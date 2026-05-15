@@ -1267,6 +1267,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   normalization shape. The real front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:1514:18: undefined function preg_split()`,
   the following `wpdb::prepare()` placeholder extraction call.
+  Milestone 848 adds a bounded implementation for that exact
+  `preg_split()` extraction shape, with `limit` `-1` and
+  `PREG_SPLIT_DELIM_CAPTURE`. The real front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`,
+  the `wpdb::prepare()` formatting call after placeholder parsing.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

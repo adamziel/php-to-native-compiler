@@ -7408,6 +7408,7 @@ impl Interpreter {
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
+            "preg_split" => call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
             "compact" => Err(runtime_error(
                 span,
@@ -11461,6 +11462,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_replace"
             | "preg_match"
             | "preg_replace"
+            | "preg_split"
             | "preg_replace_callback"
             | "compact"
             | "error_reporting"
@@ -11669,6 +11671,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_KEY" => Some(Value::Int(2)),
+        "PREG_SPLIT_DELIM_CAPTURE" => Some(Value::Int(2)),
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
@@ -12438,6 +12441,64 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(subject[..end].to_string()))
 }
 
+fn call_preg_split(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "preg_split()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() != 4 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_split()",
+                "only the WordPress wpdb prepare placeholder extraction pattern with limit -1 and PREG_SPLIT_DELIM_CAPTURE is implemented in the current subset",
+            ),
+        ));
+    }
+
+    let pattern = string_contains_argument("preg_split()", "pattern", &args[0], span)?;
+    let subject = string_contains_argument("preg_split()", "subject", &args[1], span)?;
+
+    if !is_wordpress_wpdb_prepare_placeholder_split_pattern(&pattern) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_split()",
+                "only the WordPress wpdb prepare placeholder extraction pattern is implemented in the current subset",
+            ),
+        ));
+    }
+    if !matches!(args[2], Value::Int(-1)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_split()",
+                "only limit -1 is implemented for the WordPress wpdb prepare placeholder extraction pattern",
+            ),
+        ));
+    }
+    if !matches!(args[3], Value::Int(2)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_split()",
+                "only PREG_SPLIT_DELIM_CAPTURE is implemented for the WordPress wpdb prepare placeholder extraction pattern",
+            ),
+        ));
+    }
+
+    Ok(Value::Array(split_wordpress_wpdb_prepare_placeholders(
+        &subject, span,
+    )?))
+}
+
 fn is_wordpress_redirect_sanitizer_cleanup_pattern(pattern: &str) -> bool {
     pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i"
         || pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*[]()@]|i"
@@ -12490,6 +12551,10 @@ fn is_wordpress_wpdb_prepare_placeholder_escape_pattern(pattern: &str) -> bool {
     pattern.starts_with("/%(?:%|$|(?!(") && pattern.ends_with(")?[sdfFi]))/")
 }
 
+fn is_wordpress_wpdb_prepare_placeholder_split_pattern(pattern: &str) -> bool {
+    pattern.starts_with("/(^|[^%]|(?:%%)+)(%(") && pattern.ends_with("[sdfFi])/")
+}
+
 fn is_wordpress_wpdb_prepare_placeholder_escape_replacement(replacement: &str) -> bool {
     replacement == "%%\\1" || replacement == "%%\\\\1"
 }
@@ -12527,6 +12592,10 @@ fn escape_wordpress_wpdb_prepare_unescaped_percents(subject: &str) -> String {
 }
 
 fn is_wordpress_wpdb_prepare_placeholder_suffix(suffix: &str) -> bool {
+    wordpress_wpdb_prepare_placeholder_suffix_len(suffix).is_some()
+}
+
+fn wordpress_wpdb_prepare_placeholder_suffix_len(suffix: &str) -> Option<usize> {
     let bytes = suffix.as_bytes();
     let mut index = 0;
 
@@ -12561,12 +12630,98 @@ fn is_wordpress_wpdb_prepare_placeholder_suffix(suffix: &str) -> bool {
             precision_end += 1;
         }
         if precision_end == precision_start {
-            return false;
+            return None;
         }
         index = precision_end;
     }
 
-    matches!(bytes.get(index), Some(b's' | b'd' | b'f' | b'F' | b'i'))
+    if matches!(bytes.get(index), Some(b's' | b'd' | b'f' | b'F' | b'i')) {
+        Some(index + 1)
+    } else {
+        None
+    }
+}
+
+fn split_wordpress_wpdb_prepare_placeholders(subject: &str, span: Span) -> CompileResult<PhpArray> {
+    let bytes = subject.as_bytes();
+    let mut array = PhpArray::new();
+    let mut cursor = 0;
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            index += 1;
+            continue;
+        }
+
+        let Some(suffix_len) = wordpress_wpdb_prepare_placeholder_suffix_len(&subject[index + 1..])
+        else {
+            index += 1;
+            continue;
+        };
+
+        let Some((match_start, delimiter_start)) =
+            wordpress_wpdb_prepare_placeholder_delimiter(subject, index)
+        else {
+            index += 1;
+            continue;
+        };
+
+        if match_start < cursor {
+            index += 1;
+            continue;
+        }
+
+        append_string_part(&mut array, &subject[cursor..match_start], span)?;
+        append_string_part(&mut array, &subject[delimiter_start..index], span)?;
+        let placeholder_end = index + 1 + suffix_len;
+        append_string_part(&mut array, &subject[index..placeholder_end], span)?;
+
+        cursor = placeholder_end;
+        index = placeholder_end;
+    }
+
+    append_string_part(&mut array, &subject[cursor..], span)?;
+    Ok(array)
+}
+
+fn wordpress_wpdb_prepare_placeholder_delimiter(
+    subject: &str,
+    placeholder_start: usize,
+) -> Option<(usize, usize)> {
+    if placeholder_start == 0 {
+        return Some((0, 0));
+    }
+
+    let bytes = subject.as_bytes();
+    let mut run_start = placeholder_start;
+    while run_start > 0 && bytes[run_start - 1] == b'%' {
+        run_start -= 1;
+    }
+    let percent_run_len = placeholder_start - run_start;
+    if percent_run_len >= 2 {
+        let capture_len = percent_run_len - (percent_run_len % 2);
+        let match_start = placeholder_start - capture_len;
+        return Some((match_start, match_start));
+    }
+
+    if bytes[placeholder_start - 1] != b'%' {
+        let delimiter_start = subject[..placeholder_start]
+            .char_indices()
+            .last()
+            .map(|(index, _)| index)
+            .expect("placeholder_start is greater than zero");
+        return Some((delimiter_start, delimiter_start));
+    }
+
+    None
+}
+
+fn append_string_part(array: &mut PhpArray, value: &str, span: Span) -> CompileResult<()> {
+    array
+        .append(Value::String(value.to_string()))
+        .map(|_| ())
+        .map_err(|error| runtime_error(span, error))
 }
 
 fn remove_wordpress_kses_slash_zero(subject: &str) -> String {

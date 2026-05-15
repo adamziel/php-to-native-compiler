@@ -7782,19 +7782,29 @@ handled.
   Milestone 847 covers the exact `wpdb::prepare()` placeholder-normalization
   pattern and replacement. The real front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:1514:18: undefined function preg_split()`.
-- [ ] Runtime/regex lane: inspect and implement the reached
+- [x] Runtime/regex lane: inspect and implement the reached
   `preg_split()` placeholder extraction call in
   `wp-includes/class-wpdb.php:1514` only as a bounded WordPress subset. Keep
   broad PCRE splitting, flags beyond the reached shape, delimiter capture
   behavior beyond what the call proves, offset semantics, invalid-pattern
   warnings, SQL/database semantics, and native lowering named unless
   implemented.
+  Milestone 848 covers the exact `wpdb::prepare()` placeholder-extraction
+  pattern with `limit` `-1` and `PREG_SPLIT_DELIM_CAPTURE`. The real
+  front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`.
+- [ ] Runtime/formatting lane: inspect and implement the reached
+  `vsprintf()` call in `wp-includes/class-wpdb.php:1763` only as a bounded
+  WordPress `wpdb::prepare()` subset. Keep broad format-string behavior,
+  argument unpacking/reference semantics, locale-sensitive formatting,
+  warnings, SQL/database execution, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 847 checkpoint, the latest committed checkpoint
-  is `f85da4e tools: add wordpress front controller probe`, covering
-  Milestone 846.
+- Before the current Milestone 848 checkpoint, the latest committed checkpoint
+  is `0763f04 runtime: add wordpress wpdb preg replace`, covering
+  Milestone 847.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

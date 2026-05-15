@@ -1,0 +1,14 @@
+13
+INSERT INTO wp_posts VALUES 
+(
+%1$s
+,
+ 
+%05d
+,
+ 
+%.2f
+,
+ 
+%i
+)

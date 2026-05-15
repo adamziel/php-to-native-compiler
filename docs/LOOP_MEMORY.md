@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `0763f04 runtime: add wordpress wpdb preg replace`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 848, bounded `preg_split()` support for the
+  reached WordPress `wpdb::prepare()` placeholder extraction pattern in
+  `wp-includes/class-wpdb.php:1514`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/preg_split_builtin.rs`,
+  `tests/fixtures/milestone848/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test preg_split_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone848`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  undefined `ABSPATH`; the bootstrap shim exits `0`; the front-controller probe
+  advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`.
+- Remaining semantic gaps: broad PCRE splitting, other `preg_split()` limits
+  and flags, pattern/subject arrays, exact warnings, broad formatting,
+  SQL/database semantics, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress wpdb preg split"`.
+  The next runtime milestone should inspect the reached `vsprintf()` shape.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `f85da4e tools: add wordpress front controller probe`, pushed to
   `origin/master`.
 - Task attempted: Milestone 847, bounded `preg_replace()` support for the

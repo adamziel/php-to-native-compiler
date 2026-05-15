@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 848, bounded `preg_split()` support for the reached
+  WordPress `wpdb::prepare()` placeholder extraction pattern in
+  `wp-includes/class-wpdb.php:1514`. The interpreter now accepts the current
+  `/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/` shape after WordPress
+  expands `$allowed_format`, with `limit` exactly `-1` and flags exactly
+  `PREG_SPLIT_DELIM_CAPTURE`; it returns the delimiter-capture array shape
+  WordPress expects for placeholder counting. The runtime also exposes the
+  `PREG_SPLIT_DELIM_CAPTURE` constant with value `2`, and native metadata
+  folding recognizes `preg_split()` and the constant while direct native
+  function-call lowering still rejects the call. Broad PCRE splitting, other
+  limits, `PREG_SPLIT_NO_EMPTY`, `PREG_SPLIT_OFFSET_CAPTURE`, flag
+  combinations, pattern/subject arrays, invalid-pattern warnings, SQL/database
+  semantics, and native lowering remain unsupported. The real WordPress 6.9.4
+  front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`.
+  The bootstrap-shim probe still exits `0`, and direct `wp-settings.php` still
+  stops at undefined `ABSPATH`. Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_split_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone848`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 847, bounded `preg_replace()` support for the reached
   WordPress `wpdb::prepare()` placeholder normalization pattern in
   `wp-includes/class-wpdb.php:1511`. The interpreter now accepts the current

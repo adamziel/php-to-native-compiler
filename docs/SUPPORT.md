@@ -391,11 +391,15 @@
   declaring class, protected property operands owned by the active class or an
   ancestor, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
-  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `PREG_SPLIT_DELIM_CAPTURE`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
-  `PHP_INT_MAX`, and `PHP_SAPI`. The integer constants evaluate to `0`, `1`,
-  `2`, `1`, `0`, `1`, `2`, and the current deterministic PHP 8.3
-  compatibility target `80300`; `PHP_VERSION` evaluates to the deterministic
+  `PHP_INT_MAX`, and `PHP_SAPI`. The small integer constants evaluate to
+  their documented PHP values (`CASE_LOWER` `0`, `CASE_UPPER` `1`,
+  `ARRAY_FILTER_USE_KEY` `2`, `ARRAY_FILTER_USE_BOTH` `1`,
+  `PREG_SPLIT_DELIM_CAPTURE` `2`, `SORT_REGULAR` `0`, `SORT_NUMERIC` `1`,
+  and `SORT_STRING` `2`), and `PHP_VERSION_ID` evaluates to the current
+  deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION` evaluates
+  to the deterministic
   compatibility string `8.3.0`, `PHP_INT_MAX` evaluates to the
   host-independent 64-bit integer maximum, and `PHP_SAPI` evaluates to the
   current deterministic `cli` SAPI string.
@@ -490,7 +494,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
-  `preg_match`, `preg_replace`, `preg_replace_callback`, `str_replace`, `substr_count`,
+  `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -713,6 +717,18 @@
   full PCRE replacement behavior, captures/backrefs beyond the reached
   placeholder replacement, invalid-pattern warnings, byte/Unicode edge cases,
   broad coercions, exact diagnostics, SQL semantics, and native lowering remain
+  unsupported.
+  `preg_split($pattern, $subject, $limit, $flags)` supports exactly the
+  reached WordPress `wpdb::prepare()` placeholder extraction regex
+  `/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/` after `$allowed_format`
+  expansion, with `limit` exactly `-1` and `flags` exactly
+  `PREG_SPLIT_DELIM_CAPTURE` (value `2`). It returns a sequential array with
+  the leading literal segment and the two captured delimiter groups for each
+  recognized placeholder, matching the shape WordPress documents as one
+  leading value plus three values per placeholder. Broad PCRE splitting,
+  pattern arrays, subject arrays, other limits, `PREG_SPLIT_NO_EMPTY`,
+  `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations, invalid-pattern warnings,
+  full capture semantics, SQL semantics, and native lowering remain
   unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
@@ -2274,7 +2290,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_replace_callback`,
+  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -2309,7 +2325,7 @@
   in native lowering, and interpolated string-name operands remain rejected
   before folding so native output cannot erase the runtime lookup boundary.
   Exact `CASE_LOWER`, `CASE_UPPER`,
-  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
+  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `PREG_SPLIT_DELIM_CAPTURE`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
   `PHP_INT_MAX` names
   fold to true;
@@ -2576,7 +2592,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
-  `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_replace_callback`, `str_replace`, `error_reporting`,
+  `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
@@ -4410,7 +4426,7 @@
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
+  `SORT_NUMERIC`, `SORT_STRING`, `PREG_SPLIT_DELIM_CAPTURE`, `PHP_VERSION_ID`, `PHP_VERSION`,
   `PHP_INT_MAX`, `PHP_SAPI`, the documented `E_*` error mask constants, and
   runtime-defined unqualified constants in the current name/value subset; PHP
   version component constants such as `PHP_MAJOR_VERSION`, patch-level host
@@ -4555,12 +4571,21 @@
   sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host
   cleanup pattern `#^www\.#`, and KSES null cleanup patterns
   `/[\x00-\x08\x0B\x0C\x0E-\x1F]/` and `/\\\\+0+/`, all with an empty
-  replacement and scalar/null subject: pattern/replacement arrays, subject
-  arrays, non-empty replacements, limit/count arguments, callbacks, full PCRE
-  replacement behavior, captures/backrefs, invalid-pattern warnings,
+  replacement and scalar/null subject, plus the exact WordPress
+  `wpdb::prepare()` placeholder-escape shape with replacement `'%%\\1'`:
+  pattern/replacement arrays, subject arrays, arbitrary non-empty
+  replacements, limit/count arguments, callbacks, full PCRE replacement
+  behavior, captures/backrefs beyond the reached placeholder replacement,
+  invalid-pattern warnings,
   byte/Unicode behavior beyond the current valid UTF-8 string model, full PHP
   string escape semantics, broad coercions, exact diagnostics, and native
   lowering beyond function-table introspection
+- `preg_split()` outside the exact WordPress `wpdb::prepare()` placeholder
+  extraction pattern with `limit` `-1` and `PREG_SPLIT_DELIM_CAPTURE`: broad
+  PCRE splitting, pattern arrays, subject arrays, other limits,
+  `PREG_SPLIT_NO_EMPTY`, `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations,
+  invalid-pattern warnings, full capture semantics, exact diagnostics, and
+  native lowering beyond function-table introspection
 - `preg_replace_callback()` outside the exact WordPress
   `wp_sanitize_redirect()` UTF-8 sanitizer regex shape, exact
   `_wp_sanitize_utf8_in_redirect` string callback, scalar/null subject, and
