@@ -77,7 +77,8 @@ bounded integer `min()`, and bounded nested direct-variable array-offset
 registration, bounded `date_default_timezone_set('UTC')`, bounded
 deterministic CLI `$_SERVER`/`PHP_SAPI` startup state, bounded
 `preg_match()`, bounded `error_reporting()` mask state, and bounded
-`is_dir()`, and bounded braced dynamic object-property names. The current shim frontier
+`is_dir()`, bounded braced dynamic object-property names, and bounded
+`__METHOD__` magic-constant evaluation. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
@@ -86,8 +87,8 @@ and the fatal-error-handler `register_shutdown_function()` registration, past
 timezone setup, past the first request/SAPI startup state, and past the first
 regex startup guard, past the first error-reporting mask setup, and past the
 first startup directory check, and past the first braced dynamic object-property
-access; it now stops at unsupported `__METHOD__` magic-constant evaluation in a
-method context.
+access, and past the first `__METHOD__` magic constant in method context; it
+now stops at undefined `set_error_handler()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -321,8 +322,10 @@ Milestone 784 added bounded `preg_match()` for the reached SAPI-name pattern.
 Milestone 785 added bounded `error_reporting()` mask state and reached `E_*`
 constants. Milestone 786 added bounded `is_dir()` for local filesystem paths,
 and Milestone 787 added braced dynamic object-property reads/writes through the
-existing dynamic-property runtime subset. The current frontier is now
-`__METHOD__` magic-constant evaluation in WordPress startup method context.
+existing dynamic-property runtime subset. Milestone 788 added bounded
+`__METHOD__` magic-constant evaluation in current function/method contexts.
+The current frontier is now `set_error_handler()` registration in WordPress
+startup error handling.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -468,8 +471,9 @@ The repository already has a working Rust workspace with:
   shutdown registration, bounded timezone setting, bounded deterministic
   CLI `$_SERVER`/`PHP_SAPI` startup state, bounded `preg_match()`, and bounded
   `error_reporting()` mask state, bounded `is_dir()`, and bounded braced
-  dynamic object-property names. The next bottleneck is `__METHOD__`
-  magic-constant evaluation in the WordPress bootstrap shim.
+  dynamic object-property names, and bounded `__METHOD__` magic-constant
+  evaluation. The next bottleneck is `set_error_handler()` registration in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

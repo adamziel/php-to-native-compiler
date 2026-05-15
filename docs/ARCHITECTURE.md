@@ -1052,9 +1052,9 @@ trailing-comma syntax, before traversing function bodies until generated code
 has function symbol tables, stack-frame layout, default parameter binding,
 recursion guards, return-value flow, and exact native error behavior.
 Native lowering rejects executable magic constants `__LINE__`, `__FILE__`,
-`__DIR__`, and `__FUNCTION__` until generated code has source mapping, path
-canonicalization, function-context tracking, eval/include source interaction
-rules, and exact native error behavior.
+`__DIR__`, `__FUNCTION__`, and `__METHOD__` until generated code has source
+mapping, path canonicalization, function/method-context tracking, eval/include
+source interaction rules, and exact native error behavior.
 Native lowering rejects built-in constants, runtime-defined constants, bare
 constant reads, top-level `const` declarations, `define()`/`constant()`, and
 unsupported `defined(...)` forms before operand/argument lowering until

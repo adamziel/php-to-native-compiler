@@ -3600,6 +3600,9 @@ impl Parser {
                     if magic_name == "__FUNCTION__" {
                         return Ok(Expr::MagicFunction { span: token.span });
                     }
+                    if magic_name == "__METHOD__" {
+                        return Ok(Expr::MagicMethod { span: token.span });
+                    }
                     return Err(
                         self.error_at(token.span, unsupported_magic_constant_message(magic_name))
                     );
@@ -4300,6 +4303,7 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
+            Expr::MagicMethod { .. } => Ok(()),
             Expr::SelfClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
@@ -4381,6 +4385,7 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
+            Expr::MagicMethod { .. } => Ok(()),
             Expr::ClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
@@ -4527,6 +4532,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
@@ -4654,6 +4660,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
@@ -4752,6 +4759,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }

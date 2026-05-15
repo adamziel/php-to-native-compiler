@@ -1,5 +1,5 @@
 <?php
 function current_label() {
-    return __METHOD__;
+    return __CLASS__;
 }
 echo current_label();

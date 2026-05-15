@@ -1,0 +1,8 @@
+top:
+function-default:free_function
+function-body:free_function
+method-default:Box::label
+method-body:Box::label
+inherited:ParentBox::inherited
+static-body:Box::staticLabel
+

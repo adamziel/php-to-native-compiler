@@ -17,7 +17,9 @@
   line, `__FILE__`, evaluated from the current `phpc run` input path when one
   is available, `__DIR__`, evaluated as that path's parent directory, and
   `__FUNCTION__`, evaluated as the current user-function name or an empty
-  string outside a function
+  string outside a function. `__METHOD__` evaluates to `Class::method` in the
+  current method context, to the current function name in function context, and
+  to an empty string outside a function.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
@@ -774,7 +776,7 @@
   first-class callable syntax such as `strlen(...)` and `$callback(...)`, and
   `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
-  `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
+  `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`
 - narrow `require`, `require_once`, `include`, and `include_once` execution
   for local string paths in statement and expression position, including
   constant/string concatenation, source-file-relative path resolution, included
@@ -2383,8 +2385,10 @@
   directory, and evaluates to an empty string for path-less library execution.
   The `__FUNCTION__` magic constant evaluates to the current user-function
   name in ordinary expressions and default parameter values, and to an empty
-  string outside a function. `__METHOD__` fails with a stable parse diagnostic
-  tied to the current missing method-dispatch boundary. `__CLASS__` fails with
+  string outside a function. The `__METHOD__` magic constant evaluates to the
+  current `Class::method` name in ordinary expressions and default parameter
+  values when a method class context exists, to the current function name in
+  function context, and to an empty string outside a function. `__CLASS__` fails with
   a stable parse diagnostic tied to the current missing class-context tracking
   boundary. `__TRAIT__` fails with a stable parse diagnostic tied to the
   current missing trait declaration/use and trait-context tracking boundary.
@@ -2395,7 +2399,7 @@
   declaration/default subset, reference-backed static locals,
   recursion/reentrancy edge behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
-  method/class magic constant context, namespace and trait magic constants,
+  class magic constant context, namespace and trait magic constants,
   closure invocation and capture binding, closure function-name context, magic
   constant native lowering, array callables, object/method callables,
   first-class callable syntax, namespace-qualified callable
@@ -3327,23 +3331,24 @@
   dynamic initialization expressions, references, variable variables,
   recursion/reentrancy edge behavior, included-file edge cases, exact PHP
   diagnostics, reflection behavior, and native lowering
-- magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
-  `__FUNCTION__`, such as `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
-  `__NAMESPACE__`; `__METHOD__` specifically fails with a stable parse
-  diagnostic because method-context magic constant tracking is not
-  implemented, and `__CLASS__` specifically fails because class-context
+- magic constants other than `__LINE__`, `__FILE__`, `__DIR__`,
+  `__FUNCTION__`, and `__METHOD__`, such as `__CLASS__`, `__TRAIT__`, and
+  `__NAMESPACE__`; `__CLASS__` specifically fails because class-context
   tracking is not implemented. `__TRAIT__` specifically fails because trait
   declarations, trait use, and trait-context tracking are not implemented,
   and `__NAMESPACE__` specifically fails because namespace-aware name
   resolution is not implemented.
-  `__FUNCTION__` is limited to user-function context and the top-level empty
-  string behavior; closure context is not implemented. `__FILE__` currently
+  `__FUNCTION__` and `__METHOD__` are limited to current user-function and
+  declared-method contexts plus top-level empty-string behavior; closure
+  context, trait-method context, original-name/case fidelity beyond the
+  current declaration metadata, and exact namespace/source mapping are not
+  implemented. `__FILE__` currently
   reports the `phpc run` input path string, and `__DIR__` derives from that
   same path string; neither is guaranteed to match PHP's canonical absolute
   filename or directory in all entry paths. Native lowering rejects executable
-  magic constants `__LINE__`, `__FILE__`, `__DIR__`, and `__FUNCTION__` with a
-  specific codegen diagnostic until source mapping, path canonicalization, and
-  function-context lowering exist.
+  magic constants `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and
+  `__METHOD__` with a specific codegen diagnostic until source mapping, path
+  canonicalization, and function/method-context lowering exist.
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables, direct/nested array offsets,
   nested object-property array offsets, and static-property diagnostic
@@ -4012,8 +4017,8 @@
   or values, case-insensitive legacy constants, bare namespace constant
   fallback reads, nested `const` declarations, dynamic declaration values,
   broader `constant()`/`defined()` lookup for class constants, names lexed as
-  language keywords or literals for bare reads, magic constants other than `__LINE__`,
-  `__FILE__`, `__DIR__`, and `__FUNCTION__`,
+  language keywords or literals for bare reads, magic constants other than
+  `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and `__METHOD__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
 - namespace-aware behavior beyond the current class-name and same-namespace

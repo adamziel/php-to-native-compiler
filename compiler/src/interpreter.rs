@@ -1790,6 +1790,7 @@ impl Interpreter {
             Expr::MagicFunction { .. } => Ok(Value::String(
                 self.function_context.last().cloned().unwrap_or_default(),
             )),
+            Expr::MagicMethod { span } => Ok(Value::String(self.magic_method_value(*span)?)),
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::ClassNameConstant { class_name, .. } => Ok(Value::String(class_name.clone())),
             Expr::SelfClassNameConstant { span } => self.evaluate_self_class_name_constant(*span),
@@ -3577,6 +3578,22 @@ impl Interpreter {
         } else {
             parent.to_string_lossy().into_owned()
         }
+    }
+
+    fn magic_method_value(&self, span: Span) -> CompileResult<String> {
+        let Some(function_name) = self.function_context.last() else {
+            return Ok(String::new());
+        };
+        let Some(class_id) = self.class_context.last().copied() else {
+            return Ok(function_name.clone());
+        };
+        let class = self.classes.get(class_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class(format!("class id {}", class_id.index())),
+            )
+        })?;
+        Ok(format!("{}::{function_name}", class.name()))
     }
 
     fn evaluate_array_index(

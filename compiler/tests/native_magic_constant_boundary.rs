@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source_with_source_file};
 
-const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
+const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, and __METHOD__ until native source mapping, path canonicalization, and function/method-context lowering exist; phpc run handles current magic constant behavior";
 
 #[test]
 fn phpc_run_still_handles_current_magic_constant_subset() {
@@ -15,9 +15,11 @@ echo "line:", __LINE__, "\n";
 echo "file:", __FILE__, "\n";
 echo "dir:", __DIR__, "\n";
 echo "top:", __FUNCTION__, "\n";
+echo "method-top:", __METHOD__, "\n";
 function current_magic($default = __FUNCTION__) {
     echo "default:", $default, "\n";
-    echo "body:", __FUNCTION__;
+    echo "body:", __FUNCTION__, "\n";
+    echo "method-body:", __METHOD__;
 }
 current_magic();
 "#,
@@ -27,7 +29,7 @@ current_magic();
 
     assert_eq!(
         execution.stdout,
-        "line:2\nfile:virtual/native_magic.php\ndir:virtual\ntop:\ndefault:current_magic\nbody:current_magic"
+        "line:2\nfile:virtual/native_magic.php\ndir:virtual\ntop:\nmethod-top:\ndefault:current_magic\nbody:current_magic\nmethod-body:current_magic"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -39,6 +41,7 @@ fn emit_ir_rejects_executable_magic_constants_with_specific_boundary() {
         "<?php\necho __FILE__;\n",
         "<?php\necho __DIR__;\n",
         "<?php\necho __FUNCTION__;\n",
+        "<?php\necho __METHOD__;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

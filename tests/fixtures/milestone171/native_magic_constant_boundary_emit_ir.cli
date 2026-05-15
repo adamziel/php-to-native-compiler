@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-codegen error at tests/fixtures/milestone171/native_magic_constant_boundary.php:2:6: LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior
+codegen error at tests/fixtures/milestone171/native_magic_constant_boundary.php:2:6: LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, and __METHOD__ until native source mapping, path canonicalization, and function/method-context lowering exist; phpc run handles current magic constant behavior
 --- stderr end ---

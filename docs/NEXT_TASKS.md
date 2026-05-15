@@ -7218,16 +7218,25 @@ handled.
   root writes through the existing dynamic-property runtime subset, and
   advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:173:7: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented`.
-- [ ] Object/magic-constant lane: implement bounded `__METHOD__` evaluation
+- [x] Object/magic-constant lane: implement bounded `__METHOD__` evaluation
   for the reached WordPress method context. Keep trait methods, closure
   contexts, static method edge cases, case/original-name fidelity,
   namespace-qualified names, source mapping, native lowering, and exact PHP
   behavior named unless implemented.
+  Milestone 788 implements current function/method-context `__METHOD__`
+  evaluation and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:53:2: undefined function set_error_handler()`.
+- [ ] Error runtime lane: implement or explicitly bound `set_error_handler()`
+  registration for the reached WordPress fatal/error handling path. Keep
+  callback invocation, warning/notice/deprecation routing, previous-handler
+  return semantics, error-level filtering, shutdown/fatal interactions,
+  restoration, exact PHP diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 787 checkpoint, the latest committed checkpoint
-  is `c11f0df runtime: add bounded is dir`, covering Milestone 786.
+- Before the current Milestone 788 checkpoint, the latest committed checkpoint
+  is `9665746 parser: add braced dynamic properties`, covering Milestone 787.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

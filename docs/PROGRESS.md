@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 788, bounded `__METHOD__` magic-constant evaluation for the
+  current WordPress startup method path. The parser now accepts `__METHOD__`
+  as an executable magic constant. The interpreter evaluates it to
+  `Class::method` in current declared method context, to the current function
+  name in ordinary function context, and to an empty string at top level; it is
+  also accepted in the current default-parameter and constant-expression
+  subset. Native lowering rejects it with the existing executable
+  magic-constant boundary. Closure contexts, trait methods, exact original
+  case/name fidelity beyond current declaration metadata, broader namespace and
+  source mapping behavior, `__CLASS__`, `__TRAIT__`, `__NAMESPACE__`, and
+  native lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances past the `__METHOD__` parse blocker to
+  `runtime error at <bootstrap-shim>:53:2: undefined function set_error_handler()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes magic_method_constant_evaluates_from_current_function_or_method_context -- --exact`,
+  `cargo test -p phpc --test native_magic_constant_boundary`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone788`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 787, bounded braced dynamic object-property names for the
   current WordPress startup object path. The parser now accepts
   `$object->{$expr}` reads and direct-variable-root writes, reusing the

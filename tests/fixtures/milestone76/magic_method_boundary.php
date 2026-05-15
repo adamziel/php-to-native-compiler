@@ -1,7 +1,7 @@
 <?php
 class Box {
     public function label() {
-        return __METHOD__;
+        return __CLASS__;
     }
 }
 $box = new Box();

@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:28:44Z
+
+- Checkpoint before this task:
+  `9665746 parser: add braced dynamic properties`, pushed to `origin/master`.
+- Task attempted: Milestone 788, bounded `__METHOD__` magic-constant
+  evaluation for the reached WordPress startup method context.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/native_magic_constant_boundary.rs`,
+  `tests/fixtures/milestone171/native_magic_constant_boundary_emit_ir.cli`,
+  `tests/fixtures/milestone788/*`, `GOAL.MD`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes magic_method_constant_evaluates_from_current_function_or_method_context -- --exact`,
+  `cargo test -p phpc --test native_magic_constant_boundary`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone788`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: closure magic context, trait methods, exact
+  original-name/case fidelity beyond current declaration metadata, broader
+  namespace/source mapping behavior, `__CLASS__`, `__TRAIT__`, `__NAMESPACE__`,
+  and native lowering remain unsupported.
+- Next concrete task: implement or explicitly bound `set_error_handler()`
+  registration for the reached WordPress error-handling path while documenting
+  callback invocation, previous-handler return semantics, error-level
+  filtering, restoration, shutdown/fatal interactions, exact PHP diagnostics,
+  and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T08:21:58Z
 
 - Checkpoint before this task:

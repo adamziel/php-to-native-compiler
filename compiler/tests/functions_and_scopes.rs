@@ -729,23 +729,42 @@ class Box {
 }
 
 #[test]
-fn magic_method_constant_is_rejected_until_method_dispatch_exists() {
-    let error = parse_error(
+fn magic_method_constant_evaluates_from_current_function_or_method_context() {
+    let execution = run_source(
         r#"<?php
-class Box {
-    public function label() {
+echo "top:", __METHOD__, "\n";
+function free_function($default = __METHOD__) {
+    echo "function-default:", $default, "\n";
+    echo "function-body:", __METHOD__, "\n";
+}
+class ParentBox {
+    public function inherited() {
         return __METHOD__;
     }
 }
+class Box extends ParentBox {
+    public function label($default = __METHOD__) {
+        echo "method-default:", $default, "\n";
+        echo "method-body:", __METHOD__, "\n";
+    }
+    public static function staticLabel() {
+        echo "static-body:", __METHOD__, "\n";
+    }
+}
+free_function();
+$box = new Box();
+$box->label();
+echo "inherited:", $box->inherited(), "\n";
+Box::staticLabel();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 16);
     assert_eq!(
-        error.message,
-        "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented"
+        execution.stdout,
+        "top:\nfunction-default:free_function\nfunction-body:free_function\nmethod-default:Box::label\nmethod-body:Box::label\ninherited:ParentBox::inherited\nstatic-body:Box::staticLabel\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

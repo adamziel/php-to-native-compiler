@@ -788,6 +788,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full dynamic-property support, magic property hooks, non-public
   dynamic visibility, references/copy-on-write, native lowering, `__METHOD__`
   support, or WordPress bootstrap support.
+  Milestone 788 implements bounded `__METHOD__` evaluation for the current
+  function/method-context subset. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:53:2: undefined function set_error_handler()`.
+  This is not full magic-constant support, trait/closure magic context,
+  exact namespace/source mapping, native lowering, error-handler registration,
+  or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
