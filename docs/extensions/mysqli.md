@@ -5,7 +5,8 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_host_info`, `mysqli_stat`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
-`mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
+`mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
@@ -62,6 +63,12 @@ flags value `0`, and optional null/string transaction names, returning
 deterministic `true`. They do not commit, roll back, mutate real transaction or
 autocommit state, handle savepoints, emit warnings/errors, or touch host
 database state.
+
+`mysqli_errno($handle)`, `mysqli_error($handle)`,
+`mysqli_sqlstate($handle)`, and `mysqli_warning_count($handle)` expose
+deterministic clean placeholder metadata: `0`, an empty string, `00000`, and
+`0`. They do not track real host database SQLSTATE, warnings, warning counts,
+or PHP warning/error behavior.
 
 `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
 returns deterministic `true` for the reached WordPress charset setup shape.
@@ -149,6 +156,7 @@ beyond deterministic zero clean state, no real connection liveness checks or
 reconnect behavior beyond deterministic ping success, no real
 autocommit or transaction state beyond deterministic autocommit and
 begin-transaction/commit/rollback success, no
-charset/collation negotiation, no errors/warnings, no commit/rollback behavior, no
+charset/collation negotiation, no SQLSTATE or warning-count tracking, no
+errors/warnings, no commit/rollback behavior, no
 configuration beyond the current report-mode flag, no PDO bridge, and no
 native database lowering.

@@ -514,7 +514,8 @@
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`, `mysqli_set_charset`,
   `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -891,6 +892,9 @@
   non-empty `mysqli` result sets are not implemented in the current subset.
   For the same placeholder handle, `mysqli_errno($handle)` returns `0` and
   `mysqli_error($handle)` returns an empty string.
+  `mysqli_sqlstate($handle)` returns deterministic clean SQLSTATE `00000` and
+  `mysqli_warning_count($handle)` returns deterministic `0` without tracking
+  real host database SQLSTATE, warnings, or warning-count state.
   `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return
   deterministic `0` for the clean placeholder connection state.
   `mysqli_ping($handle)` accepts the placeholder handle and returns
@@ -2375,7 +2379,8 @@
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`,
   `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -2694,6 +2699,7 @@
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
+  `mysqli_sqlstate`, `mysqli_warning_count`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
@@ -2835,6 +2841,7 @@
   `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
   `mysqli_get_server_info`, `mysqli_autocommit`, `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_sqlstate`, `mysqli_warning_count`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
@@ -2900,7 +2907,8 @@
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
+  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
   `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
@@ -2921,8 +2929,9 @@
   `mysqli_query(...)` returns only the current false
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
   synthetic empty-result boundaries;
-  `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
-  diagnostics; `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
+  `mysqli_errno(...)`, `mysqli_error(...)`, `mysqli_sqlstate(...)`, and
+  `mysqli_warning_count(...)` expose only clean placeholder diagnostics;
+  `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
   only deterministic zero clean-state metadata; `mysqli_ping(...)` returns only
   deterministic placeholder liveness success; `mysqli_select_db(...)`
   returns only deterministic success for the placeholder handle;
@@ -2934,7 +2943,8 @@
   `mysqli_get_server_info(...)`/`mysqli_get_host_info(...)`/
   `mysqli_stat(...)`/`mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
-  `mysqli_errno(...)`/`mysqli_error(...)`/
+  `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_sqlstate(...)`/
+  `mysqli_warning_count(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
@@ -4583,7 +4593,8 @@
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_get_host_info()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
-  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
+  `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
@@ -4597,7 +4608,7 @@
   mysqli resources/objects with real connection state, host/transport/protocol
   metadata, server status/counters, autocommit/transaction state, queries, result sets, prepared statements, connection charset state, binary or invalid-string
   behavior, exact escaping edge cases, liveness or reconnect behavior,
-  errors/warnings, transactions,
+  SQLSTATE/warning-count state, errors/warnings, transactions,
   configuration beyond the current report-mode flag, PDO behavior, exact PHP
   diagnostics, and native database calls
 - `version_compare()` outside the current numeric-component subset: PHP's full

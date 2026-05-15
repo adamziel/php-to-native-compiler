@@ -8186,17 +8186,28 @@ handled.
   real WordPress transaction behavior, real transaction state, autocommit state
   mutation, database mutation, savepoints, host database integration,
   warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi state boundary after
+- [x] Runtime/mysqli lane: inspect the next MySQLi state boundary after
   placeholder transaction completion and choose a small tested slice, such as
   deterministic `mysqli_sqlstate()`/`mysqli_warning_count()` placeholder
   error-state metadata or a sharper named diagnostic, before broader SQL
   execution is claimed.
+  Milestone 887 implements bounded `mysqli_sqlstate($handle)` and
+  `mysqli_warning_count($handle)` for placeholder `mysqli` objects. They
+  return deterministic clean-state metadata (`00000` and `0`), reject
+  non-`mysqli` handles with stable diagnostics, and are visible through runtime
+  and native metadata lookup. This is not real SQLSTATE tracking,
+  warning-count tracking, host database integration, warnings/errors, or
+  native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_sqlstate()`/`mysqli_warning_count()` placeholders through
+  WordPress-shaped error-state bookkeeping without claiming real database
+  warning/error fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3f081fa runtime: add mysqli commit rollback placeholders`, covering
-  Milestone 885 before the current Milestone 886 candidate.
+  `5ea242b tests: add wordpress wpdb commit rollback smoke`, covering
+  Milestone 886 before the current Milestone 887 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

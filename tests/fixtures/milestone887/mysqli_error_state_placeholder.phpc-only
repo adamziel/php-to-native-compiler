@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic clean placeholder
+`mysqli_sqlstate()` and `mysqli_warning_count()` metadata. System PHP would
+require the mysqli extension and a real host connection to report actual
+SQLSTATE and warning-count state.

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone887/mysqli_error_state_placeholder.php
+yes|callable
+0
+
+00000
+0
+00000
+0

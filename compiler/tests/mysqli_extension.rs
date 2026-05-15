@@ -426,6 +426,37 @@ echo mysqli_insert_id($handle);
 }
 
 #[test]
+fn mysqli_error_state_metadata_returns_clean_placeholder_state() {
+    let execution = run_source(
+        r#"<?php
+$sqlstate = "mysqli_sqlstate";
+$warnings = "mysqli_warning_count";
+echo function_exists($sqlstate) ? "yes" : "no";
+echo "|";
+echo is_callable($warnings) ? "callable" : "missing";
+$handle = mysqli_init();
+echo "|";
+echo mysqli_errno($handle);
+echo "|";
+echo mysqli_error($handle);
+echo "|";
+echo mysqli_sqlstate($handle);
+echo "|";
+echo mysqli_warning_count($handle);
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo $sqlstate($handle);
+echo "|";
+echo $warnings($handle);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|0||00000|0|00000|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_real_escape_string_escapes_current_scalar_subset() {
     let execution = run_source(
         r#"<?php
@@ -1215,6 +1246,39 @@ mysqli_insert_id("not-a-handle");
 }
 
 #[test]
+fn mysqli_error_state_metadata_rejects_forms_outside_current_boundary() {
+    let bad_sqlstate_handle = run_source(
+        r#"<?php
+mysqli_sqlstate("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_sqlstate_handle.phase, Phase::Runtime);
+    assert_eq!(bad_sqlstate_handle.line, 2);
+    assert_eq!(bad_sqlstate_handle.column, 1);
+    assert_eq!(
+        bad_sqlstate_handle.message,
+        "unsupported call mysqli_sqlstate(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_warning_count_handle = run_source(
+        r#"<?php
+mysqli_warning_count("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_warning_count_handle.phase, Phase::Runtime);
+    assert_eq!(bad_warning_count_handle.line, 2);
+    assert_eq!(bad_warning_count_handle.column, 1);
+    assert_eq!(
+        bad_warning_count_handle.message,
+        "unsupported call mysqli_warning_count(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
 fn mysqli_ping_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -1303,6 +1367,10 @@ echo function_exists("mysqli_errno") ? "1" : "0";
 echo is_callable("mysqli_errno") ? "1" : "0";
 echo function_exists("mysqli_error") ? "1" : "0";
 echo is_callable("mysqli_error") ? "1" : "0";
+echo function_exists("mysqli_sqlstate") ? "1" : "0";
+echo is_callable("mysqli_sqlstate") ? "1" : "0";
+echo function_exists("mysqli_warning_count") ? "1" : "0";
+echo is_callable("mysqli_warning_count") ? "1" : "0";
 echo function_exists("mysqli_affected_rows") ? "1" : "0";
 echo is_callable("mysqli_affected_rows") ? "1" : "0";
 echo function_exists("mysqli_insert_id") ? "1" : "0";
@@ -1347,7 +1415,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 66, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 70, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1499,6 +1567,30 @@ mysqli_errno(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_error(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_sqlstate(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_warning_count(mysqli_init());
 "#,
     )
     .unwrap_err();

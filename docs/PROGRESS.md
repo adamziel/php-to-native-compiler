@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 887, bounded `mysqli_sqlstate()` and
+  `mysqli_warning_count()` support for placeholder MySQLi handles. The runtime
+  now accepts both functions for current placeholder `mysqli` objects, returns
+  deterministic clean-state metadata (`"00000"` and `0`), rejects non-`mysqli`
+  handles with stable diagnostics, and exposes both names through runtime and
+  native metadata lookup. This is not real SQLSTATE tracking, warning-count
+  tracking, host database integration, PHP warning/error fidelity, or native
+  database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_error_state -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone887`.
+
 - Added Milestone 886, a synthetic WordPress-shaped `wpdb`
   transaction-completion bookkeeping smoke that calls the bounded
   `mysqli_commit($this->dbh, 0, $name)` and

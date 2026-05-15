@@ -1365,6 +1365,9 @@ historical blockers and remaining full-support gaps include:
   fidelity, or host database integration. Milestone 886 wires those
   placeholders through a synthetic WordPress-shaped `wpdb` commit/rollback
   bookkeeping smoke without claiming real WordPress transaction fidelity.
+  Milestone 887 adds deterministic clean `mysqli_sqlstate()` and
+  `mysqli_warning_count()` placeholder metadata without real SQLSTATE,
+  warning-count, or host error-state tracking.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
