@@ -8163,17 +8163,29 @@ handled.
   ran. It is not real WordPress transaction behavior, real transaction state,
   autocommit state mutation, commit/rollback behavior, savepoints, host
   database integration, warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next transaction boundary after
+- [x] Runtime/mysqli lane: inspect the next transaction boundary after
   begin-transaction placeholders and choose a small tested slice, such as
   bounded `mysqli_commit()`/`mysqli_rollback()` placeholder success or a
   deterministic placeholder error-state boundary, before broader SQL execution
   is claimed.
+  Milestone 885 implements bounded `mysqli_commit($handle, $flags, $name)` and
+  `mysqli_rollback($handle, $flags, $name)` for placeholder `mysqli` objects.
+  They accept omitted flags/name, flags value `0`, and null/string names,
+  return deterministic `true`, reject non-`mysqli` handles, nonzero flags,
+  non-int flags, and unsupported name values with stable diagnostics, and are
+  visible through runtime and native metadata lookup. This is not real
+  commit/rollback behavior, transaction state, autocommit state mutation,
+  savepoints, host database integration, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+  bounded `mysqli_commit()`/`mysqli_rollback()` placeholders through
+  WordPress-shaped transaction bookkeeping without claiming real transaction or
+  database-state behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `522e858 runtime: add mysqli begin transaction placeholder`, covering
-  Milestone 883 before the current Milestone 884 candidate.
+  `774e901 tests: add wordpress wpdb begin transaction smoke`, covering
+  Milestone 884 before the current Milestone 885 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

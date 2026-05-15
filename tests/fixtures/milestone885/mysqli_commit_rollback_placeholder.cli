@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone885/mysqli_commit_rollback_placeholder.php
+yes|callable
+commit
+rollback
+dynamic-commit
+dynamic-rollback

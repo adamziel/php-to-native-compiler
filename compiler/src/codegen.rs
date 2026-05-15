@@ -6348,6 +6348,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_stat"
             | "mysqli_autocommit"
             | "mysqli_begin_transaction"
+            | "mysqli_commit"
+            | "mysqli_rollback"
             | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_errno"

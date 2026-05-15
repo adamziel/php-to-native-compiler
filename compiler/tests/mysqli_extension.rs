@@ -259,6 +259,38 @@ echo $call($handle, 0, null) ? "dynamic" : "failed";
 }
 
 #[test]
+fn mysqli_commit_and_rollback_accept_current_placeholder_shape() {
+    let execution = run_source(
+        r#"<?php
+$commit = "mysqli_commit";
+$rollback = "mysqli_rollback";
+echo function_exists($commit) ? "yes" : "no";
+echo "|";
+echo is_callable($rollback) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_begin_transaction($handle);
+echo "|";
+echo mysqli_commit($handle) ? "commit" : "failed";
+mysqli_begin_transaction($handle, 0, "wp");
+echo "|";
+echo mysqli_rollback($handle, 0, "wp") ? "rollback" : "failed";
+echo "|";
+echo $commit($handle, 0, null) ? "dynamic-commit" : "failed";
+echo "|";
+echo $rollback($handle, 0, null) ? "dynamic-rollback" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|commit|rollback|dynamic-commit|dynamic-rollback"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -589,6 +621,71 @@ mysqli_begin_transaction($handle, 0, false);
     assert_eq!(
         bad_name.message,
         "unsupported call mysqli_begin_transaction(): name argument must be string or null in the current subset, got bool"
+    );
+}
+
+#[test]
+fn mysqli_commit_and_rollback_reject_forms_outside_current_boundary() {
+    let bad_commit_handle = run_source(
+        r#"<?php
+mysqli_commit("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_commit_handle.phase, Phase::Runtime);
+    assert_eq!(bad_commit_handle.line, 2);
+    assert_eq!(bad_commit_handle.column, 1);
+    assert_eq!(
+        bad_commit_handle.message,
+        "unsupported call mysqli_commit(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_rollback_handle = run_source(
+        r#"<?php
+mysqli_rollback("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_rollback_handle.phase, Phase::Runtime);
+    assert_eq!(bad_rollback_handle.line, 2);
+    assert_eq!(bad_rollback_handle.column, 1);
+    assert_eq!(
+        bad_rollback_handle.message,
+        "unsupported call mysqli_rollback(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_commit_flags = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_commit($handle, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_commit_flags.phase, Phase::Runtime);
+    assert_eq!(bad_commit_flags.line, 3);
+    assert_eq!(bad_commit_flags.column, 1);
+    assert_eq!(
+        bad_commit_flags.message,
+        "unsupported call mysqli_commit(): only flags value 0 is implemented in the current subset, got 1"
+    );
+
+    let bad_rollback_name = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_rollback($handle, 0, false);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_rollback_name.phase, Phase::Runtime);
+    assert_eq!(bad_rollback_name.line, 3);
+    assert_eq!(bad_rollback_name.column, 1);
+    assert_eq!(
+        bad_rollback_name.message,
+        "unsupported call mysqli_rollback(): name argument must be string or null in the current subset, got bool"
     );
 }
 
@@ -1194,6 +1291,10 @@ echo function_exists("mysqli_autocommit") ? "1" : "0";
 echo is_callable("mysqli_autocommit") ? "1" : "0";
 echo function_exists("mysqli_begin_transaction") ? "1" : "0";
 echo is_callable("mysqli_begin_transaction") ? "1" : "0";
+echo function_exists("mysqli_commit") ? "1" : "0";
+echo is_callable("mysqli_commit") ? "1" : "0";
+echo function_exists("mysqli_rollback") ? "1" : "0";
+echo is_callable("mysqli_rollback") ? "1" : "0";
 echo function_exists("mysqli_set_charset") ? "1" : "0";
 echo is_callable("mysqli_set_charset") ? "1" : "0";
 echo function_exists("mysqli_query") ? "1" : "0";
@@ -1246,7 +1347,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 62, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 66, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1338,6 +1439,30 @@ mysqli_autocommit(mysqli_init(), false);
     let error = emit_ir_source(
         r#"<?php
 mysqli_begin_transaction(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_commit(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_rollback(mysqli_init());
 "#,
     )
     .unwrap_err();

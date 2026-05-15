@@ -1,0 +1,5 @@
+yes|callable
+commit
+rollback
+dynamic-commit
+dynamic-rollback

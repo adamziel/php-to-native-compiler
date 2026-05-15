@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 885, bounded `mysqli_commit()` and `mysqli_rollback()`
+  support for placeholder MySQLi handles. The runtime now accepts
+  `mysqli_commit($handle)` and `mysqli_rollback($handle)`, plus optional flags
+  value `0` and optional null/string transaction names for current placeholder
+  `mysqli` objects, returns deterministic `true`, rejects non-`mysqli`
+  handles, nonzero flags, non-int flags, and unsupported name values with
+  stable diagnostics, and exposes both names through runtime and native
+  metadata lookup. This is not real commit/rollback behavior, transaction
+  state, autocommit state mutation, savepoints, host database integration,
+  warning/error fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_commit -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone885`.
+
 - Added Milestone 884, a synthetic WordPress-shaped `wpdb` transaction-start
   bookkeeping smoke that calls the bounded
   `mysqli_begin_transaction($this->dbh, 0, $name)` placeholder path, records

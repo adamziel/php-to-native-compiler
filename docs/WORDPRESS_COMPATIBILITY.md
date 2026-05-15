@@ -1359,7 +1359,10 @@ historical blockers and remaining full-support gaps include:
   transaction state, autocommit state changes, commit/rollback behavior, or
   host database integration. Milestone 884 wires that placeholder through a
   synthetic WordPress-shaped `wpdb` transaction-start bookkeeping smoke without
-  claiming real WordPress transaction fidelity.
+  claiming real WordPress transaction fidelity. Milestone 885 adds bounded
+  deterministic `mysqli_commit()`/`mysqli_rollback()` placeholder success
+  without real transaction state, savepoints, database mutation, warning/error
+  fidelity, or host database integration.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
