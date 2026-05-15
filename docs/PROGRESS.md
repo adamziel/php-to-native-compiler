@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 758, nested object-property array-offset `unset(...)` for
+  direct object variables and named properties. The parser now accepts forms
+  such as `unset($object->items[$outer][$inner])` while preserving the existing
+  parse boundary for plain `unset($object->property)`. The interpreter
+  evaluates all keys left to right, removes the final key when the property
+  value is an array, treats missing keys and missing/`null` paths as no-ops,
+  writes mutated arrays back through the existing visibility-aware property
+  API, and reports stable invalid-array-access diagnostics for non-array roots
+  or intermediates. Plain property uninitialization, append-offset unset,
+  dynamic property roots, mixed object/property/ArrayAccess paths, magic
+  `__unset`, typed-property uninitialized state, references/copy-on-write,
+  exact PHP diagnostics, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:165:19` object-property nested unset blocker in
+  `wp-includes/l10n/class-wp-translation-controller.php` to
+  `parse error at <bootstrap-shim>:24:13: unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files`,
+  corresponding to `$result = include $this->file;` in
+  `wp-includes/l10n/class-wp-translation-file-php.php`. Direct
+  `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_property_nested_array_unset -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries object_property_unset -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone758`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 757, direct-object-property nested array assignment and
   append-at-depth assignment for the current no-reference value model. The
   parser now accepts targets such as

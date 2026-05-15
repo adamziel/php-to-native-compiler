@@ -1701,6 +1701,10 @@ impl Parser {
                         span,
                     })
                 }
+                target @ UnsetTarget::ObjectPropertyArrayIndex { .. } => Ok(Stmt::UnsetMany {
+                    targets: vec![target],
+                    span,
+                }),
                 UnsetTarget::StaticProperty {
                     class_name,
                     property,
@@ -1747,11 +1751,50 @@ impl Parser {
         };
 
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_object_property_unset_message(),
-                ));
+            if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                let operator_span = self.previous().span;
+                if matches!(self.peek().kind, TokenKind::Variable(_)) {
+                    return Err(
+                        self.error_at(operator_span, unsupported_object_property_unset_message())
+                    );
+                }
+                let property = self.consume_object_property_name(operator_span)?;
+                if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                    return Err(
+                        self.error_at(operator_span, unsupported_object_property_unset_message())
+                    );
+                }
+                let bracket_span = self.previous().span;
+                if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                    return Err(self.error_at(bracket_span, unsupported_unset_message()));
+                }
+                let first_index = self.parse_expression()?;
+                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+                let mut indices = vec![first_index];
+
+                while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                    let bracket_span = self.previous().span;
+                    if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                        return Err(self.error_at(bracket_span, unsupported_unset_message()));
+                    }
+                    let index = self.parse_expression()?;
+                    self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+                    indices.push(index);
+                }
+
+                if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                    return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+                }
+                if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+                    return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+                }
+
+                return Ok(UnsetTarget::ObjectPropertyArrayIndex {
+                    object: name,
+                    property,
+                    indices,
+                    span: target_span,
+                });
             }
             if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
                 return Ok(UnsetTarget::Variable {

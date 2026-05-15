@@ -6924,16 +6924,25 @@ handled.
   `$this->loaded_translations[$locale][$textdomain][] = $moe`, advancing the
   real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:165:19: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
-- [ ] Parser/value-model lane: implement or explicitly bound nested
+- [x] Parser/value-model lane: implement or explicitly bound nested
   object-property array-offset `unset(...)` for the next real WordPress
   bootstrap-shim blocker at `<bootstrap-shim>:165:19`, corresponding to
   `unset( $this->loaded_translations[ $locale ][ $textdomain ][ $i ] );` in
-  `wp-includes/l10n/class-wp-translation-controller.php`.
+  `wp-includes/l10n/class-wp-translation-controller.php`. Milestone 758
+  implements that direct-object-property nested array unset subset and
+  advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:24:13: unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files`.
+- [ ] Runtime/include lane: implement or explicitly bound expression-form
+  `include` with return values for the next real WordPress bootstrap-shim
+  blocker at `<bootstrap-shim>:24:13`, corresponding to
+  `$result = include $this->file;` in
+  `wp-includes/l10n/class-wp-translation-file-php.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 757 checkpoint, the latest committed checkpoint
-  is `c106c12 parser: add magic new class names`, covering Milestone 756.
+- Before the current Milestone 758 checkpoint, the latest committed checkpoint
+  is `e2f50ec runtime: add object property nested array writes`, covering
+  Milestone 757.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

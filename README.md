@@ -108,7 +108,8 @@ incorrect native code.
   append writes, nested direct-variable array-offset assignment expressions,
   append-at-depth assignment expressions, direct-object-property nested array
   assignment and append-at-depth expressions, direct/nested array offset
-  removal, array iteration, and simple positional statement-form
+  removal, nested object-property array offset removal, array iteration, and
+  simple positional statement-form
   `list($a, $b) = expr;` assignment over numeric keys
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,

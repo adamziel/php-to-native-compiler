@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+fallback
+charge
+--- stdout end ---
+stderr:
+--- stderr end ---
+

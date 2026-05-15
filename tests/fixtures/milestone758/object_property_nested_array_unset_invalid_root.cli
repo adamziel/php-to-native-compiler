@@ -1,0 +1,7 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone758/object_property_nested_array_unset_invalid_root.php:8:1: invalid array access: cannot unset offset on string
+--- stderr end ---
+

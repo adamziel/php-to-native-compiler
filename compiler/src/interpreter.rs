@@ -1450,6 +1450,14 @@ impl Interpreter {
             UnsetTarget::NestedArrayIndex { name, indices, .. } => {
                 self.execute_unset_nested_array_index(name, indices, span, scope)
             }
+            UnsetTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => self.execute_unset_object_property_nested_array_index(
+                object, property, indices, span, scope,
+            ),
             UnsetTarget::StaticProperty {
                 class_name,
                 property,
@@ -1553,6 +1561,62 @@ impl Interpreter {
         Self::unset_nested_array_value(&mut child, rest, span)?;
         array.insert(key.clone(), Value::Array(child));
         Ok(())
+    }
+
+    fn execute_unset_object_property_nested_array_index(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot unset property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let Some(mut slot) = object
+            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?
+        else {
+            return Ok(());
+        };
+
+        match &mut slot {
+            Value::Array(array) => {
+                Self::unset_nested_array_value(array, &keys, span)?;
+                object
+                    .write_property_from_context(
+                        property,
+                        slot,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
+            Value::Null => Ok(()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
     }
 
     fn execute_unset_named_static_property(

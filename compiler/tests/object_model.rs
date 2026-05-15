@@ -245,6 +245,54 @@ $bag->items["key"]["child"] = "value";
 }
 
 #[test]
+fn object_property_nested_array_unset_removes_current_subset() {
+    let source = r#"<?php
+class Bag {
+    public $items;
+    public $empty;
+}
+
+$bag = new Bag();
+$bag->items["translation.mo"]["en_US"]["default"] = "loaded";
+$bag->items["translation.mo"]["en_US"]["fallback"] = "fallback";
+$bag->items["translation.mo"]["fr_FR"]["default"] = "charge";
+unset($bag->items["translation.mo"]["en_US"]["default"]);
+unset($bag->items["missing"]["path"]);
+unset($bag->empty["path"]);
+echo $bag->items["translation.mo"]["en_US"]["fallback"], "\n";
+echo $bag->items["translation.mo"]["fr_FR"]["default"], "\n";
+print_r($bag->items);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "fallback\ncharge\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [fallback] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn object_property_nested_array_unset_rejects_non_array_roots() {
+    let error = runtime_error(
+        r#"<?php
+class Bag {
+    public $items;
+}
+
+$bag = new Bag();
+$bag->items = "not-array";
+unset($bag->items["key"]["child"]);
+"#,
+    );
+
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot unset offset on string"
+    );
+}
+
+#[test]
 fn dynamic_public_property_names_read_write_existing_slots_and_stdclass_slots() {
     let source = r#"<?php
 class Account {

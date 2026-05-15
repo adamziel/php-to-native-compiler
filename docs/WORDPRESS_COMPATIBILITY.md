@@ -529,6 +529,20 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `wp-includes/l10n/class-wp-translation-controller.php`. This is not generic
   object/ArrayAccess target support, references, copy-on-write, exact PHP
   diagnostics, or WordPress bootstrap support.
+  Milestone 758 implements nested object-property array-offset `unset(...)`
+  for direct object variables and named properties while keeping plain
+  `unset($object->property)` as an explicit boundary. After that slice, the
+  direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:24:13: unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files`,
+  corresponding to `$result = include $this->file;` in
+  `wp-includes/l10n/class-wp-translation-file-php.php`. This is not
+  expression-form include execution, include return-value behavior, generic
+  dynamic include semantics, exact PHP diagnostics, or WordPress bootstrap
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

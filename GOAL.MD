@@ -62,9 +62,9 @@ Recent WordPress-directed milestones have been walking the real WordPress
 6.9.4 bootstrap-shim forward through concrete blockers: references as explicit
 runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
 instantiation, and now direct-object-property nested array assignment and
-append-at-depth assignment. The current shim frontier is nested object-property
-array-offset `unset(...)` in
-`wp-includes/l10n/class-wp-translation-controller.php`. Each step is
+append-at-depth assignment plus nested object-property array-offset
+`unset(...)`. The current shim frontier is expression-form `include` with a
+return value in `wp-includes/l10n/class-wp-translation-file-php.php`. Each step is
 intentionally small because it only counts after parser/runtime code, tests,
 CLI fixtures, docs, and named unsupported edges are in place.
 

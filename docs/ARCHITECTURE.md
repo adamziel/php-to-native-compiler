@@ -64,6 +64,11 @@ targets keep a variable or object-property root plus evaluated index
 expressions so the interpreter can materialize missing array containers under
 the current no-reference/no-copy-on-write model. Mixed object/property/ArrayAccess
 paths and nested read-modify-write forms remain explicit boundaries.
+Unset targets follow the same conservative pattern: direct variables,
+direct/nested array offsets, selected static-property diagnostics, and
+direct-object-property nested array offsets have explicit targets, while plain
+object-property uninitialization and mixed target paths remain separate
+boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
