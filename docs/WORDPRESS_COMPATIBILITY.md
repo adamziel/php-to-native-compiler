@@ -290,6 +290,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   integration, dynamic loading, exact diagnostics, partial-output behavior, or
   native extension support. The bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
+  Milestone 734 adds bounded `file_exists()` execution for one string local
+  path, rejecting stream-wrapper paths and returning host filesystem metadata
+  existence for files and directories, including committed repo-relative
+  source-map fixture paths. This is not include-path lookup, stream wrapper
+  support, canonicalization/symlink policy, permissions/warning
+  fidelity, open_basedir, stat caching, TOCTOU semantics, host-independent
+  filesystem support, partial-output behavior, or native filesystem lowering.
+  The bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

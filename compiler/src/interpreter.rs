@@ -107,14 +107,26 @@ fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
 }
 
 fn repo_root_relative_path(path: &Path) -> Option<PathBuf> {
+    let candidate = repo_root_relative_candidate(path)?;
+    candidate.exists().then_some(candidate)
+}
+
+fn repo_root_relative_candidate(path: &Path) -> Option<PathBuf> {
     if path.is_absolute() {
         return None;
     }
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest_dir.parent()?;
-    let candidate = repo_root.join(path);
-    candidate.exists().then_some(candidate)
+    Some(repo_root.join(path))
+}
+
+fn local_filesystem_metadata_path(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() || path.exists() {
+        return path;
+    }
+    repo_root_relative_candidate(&path).unwrap_or(path)
 }
 
 fn integral_float_to_i64(value: f64) -> Option<i64> {
@@ -5932,6 +5944,42 @@ impl Interpreter {
                     )),
                 }
             }
+            "file_exists" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "file_exists()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        Ok(Value::Bool(metadata_path.try_exists().map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "file_exists()",
+                                    format!("filesystem metadata lookup failed: {error}"),
+                                ),
+                            )
+                        })?))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "file_exists()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "header" => call_header(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
@@ -8041,6 +8089,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "file_exists"
             | "header"
             | "assert"
             | "get_class"

@@ -893,6 +893,15 @@ Direct `extension_loaded($name)` calls with already-lowerable string names fold
 against the current deterministic bounded compatibility registry: `json` and
 `hash` fold to true, while other names fold to false. Native code does not
 query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
+`file_exists()` is currently an interpreter-only local filesystem metadata
+builtin for the WordPress bootstrap drop-in check. It accepts one string local
+path, rejects stream-wrapper paths, and returns a boolean for host filesystem
+metadata existence. Relative paths check the process path first and then the
+repository root for committed source-map fixture paths; this does not establish
+include-path lookup, canonicalization, stream support, stat-cache semantics,
+open_basedir, exact warnings, or native filesystem lowering. Native
+function-table introspection recognizes the name, while direct native calls
+reject under the function-call boundary.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject

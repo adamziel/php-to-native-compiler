@@ -353,6 +353,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `sprintf`, `implode`, `dirname`,
+  `file_exists`,
   `version_compare`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -436,6 +437,16 @@
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
+  `file_exists($path)` accepts one string local path, rejects stream-wrapper
+  paths, and returns `true` or `false` from the host filesystem metadata lookup
+  for files and directories in the current interpreter run. Relative paths are
+  checked against the process path first and then against the repository root
+  for committed source-map fixture paths. It is a bounded WordPress bootstrap
+  compatibility slice, not full PHP filesystem support: include-path lookup,
+  stream wrappers, canonicalization/symlink policy, permissions and warning
+  fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
+  filesystem coupling, partial-output behavior, and native lowering remain
+  unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. It currently records no autoload stack and never invokes the
@@ -1726,7 +1737,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `dirname`, `array_change_key_case`, `array_column`, `array_is_list`,
+  `dirname`, `file_exists`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
@@ -2018,7 +2029,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `sprintf`, `implode`, `count`,
+  one of the documented callable builtins: `strlen`, `sprintf`, `implode`, `file_exists`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2141,7 +2152,7 @@
   first-class callable syntax, `call_user_func`, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `sprintf`, `implode`, `isset`, `empty`, `count`, `define`, `constant`,
+- Builtins: `strlen`, `sprintf`, `implode`, `file_exists`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,

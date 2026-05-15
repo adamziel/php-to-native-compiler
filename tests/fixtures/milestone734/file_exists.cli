@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+file|dir|missing--- stdout end ---
+stderr:
+--- stderr end ---

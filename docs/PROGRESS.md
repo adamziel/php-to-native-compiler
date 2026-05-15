@@ -4,6 +4,37 @@
 
 Implemented:
 
+- Added Milestone 734, bounded `file_exists()` execution through `phpc run`
+  for the real WordPress 6.9.4 bootstrap-shim database drop-in probe. The
+  interpreter accepts one string local path, rejects stream-wrapper paths, and
+  returns a boolean from the host filesystem metadata lookup for files and
+  directories, including committed repo-relative source-map fixture paths. The
+  builtin is available through string-valued dynamic calls and
+  the current callable-name table; native function-table introspection
+  recognizes the name while direct native calls still reject under the
+  function-call boundary. Include-path lookup, stream wrappers, path
+  canonicalization/symlink policy, permissions/warning fidelity, open_basedir,
+  filesystem stat caching, TOCTOU behavior, host coupling, partial-output
+  behavior, and native filesystem lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `file_exists()` blocker
+  at `<bootstrap-shim>:203:8` and now stops at
+  `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test file_exists_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test file_exists_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone734`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone734`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  `git diff --check`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 733, a bounded `extension_loaded()` compatibility registry
   for the WordPress 6.9.4 bootstrap requirement checks. The interpreter now
   reports `json` and `hash` as loaded and keeps other extension names false;

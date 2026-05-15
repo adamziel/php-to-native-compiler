@@ -6744,17 +6744,27 @@ handled.
   Milestone 733 slice reports `json` and `hash` as loaded, keeps other
   extensions false, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
-- [ ] Runtime/filesystem lane: implement or explicitly bound `file_exists()`
+- [x] Runtime/filesystem lane: implement or explicitly bound `file_exists()`
   for the real WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:203:8`,
   with tests, CLI coverage, docs, and named unsupported edges for filesystem
   metadata policy, path canonicalization, relative paths, stream wrappers,
   permissions, TOCTOU behavior, host filesystem coupling, partial-output
-  behavior, and native lowering.
+  behavior, and native lowering. The Milestone 734 slice accepts one string
+  local path, rejects stream-wrapper paths, exposes the name through the current
+  callable table, keeps direct native calls behind the function-call boundary,
+  and advances the real bootstrap-shim probe to
+  `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
+- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+  6.9.4 bootstrap-shim complex interpolation blocker at `<bootstrap-shim>:3891:12`,
+  with tests, CLI coverage, docs, and named unsupported edges for array-offset
+  interpolation, object/static property interpolation, `${...}` forms,
+  variable variables, expression interpolation, escaping/source spans, PHP
+  diagnostic fidelity, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 733 checkpoint, the latest committed checkpoint
-  is `547a714 runtime: add bounded exit`, covering Milestone 732.
+- Before the current Milestone 734 checkpoint, the latest committed checkpoint
+  is `cb8974e runtime: add bounded extension registry`, covering Milestone 733.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T10:05:00Z
+
+- Checkpoint before this task: `cb8974e runtime: add bounded extension registry`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 734, bounded `file_exists()` execution for the real
+  WordPress 6.9.4 bootstrap-shim database drop-in check.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/file_exists_builtin.rs`,
+  `compiler/tests/file_exists_cli.rs`, `tests/fixtures/milestone734/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test file_exists_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test file_exists_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone734`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone734`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  `git diff --check`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: include-path lookup, stream wrappers,
+  canonicalization/symlink policy, permissions/warning fidelity, open_basedir,
+  stat-cache behavior, TOCTOU semantics, host filesystem coupling,
+  partial-output behavior, and native filesystem lowering remain unsupported.
+  The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
+- Next concrete task: implement or explicitly bound the complex interpolation
+  forms needed by the bootstrap shim, starting with array-offset/object/static
+  property interpolation diagnostics and fixtures.
+
 ## Loop Event 2026-05-15T09:20:00Z
 
 - Checkpoint before this task: `547a714 runtime: add bounded exit`, pushed to
