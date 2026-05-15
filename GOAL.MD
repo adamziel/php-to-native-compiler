@@ -156,7 +156,7 @@ synthetic normalized front-controller smoke for that path. Milestone 852 added
 the first placeholder empty `mysqli_result` lifecycle boundary, and Milestone
 853 added a synthetic `wpdb::query()` smoke that stores, fetches, frees, and
 drains that empty result through WordPress-shaped object state. Milestones 854
-through 861 then moved the database-consumption smoke from an explicit
+through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, and mixed fetch-array paths, plus
 synthetic `wpdb::get_results()` harnesses for those row shapes. These are

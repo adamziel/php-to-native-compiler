@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone862/wpdb_get_results_fetch_array_default_both.php
+1
+1
+1|1
+Hello world placeholder|Hello world placeholder
+1|1
+Hello world placeholder|Hello world placeholder

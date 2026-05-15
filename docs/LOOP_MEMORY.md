@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `9297d63 runtime: add mysqli fetch array modes`, pushed to `origin/master`.
+- Task attempted: Milestone 862, a synthetic WordPress-shaped
+  `wpdb::get_results($query, ARRAY_A)` smoke that consumes the deterministic
+  seed-post placeholder result through omitted-mode
+  `mysqli_fetch_array($result)`.
+- Files changed so far: `tests/fixtures/milestone862/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone862`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb::get_results(..., ARRAY_A)`
+  path can now use omitted-mode `mysqli_fetch_array()` defaulting to
+  `MYSQLI_BOTH` and observe both numeric and associative keys for the
+  deterministic placeholder post row.
+- Remaining semantic gaps: real WordPress `wpdb` output-mode fidelity, SQL
+  execution, database state, query parsing, cache behavior, post/content
+  fidelity, duplicate-column behavior, warnings/errors, cursor operations, and
+  native database lowering remain missing.
+- Next concrete task: run whitespace checks, then use the full serialized
+  checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `4a1658e tests: add wordpress wpdb fetch array smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 861, deterministic `mysqli_fetch_array()` numeric

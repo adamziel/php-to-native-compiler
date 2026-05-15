@@ -7929,15 +7929,28 @@ handled.
   boundary, and broad query/result support, duplicate-column fidelity,
   warnings/errors, SQL execution, real database state, and native lowering
   remain missing.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
   default or mixed `mysqli_fetch_array()` row shape after Milestone 861 without
   claiming real `wpdb` output-mode fidelity or real database support.
+  Milestone 862 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_A)` fixture that consumes the exact seed-post placeholder result
+  through omitted-mode `mysqli_fetch_array($result)`, stores the mixed
+  numeric/associative row in `$this->last_result`, increments
+  `$this->num_rows`, frees the placeholder result, and drains placeholder
+  multi-result state. It is not real WordPress `wpdb` output-mode fidelity,
+  SQL execution, database state, cache behavior, duplicate-column behavior,
+  warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next WordPress database-result boundary
+  after deterministic fetch-array modes and choose a small tested slice, such
+  as scoped `mysqli_data_seek($result, 0)` cursor reset for placeholder
+  results, deterministic `mysqli_fetch_row()`, or a sharper named boundary for
+  unsupported cursor/result operations.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4a1658e tests: add wordpress wpdb fetch array smoke`, covering
-  Milestone 860 before the current Milestone 861 candidate.
+  `9297d63 runtime: add mysqli fetch array modes`, covering Milestone 861
+  before the current Milestone 862 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

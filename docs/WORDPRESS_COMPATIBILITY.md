@@ -1304,10 +1304,12 @@ historical blockers and remaining full-support gaps include:
   ARRAY_A)` smoke that consumes the row through that explicit
   `mysqli_fetch_array(..., MYSQLI_ASSOC)` path. Milestone 861 adds numeric,
   explicit mixed, and omitted-mode default mixed fetch-array hydration for the
-  same deterministic row. These are still deterministic harness milestones,
-  not SQL execution, real database state, duplicate-column or warning/error
-  fidelity, real `wpdb` output-mode fidelity, plugin/theme/admin/REST, SAPI,
-  rendered request, or native WordPress support.
+  same deterministic row. Milestone 862 adds a synthetic `wpdb::get_results()`
+  smoke that consumes the omitted-mode default mixed row shape. These are still
+  deterministic harness milestones, not SQL execution, real database state,
+  duplicate-column or warning/error fidelity, real `wpdb` output-mode
+  fidelity, plugin/theme/admin/REST, SAPI, rendered request, or native
+  WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

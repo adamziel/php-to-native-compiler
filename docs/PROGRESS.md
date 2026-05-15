@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 862, a synthetic WordPress-shaped `wpdb::get_results()`
+  smoke that consumes the deterministic seed-post placeholder result through
+  omitted-mode `mysqli_fetch_array($result)`, now defaulting to
+  `MYSQLI_BOTH`. The fixture stores the mixed numeric/associative row in
+  `$this->last_result`, increments `$this->num_rows`, frees the placeholder
+  result, drains placeholder multi-result state, and verifies both numeric and
+  associative keys in the returned row and recorded query state. This is a
+  harness smoke only; it does not add real WordPress `wpdb` output-mode
+  fidelity, SQL execution, database state, cache behavior, real post content,
+  duplicate-column behavior, warnings/errors, or native lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone862`.
+
 - Added Milestone 861, deterministic `mysqli_fetch_array()` numeric and mixed
   row hydration for the seed-post placeholder result. The runtime now accepts
   `mysqli_fetch_array($result, MYSQLI_NUM)`,
