@@ -426,7 +426,7 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `header`, `header_remove`,
+  `function_exists`, `extension_loaded`, `mysqli_connect`, `header`, `header_remove`,
   `headers_sent`, `abs`, `assert`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -501,6 +501,13 @@
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
+  `mysqli_connect(...)` is currently a database-extension boundary only: the
+  name is visible through function/callability metadata and dynamic
+  string-valued calls, but any attempted connection call reports a stable
+  unsupported runtime diagnostic. Mysqli resources/objects, host connections,
+  queries, result sets, escaping, charset handling, errors/warnings,
+  transactions, configuration, PDO behavior, and native database calls are not
+  implemented.
   `assert($assertion, $description = null)` evaluates one or two arguments
   normally and returns `true` for truthy assertions. The optional description
   is inert metadata in this slice and may be `null`, bool, int, float, or
@@ -1867,7 +1874,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `dirname`, `file_exists`, `array_change_key_case`, `array_column`, `array_is_list`,
+  `dirname`, `file_exists`, `mysqli_connect`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
@@ -2171,7 +2178,7 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `dirname`, `extension_loaded`, `header`, `header_remove`,
+  `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`, `header`, `header_remove`,
   `headers_sent`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -2297,7 +2304,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `header`, `header_remove`, `headers_sent`, `assert`,
+  `dirname`, `extension_loaded`, `mysqli_connect`, `header`, `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -2358,6 +2365,10 @@
   current bounded compatibility registry, returns false for other names, and
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
+  `mysqli_connect` is recognized for function/callability metadata and
+  dynamic lookup only; direct and dynamic connection calls are a stable
+  unsupported runtime boundary, and direct native `mysqli_connect(...)` calls
+  still reject under the function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
@@ -3892,6 +3903,11 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
+- `mysqli_connect()` beyond the current function-table boundary: mysqli
+  extension loading, host/database connections, mysqli resources/objects,
+  queries, result sets, prepared statements, escaping, charset handling,
+  errors/warnings, transactions, configuration, PDO behavior, exact PHP
+  diagnostics, and native database calls
 - `version_compare()` outside the current numeric-component subset: PHP's full
   version-string grammar, pre-release labels, arbitrary separators, invalid
   argument diagnostics, extension version coupling, and native lowering

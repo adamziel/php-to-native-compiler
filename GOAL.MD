@@ -67,10 +67,12 @@ return values, skipped positional `list(...)` destructuring, class
 `implements` relationship metadata, bounded object-handle `=&`, bounded
 `str_replace()`, bounded `call_user_func()`, a bounded direct-variable
 array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
-no-argument `headers_sent()`, bounded `abs()`, and bounded `header_remove()`.
-The current shim frontier is WordPress' missing-MySQL-extension guard in
-`wp-includes/load.php:202`, because `function_exists( 'mysqli_connect' )`
-remains false.
+no-argument `headers_sent()`, bounded `abs()`, bounded `header_remove()`, and
+a bounded `mysqli_connect` function-table boundary. The current shim frontier
+has moved past WordPress' missing-MySQL-extension guard in
+`wp-includes/load.php:202`; it now stops in `wp-includes/plugin.php:39` because
+the current runtime treats an early read of the global `$wp_filter` as an
+undefined-variable runtime error instead of PHP's warning-plus-`null` value.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 

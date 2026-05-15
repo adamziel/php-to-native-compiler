@@ -651,6 +651,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   HTML page. This is not response header storage/removal, output-sent warnings,
   SAPI behavior, database or mysqli support, native lowering, or WordPress
   bootstrap support.
+  Milestone 770 implements an explicit `mysqli_connect` database-extension
+  boundary: function/callability metadata and dynamic lookup see the name, but
+  attempted connection calls fail with a stable unsupported-database runtime
+  diagnostic. It advances the real bootstrap-shim probe past the missing-MySQL
+  guard to
+  `runtime error at <bootstrap-shim>:39:6: undefined variable '$wp_filter'`,
+  corresponding to the early `if ( $wp_filter )` check in
+  `wp-includes/plugin.php:39`. This is not mysqli extension support, database
+  I/O, resources/objects, result sets, escaping, errors, PDO support, native
+  lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

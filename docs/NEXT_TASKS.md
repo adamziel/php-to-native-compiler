@@ -7044,18 +7044,30 @@ handled.
   WordPress' `wp_check_php_mysql_versions()` missing-MySQL-extension path in
   `wp-includes/load.php:202`, producing the missing `mysqli` extension HTML
   page and exit code `1` instead of a compiler/runtime unsupported diagnostic.
-- [ ] Database/extension lane: define the honest next WordPress database
+- [x] Database/extension lane: define the honest next WordPress database
   compatibility step after the missing-MySQL-extension guard. Options include a
   bounded `function_exists('mysqli_connect')`/extension presence policy only if
   it immediately leads to explicit unsupported mysqli/database operations, or a
   real minimal mysqli/PDO compatibility plan with host assumptions. Do not
   claim MySQL support without executable database behavior, tests, docs, and
   named unsupported edges.
+  Milestone 770 exposes `mysqli_connect` through function/callability metadata
+  and dynamic lookup but makes all direct and dynamic connection calls an
+  explicit unsupported database boundary. It advances the real
+  bootstrap-shim probe past the missing-MySQL-extension guard to
+  `runtime error at <bootstrap-shim>:39:6: undefined variable '$wp_filter'`,
+  corresponding to `wp-includes/plugin.php:39`.
+- [ ] Runtime compatibility lane: implement or explicitly bound PHP-shaped
+  undefined-variable reads for the reached WordPress `if ( $wp_filter )` path,
+  likely warning-plus-`null`/falsey behavior in `phpc run`, while preserving
+  stable diagnostics and documenting unsupported warning reporting,
+  partial-output behavior, native lowering, and cases where undefined reads
+  must remain hard boundaries.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 769 checkpoint, the latest committed checkpoint
-  is `1b38379 runtime: add bounded abs`, covering Milestone 768.
+- Before the current Milestone 770 checkpoint, the latest committed checkpoint
+  is `74bd702 runtime: add bounded header_remove`, covering Milestone 769.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 770, a bounded `mysqli_connect` database-extension boundary.
+  The runtime now exposes `mysqli_connect` through `function_exists()`,
+  `is_callable()`, dynamic string-valued call lookup, and native function-table
+  introspection, but any attempted direct or dynamic connection call reports
+  `unsupported call mysqli_connect(): mysqli/database connections are not
+  implemented in the current subset`. This deliberately does not implement
+  mysqli resources/objects, connections, queries, result sets, errors,
+  transactions, escaping, charset handling, host/credential configuration,
+  extension loading, PDO, or native database calls. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the
+  `wp_check_php_mysql_versions()` missing-MySQL-extension guard in
+  `wp-includes/load.php:202` to
+  `runtime error at <bootstrap-shim>:39:6: undefined variable '$wp_filter'`,
+  corresponding to `wp-includes/plugin.php:39`. Direct `wp-settings.php` still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone770`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 769, bounded `header_remove()` for the current no-header-state
   CLI/runtime shim. The builtin now accepts no argument or one string header
   name, returns `null`, records no header state, and is visible through

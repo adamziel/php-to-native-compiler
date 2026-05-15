@@ -7078,6 +7078,13 @@ impl Interpreter {
                     )),
                 }
             }
+            "mysqli_connect" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_connect()",
+                    "mysqli/database connections are not implemented in the current subset",
+                ),
+            )),
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9293,6 +9300,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "mysqli_connect"
             | "file_exists"
             | "header"
             | "header_remove"

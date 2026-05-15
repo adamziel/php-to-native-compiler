@@ -930,6 +930,12 @@ output buffers, SAPI differences, and native lowering are not modeled.
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
 numeric diagnostics are modeled.
+`mysqli_connect()` is a database-extension boundary, not database support. The
+runtime and native function tables expose the name so early application
+extension guards can move to the next compatibility blocker, but direct or
+dynamic connection attempts report a stable unsupported runtime diagnostic
+until mysqli/PDO host integration, connection handles, query/result behavior,
+errors, escaping, charset state, and native database calls are designed.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.
@@ -1474,3 +1480,6 @@ Until that exists, `extension_loaded()` uses a bounded compiler/runtime
 compatibility registry. It is intentionally just enough for current WordPress
 bootstrap requirement checks and does not claim host extension support,
 extension functions/constants, extension versions, or dynamic loading.
+The current `mysqli_connect()` visibility is a narrower function-table boundary
+used to get past WordPress' early MySQL-extension guard; it does not mark the
+`mysqli` extension loaded and does not provide executable database behavior.

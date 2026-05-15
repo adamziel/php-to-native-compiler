@@ -1,5 +1,5 @@
 exit: 0
 stdout:
-needs-db-extension--- stdout end ---
+ok--- stdout end ---
 stderr:
 --- stderr end ---
