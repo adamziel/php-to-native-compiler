@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone889/mysqli_client_protocol_metadata.php
+mysqlnd 8.0.0-phpc-placeholder
+mysqlnd 8.0.0-phpc-placeholder
+mysqlnd 8.0.0-phpc-placeholder
+10
+10

@@ -1370,6 +1370,10 @@ historical blockers and remaining full-support gaps include:
   warning-count, or host error-state tracking. Milestone 888 wires that clean
   placeholder metadata through a synthetic WordPress-shaped `wpdb` error-state
   bookkeeping smoke without claiming real database warning/error fidelity.
+  Milestone 889 adds deterministic `mysqli_get_client_info()` and
+  `mysqli_get_proto_info()` placeholder client/protocol metadata without real
+  client-library detection, protocol negotiation, host connection metadata, or
+  PHP deprecation/warning fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `14552d5 tests: add wordpress wpdb error state smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 889, bounded deterministic
+  `mysqli_get_client_info()` and `mysqli_get_proto_info()` placeholder metadata
+  for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone889/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone889`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi handles now expose
+  deterministic client-library and protocol metadata for connection
+  bookkeeping exploration.
+- Remaining semantic gaps: real client-library detection, protocol
+  negotiation, host connection metadata, PHP deprecation/warning fidelity, host
+  database integration, database state mutation, and native database lowering
+  remain missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, add a synthetic WordPress-shaped
+  `wpdb` client/protocol metadata bookkeeping smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `afaaa0d runtime: add mysqli clean error state placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 888, a synthetic WordPress-shaped `wpdb`

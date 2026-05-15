@@ -185,7 +185,9 @@ transaction-completion boundaries wired through a synthetic WordPress-shaped
 `wpdb` commit/rollback bookkeeping smoke, plus deterministic clean
 `mysqli_sqlstate()`/`mysqli_warning_count()` placeholder error-state metadata
 wired through a synthetic WordPress-shaped `wpdb` error-state bookkeeping
-smoke.
+smoke, plus deterministic `mysqli_get_client_info()`/`mysqli_get_proto_info()`
+placeholder client/protocol metadata for the next database connection metadata
+boundary.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

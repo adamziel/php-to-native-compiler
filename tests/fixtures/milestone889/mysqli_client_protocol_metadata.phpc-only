@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_client_info()` and `mysqli_get_proto_info()` metadata boundary.
+System PHP depends on the installed mysqli extension, reports the actual client
+library, and needs a real connection for protocol metadata.

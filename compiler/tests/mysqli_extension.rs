@@ -186,6 +186,38 @@ echo $call($handle);
 }
 
 #[test]
+fn mysqli_client_and_protocol_metadata_return_current_placeholders() {
+    let execution = run_source(
+        r#"<?php
+$client = "mysqli_get_client_info";
+$proto = "mysqli_get_proto_info";
+echo function_exists($client) ? "yes" : "no";
+echo "|";
+echo is_callable($proto) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_get_client_info();
+echo "|";
+echo mysqli_get_client_info(null);
+echo "|";
+echo $client($handle);
+echo "|";
+echo mysqli_get_proto_info($handle);
+echo "|";
+echo $proto($handle);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|10|10"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_stat_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -568,6 +600,39 @@ mysqli_stat("not-a-handle");
     assert_eq!(
         bad_handle.message,
         "unsupported call mysqli_stat(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_client_and_protocol_metadata_reject_forms_outside_current_boundary() {
+    let bad_client_arg = run_source(
+        r#"<?php
+mysqli_get_client_info("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_client_arg.phase, Phase::Runtime);
+    assert_eq!(bad_client_arg.line, 2);
+    assert_eq!(bad_client_arg.column, 1);
+    assert_eq!(
+        bad_client_arg.message,
+        "unsupported call mysqli_get_client_info(): optional argument must be mysqli object or null in the current subset, got string"
+    );
+
+    let bad_proto_handle = run_source(
+        r#"<?php
+mysqli_get_proto_info("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_proto_handle.phase, Phase::Runtime);
+    assert_eq!(bad_proto_handle.line, 2);
+    assert_eq!(bad_proto_handle.column, 1);
+    assert_eq!(
+        bad_proto_handle.message,
+        "unsupported call mysqli_get_proto_info(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -1349,6 +1414,10 @@ echo function_exists("mysqli_get_server_info") ? "1" : "0";
 echo is_callable("mysqli_get_server_info") ? "1" : "0";
 echo function_exists("mysqli_get_host_info") ? "1" : "0";
 echo is_callable("mysqli_get_host_info") ? "1" : "0";
+echo function_exists("mysqli_get_client_info") ? "1" : "0";
+echo is_callable("mysqli_get_client_info") ? "1" : "0";
+echo function_exists("mysqli_get_proto_info") ? "1" : "0";
+echo is_callable("mysqli_get_proto_info") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
 echo is_callable("mysqli_stat") ? "1" : "0";
 echo function_exists("mysqli_autocommit") ? "1" : "0";
@@ -1415,7 +1484,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 70, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 74, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1483,6 +1552,30 @@ mysqli_get_host_info(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_stat(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_client_info();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_proto_info(mysqli_init());
 "#,
     )
     .unwrap_err();

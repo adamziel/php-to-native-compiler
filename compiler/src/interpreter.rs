@@ -4188,6 +4188,44 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_get_client_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_get_client_info()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        if let Some(arg) = args.first() {
+            match arg {
+                Value::Null => {}
+                Value::Object(_) => expect_mysqli_handle("mysqli_get_client_info()", arg, span)?,
+                arg => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_get_client_info()",
+                            format!(
+                                "optional argument must be mysqli object or null in the current subset, got {}",
+                                arg.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(Value::String("mysqlnd 8.0.0-phpc-placeholder".to_string()))
+    }
+
+    fn call_mysqli_get_proto_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_proto_info", args, 1, span)?;
+        expect_mysqli_handle("mysqli_get_proto_info()", &args[0], span)?;
+        Ok(Value::Int(10))
+    }
+
     fn call_mysqli_stat(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stat", args, 1, span)?;
         expect_mysqli_handle("mysqli_stat()", &args[0], span)?;
@@ -9190,6 +9228,8 @@ impl Interpreter {
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_get_host_info" => self.call_mysqli_get_host_info(&args, span),
+            "mysqli_get_client_info" => self.call_mysqli_get_client_info(&args, span),
+            "mysqli_get_proto_info" => self.call_mysqli_get_proto_info(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
             "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
@@ -12130,6 +12170,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
             | "mysqli_get_host_info"
+            | "mysqli_get_client_info"
+            | "mysqli_get_proto_info"
             | "mysqli_stat"
             | "mysqli_autocommit"
             | "mysqli_begin_transaction"

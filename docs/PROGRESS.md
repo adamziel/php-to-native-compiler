@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 889, bounded `mysqli_get_client_info()` and
+  `mysqli_get_proto_info()` support for placeholder MySQLi metadata. The
+  runtime now accepts `mysqli_get_client_info()` with no argument, `null`, or a
+  current placeholder `mysqli` object, returns deterministic client metadata,
+  accepts `mysqli_get_proto_info($handle)` for current placeholder `mysqli`
+  objects, returns deterministic protocol version `10`, rejects unsupported
+  argument forms with stable diagnostics, and exposes both names through
+  runtime and native metadata lookup. This is not real client-library
+  detection, protocol negotiation, host connection metadata, PHP 8.1
+  deprecation/warning fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone889`.
+
 - Added Milestone 888, a synthetic WordPress-shaped `wpdb` error-state
   bookkeeping smoke that calls the bounded clean `mysqli_errno()`,
   `mysqli_error()`, `mysqli_sqlstate()`, and `mysqli_warning_count()`

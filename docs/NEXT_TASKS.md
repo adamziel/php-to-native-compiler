@@ -8208,16 +8208,28 @@ handled.
   bookkeeping, and verifies the clean deterministic metadata. It is not real
   WordPress database error fidelity, SQLSTATE tracking, warning-count tracking,
   host database integration, warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after clean
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after clean
   error-state metadata and choose a small tested slice, such as deterministic
   `mysqli_get_client_info()`/`mysqli_get_proto_info()` metadata or a sharper
   named diagnostic, before broader SQL execution or real host state is claimed.
+  Milestone 889 implements bounded deterministic client/protocol metadata for
+  placeholder `mysqli` objects. `mysqli_get_client_info()` accepts no argument,
+  `null`, or a current placeholder handle and returns
+  `mysqlnd 8.0.0-phpc-placeholder`; `mysqli_get_proto_info($handle)` returns
+  protocol version `10`; unsupported forms report stable diagnostics; both
+  names are visible through runtime and native metadata lookup. This is not
+  real client-library detection, protocol negotiation, host connection
+  metadata, PHP deprecation/warning fidelity, or native database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_client_info()`/`mysqli_get_proto_info()` placeholders
+  through WordPress-shaped connection metadata bookkeeping without claiming
+  real database client/protocol fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `afaaa0d runtime: add mysqli clean error state placeholders`, covering
-  Milestone 887 before the current Milestone 888 candidate.
+  `14552d5 tests: add wordpress wpdb error state smoke`, covering
+  Milestone 888 before the current Milestone 889 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
