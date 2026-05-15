@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T11:36:00Z
+
+- Checkpoint before this task:
+  `5a006e3 runtime: add bounded substr_count`, pushed to `origin/master`.
+- Task attempted: Milestone 802, bounded `preg_match()` direct matches-output
+  support for the reached WordPress `wpdb::parse_db_host()` startup path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_match_builtin.rs`,
+  `tests/fixtures/milestone802/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone802`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1997:5: undefined function mysqli_real_connect()`.
+- Remaining semantic gaps: non-direct matches outputs, flags, offsets,
+  optional unmatched-group fidelity, broad named-capture support, full PCRE,
+  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
+  diagnostics, native lowering, and full single-quoted string escape fidelity
+  remain unsupported.
+- Next concrete task: add an honest bounded `mysqli_real_connect()` boundary
+  for the reached WordPress startup path while keeping real database I/O,
+  authentication, query/result behavior, escaping, charset state,
+  warning/error routing, exact diagnostics, PDO, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T10:57:20Z
 
 - Checkpoint before this task:

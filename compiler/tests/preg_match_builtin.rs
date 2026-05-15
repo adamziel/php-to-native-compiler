@@ -56,17 +56,92 @@ echo $call('/^wp-/', 'wp-settings') ? "match" : "miss";
 }
 
 #[test]
+fn preg_match_writes_direct_matches_variable_for_current_subset() {
+    let execution = run_source(
+        r#"<?php
+$result = preg_match('/dex/', 'index.php', $matches);
+echo $result;
+echo "|";
+echo $matches[0];
+echo "|";
+$matches = ["old"];
+$result = preg_match('/missing/', 'index.php', $matches);
+echo $result;
+echo "|";
+echo count($matches);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|dex|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn preg_match_writes_wordpress_db_host_named_matches() {
+    let execution = run_source(
+        r#"<?php
+$ipv4 = '#^(?P<host>[^:/]*)(?::(?P<port>[\d]+))?#';
+$ipv6 = '#^(?:\[)?(?P<host>[0-9a-fA-F:]+)(?:\]:(?P<port>[\d]+))?#';
+echo preg_match($ipv4, 'db.example:3306', $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo $matches['host'];
+echo "|";
+echo $matches[1];
+echo "|";
+echo $matches['port'];
+echo "|";
+echo $matches[2];
+echo "|";
+echo preg_match($ipv6, '[2001:db8::1]:3306', $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo $matches['host'];
+echo "|";
+echo $matches[1];
+echo "|";
+echo $matches['port'];
+echo "|";
+echo $matches[2];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|db.example:3306|db.example|db.example|3306|3306|1|[2001:db8::1]:3306|2001:db8::1|2001:db8::1|3306|3306"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_rejects_forms_outside_current_subset() {
     let output_args = runtime_error(
         r#"<?php
-preg_match('/wp/', 'wp-settings', null);
+$bag = [];
+preg_match('/wp/', 'wp-settings', $bag['matches']);
 "#,
     );
-    assert_eq!(output_args.line, 2);
+    assert_eq!(output_args.line, 3);
     assert_eq!(output_args.column, 1);
     assert_eq!(
         output_args.message,
-        "unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset"
+        "unsupported call preg_match(): matches output must be a direct variable in the current subset"
+    );
+
+    let flags_args = runtime_error(
+        r#"<?php
+preg_match('/wp/', 'wp-settings', $matches, 0);
+"#,
+    );
+    assert_eq!(flags_args.line, 2);
+    assert_eq!(flags_args.column, 1);
+    assert_eq!(
+        flags_args.message,
+        "unsupported call preg_match(): flags and offset arguments are not implemented; pass at most a direct matches variable in the current subset"
     );
 
     let unsupported_pattern = runtime_error(

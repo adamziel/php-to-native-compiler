@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 802, bounded `preg_match()` direct matches-output support
+  for the current WordPress `wpdb::parse_db_host()` startup path. The
+  interpreter now routes direct and dynamic `preg_match` calls through an
+  expression-aware path, preserves the existing two-argument literal regex
+  subset, accepts a third direct variable for `$matches`, writes match `0` for
+  literal contains/prefix/suffix/exact patterns, clears the matches variable to
+  an empty array on no match, and recognizes the two exact WordPress db-host
+  named-capture patterns reached in `class-wpdb.php`. Those WordPress patterns
+  populate `0`, `host`/`1`, and optional `port`/`2` entries for the current
+  IPv4-ish and bracketed IPv6-ish paths. Non-direct matches outputs, flags,
+  offsets, optional unmatched-group fidelity, broad named-capture behavior,
+  full PCRE syntax, invalid-pattern warnings, exact PHP diagnostics, and
+  native lowering remain unsupported. Because the current string-literal
+  subset over-normalizes backslashes in single-quoted strings, the recognizer
+  accepts both the PHP-correct pattern strings and the current
+  lexer-normalized WordPress spellings; full single-quoted escape fidelity is
+  still a separate language gap. The real WordPress 6.9.4 bootstrap-shim probe
+  now advances past the reached `preg_match()` call to
+  `runtime error at <bootstrap-shim>:1997:5: undefined function mysqli_real_connect()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone802`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 801, a bounded `substr_count()` implementation for the
   current WordPress `parse_db_host()` startup path immediately after
   `strpos()`. The runtime now exposes `substr_count` through

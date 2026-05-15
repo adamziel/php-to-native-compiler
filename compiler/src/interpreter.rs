@@ -5599,6 +5599,9 @@ impl Interpreter {
                 if key == "spl_autoload_register" {
                     return self.call_spl_autoload_register(args, span, caller_scope);
                 }
+                if key == "preg_match" {
+                    return self.call_preg_match_with_optional_matches(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -5626,6 +5629,9 @@ impl Interpreter {
             Callable::Builtin(key) => {
                 if key == "spl_autoload_register" {
                     return self.call_spl_autoload_register(args, span, caller_scope);
+                }
+                if key == "preg_match" {
+                    return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -5705,6 +5711,68 @@ impl Interpreter {
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn call_preg_match_with_optional_matches(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_match()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_match()",
+                    "flags and offset arguments are not implemented; pass at most a direct matches variable in the current subset",
+                ),
+            ));
+        }
+
+        let pattern = self.evaluate(&args[0], caller_scope)?;
+        let subject = self.evaluate(&args[1], caller_scope)?;
+        let values = vec![pattern, subject];
+        if args.len() == 2 {
+            return call_preg_match(&values, span);
+        }
+
+        let Expr::Variable(matches_name, _) = &args[2] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_match()",
+                    "matches output must be a direct variable in the current subset",
+                ),
+            ));
+        };
+
+        let pattern = string_contains_argument("preg_match()", "pattern", &values[0], span)?;
+        let subject = string_contains_argument("preg_match()", "subject", &values[1], span)?;
+        let pattern = BoundedPregPattern::parse(&pattern).map_err(|message| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call("preg_match()", message),
+            )
+        })?;
+
+        if let Some(matches) = pattern.captures(&subject) {
+            caller_scope.write_static(matches_name, Value::Array(matches));
+            Ok(Value::Int(1))
+        } else {
+            caller_scope.write_static(matches_name, Value::Array(PhpArray::new()));
+            Ok(Value::Int(0))
+        }
     }
 
     fn call_exit_construct(
@@ -10325,10 +10393,23 @@ enum BoundedPregPattern {
     Prefix(String),
     Suffix(String),
     Exact(String),
+    WordPressDbHostIpv4,
+    WordPressDbHostIpv6,
 }
 
 impl BoundedPregPattern {
     fn parse(pattern: &str) -> Result<Self, String> {
+        if pattern == "#^(?P<host>[^:/]*)(?::(?P<port>[\\d]+))?#"
+            || pattern == "#^(?P<host>[^:/]*)(?::(?P<port>[d]+))?#"
+        {
+            return Ok(Self::WordPressDbHostIpv4);
+        }
+        if pattern == "#^(?:\\[)?(?P<host>[0-9a-fA-F:]+)(?:\\]:(?P<port>[\\d]+))?#"
+            || pattern == "#^(?:[)?(?P<host>[0-9a-fA-F:]+)(?:]:(?P<port>[d]+))?#"
+        {
+            return Ok(Self::WordPressDbHostIpv6);
+        }
+
         let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
             return Err(
                 "only slash-delimited patterns are implemented in the current subset".to_string(),
@@ -10365,8 +10446,110 @@ impl BoundedPregPattern {
             Self::Prefix(literal) => subject.starts_with(literal),
             Self::Suffix(literal) => subject.ends_with(literal),
             Self::Exact(literal) => subject == literal,
+            Self::WordPressDbHostIpv4 | Self::WordPressDbHostIpv6 => {
+                self.captures(subject).is_some()
+            }
         }
     }
+
+    fn captures(&self, subject: &str) -> Option<PhpArray> {
+        match self {
+            Self::Contains(literal) => subject
+                .find(literal)
+                .map(|start| preg_match_single_capture(&subject[start..start + literal.len()])),
+            Self::Prefix(literal) if subject.starts_with(literal) => {
+                Some(preg_match_single_capture(literal))
+            }
+            Self::Suffix(literal) if subject.ends_with(literal) => {
+                Some(preg_match_single_capture(literal))
+            }
+            Self::Exact(literal) if subject == literal => Some(preg_match_single_capture(subject)),
+            Self::WordPressDbHostIpv4 => wordpress_db_host_ipv4_captures(subject),
+            Self::WordPressDbHostIpv6 => wordpress_db_host_ipv6_captures(subject),
+            _ => None,
+        }
+    }
+}
+
+fn preg_match_single_capture(value: &str) -> PhpArray {
+    let mut matches = PhpArray::new();
+    matches.insert(0, Value::String(value.to_string()));
+    matches
+}
+
+fn wordpress_db_host_match_array(full: &str, host: &str, port: Option<&str>) -> PhpArray {
+    let mut matches = PhpArray::new();
+    matches.insert(0, Value::String(full.to_string()));
+    matches.insert("host", Value::String(host.to_string()));
+    matches.insert(1, Value::String(host.to_string()));
+    if let Some(port) = port {
+        matches.insert("port", Value::String(port.to_string()));
+        matches.insert(2, Value::String(port.to_string()));
+    }
+    matches
+}
+
+fn wordpress_db_host_ipv4_captures(subject: &str) -> Option<PhpArray> {
+    let host_end = subject
+        .bytes()
+        .position(|byte| matches!(byte, b':' | b'/'))
+        .unwrap_or(subject.len());
+    let host = &subject[..host_end];
+    let mut full_end = host_end;
+    let mut port = None;
+
+    if subject.as_bytes().get(host_end) == Some(&b':') {
+        let port_start = host_end + 1;
+        let port_len = subject.as_bytes()[port_start..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        if port_len > 0 {
+            full_end = port_start + port_len;
+            port = Some(&subject[port_start..full_end]);
+        }
+    }
+
+    Some(wordpress_db_host_match_array(
+        &subject[..full_end],
+        host,
+        port,
+    ))
+}
+
+fn wordpress_db_host_ipv6_captures(subject: &str) -> Option<PhpArray> {
+    let starts_with_bracket = subject.starts_with('[');
+    let host_start = usize::from(starts_with_bracket);
+    let host_len = subject.as_bytes()[host_start..]
+        .iter()
+        .take_while(|byte| byte.is_ascii_hexdigit() || **byte == b':')
+        .count();
+    if host_len == 0 {
+        return None;
+    }
+
+    let host_end = host_start + host_len;
+    let host = &subject[host_start..host_end];
+    let mut full_end = host_end;
+    let mut port = None;
+
+    if starts_with_bracket && subject.as_bytes().get(host_end..host_end + 2) == Some(b"]:") {
+        let port_start = host_end + 2;
+        let port_len = subject.as_bytes()[port_start..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        if port_len > 0 {
+            full_end = port_start + port_len;
+            port = Some(&subject[port_start..full_end]);
+        }
+    }
+
+    Some(wordpress_db_host_match_array(
+        &subject[..full_end],
+        host,
+        port,
+    ))
 }
 
 fn split_slash_delimited_pattern(pattern: &str) -> Option<(&str, &str)> {

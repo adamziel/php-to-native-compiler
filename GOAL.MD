@@ -103,9 +103,9 @@ UTF-8 probe, the following `restore_error_handler()` cleanup, and the reached
 array literal reference element, and the reached object-property
 reference-assignment source, the reached `unset($this->$name)` path,
 executable `__CLASS__` in class context, and the reached `mysqli_report()`
-mode call, the reached `mysqli_init()` handle creation, and bounded `strpos()`
-and `substr_count()` matching; it now stops at `preg_match()` matches-output
-support.
+mode call, the reached `mysqli_init()` handle creation, bounded `strpos()`
+and `substr_count()` matching, and the reached `preg_match()` matches-output
+path; it now stops at `mysqli_real_connect()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -354,8 +354,10 @@ visible slots. Milestone 797 added bounded executable `__CLASS__` evaluation in
 class context. Milestone 798 added bounded `mysqli_report()` mode handling.
 Milestone 799 added a bounded `mysqli_init()` placeholder handle. Milestone
 800 added bounded `strpos()` matching for the reached `parse_db_host()` path.
-Milestone 801 added bounded `substr_count()` matching. The current frontier is
-now `preg_match()` matches-output support in WordPress startup.
+Milestone 801 added bounded `substr_count()` matching. Milestone 802 added
+bounded `preg_match()` direct matches-output support for the reached
+`parse_db_host()` path. The current frontier is now `mysqli_real_connect()` in
+WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -511,9 +513,10 @@ The repository already has a working Rust workspace with:
   that null visible property slots, and bounded executable `__CLASS__`
   evaluation in class context, and bounded `mysqli_report()` mode handling for
   the reached startup call, and bounded `mysqli_init()` placeholder-handle
-  creation, bounded `strpos()` matching, and bounded `substr_count()` counts.
-  The next bottleneck is `preg_match()` matches-output support in the WordPress
-  bootstrap shim.
+  creation, bounded `strpos()` matching, bounded `substr_count()` counts, and
+  bounded `preg_match()` direct matches-output support for the reached
+  db-host parse path. The next bottleneck is `mysqli_real_connect()` in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

@@ -7341,16 +7341,29 @@ handled.
   lengths within the current bounds rules, non-overlapping byte-position
   counts, and short-slice zero counts, advancing the real bootstrap-shim probe
   to `runtime error at <bootstrap-shim>:2101:14: unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset`.
-- [ ] Runtime/regex lane: add bounded `preg_match()` matches-output support for
+- [x] Runtime/regex lane: add bounded `preg_match()` matches-output support for
   the reached WordPress `parse_db_host()` path. Preserve capture naming,
   optional unmatched groups, flags, offsets, full PCRE behavior, invalid
   pattern warnings, exact diagnostics, and native lowering unless those slices
   are implemented and tested.
+  Milestone 802 accepts a third direct `$matches` variable, writes match `0`
+  for current literal patterns, clears matches on no match, recognizes the two
+  exact WordPress db-host named-capture patterns reached in
+  `class-wpdb.php`, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1997:5: undefined function mysqli_real_connect()`.
+- [ ] Runtime/database lane: add an honest bounded `mysqli_real_connect()`
+  boundary for the reached WordPress startup path. Decide whether the current
+  placeholder `mysqli` object should record deterministic connection state for
+  the bootstrap path or whether the call should stop with a stable unsupported
+  database-connection diagnostic. Keep real host I/O, authentication,
+  socket/port handling, database selection, warnings/errors, charset state,
+  query/result behavior, escaping, exact diagnostics, PDO, and native database
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 801 checkpoint, the latest committed checkpoint
-  is `39416c3 runtime: add bounded strpos`, covering Milestone 800.
+- Before the current Milestone 802 checkpoint, the latest committed checkpoint
+  is `5a006e3 runtime: add bounded substr_count`, covering Milestone 801.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
