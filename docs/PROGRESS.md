@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 831, bounded WordPress `wpdb::query()` classifier and
+  option-cache query coverage. `preg_match()` now recognizes the exact
+  adjacent DDL/DML classifier patterns
+  `/^\s*(create|alter|truncate|drop)\s/i`,
+  `/^\s*(insert|delete|update|replace)\s/i`, and
+  `/^\s*(insert|replace)\s/i`, including optional leading ASCII whitespace,
+  ASCII-case-insensitive keywords, one following ASCII whitespace character,
+  and match `0` output for direct `$matches` variables. The MySQLi empty
+  options-table placeholder also accepts the reached
+  `SELECT option_name, option_value FROM <prefix>options WHERE option_name IN (...)`
+  and
+  `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`
+  cache-priming reads without executing SQL. Broad PCRE behavior, broad SQL
+  parsing/execution, result resources, row fetching, database contents,
+  affected-row/insert-id state, exact warnings/errors, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
+  corresponding to a reached complex `empty(...)` operand. Direct
+  `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone831`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 830, a bounded MySQLi empty-result placeholder for the
   reached WordPress options bootstrap query path. The interpreter now accepts
   `mysqli_query($handle, "SELECT option_name, option_value FROM <prefix>options WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )")`

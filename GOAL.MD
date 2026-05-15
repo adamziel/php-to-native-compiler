@@ -427,9 +427,11 @@ bounded `next()` cursor-advance path for direct arrays and
 `array_pop()` hook cleanup path. Milestone 830 covers the reached empty
 WordPress options-table `mysqli_query()` placeholders in `wpdb::_do_query()`
 plus clean `mysqli_errno()`/`mysqli_error()` bookkeeping for the placeholder
-handle. The current frontier is now the following `wpdb::query()` regex
-classifier, reported by the bootstrap shim as
-`runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
+handle. Milestone 831 covers the adjacent `wpdb::query()` DDL/DML classifier
+regexes plus the reached empty option-name cache-priming and single-option
+MySQLi reads. The current frontier is now a complex `empty(...)` operand,
+reported by the bootstrap shim as
+`runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -620,8 +622,9 @@ The repository already has a working Rust workspace with:
   cleanup shape. Bounded `mysqli_query()` options-table placeholders plus
   clean `mysqli_errno()` and `mysqli_error()` bookkeeping cover the reached
   `wpdb::_do_query()` empty options query path without claiming real database
-  execution. The next bottleneck is the following `wpdb::query()`
-  `preg_match()` classifier regex.
+  execution. Bounded WordPress `preg_match()` query classifiers and empty
+  option-name MySQLi reads cover the following `wpdb::query()` path. The next
+  bottleneck is a reached complex `empty(...)` operand.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

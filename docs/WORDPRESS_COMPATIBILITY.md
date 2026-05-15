@@ -1147,6 +1147,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.
+  Milestone 831 implements the adjacent bounded `wpdb::query()` classifier
+  regexes for DDL, DML, and insert/replace queries, and widens the empty
+  options-table MySQLi placeholder for the reached option-name cache-priming
+  and single-option reads. This is not broad PCRE support, broad SQL parsing,
+  real SQL execution, result resources, row fetching, database contents,
+  affected-row/insert-id state, exact warnings/errors, or native lowering. The
+  real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
+  corresponding to a reached complex `empty(...)` operand.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

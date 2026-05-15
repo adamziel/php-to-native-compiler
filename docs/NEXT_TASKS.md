@@ -7618,16 +7618,27 @@ handled.
   placeholder handle, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.
-- [ ] Runtime/regex lane: add the next bounded `preg_match()` slice for the
+- [x] Runtime/regex lane: add the next bounded `preg_match()` slice for the
   reached `wpdb::query()` DDL/DML classifier regex after the empty options
   query path. Keep broad PCRE parsing, capture fidelity, non-`u`/`i` modifier
   behavior outside the exact reached patterns, binary/invalid-string behavior,
   exact diagnostics, and native lowering named unless implemented.
+  Milestone 831 covers the adjacent DDL/DML/insert-replace classifier regexes
+  and widens the empty options-table MySQLi placeholder for the reached
+  option-name cache-priming and single-option reads. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
+- [ ] Runtime/expression lane: extend `empty(...)` for the reached complex
+  WordPress operand at `<bootstrap-shim>:3045:17` without broadening arbitrary
+  lvalue support beyond tested parser/runtime shapes. Keep magic property
+  hooks, ArrayAccess, references/copy-on-write, warning fidelity, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 830 checkpoint, the latest committed checkpoint
-  is `e8695e0 runtime: add bounded array_pop`, covering Milestone 829.
+- Before the current Milestone 831 checkpoint, the latest committed checkpoint
+  is `4ea19c3 runtime: add bounded wordpress mysqli options queries`, covering
+  Milestone 830.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

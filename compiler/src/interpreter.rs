@@ -11526,24 +11526,35 @@ fn mysql_escape_string(value: &str) -> String {
 
 fn is_wordpress_empty_options_query(query: &str) -> bool {
     let query = query.trim();
-    if !query
-        .strip_prefix("SELECT option_name, option_value FROM ")
-        .is_some_and(|rest| rest.contains("options"))
-    {
-        return false;
+    if let Some(rest) = query.strip_prefix("SELECT option_name, option_value FROM ") {
+        let Some((table, suffix)) = rest.split_once(' ') else {
+            return rest.ends_with("options");
+        };
+        return table.ends_with("options")
+            && (suffix == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+                || (suffix.starts_with("WHERE option_name IN (") && suffix.ends_with(')')));
     }
 
-    let Some(rest) = query.strip_prefix("SELECT option_name, option_value FROM ") else {
-        return false;
-    };
-    let Some((table, suffix)) = rest.split_once(' ') else {
-        return rest.ends_with("options");
-    };
-    if !table.ends_with("options") {
-        return false;
+    for prefix in [
+        "SELECT option_value FROM ",
+        "SELECT autoload FROM ",
+        "SELECT option_name FROM ",
+    ] {
+        let Some(rest) = query.strip_prefix(prefix) else {
+            continue;
+        };
+        let Some((table, suffix)) = rest.split_once(' ') else {
+            continue;
+        };
+        if table.ends_with("options")
+            && suffix.starts_with("WHERE option_name = ")
+            && (suffix.ends_with(" LIMIT 1") || !suffix.contains(" LIMIT "))
+        {
+            return true;
+        }
     }
 
-    suffix == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    false
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
@@ -12018,6 +12029,9 @@ enum BoundedPregPattern {
     WordPressDbHostIpv6,
     WordPressTablePrefixInvalidChar,
     WordPressSafeCollationReadQuery,
+    WordPressDdlQuery,
+    WordPressDmlQuery,
+    WordPressInsertReplaceQuery,
     WordPressNonAsciiByte,
 }
 
@@ -12040,6 +12054,19 @@ impl BoundedPregPattern {
             || pattern == "/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)s/i"
         {
             return Ok(Self::WordPressSafeCollationReadQuery);
+        }
+        if pattern == "/^\\s*(create|alter|truncate|drop)\\s/i"
+            || pattern == "/^s*(create|alter|truncate|drop)s/i"
+        {
+            return Ok(Self::WordPressDdlQuery);
+        }
+        if pattern == "/^\\s*(insert|delete|update|replace)\\s/i"
+            || pattern == "/^s*(insert|delete|update|replace)s/i"
+        {
+            return Ok(Self::WordPressDmlQuery);
+        }
+        if pattern == "/^\\s*(insert|replace)\\s/i" || pattern == "/^s*(insert|replace)s/i" {
+            return Ok(Self::WordPressInsertReplaceQuery);
         }
         if pattern == "/[^\\x00-\\x7F]/" || pattern == "/[^x00-x7F]/" {
             return Ok(Self::WordPressNonAsciiByte);
@@ -12085,6 +12112,9 @@ impl BoundedPregPattern {
             | Self::WordPressDbHostIpv6
             | Self::WordPressTablePrefixInvalidChar
             | Self::WordPressSafeCollationReadQuery
+            | Self::WordPressDdlQuery
+            | Self::WordPressDmlQuery
+            | Self::WordPressInsertReplaceQuery
             | Self::WordPressNonAsciiByte => self.captures(subject).is_some(),
         }
     }
@@ -12105,6 +12135,17 @@ impl BoundedPregPattern {
             Self::WordPressDbHostIpv6 => wordpress_db_host_ipv6_captures(subject),
             Self::WordPressTablePrefixInvalidChar => wordpress_table_prefix_invalid_char(subject),
             Self::WordPressSafeCollationReadQuery => wordpress_safe_collation_read_query(subject),
+            Self::WordPressDdlQuery => {
+                wordpress_query_classifier(subject, &["CREATE", "ALTER", "TRUNCATE", "DROP"], true)
+            }
+            Self::WordPressDmlQuery => wordpress_query_classifier(
+                subject,
+                &["INSERT", "DELETE", "UPDATE", "REPLACE"],
+                true,
+            ),
+            Self::WordPressInsertReplaceQuery => {
+                wordpress_query_classifier(subject, &["INSERT", "REPLACE"], true)
+            }
             Self::WordPressNonAsciiByte => wordpress_non_ascii_byte(subject),
             _ => None,
         }
@@ -12137,21 +12178,44 @@ fn wordpress_table_prefix_invalid_char(subject: &str) -> Option<PhpArray> {
 }
 
 fn wordpress_safe_collation_read_query(subject: &str) -> Option<PhpArray> {
-    for keyword in ["SHOW", "DESCRIBE", "DESC", "EXPLAIN", "CREATE"] {
-        let Some(candidate) = subject.get(..keyword.len()) else {
+    wordpress_query_classifier(
+        subject,
+        &["SHOW", "DESCRIBE", "DESC", "EXPLAIN", "CREATE"],
+        false,
+    )
+}
+
+fn wordpress_query_classifier(
+    subject: &str,
+    keywords: &[&str],
+    allow_leading_whitespace: bool,
+) -> Option<PhpArray> {
+    let leading_len = if allow_leading_whitespace {
+        subject
+            .char_indices()
+            .find(|(_, ch)| !ch.is_ascii_whitespace())
+            .map(|(index, _)| index)
+            .unwrap_or(subject.len())
+    } else {
+        0
+    };
+    let candidate_subject = &subject[leading_len..];
+
+    for keyword in keywords {
+        let Some(candidate) = candidate_subject.get(..keyword.len()) else {
             continue;
         };
         if !candidate.eq_ignore_ascii_case(keyword) {
             continue;
         }
-        let Some(rest) = subject.get(keyword.len()..) else {
+        let Some(rest) = candidate_subject.get(keyword.len()..) else {
             continue;
         };
         let Some(whitespace) = rest.chars().next() else {
             continue;
         };
         if whitespace.is_ascii_whitespace() {
-            let end = keyword.len() + whitespace.len_utf8();
+            let end = leading_len + keyword.len() + whitespace.len_utf8();
             return Some(preg_match_single_capture(&subject[..end]));
         }
     }

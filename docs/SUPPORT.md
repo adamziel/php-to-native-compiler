@@ -636,7 +636,13 @@
   for conventional prefixes such as `wp_`. The exact WordPress safe-collation
   query classifier `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i` is supported
   with ASCII-case-insensitive keyword matching and one following ASCII
-  whitespace character. The exact WordPress `wpdb::check_ascii()` non-ASCII
+  whitespace character. The exact adjacent `wpdb::query()` classifiers
+  `/^\s*(create|alter|truncate|drop)\s/i`,
+  `/^\s*(insert|delete|update|replace)\s/i`, and
+  `/^\s*(insert|replace)\s/i` are supported with optional leading ASCII
+  whitespace, ASCII-case-insensitive keyword matching, one following ASCII
+  whitespace character, and match `0` population for direct `$matches`
+  variables. The exact WordPress `wpdb::check_ascii()` non-ASCII
   byte detector `/[^\x00-\x7F]/` is supported over the current valid UTF-8
   runtime string model, returning whether any represented character is
   non-ASCII. Non-direct matches outputs, flags, offsets, optional
@@ -725,8 +731,10 @@
   reached WordPress options-table bootstrap reads
   `SELECT option_name, option_value FROM <prefix>options WHERE autoload IN (
   'yes', 'on', 'auto-on', 'auto' )` and
-  `SELECT option_name, option_value FROM <prefix>options`, returning
-  deterministic empty boundaries without executing SQL. For the same
+  `SELECT option_name, option_value FROM <prefix>options`, plus the reached
+  empty option-cache reads using `WHERE option_name IN (...)` and
+  `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
+  returning deterministic empty boundaries without executing SQL. For the same
   placeholder handle, `mysqli_errno($handle)` returns `0` and
   `mysqli_error($handle)` returns an empty string.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
@@ -4433,7 +4441,8 @@
   contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
   named-capture patterns, the exact WordPress table-prefix validation pattern
   `|[^a-z0-9_]|i`, the exact WordPress safe-collation query classifier, and
-  the exact WordPress ASCII-check byte-range pattern: non-direct matches
+  the exact adjacent WordPress `wpdb::query()` DDL/DML classifiers, and the
+  exact WordPress ASCII-check byte-range pattern: non-direct matches
   outputs, flags, offsets, optional unmatched-group fidelity, broad
   capture-group behavior, full PCRE syntax, bracket classes and ranges beyond
   the documented exact WordPress pattern, modifiers other than the documented

@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T17:45:00Z
+
+- Checkpoint before this task:
+  `4ea19c3 runtime: add bounded wordpress mysqli options queries`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 831, bounded WordPress `wpdb::query()` classifier
+  regexes plus empty option-name MySQLi reads.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_match_builtin.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone831/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone831`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
+- Remaining semantic gaps: broad PCRE support, broad SQL parsing/execution,
+  result resources, row fetching, database contents, complex `empty(...)`
+  operands, ArrayAccess/magic property behavior, references/copy-on-write,
+  exact warning behavior, and native lowering remain unsupported.
+- Next concrete task: extend `empty(...)` for the reached complex WordPress
+  operand while keeping broad lvalue support, magic hooks, ArrayAccess,
+  references/copy-on-write, exact warning behavior, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T17:05:00Z
 
 - Checkpoint before this task:

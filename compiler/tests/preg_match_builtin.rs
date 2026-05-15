@@ -173,6 +173,41 @@ echo preg_match($pattern, "café");
 }
 
 #[test]
+fn preg_match_handles_wordpress_query_type_classifiers() {
+    let execution = run_source(
+        r#"<?php
+$ddl = '/^\s*(create|alter|truncate|drop)\s/i';
+$dml = '/^\s*(insert|delete|update|replace)\s/i';
+$insert = '/^\s*(insert|replace)\s/i';
+echo preg_match($ddl, "  CREATE TABLE wp_posts", $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo preg_match($ddl, "SELECT option_name FROM wp_options");
+echo "|";
+echo preg_match($dml, "\tupdate wp_options set option_value = 'x'", $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo preg_match($dml, "show tables");
+echo "|";
+echo preg_match($insert, " replace into wp_options", $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo preg_match($insert, "delete from wp_options");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|  CREATE |0|1|\tupdate |0|1| replace |0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_rejects_forms_outside_current_subset() {
     let output_args = runtime_error(
         r#"<?php

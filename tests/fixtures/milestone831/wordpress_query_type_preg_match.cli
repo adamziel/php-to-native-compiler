@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+1|  CREATE |0|1|	update |0|1| replace |0
+--- stdout end ---
+stderr:
+--- stderr end ---
