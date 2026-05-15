@@ -25,12 +25,26 @@ fn int_casts_execute_for_current_scalar_and_null_subset() {
         r#"<?php
 echo (int) null, "|", (int) false, "|", (int) true, "\n";
 echo (integer) 42, "|", (int) -3.8, "|", (int) " 15 ", "|", (int) "2.9", "\n";
-echo (int) "", "|", (int) "not numeric";
+echo (int) "", "|", (int) "not numeric", "|", (int) "+.", "|", (int) "128m", "|", (int) "1.2e3m";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "0|0|1\n42|-3|15|2\n0|0");
+    assert_eq!(execution.stdout, "0|0|1\n42|-3|15|2\n0|0|0|128|1200");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn int_casts_execute_current_leading_numeric_string_subset() {
+    let execution = run_source(
+        r#"<?php
+echo (int) "42abc", "|", (int) "2.9m", "|", (int) "-3kb", "|", (int) "+7foo", "\n";
+echo (int) ".5m", "|", (int) "-.5m", "|", (int) "1e3m", "|", (int) "1e";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "42|2|-3|7\n0|0|1000|1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -108,14 +122,14 @@ fn int_casts_reject_unimplemented_warning_paths_for_now() {
         "unsupported call (int): array-to-int cast behavior is not implemented"
     );
 
-    let error = run_source("<?php\necho (int) \"42abc\";\n").unwrap_err();
+    let error = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Runtime);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call (int): leading-numeric string cast behavior is not implemented"
+        "unsupported call (int): non-finite or out-of-range float-to-int cast behavior is not implemented"
     );
 }
 

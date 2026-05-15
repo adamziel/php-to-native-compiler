@@ -8811,22 +8811,77 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
         return cast_float_to_int(value, "(int)", span);
     }
 
+    if let Some(prefix) = leading_numeric_prefix(trimmed) {
+        if let Ok(value) = prefix.parse::<i64>() {
+            return Ok(Value::Int(value));
+        }
+        if let Ok(value) = prefix.parse::<f64>() {
+            return cast_float_to_int(value, "(int)", span);
+        }
+    }
+
     Err(runtime_error(
         span,
         RuntimeError::unsupported_call(
             "(int)",
-            "leading-numeric string cast behavior is not implemented",
+            "leading-numeric string cast behavior is outside the current bounded prefix subset",
         ),
     ))
 }
 
 fn starts_with_numeric_prefix(value: &str) -> bool {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some('+' | '-') => matches!(chars.next(), Some('0'..='9') | Some('.')),
-        Some('0'..='9') | Some('.') => true,
-        _ => false,
+    leading_numeric_prefix(value).is_some()
+}
+
+fn leading_numeric_prefix(value: &str) -> Option<&str> {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+
+    if matches!(bytes.get(index), Some(b'+' | b'-')) {
+        index += 1;
     }
+
+    let digits_before_decimal = consume_ascii_digits_bytes(bytes, &mut index);
+    if matches!(bytes.get(index), Some(b'.')) {
+        index += 1;
+        let digits_after_decimal = consume_ascii_digits_bytes(bytes, &mut index);
+        if digits_before_decimal == 0 && digits_after_decimal == 0 {
+            return None;
+        }
+    } else if digits_before_decimal == 0 {
+        return None;
+    }
+
+    let end_before_exponent = index;
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        let exponent_marker = index;
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        if consume_ascii_digits_bytes(bytes, &mut index) == 0 {
+            index = exponent_marker;
+        }
+    }
+
+    if index == 0 {
+        None
+    } else {
+        let end = if index == end_before_exponent {
+            end_before_exponent
+        } else {
+            index
+        };
+        Some(&value[..end])
+    }
+}
+
+fn consume_ascii_digits_bytes(bytes: &[u8], index: &mut usize) -> usize {
+    let start = *index;
+    while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
+        *index += 1;
+    }
+    *index - start
 }
 
 fn cast_string_to_float(value: &str, span: Span) -> CompileResult<Value> {

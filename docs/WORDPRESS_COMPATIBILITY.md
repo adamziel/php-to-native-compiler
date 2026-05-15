@@ -701,6 +701,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   mask support, binary/null-byte string compatibility beyond the current
   represented runtime-string subset, array/object/resource coercions, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 776 implements bounded leading-numeric `(int)` string casts for
+  the reached shorthand memory-limit path. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:1691:7: undefined function str_contains()`,
+  corresponding to `wp-includes/load.php:1691`. This is not exact PHP warning
+  recovery for leading-numeric strings, full numeric grammar compatibility,
+  non-finite/out-of-range cast support, array/object/resource coercions, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -7105,17 +7105,26 @@ handled.
   `trim()` slice and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1689:11: unsupported call (int): leading-numeric string cast behavior is not implemented`,
   corresponding to `wp-includes/load.php:1689`.
-- [ ] Cast/coercion lane: implement a bounded leading-numeric `(int)` string
+- [x] Cast/coercion lane: implement a bounded leading-numeric `(int)` string
   cast slice for the next WordPress bootstrap blocker, starting with the
   shorthand memory strings produced by `wp_convert_hr_to_bytes()`. Keep PHP's
   warning/recovery details, whitespace/sign/decimal/exponent grammar,
   overflow, binary string edge cases, exact diagnostics, and native lowering
   named unless implemented.
+  Milestone 776 implements a bounded leading-numeric string prefix scanner for
+  `(int)` casts and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1691:7: undefined function str_contains()`,
+  corresponding to `wp-includes/load.php:1691`.
+- [ ] String builtin lane: implement a bounded `str_contains()` slice for the
+  next WordPress bootstrap blocker, starting with scalar/null string-convertible
+  haystack and needle arguments. Keep binary string edge cases, array/object/
+  resource coercions, exact diagnostics, empty-needle behavior, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 775 checkpoint, the latest committed checkpoint
-  is `8303f95 runtime: add bounded strtolower`, covering Milestone 774.
+- Before the current Milestone 776 checkpoint, the latest committed checkpoint
+  is `15059d2 runtime: add bounded trim`, covering Milestone 775.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

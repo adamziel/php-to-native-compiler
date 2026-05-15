@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+42
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone699/int_cast_leading_numeric.php:2:6: unsupported call (int): leading-numeric string cast behavior is not implemented
 --- stderr end ---

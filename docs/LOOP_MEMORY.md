@@ -431,6 +431,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   warning/recovery, numeric grammar, overflow, binary string, diagnostic, and
   native-lowering gaps.
 
+## Loop Event 2026-05-15T11:32:00Z
+
+- Checkpoint before this task:
+  `15059d2 runtime: add bounded trim`, pushed to `origin/master`.
+- Task attempted: Milestone 776, bounded leading-numeric `(int)` string casts
+  for the WordPress `wp_convert_hr_to_bytes()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/scalar_casts.rs`, `tests/fixtures/milestone699/*`,
+  `tests/fixtures/milestone776/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test scalar_casts`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone699`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone776`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: exact PHP warning/recovery behavior for
+  leading-numeric strings, numeric grammar outside the current bounded prefix
+  scanner, non-finite/out-of-range casts, binary string edge cases,
+  array/object/resource coercions, exact diagnostics, and native lowering
+  remain unsupported. Direct `wp-settings.php` still stops on undefined
+  `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:1691:7: undefined function str_contains()`.
+- Next concrete task: implement a bounded `str_contains()` string builtin slice
+  for the reached `wp_convert_hr_to_bytes()` path while documenting empty-needle
+  behavior, binary string, coercion, diagnostic, and native-lowering gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

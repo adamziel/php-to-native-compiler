@@ -1375,7 +1375,9 @@
   strings unchanged. `(int)`/`(integer)` is implemented for the current
   scalar/null value model: `null` and `false` become `0`, `true` becomes `1`,
   integers are unchanged, finite in-range floats truncate toward zero,
-  well-formed numeric strings convert through the current numeric parser, and
+  well-formed numeric strings convert through the current numeric parser,
+  bounded leading-numeric string prefixes with optional sign, decimal point,
+  and exponent convert through the same integer/finite-float cast path, and
   empty or non-numeric strings become `0`. `(bool)`/`(boolean)` is implemented
   over the current value model using current PHP-shaped truthiness: `null`,
   `false`, integer/float zero, `""`, `"0"`, and empty arrays are false; other
@@ -1389,10 +1391,11 @@
   one-element array at key `0`, and arrays are unchanged. Array/object behavior
   for `(string)`, `(int)`, and `(float)`, object-to-array property
   materialization and mangled visibility keys, Closure object array casts,
-  leading-numeric string casts such as `"42abc"`, non-finite or out-of-range
-  float cast behavior, resources, `(real)`, `(object)`, `(unset)`, and
-  `(binary)` cast forms, exact PHP diagnostics, and native lowering remain
-  unsupported.
+  exact PHP warning/recovery behavior for leading-numeric strings, numeric
+  grammar outside the current bounded prefix scanner, non-finite or
+  out-of-range float cast behavior, resources, `(real)`, `(object)`,
+  `(unset)`, and `(binary)` cast forms, exact PHP diagnostics, and native
+  lowering remain unsupported.
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and

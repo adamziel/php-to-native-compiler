@@ -1422,10 +1422,12 @@ Cast expressions are AST-backed, but execution is intentionally limited to the
 current scalar/null/array runtime value model. `(string)` handles scalar/null
 values through the runtime echo-string conversion boundary. `(int)`/`(integer)`
 handles scalar/null values through a narrow integer-cast policy for WordPress
-bootstrap parsing and focused fixtures. `(array)` handles `null`, scalars, and
-already-array values only. Object-to-array property materialization, resources,
-leading-numeric string, non-finite or out-of-range float behavior, exact PHP
-warning/error recovery, and native cast lowering remain explicit boundaries.
+bootstrap parsing and focused fixtures, including bounded leading-numeric
+string prefixes. `(array)` handles `null`, scalars, and already-array values
+only. Object-to-array property materialization, resources, exact PHP
+warning/recovery behavior for leading-numeric strings, numeric grammar outside
+the current prefix scanner, non-finite or out-of-range float behavior, and
+native cast lowering remain explicit boundaries.
 
 ## Exception Boundary
 
