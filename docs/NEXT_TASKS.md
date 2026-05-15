@@ -6704,17 +6704,27 @@ handled.
   `%s`, and `%N$s`, keeps full PHP formatting semantics and native lowering
   explicit, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:193:3: undefined function header()`.
-- [ ] Runtime/web-SAPI lane: implement or explicitly bound `header()` for the
+- [x] Runtime/web-SAPI lane: implement or explicitly bound `header()` for the
   real WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:193:3`,
   with tests, CLI coverage, docs, and named unsupported edges for response
   header storage, status-code parsing, replacement behavior, header removal,
   output-sent warnings, SAPI/web-server integration, partial-output behavior,
-  exact PHP diagnostics, and native lowering.
+  exact PHP diagnostics, and native lowering. The Milestone 730 slice accepts a
+  string header line with optional bool replacement flag and integer response
+  code as a no-op returning `null`, keeps real response/SAPI semantics and
+  native lowering explicit, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
+- [ ] Runtime/string-array builtin lane: implement or explicitly bound
+  `implode()` for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:195:8`, with tests, CLI coverage, docs, and named
+  unsupported edges for argument-order overloads, non-string array values,
+  nested arrays, object/resource conversions, exact warning behavior,
+  partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 729 checkpoint, the latest committed checkpoint
-  is `2147251 runtime: add bounded version_compare`, covering Milestone 728.
+- Before the current Milestone 730 checkpoint, the latest committed checkpoint
+  is `3994f09 runtime: add bounded sprintf`, covering Milestone 729.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

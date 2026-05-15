@@ -5844,6 +5844,7 @@ impl Interpreter {
                     )),
                 }
             }
+            "header" => call_header(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -7951,6 +7952,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "header"
             | "assert"
             | "get_class"
             | "is_object"
@@ -8200,6 +8202,63 @@ fn bounded_sprintf(format: &str, args: &[Value], span: Span) -> CompileResult<St
     }
 
     Ok(output)
+}
+
+fn call_header(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "header()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    match &args[0] {
+        Value::String(_) => {}
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "header()",
+                    format!(
+                        "header argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    }
+
+    if let Some(other) = args.get(1).filter(|value| !matches!(value, Value::Bool(_))) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "header()",
+                format!(
+                    "replace argument must be bool in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        ));
+    }
+
+    if let Some(other) = args.get(2).filter(|value| !matches!(value, Value::Int(_))) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "header()",
+                format!(
+                    "response_code argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        ));
+    }
+
+    Ok(Value::Null)
 }
 
 fn call_version_compare(args: &[Value], span: Span) -> CompileResult<Value> {

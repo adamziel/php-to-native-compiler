@@ -354,7 +354,7 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `assert`, `get_class`, `is_object`,
+  `function_exists`, `extension_loaded`, `header`, `assert`, `get_class`, `is_object`,
   `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -425,6 +425,13 @@
   returns `true`. It currently records no autoload stack and never invokes the
   callback; this is a WordPress bootstrap compatibility boundary, not full SPL
   autoloading.
+  `header($header, $replace = true, $response_code = 0)` accepts a string
+  header line plus optional bool replacement flag and optional integer response
+  code, returns `null`, and records no header state. This is a WordPress
+  bootstrap compatibility boundary only; response header storage, status-code
+  state, replacement/removal behavior, output-sent warnings, web-server/SAPI
+  integration, exact diagnostics, partial-output behavior, and native lowering
+  remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic empty compiler/runtime extension registry. It
   returns `false` for all names, including WordPress probe names such as
@@ -2005,7 +2012,7 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `dirname`, `extension_loaded`, `get_class`,
+  `function_exists`, `dirname`, `extension_loaded`, `header`, `get_class`,
   `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -2128,7 +2135,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `assert`, `spl_autoload_register`, `get_class`,
+  `dirname`, `extension_loaded`, `header`, `assert`, `spl_autoload_register`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -2188,6 +2195,9 @@
   accepts string extension names, returns `false` from the current deterministic
   empty extension registry, and rejects non-string names. Its native folding is
   limited to direct false folding for already-lowerable string names.
+  `header` accepts the same current no-op header subset as the builtin section
+  above; direct native `header(...)` calls still reject under the function-call
+  boundary, while native function-table introspection recognizes the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3691,6 +3701,11 @@
   canonicalization, symlink resolution, null-byte behavior, broad scalar
   coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
   beyond function-table introspection
+- `header()` behavior beyond accepting current string/bool/int arguments as a
+  no-op returning `null`: response header storage, status-code parsing/state,
+  replacement/removal behavior, output-sent warnings, SAPI/web-server
+  integration, exact `ValueError`/`TypeError` diagnostics, partial-output
+  behavior, and native lowering beyond function-table introspection
 - `spl_autoload_register()` behavior beyond accepting closure/string callback
   registrations as a no-op success, including autoload stack storage,
   unregistering, invocation during class lookup, prepend ordering,

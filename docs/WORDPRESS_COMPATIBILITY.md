@@ -261,6 +261,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   handling, locale behavior, warning behavior, partial-output behavior, or
   native lowering. The bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:193:3: undefined function header()`.
+  Milestone 730 covers bounded `header()` as a no-op web/SAPI boundary for a
+  string header line plus optional bool replacement flag and integer response
+  code. This is not response header storage, status-code state,
+  replacement/removal behavior, output-sent warning behavior, SAPI/web-server
+  integration, exact diagnostics, partial-output behavior, or native lowering.
+  The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

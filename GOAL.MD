@@ -198,8 +198,10 @@ added the deterministic `PHP_VERSION` compatibility constant. Milestone 728
 then advanced past the first `version_compare()` guard with a bounded
 numeric-component comparator. Milestone 729 then advanced past the first
 `sprintf()` message-format path with a bounded string-placeholder formatter.
-The next visible bootstrap-shim blocker is now missing `header()`:
-`runtime error at <bootstrap-shim>:193:3: undefined function header()`.
+Milestone 730 then advanced past the first `header()` path with a no-op
+web/SAPI boundary that validates the current argument shape and returns `null`.
+The next visible bootstrap-shim blocker is now missing `implode()`:
+`runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -311,7 +313,7 @@ The repository already has a working Rust workspace with:
   probe currently advances through bounded loop-depth control flow,
   function-scope `global` imports, the `PHP_VERSION` compatibility constant,
   the first bounded `version_compare()` slice, and the first bounded
-  `sprintf()` slice, then stops at missing `header()`. The direct
+  `sprintf()` and `header()` slices, then stops at missing `implode()`. The direct
   `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

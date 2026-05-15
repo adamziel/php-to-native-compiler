@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 730, bounded `header()` execution through `phpc run` for the
+  no-op web/SAPI boundary needed by the current WordPress bootstrap-shim path.
+  The builtin accepts one to three arguments, requires a string header line,
+  accepts an optional bool replacement flag and optional integer response code,
+  returns `null`, and records no header or response state. It is available
+  through string-valued dynamic calls and the current callable-name table.
+  Response header storage, status-code parsing/state, replacement/removal
+  behavior, output-sent warnings, SAPI/web-server integration, exact PHP
+  diagnostics, partial-output behavior, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `header()` blocker at
+  `<bootstrap-shim>:193:3` and now stops at
+  `runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test header_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test header_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone730`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone730`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 729, bounded `sprintf()` execution through `phpc run` for the
   string-format subset needed by the current WordPress bootstrap-shim path. The
   builtin requires a string format and supports literal text, escaped percent

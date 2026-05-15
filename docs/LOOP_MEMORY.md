@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T07:35:00Z
+
+- Checkpoint before this task: `3994f09 runtime: add bounded sprintf`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 730, bounded `header()` execution for the real
+  WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:193:3`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/header_builtin.rs`,
+  `compiler/tests/header_cli.rs`, `tests/fixtures/milestone730/*`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test header_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test header_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone730`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone730`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: response header storage, status-code parsing/state,
+  replacement/removal behavior, output-sent warnings, SAPI/web-server
+  integration, exact `ValueError`/`TypeError` diagnostics, partial-output
+  behavior, and native lowering remain unsupported. The direct WordPress probe
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
+- Next concrete task: implement or explicitly bound `implode()` while keeping
+  argument-order overloads, non-string array values, nested arrays,
+  object/resource conversions, exact warning behavior, partial-output behavior,
+  and native lowering explicit.
+
 ## Loop Event 2026-05-15T06:55:00Z
 
 - Checkpoint before this task: `2147251 runtime: add bounded version_compare`,

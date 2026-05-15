@@ -838,6 +838,12 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
+`header()` is an interpreter-only no-op web/SAPI boundary for the current
+WordPress bootstrap path. It validates the current string/bool/int argument
+shape, returns `null`, and deliberately records no response state yet. Native
+function-table introspection recognizes the name, while direct native calls
+reject until response state, diagnostics, and SAPI integration have a lowered
+runtime model.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.
