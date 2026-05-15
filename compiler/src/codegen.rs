@@ -914,7 +914,9 @@ impl LlvmGenerator {
             | AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::Property { span, .. }
+            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
@@ -3702,7 +3704,9 @@ impl CGenerator {
             | AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::Property { span, .. }
+            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }

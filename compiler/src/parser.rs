@@ -1913,6 +1913,7 @@ impl Parser {
                     | AssignTarget::LateStaticProperty { .. } => {}
                     AssignTarget::NestedArrayIndex { .. }
                     | AssignTarget::NestedArrayAppend { .. }
+                    | AssignTarget::ObjectPropertyArrayIndex { .. }
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
@@ -2071,6 +2072,22 @@ impl Parser {
             if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                 return Ok(AssignTarget::Variable { name, span });
             }
+            if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_assignment_expression_target_message(),
+                    ));
+                }
+                let index = self.parse_expression()?;
+                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+                return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                    object: name,
+                    property,
+                    index,
+                    span,
+                });
+            }
             return Ok(AssignTarget::Property {
                 object: name,
                 property,
@@ -2094,6 +2111,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -2115,6 +2133,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -2235,6 +2254,16 @@ impl Parser {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
+                if let Some((object, property, index, span)) =
+                    Self::object_property_array_index_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        index,
+                        span,
+                    });
+                }
                 let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
                     .ok_or(unsupported_assignment_expression_target_message())?;
                 if indices.len() == 1 {
@@ -2328,6 +2357,27 @@ impl Parser {
                     indices.push(*index);
                     Some((name, indices, span))
                 }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn object_property_array_index_from_expr(expr: &Expr) -> Option<(String, String, Expr, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match target.as_ref() {
+                Expr::Property {
+                    target, property, ..
+                } => match target.as_ref() {
+                    Expr::Variable(object, _) => {
+                        Some((object.clone(), property.clone(), (**index).clone(), *span))
+                    }
+                    _ => None,
+                },
                 _ => None,
             },
             _ => None,

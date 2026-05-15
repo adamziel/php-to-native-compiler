@@ -6887,16 +6887,24 @@ handled.
   sources as the existing runtime boundary and advances the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:302:38: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
-- [ ] Parser/reference lane: implement or explicitly bound by-reference
+- [x] Parser/reference lane: implement or explicitly bound by-reference
   assignment into object-property array-offset targets for the next real
   WordPress bootstrap-shim blocker at `<bootstrap-shim>:302:38`,
   corresponding to `$this->entries[ $entry->key() ] = &$entry;` in
+  `wp-includes/pomo/mo.php`. Milestone 753 parses this direct target shape as
+  the existing runtime boundary and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:319:19: unsupported reference return: returning functions by reference is not implemented`.
+- [ ] Parser/reference lane: implement or explicitly bound by-reference
+  method returns for the next real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:319:19`, corresponding to
+  `public function &make_entry( $original, $translation )` in
   `wp-includes/pomo/mo.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 752 checkpoint, the latest committed checkpoint
-  is `ea6f981 objects: add instance property defaults`, covering Milestone 751.
+- Before the current Milestone 753 checkpoint, the latest committed checkpoint
+  is `66e0715 parser: bound method-call reference sources`, covering
+  Milestone 752.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

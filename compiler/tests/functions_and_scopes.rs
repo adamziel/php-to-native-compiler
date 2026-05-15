@@ -884,6 +884,52 @@ $parser->run();
 }
 
 #[test]
+fn reference_assignment_object_property_array_target_inside_unexecuted_body_is_registered() {
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $entries;
+
+    public function register() {
+        $entry = 1;
+        $this->entries[$entry] =& $entry;
+    }
+}
+echo "loaded";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "loaded");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_array_target_executes_as_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Catalog {
+    public $entries;
+
+    public function run() {
+        $entry = 1;
+        $this->entries[$entry] =& $entry;
+    }
+}
+$catalog = new Catalog();
+$catalog->run();
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: references and aliasing are not implemented"
+    );
+}
+
+#[test]
 fn reference_assignment_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php

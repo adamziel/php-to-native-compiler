@@ -278,6 +278,12 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    ObjectPropertyArrayIndex {
+        object: String,
+        property: String,
+        index: Expr,
+        span: Span,
+    },
     DynamicProperty {
         object: String,
         property: Expr,
@@ -420,6 +426,7 @@ impl AssignTarget {
             | AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::Property { span, .. }
+            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::DynamicProperty { span, .. }
             | AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }

@@ -23,9 +23,12 @@
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
 - by-reference assignment syntax `$alias =& $value;`,
-  `$alias =& $array[$key];`, and `$alias =& $object->method();` parses in
+  `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
+  object-property array-offset targets such as `$object->items[$key] =& $value`
+  parses in
   statement position as a runtime boundary for direct variable,
-  direct array-offset, and method-call sources. Guarded or
+  direct array-offset, and method-call sources plus the documented direct
+  object-property array-offset target shape. Guarded or
   declaration-contained code can be loaded, but if execution reaches the
   assignment, `phpc run` reports `unsupported call reference assignment:
   references and aliasing are not implemented`. This does not create PHP

@@ -2202,6 +2202,13 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::ObjectPropertyArrayIndex { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "assignment",
+                    "object-property array-offset targets are not implemented",
+                ),
+            )),
             AssignTarget::DynamicProperty {
                 object,
                 property,
@@ -2497,15 +2504,15 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
-            AssignTarget::NestedArrayIndex { .. } | AssignTarget::NestedArrayAppend { .. } => {
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "compound assignment",
-                        "nested array targets are not implemented",
-                    ),
-                ))
-            }
+            AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "nested array targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -2733,15 +2740,15 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
-            AssignTarget::NestedArrayIndex { .. } | AssignTarget::NestedArrayAppend { .. } => {
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "increment/decrement",
-                        "nested array targets are not implemented",
-                    ),
-                ))
-            }
+            AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "nested array targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -2919,7 +2926,8 @@ impl Interpreter {
                 RuntimeError::unsupported_call("??=", "append-offset targets are not implemented"),
             )),
             AssignTarget::NestedArrayIndex { span, .. }
-            | AssignTarget::NestedArrayAppend { span, .. } => Err(runtime_error(
+            | AssignTarget::NestedArrayAppend { span, .. }
+            | AssignTarget::ObjectPropertyArrayIndex { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call("??=", "nested array targets are not implemented"),
             )),

@@ -149,7 +149,8 @@ Planned runtime values and semantics:
 - copy-on-write containers
 
 By-reference assignment has syntax recognition only as a runtime boundary for
-statement-form direct variable, direct array-offset, and method-call sources.
+statement-form direct variable, direct array-offset, and method-call sources
+plus direct object-property array-offset targets.
 It deliberately does not add a `Reference` runtime value or alias-backed symbol-table slots.
 The current value model remains boxed values in materialized symbol tables; PHP
 reference containers and copy-on-write remain future runtime work.
