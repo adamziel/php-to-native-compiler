@@ -4518,6 +4518,35 @@ impl Interpreter {
         Ok(Value::Int(state.fields.len() as i64))
     }
 
+    fn call_mysqli_data_seek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_data_seek", args, 2, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_data_seek()", &args[0], span)?;
+        let offset = match &args[1] {
+            Value::Int(offset) => *offset,
+            value => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_data_seek()",
+                        format!(
+                            "offset must be int in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let state = self.mysqli_result_state_mut("mysqli_data_seek()", result_id, span)?;
+        let Ok(offset) = usize::try_from(offset) else {
+            return Ok(Value::Bool(false));
+        };
+        if offset >= state.rows.len() {
+            return Ok(Value::Bool(false));
+        }
+        state.row_cursor = offset;
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_free_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_free_result", args, 1, span)?;
         let result_id = expect_mysqli_result_handle("mysqli_free_result()", &args[0], span)?;
@@ -8922,6 +8951,7 @@ impl Interpreter {
             "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
+            "mysqli_data_seek" => self.call_mysqli_data_seek(&args, span),
             "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
             "mysqli_more_results" => self.call_mysqli_more_results(&args, span),
             "mysqli_next_result" => self.call_mysqli_next_result(&args, span),
@@ -11848,6 +11878,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
+            | "mysqli_data_seek"
             | "mysqli_free_result"
             | "mysqli_more_results"
             | "mysqli_next_result"

@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `d2fef77 tests: add wordpress wpdb fetch row smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 865, bounded `mysqli_data_seek()` support for
+  interpreter placeholder result cursors.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone865/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone865`
+  passed.
+- Current WordPress frontier: deterministic placeholder results can now be
+  rewound to offset `0` and read again through the existing row fetchers.
+- Remaining semantic gaps: real buffered/unbuffered result behavior, arbitrary
+  result schemas, SQL execution, database state, query parsing, MySQLi
+  warnings/errors, real WordPress `wpdb` fidelity, and native database lowering
+  remain missing.
+- Next concrete task: run diff checks and the full serialized checkpoint gate.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `2668078 runtime: add mysqli fetch row seed result`, pushed to
   `origin/master`.
 - Task attempted: Milestone 864, a synthetic WordPress-shaped

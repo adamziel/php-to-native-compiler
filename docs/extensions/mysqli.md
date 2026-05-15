@@ -62,9 +62,12 @@ returns the same associative row shape and then `false`;
 `mysqli_fetch_array($result, MYSQLI_BOTH)` and omitted mode/default
 `MYSQLI_BOTH` return both numeric and associative keys. The `MYSQLI_ASSOC`,
 `MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed. Unsupported mode values
-remain explicit boundaries. This is a fixed row-shape and cursor boundary, not
-SQL execution, database storage, WordPress content fidelity, broad query/result
-support, duplicate-column fidelity, warning/error fidelity, or real mysqli
+remain explicit boundaries. `mysqli_data_seek($result, $offset)` accepts an
+integer offset for placeholder results, resets the row cursor when the offset is
+in range, and returns `false` for negative or out-of-range offsets. This is a
+fixed row-shape and cursor boundary, not SQL execution, database storage,
+WordPress content fidelity, broad query/result support, duplicate-column
+fidelity, warning/error fidelity, unbuffered result behavior, or real mysqli
 metadata.
 
 Other `SELECT` statements are rejected with a specific non-empty-result-set

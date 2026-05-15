@@ -7960,16 +7960,25 @@ handled.
   placeholder multi-result state. It is not real WordPress `wpdb` output-mode
   fidelity, WordPress core constants, SQL execution, database state, cache
   behavior, warnings/errors, cursor seeking, or native lowering.
-- [ ] Runtime/mysqli lane: add the next cursor/result operation as a
+- [x] Runtime/mysqli lane: add the next cursor/result operation as a
   deterministic slice or explicit named boundary, with `mysqli_data_seek()` on
   placeholder results as the likely next small target before broadening query
   execution.
+  Milestone 865 adds bounded `mysqli_data_seek($result, $offset)` support for
+  placeholder result state. Integer in-range offsets reset the row cursor,
+  negative and out-of-range offsets return `false`, and non-integer offsets
+  remain a named unsupported boundary. This is not real buffered/unbuffered
+  result behavior, SQL execution, database state, warnings/errors, or native
+  lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+  cursor reset/re-read behavior through `mysqli_data_seek($result, 0)` without
+  claiming real `wpdb` result caching or database support.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2668078 runtime: add mysqli fetch row seed result`, covering Milestone 863
-  before the current Milestone 864 candidate.
+  `d2fef77 tests: add wordpress wpdb fetch row smoke`, covering Milestone 864
+  before the current Milestone 865 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

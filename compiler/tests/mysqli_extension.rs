@@ -458,6 +458,37 @@ echo mysqli_fetch_row($result) === false ? "no-row" : "row";
 }
 
 #[test]
+fn mysqli_data_seek_resets_current_seed_post_row_cursor() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$row = mysqli_fetch_row($result);
+echo $row[1];
+echo "|";
+echo mysqli_data_seek($result, 0) ? "seek" : "no-seek";
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["ID"];
+echo "|";
+echo $row["post_title"];
+echo "|";
+echo mysqli_data_seek($result, 1) ? "seek" : "no-seek";
+echo "|";
+echo mysqli_data_seek($result, -1) ? "seek" : "no-seek";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Hello world placeholder|seek|1|Hello world placeholder|no-seek|no-seek"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_fetch_array_accepts_current_seed_row_modes() {
     let execution = run_source(
         r#"<?php
@@ -611,6 +642,24 @@ mysqli_fetch_array($result, 99);
         invalid_fetch_array_mode.message,
         "unsupported call mysqli_fetch_array(): mode must be MYSQLI_ASSOC, MYSQLI_NUM, or MYSQLI_BOTH in the current subset, got int"
     );
+
+    let invalid_data_seek_offset = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_data_seek($result, "0");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(invalid_data_seek_offset.phase, Phase::Runtime);
+    assert_eq!(invalid_data_seek_offset.line, 5);
+    assert_eq!(invalid_data_seek_offset.column, 1);
+    assert_eq!(
+        invalid_data_seek_offset.message,
+        "unsupported call mysqli_data_seek(): offset must be int in the current subset, got string"
+    );
 }
 
 #[test]
@@ -732,6 +781,8 @@ echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_num_fields") ? "1" : "0";
 echo is_callable("mysqli_num_fields") ? "1" : "0";
+echo function_exists("mysqli_data_seek") ? "1" : "0";
+echo is_callable("mysqli_data_seek") ? "1" : "0";
 echo function_exists("mysqli_free_result") ? "1" : "0";
 echo is_callable("mysqli_free_result") ? "1" : "0";
 echo function_exists("mysqli_more_results") ? "1" : "0";
@@ -750,7 +801,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 42, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 44, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone865/mysqli_data_seek_seed_post.php
+Hello world placeholder
+no-row
+seek
+1
+Hello world placeholder
+no-seek

@@ -1309,10 +1309,11 @@ historical blockers and remaining full-support gaps include:
   adds deterministic `mysqli_fetch_row()` numeric row hydration for the same
   placeholder result, and Milestone 864 adds a synthetic
   `wpdb::get_results($query, ARRAY_N)` smoke over that numeric row branch.
-  These are still deterministic harness milestones, not SQL execution, real
-  database state, duplicate-column or warning/error fidelity, real `wpdb`
-  output-mode fidelity, plugin/theme/admin/REST, SAPI, rendered request, or
-  native WordPress support.
+  Milestone 865 adds bounded `mysqli_data_seek()` cursor reset for placeholder
+  results. These are still deterministic harness milestones, not SQL
+  execution, real database state, duplicate-column or warning/error fidelity,
+  real `wpdb` output-mode fidelity, plugin/theme/admin/REST, SAPI, rendered
+  request, or native WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

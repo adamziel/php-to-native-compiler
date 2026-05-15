@@ -851,6 +851,9 @@
   mode/default `MYSQLI_BOTH` returns both numeric and associative keys. All
   fetch-array modes share that row cursor. The `MYSQLI_ASSOC`, `MYSQLI_NUM`,
   and `MYSQLI_BOTH` constants are exposed with their PHP integer values.
+  `mysqli_data_seek($result, $offset)` accepts integer offsets for placeholder
+  results, resets the row cursor for in-range offsets, and returns `false` for
+  negative or out-of-range offsets.
   `mysqli_free_result($result)` releases that interpreter-owned placeholder
   result state and returns `null`. `mysqli_more_results($handle)` and
   `mysqli_next_result($handle)` return `false` for the placeholder connection.

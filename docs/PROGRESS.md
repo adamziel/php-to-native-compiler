@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 865, bounded `mysqli_data_seek()` support for interpreter
+  placeholder result state. The runtime now accepts
+  `mysqli_data_seek($result, $offset)` with an integer offset, resets the
+  placeholder row cursor when the offset is in range, returns `false` for
+  negative or out-of-range offsets, rejects non-integer offsets with a stable
+  diagnostic, and exposes the function through runtime and native metadata
+  lookup. The CLI fixture proves resetting the deterministic seed-post result
+  from end-of-result back to offset `0`. This is not general cursor seeking,
+  real buffered result resources, unbuffered result behavior, SQL execution,
+  database state, warning/error fidelity, or native database lowering. Focused
+  verification so far: `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone865`.
+
 - Added Milestone 864, a synthetic WordPress-shaped `wpdb::get_results()`
   smoke that consumes the deterministic seed-post placeholder result through
   `mysqli_fetch_row()` in a local `ARRAY_N` branch. The fixture stores the

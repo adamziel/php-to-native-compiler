@@ -6355,6 +6355,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
+            | "mysqli_data_seek"
             | "mysqli_free_result"
             | "mysqli_more_results"
             | "mysqli_next_result"
