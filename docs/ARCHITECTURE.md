@@ -893,6 +893,11 @@ scalar/null string-convertible search, replacement, and subject values. Native
 function-table introspection recognizes the name, while direct native calls
 still reject until string allocation, array forms, count-output references, and
 diagnostics have a lowered runtime model.
+`call_user_func()` is an interpreter-only bounded callable dispatcher for
+string callbacks resolving to current user functions or documented callable
+builtins. It reuses the value-based call path and does not implement array
+callables, closure invocation, `__invoke`, `call_user_func_array`, references,
+variadic unpacking, or native lowering.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.

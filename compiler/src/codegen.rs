@@ -6210,6 +6210,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "strlen"
             | "str_replace"
             | "sprintf"
+            | "call_user_func"
             | "implode"
             | "dirname"
             | "version_compare"

@@ -597,6 +597,17 @@ The first bootstrap probe is expected to fail. Known blockers include:
   search/replace/subject behavior, the `$count` output argument,
   object/resource coercion, exact warning behavior, binary string edge cases,
   native lowering, or WordPress bootstrap support.
+  Milestone 764 implements bounded `call_user_func()` dispatch for string
+  callables resolving to current user functions or documented callable
+  builtins. It advances the real bootstrap-shim probe past
+  `call_user_func( $the_['function'] )` in
+  `wp-includes/class-wp-hook.php:339` to
+  `runtime error at <bootstrap-shim>:4955:3: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$parsed_args =& $args;` in
+  `wp-includes/functions.php:4955`. This is not array callable dispatch,
+  closure invocation, `__invoke`, `call_user_func_array`, references, variadic
+  unpacking, exact PHP warning behavior, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

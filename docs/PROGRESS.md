@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 764, bounded `call_user_func()` dispatch for string
+  callables. The runtime now accepts `call_user_func($name, ...$args)` when
+  `$name` is a string resolving to a current user function or documented
+  builtin, reusing the existing value-based callable path. Dynamic
+  string-valued calls, `function_exists()`, and `is_callable()` now recognize
+  `call_user_func`. Array callables, closure invocation, `__invoke`,
+  `call_user_func_array`, references, variadic unpacking, exact PHP warnings,
+  and native lowering remain unsupported. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the previous
+  `call_user_func( $the_['function'] )` blocker in
+  `wp-includes/class-wp-hook.php:339` to
+  `runtime error at <bootstrap-shim>:4955:3: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$parsed_args =& $args;` in
+  `wp-includes/functions.php:4955`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test call_user_func_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone764`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 763, a bounded `str_replace()` builtin for scalar/null
   string-convertible search, replace, and subject values. The current slice
   preserves PHP's empty-search behavior by returning the subject unchanged,

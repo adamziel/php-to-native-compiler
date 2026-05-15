@@ -5900,6 +5900,7 @@ impl Interpreter {
             }
             "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
+            "call_user_func" => self.call_user_func_builtin(args, span),
             "implode" => call_implode(&args, span),
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
@@ -7811,6 +7812,62 @@ impl Interpreter {
         }
     }
 
+    fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func()",
+                    ArityExpectation::AtLeast(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback_name = match &args[0] {
+            Value::String(name) => name,
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        "array callables are not implemented in the current subset",
+                    ),
+                ));
+            }
+            Value::Closure(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        "closure invocation is not implemented",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        format!(
+                            "callback must evaluate to string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let callable = self.lookup_function(callback_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback_name)),
+            )
+        })?;
+
+        self.call_callable_with_values(callable, args[1..].to_vec(), span)
+    }
+
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array), callback] => {
@@ -9144,6 +9201,7 @@ fn is_builtin(name: &str) -> bool {
             | "strlen"
             | "str_replace"
             | "sprintf"
+            | "call_user_func"
             | "implode"
             | "dirname"
             | "version_compare"

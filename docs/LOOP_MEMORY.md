@@ -115,6 +115,35 @@ injects this file into every prompt. Each Codex pass should update it with:
   `__invoke`, references, variadics, exact warning behavior, and native
   lowering named unless implemented.
 
+## Loop Event 2026-05-15T07:13:00Z
+
+- Checkpoint before this task:
+  `da54a60 runtime: add bounded str_replace`, pushed to `origin/master`.
+- Task attempted: Milestone 764, bounded `call_user_func()` for string
+  callables.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/call_user_func_builtin.rs`,
+  `tests/fixtures/milestone764/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test call_user_func_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone764`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: array callable dispatch, closure invocation,
+  `__invoke`, `call_user_func_array`, references, variadic unpacking, exact PHP
+  warning behavior, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:4955:3: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$parsed_args =& $args;` in
+  `wp-includes/functions.php:4955`.
+- Next concrete task: implement or honestly bound direct variable array
+  by-reference assignment for the reached `wp_parse_args()` path while keeping
+  alias rebinding, scalar references, nested/array-offset sources,
+  copy-on-write, mutation ordering, exact PHP diagnostics, and native lowering
+  named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

@@ -1,0 +1,102 @@
+use php_compiler::emit_ir_source;
+use php_compiler::error::Phase;
+use php_compiler::run_source;
+
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+
+fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Runtime);
+    error
+}
+
+#[test]
+fn call_user_func_invokes_current_string_callable_subset() {
+    let execution = run_source(
+        r#"<?php
+function greet($name) {
+    return "hi " . $name;
+}
+echo call_user_func("greet", "Ada"), "\n";
+echo call_user_func("str_replace", " ", "_", "hello world"), "\n";
+$call = "call_user_func";
+echo $call("strlen", "four");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hi Ada\nhello_world\n4");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_is_available_through_function_metadata_builtins() {
+    let execution = run_source(
+        r#"<?php
+echo function_exists("call_user_func") ? "yes" : "no";
+echo "|";
+echo is_callable("call_user_func") ? "callable" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_rejects_forms_outside_current_subset() {
+    let missing = runtime_error(
+        r#"<?php
+echo call_user_func();
+"#,
+    );
+    assert_eq!(missing.line, 2);
+    assert_eq!(missing.column, 6);
+    assert_eq!(
+        missing.message,
+        "arity mismatch for call_user_func(): expected at least 1 argument(s), got 0"
+    );
+
+    let non_string = runtime_error(
+        r#"<?php
+echo call_user_func(42);
+"#,
+    );
+    assert_eq!(non_string.line, 2);
+    assert_eq!(non_string.column, 6);
+    assert_eq!(
+        non_string.message,
+        "unsupported call call_user_func(): callback must evaluate to string in the current subset, got int"
+    );
+
+    let array_callable = runtime_error(
+        r#"<?php
+echo call_user_func(["ClassName", "method"]);
+"#,
+    );
+    assert_eq!(array_callable.line, 2);
+    assert_eq!(array_callable.column, 6);
+    assert_eq!(
+        array_callable.message,
+        "unsupported call call_user_func(): array callables are not implemented in the current subset"
+    );
+
+    let unknown = runtime_error(
+        r#"<?php
+echo call_user_func("missing_function");
+"#,
+    );
+    assert_eq!(unknown.line, 2);
+    assert_eq!(unknown.column, 6);
+    assert_eq!(unknown.message, "undefined function missing_function()");
+}
+
+#[test]
+fn emit_ir_rejects_call_user_func_until_native_runtime_call_lowering_exists() {
+    let error = emit_ir_source("<?php\necho call_user_func('strlen', 'abc');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}

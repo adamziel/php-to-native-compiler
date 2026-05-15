@@ -411,7 +411,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `str_replace`, `sprintf`,
-  `implode`, `dirname`, `file_exists`,
+  `call_user_func`, `implode`, `dirname`, `file_exists`,
   `version_compare`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -478,6 +478,12 @@
   unchanged for an empty search string. Array search/replace/subject forms,
   the fourth `$count` output argument, object/resource coercions, exact warning
   behavior, binary string edge cases, and native lowering remain unsupported.
+  `call_user_func($callback, ...$args)` supports string callbacks resolving to
+  current user functions or documented callable builtins and forwards evaluated
+  positional values through the current value-call path. Array callables,
+  closure invocation, `__invoke`, `call_user_func_array`, references, variadic
+  unpacking, exact PHP warning behavior, and native lowering remain
+  unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -2132,7 +2138,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `str_replace`, `sprintf`,
-  `implode`, `file_exists`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2253,11 +2259,11 @@
   method/class magic constant context, namespace and trait magic constants,
   closure invocation and capture binding, closure function-name context, magic
   constant native lowering, array callables, object/method callables,
-  first-class callable syntax, `call_user_func`, namespace-qualified callable
+  first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `str_replace`, `sprintf`, `implode`, `file_exists`,
-  `isset`, `empty`, `count`, `define`, `constant`,
+- Builtins: `strlen`, `str_replace`, `sprintf`, `call_user_func`, `implode`,
+  `file_exists`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,
@@ -2340,6 +2346,10 @@
   as the builtin section above; direct native `str_replace(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
+  `call_user_func` accepts the same current string-callable subset as the
+  builtin section above; direct native `call_user_func(...)` calls still reject
+  under the function-call boundary, while native function-table introspection
+  recognizes the name.
   `implode` accepts the same current scalar/null array-value subset as the
   builtin section above; direct native `implode(...)` calls still reject under
   the function-call boundary, while native function-table introspection
@@ -3629,7 +3639,7 @@
   coercion, overflow, or complete shift-count semantics.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
-  `call_user_func`, and namespace/autoload-aware callable resolution
+  `call_user_func_array`, and namespace/autoload-aware callable resolution
 - `array_key_exists` lossy or non-finite float key coercion and PHP
   warning/deprecation behavior, array/object/resource/reference keys, exact
   native `TypeError` objects, reference/copy-on-write behavior, and native

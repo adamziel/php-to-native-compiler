@@ -276,8 +276,10 @@ interface enforcement and built-in/internal interface catalogs explicit future
 work. Milestone 762 added a bounded object-handle `=&` slice for direct
 variable sources into direct array-offset targets, advancing past
 `wp-includes/l10n.php:1428`. Milestone 763 added a bounded scalar/null
-`str_replace()` builtin; the current bootstrap-shim blocker is now missing
-`call_user_func()` at `wp-includes/class-wp-hook.php:339`.
+`str_replace()` builtin. Milestone 764 added bounded string-callable
+`call_user_func()` dispatch; the current bootstrap-shim blocker is now
+reference assignment at `wp-includes/functions.php:4955`,
+`$parsed_args =& $args;`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.

@@ -6984,17 +6984,27 @@ handled.
   `runtime error at <bootstrap-shim>:3839:2: undefined function call_user_func()`,
   corresponding to `call_user_func( $the_['function'] )` in
   `wp-includes/class-wp-hook.php:339`.
-- [ ] Callable/runtime lane: implement a bounded `call_user_func()` slice for
+- [x] Callable/runtime lane: implement a bounded `call_user_func()` slice for
   the next real WordPress bootstrap-shim blocker, including direct string
   callables and current array callable metadata where required, while keeping
   references, variadic unpacking, `call_user_func_array`, closure invocation,
   `__invoke`, exact warnings, and native lowering named unless implemented.
+  Milestone 764 implements string callables only and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:4955:3: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$parsed_args =& $args;` in
+  `wp-includes/functions.php:4955`.
+- [ ] Runtime/value-model lane: implement or honestly bound direct variable
+  array by-reference assignment for the next real WordPress bootstrap-shim
+  blocker at `wp-includes/functions.php:4955`, while keeping alias rebinding,
+  scalar references, nested/array-offset sources, copy-on-write, mutation
+  ordering, exact PHP diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 763 checkpoint, the latest committed checkpoint
-  is `de7d5e8 runtime: add object handle reference assignment`, covering
-  Milestone 762.
+- Before the current Milestone 764 checkpoint, the latest committed checkpoint
+  is `da54a60 runtime: add bounded str_replace`, covering Milestone 763.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

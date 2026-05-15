@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+hi Ada
+hello_world
+4--- stdout end ---
+stderr:
+--- stderr end ---
