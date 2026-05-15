@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Milestone 745, bounded dynamic object-property names through
+  `phpc run`. The parser now represents `$object->$name` reads and direct
+  assignments as dynamic-property AST nodes when the object root is a direct
+  variable and the property-name expression is a direct variable. The
+  interpreter resolves string and integer property names, reads existing
+  public object slots by the resolved name, writes existing public object
+  slots by the resolved name, and can materialize public dynamic slots on the
+  metadata-only core `stdClass` seed. Missing dynamic slots on non-`stdClass`
+  declared classes, dynamic property names with unsupported value types,
+  dynamic methods, magic property hooks, dynamic interpolation, compound
+  assignment, increment/decrement, `??=`, references/copy-on-write, exact
+  deprecation/notice behavior, and native lowering remain unsupported. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:4451:14` dynamic-property blocker to
+  `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
+  references are not implemented`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model dynamic -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone745`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 744, bounded inline HTML output between PHP close/open tags
   through `phpc run`. The lexer now emits text between `?>` and the next PHP
   open tag as an inline HTML token, consumes one immediate newline after `?>`

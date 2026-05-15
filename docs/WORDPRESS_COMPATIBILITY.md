@@ -368,6 +368,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   the bootstrap-shim probe advances to
   `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
   access: dynamic property names are not implemented`.
+  Milestone 745 adds bounded dynamic object-property names for existing public
+  slots and `stdClass` public dynamic slots. This covers the WordPress
+  `_wp_json_sanity_check()` assignment shape `$output->$clean_id = ...` at the
+  previous blocker. With
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1`,
+  the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe now exits without timing out, emits zero
+  stdout bytes, starts stderr with
+  `phpc trace include: <wordpress-root>/wp-settings.php`, and reaches
+  `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
+  references are not implemented`. This is not full dynamic-property support,
+  reference support, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

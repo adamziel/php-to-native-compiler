@@ -83,6 +83,8 @@ fn emit_ir_rejects_public_property_reads_and_writes_with_specific_boundary() {
     for source in [
         "<?php\necho $box->name;\n",
         "<?php\n$box->name = \"Ada\";\n",
+        "<?php\n$name = \"name\";\necho $box->$name;\n",
+        "<?php\n$name = \"name\";\n$box->$name = \"Ada\";\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

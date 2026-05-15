@@ -147,8 +147,8 @@ incorrect native code.
   redeclarations sharing one runtime slot,
   braced nested class declarations that register only when execution reaches
   the `class` statement,
-  a metadata-only built-in `Exception` class seed with no-argument
-  instantiation and user subclasses,
+  metadata-only built-in `Exception` and `stdClass` class seeds, including
+  no-argument instantiation and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
@@ -164,6 +164,8 @@ incorrect native code.
   diagnostics for PHP-forbidden static-property unset,
   dynamic static method calls through `$object::method()` and
   `$className::method()` for visible static methods,
+  dynamic property-name reads/writes for existing public slots and `stdClass`
+  public dynamic slots when property-name values are strings or integers,
   `clone $object` for current object values without declared `__clone`
   methods, using fresh object handles and shallow-copied property slots,
   single-parent metadata including namespaced parent names when the parent is
@@ -205,7 +207,9 @@ visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 instance property defaults,
-typed or multi-declarator class constants, dynamic method/property names, resources, and
+typed or multi-declarator class constants, dynamic method names, dynamic
+property creation outside `stdClass`, non-public dynamic property access,
+magic property hooks, resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 

@@ -1889,6 +1889,7 @@ impl Parser {
                     | AssignTarget::ParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. } => {}
                     AssignTarget::NestedArrayIndex { .. }
+                    | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -1991,6 +1992,17 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
             let operator_span = self.previous().span;
+            if matches!(self.peek().kind, TokenKind::Variable(_)) {
+                let property = self.parse_dynamic_property_name_expr(operator_span)?;
+                if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Ok(AssignTarget::Variable { name, span });
+                }
+                return Ok(AssignTarget::DynamicProperty {
+                    object: name,
+                    property,
+                    span,
+                });
+            }
             let property = self.consume_object_property_name(operator_span)?;
             if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                 return Ok(AssignTarget::Variable { name, span });
@@ -2017,6 +2029,7 @@ impl Parser {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
+            | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
@@ -2036,6 +2049,7 @@ impl Parser {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
+            | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
@@ -2187,6 +2201,18 @@ impl Parser {
                 Expr::Variable(object, _) => Ok(AssignTarget::Property {
                     object,
                     property,
+                    span,
+                }),
+                _ => Err(unsupported_assignment_expression_target_message()),
+            },
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => match *target {
+                Expr::Variable(object, _) => Ok(AssignTarget::DynamicProperty {
+                    object,
+                    property: *property,
                     span,
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
@@ -3040,6 +3066,23 @@ impl Parser {
 
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
+                if matches!(self.peek().kind, TokenKind::Variable(_)) {
+                    let property = self.parse_dynamic_property_name_expr(operator_span)?;
+                    if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                        return Err(self.error_at(
+                            operator_span,
+                            "unsupported dynamic method call: dynamic method names are not implemented",
+                        ));
+                    }
+
+                    let span = expr.span();
+                    expr = Expr::DynamicProperty {
+                        target: Box::new(expr),
+                        property: Box::new(property),
+                        span,
+                    };
+                    continue;
+                }
                 let member = self.consume_object_property_name(operator_span)?;
                 if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                     let span = expr.span();
@@ -3911,6 +3954,7 @@ impl Parser {
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
+            | Expr::DynamicProperty { .. }
             | Expr::MethodCall { .. }
             | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
@@ -3989,6 +4033,7 @@ impl Parser {
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
+            | Expr::DynamicProperty { .. }
             | Expr::MethodCall { .. }
             | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
@@ -4037,6 +4082,9 @@ impl Parser {
             }
             Expr::AppendIndex { target, .. } => Self::expr_contains_assignment(target),
             Expr::Property { target, .. } => Self::expr_contains_assignment(target),
+            Expr::DynamicProperty {
+                target, property, ..
+            } => Self::expr_contains_assignment(target) || Self::expr_contains_assignment(property),
             Expr::MethodCall { target, args, .. } => {
                 Self::expr_contains_assignment(target)
                     || args.iter().any(Self::expr_contains_assignment)
@@ -4141,6 +4189,12 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(target)
             }
             Expr::Property { target, .. } => Self::expr_contains_unsupported_assignment_rhs(target),
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+                    || Self::expr_contains_unsupported_assignment_rhs(property)
+            }
             Expr::MethodCall { target, args, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(target)
                     || args
@@ -4246,6 +4300,10 @@ impl Parser {
                 Self::find_append_index_span(target).or_else(|| Self::find_append_index_span(index))
             }
             Expr::Property { target, .. } => Self::find_append_index_span(target),
+            Expr::DynamicProperty {
+                target, property, ..
+            } => Self::find_append_index_span(target)
+                .or_else(|| Self::find_append_index_span(property)),
             Expr::MethodCall { target, args, .. } => Self::find_append_index_span(target)
                 .or_else(|| args.iter().find_map(Self::find_append_index_span)),
             Expr::ParentMethodCall { args, .. } => {
@@ -4328,10 +4386,7 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => Ok(name),
-            TokenKind::Variable(_) => Err(self.error_at(
-                token.span,
-                "unsupported dynamic property access: dynamic property names are not implemented",
-            )),
+            TokenKind::Variable(_) => unreachable!("caller handles dynamic property variables"),
             _ => Err(self.error_at(
                 operator_span,
                 format!(
@@ -4339,6 +4394,14 @@ impl Parser {
                     token_name(&token.kind)
                 ),
             )),
+        }
+    }
+
+    fn parse_dynamic_property_name_expr(&mut self, _operator_span: Span) -> CompileResult<Expr> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            _ => unreachable!("caller checked dynamic property variable"),
         }
     }
 

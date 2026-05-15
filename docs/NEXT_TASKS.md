@@ -6836,15 +6836,21 @@ handled.
   shim reached `parse error at <bootstrap-shim>:3909:1: expected expression,
   found <`; Milestone 744 adds bounded inline HTML output between `?>` and the
   next PHP open tag.
-- [ ] Object/runtime lane: implement or explicitly bound dynamic property
-  access. The real WordPress 6.9.4 bootstrap shim now reaches
-  `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
-  access: dynamic property names are not implemented`.
+- [x] Object/runtime lane: implement or explicitly bound dynamic property
+  access. Milestone 745 adds bounded dynamic property-name reads/writes for
+  existing public slots and `stdClass` public dynamic slots. The real WordPress
+  6.9.4 bootstrap shim now advances past the previous
+  `<bootstrap-shim>:4451:14` dynamic-property blocker and reaches
+  `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
+  references are not implemented`.
+- [ ] References/value-model lane: implement or explicitly bound reference
+  expressions for the next real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:4955:17`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 744 checkpoint, the latest committed checkpoint
-  is `407c05d runtime: add for header lists`, covering Milestone 743.
+- Before the current Milestone 745 checkpoint, the latest committed checkpoint
+  is `d90446b parser: add bounded inline html`, covering Milestone 744.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

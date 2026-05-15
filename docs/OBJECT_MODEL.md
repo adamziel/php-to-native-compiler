@@ -28,8 +28,10 @@ method/constructor context and dispatch against the current class's parent
 chain while reusing the current `$this` object. Explicit `self::method(...)`
 calls are supported from active instance method/constructor context and
 dispatch against the current class and inherited method chain while reusing
-the current `$this` object. Dynamic method/property
-names still fail with explicit parse diagnostics. Named
+the current `$this` object. Dynamic property-name reads and direct writes are
+supported for existing public slots and public dynamic `stdClass` slots when
+the property-name value is a string or integer. Dynamic method names still
+fail with explicit parse diagnostics. Named
 `ClassName::method(...)` calls parse and report stable runtime diagnostics
 before static dispatch. Static member access through `::` outside the current
 named/self/parent method-call, class-name constant, class-constant, and
@@ -116,6 +118,7 @@ The model follows the PHP lookup rules needed by the first object slice:
 - static properties are stored per declaring class outside object slots and
   inherited static property reads/writes share the declaring class slot unless
   a child redeclares the property;
+- the core class table seeds metadata-only `Exception` and `stdClass` entries;
 - object values initialize inherited and exact-class non-static instance
   properties to `null` while preserving declaring class id/name for each slot;
   compatible inherited public/protected redeclarations share one slot with the
@@ -124,6 +127,10 @@ The model follows the PHP lookup rules needed by the first object slice:
 - public instance property reads return the current slot value;
 - public instance property writes mutate the current object value stored in that
   variable;
+- dynamic property-name reads and direct writes resolve string and integer
+  property-name values, can read/write existing public slots on current object
+  values, and can materialize public dynamic slots on `stdClass` object
+  handles;
 - private property reads and direct writes require an active method context
   matching the slot's declaring class. Protected property reads and direct
   writes work from the declaring class or a child-class method context,
@@ -233,7 +240,10 @@ constructors produce stable runtime errors.
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
 property, a private slot owned by the active declaring class, or a protected
-slot visible from the active class or an ancestor. It also accepts direct
+slot visible from the active class or an ancestor. It also accepts
+`$object->$name` reads and direct `$object->$name = <expr>` writes for string
+or integer dynamic names that resolve to existing public slots, plus public
+dynamic slot creation on `stdClass`. It also accepts direct
 `isset($object->name)` checks over direct object-variable operands and direct
 `empty($object->name)` checks over direct object-variable operands for the
 same public/private/protected context slice. Property names remain
@@ -268,7 +278,7 @@ Class constants are accepted as `const NAME = value;` or
 Typed constants, multiple constants in one declaration, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
-Typed static properties, dynamic property names, storage-removing
+Typed static properties, dynamic static property names, storage-removing
 static-property unset, and top-level `static::$prop` execution are outside the
 current slice.
 
@@ -331,14 +341,17 @@ abstract/final/readonly modifiers, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
 binding, magic methods, namespaces,
-autoloading, anonymous classes, attributes, reflection, dynamic properties,
+autoloading, anonymous classes, attributes, reflection, dynamic property
+semantics beyond current `stdClass` public slot materialization,
 cloning, destructors, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call,
 class-constant, and static-property slices, constructor behavior beyond public/inherited public
 instance `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 typed/default property compatibility,
 non-public property access outside the current private/protected method context,
-non-public constructor access beyond the current constructor slice, dynamic method/property names,
+non-public constructor access beyond the current constructor slice, dynamic
+method names, dynamic property-name forms beyond existing public slots and
+`stdClass` public dynamic slots,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`

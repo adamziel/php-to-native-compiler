@@ -26,6 +26,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T19:25:00Z
+
+- Checkpoint before this task:
+  `d90446b parser: add bounded inline html`, pushed to `origin/master`.
+- Task attempted: Milestone 745, bounded dynamic object-property names.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `runtime/src/lib.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/native_object_class_boundary.rs`,
+  `tests/fixtures/milestone745/dynamic_object_properties.php`,
+  `tests/fixtures/milestone745/dynamic_object_properties.stdout`,
+  `tests/fixtures/unsupported_object_features/unsupported_dynamic_property.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_object_access.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model dynamic -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone745`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: dynamic property names are limited to string/int
+  property-name variables, existing public slots, and `stdClass` public dynamic
+  slots. Dynamic methods, magic property hooks, dynamic interpolation,
+  non-public dynamic access, compound assignment, increment/decrement, `??=`,
+  references/copy-on-write, exact notice/deprecation behavior, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
+  references are not implemented`.
+- Next concrete task: implement or explicitly bound reference expressions for
+  the current value model, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T18:45:00Z
 
 - Checkpoint before this task:

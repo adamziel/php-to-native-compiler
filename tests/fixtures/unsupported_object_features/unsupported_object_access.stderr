@@ -1,2 +1,2 @@
-parse error at 7:7: unsupported dynamic property access: dynamic property names are not implemented
+parse error at 7:5: unsupported dynamic method call: dynamic method names are not implemented
 

@@ -1538,6 +1538,11 @@ impl Interpreter {
                 property,
                 span,
             } => self.evaluate_property_read(target, property, *span, scope),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => self.evaluate_dynamic_property_read(target, property, *span, scope),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -1975,6 +1980,27 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                match scope.read_static(object, *span)? {
+                    Value::Object(object) => object
+                        .write_dynamic_public_property(&property, value.clone())
+                        .map(|()| value)
+                        .map_err(|error| runtime_error(*span, error)),
+                    other => Err(runtime_error(
+                        *span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
             AssignTarget::StaticProperty {
                 class_name,
                 property,
@@ -2233,6 +2259,13 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
+            AssignTarget::DynamicProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "dynamic property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -2460,6 +2493,13 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
+            AssignTarget::DynamicProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "dynamic property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -2643,6 +2683,13 @@ impl Interpreter {
                     unreachable!("non-null object properties return before assignment")
                 }
             }
+            AssignTarget::DynamicProperty { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "dynamic property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
@@ -2939,6 +2986,49 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_property_access(format!(
                     "cannot read property ${property} from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_dynamic_property_read(
+        &mut self,
+        target: &Expr,
+        property: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+        let target_value = self.evaluate(target, scope)?;
+
+        match target_value {
+            Value::Object(object) => object
+                .read_public_property(&property)
+                .map_err(|error| runtime_error(span, error)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot read property ${property} from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_dynamic_property_name(
+        &mut self,
+        property: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        match self.evaluate(property, scope)? {
+            Value::String(value) => Ok(value),
+            Value::Int(value) => Ok(value.to_string()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "dynamic property names only support strings and integers in the current subset, got {}",
                     other.type_name()
                 )),
             )),

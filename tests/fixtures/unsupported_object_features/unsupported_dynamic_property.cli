@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_dynamic_property.php:7:7: unsupported dynamic property access: dynamic property names are not implemented
+runtime error at tests/fixtures/unsupported_object_features/unsupported_dynamic_property.php:5:1: undefined property Box::$missing
 --- stderr end ---

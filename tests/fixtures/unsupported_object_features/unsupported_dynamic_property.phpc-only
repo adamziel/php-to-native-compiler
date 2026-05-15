@@ -1,1 +1,1 @@
-phpc supports only static property names after -> in the current object slice.
+phpc supports dynamic property-name writes only for existing public declared slots and stdClass dynamic slots.

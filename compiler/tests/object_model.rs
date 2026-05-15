@@ -34,8 +34,9 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 2);
+    assert_eq!(classes.classes().len(), 3);
     assert_eq!(classes.classes()[0].name(), "Exception");
+    assert_eq!(classes.classes()[1].name(), "stdClass");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -191,6 +192,73 @@ print_r($profile);
         "parent-initial:\ninitial:\n7\nAda\n5\nProfile Object\n(\n    [id] => 7\n    [name] => Ada\n    [visits] => 3\n    [secret:protected] => \n    [token:Profile:private] => \n)\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_public_property_names_read_write_existing_slots_and_stdclass_slots() {
+    let source = r#"<?php
+class Account {
+    public $id;
+}
+
+class Profile extends Account {
+    public $name;
+}
+
+$profile = new Profile();
+$id = "id";
+$name = "name";
+$profile->$id = 7;
+$profile->$name = "Ada";
+echo $profile->id, "|", $profile->$id, "|", $profile->$name, "\n";
+
+$data = new stdClass();
+$key = "answer";
+$data->$key = 42;
+echo $data->answer, "|", $data->$key, "\n";
+
+$intKey = 7;
+$data->$intKey = "seven";
+echo $data->$intKey;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "7|7|Ada\n42|42\nseven");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_property_names_do_not_materialize_missing_slots_on_declared_classes() {
+    let error = runtime_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+$name = "missing";
+$box->$name = 1;
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
+fn dynamic_property_names_reject_unsupported_name_values() {
+    let error = runtime_error(
+        r#"<?php
+$data = new stdClass();
+$name = [];
+$data->$name = 1;
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: dynamic property names only support strings and integers in the current subset, got array"
+    );
 }
 
 #[test]
@@ -1548,7 +1616,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => Box\n    [2] => Profile\n)\n3|Exception|Box|Profile\nException|Box|Profile"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => Box\n    [3] => Profile\n)\n4|Exception|stdClass|Box\nException|stdClass|Box"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1569,7 +1637,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => App\\Mode\n    [2] => App\\Status\n)\n3\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => App\\Mode\n    [3] => App\\Status\n)\n4\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4251,19 +4319,6 @@ echo $default->label();
 #[test]
 fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
     let cases = [
-        (
-            r#"<?php
-class Box {
-    public $name;
-}
-$box = new Box();
-$property = "name";
-$box->$property;
-"#,
-            7,
-            7,
-            "unsupported dynamic property access: dynamic property names are not implemented",
-        ),
         (
             r#"<?php
 $box::NAME;

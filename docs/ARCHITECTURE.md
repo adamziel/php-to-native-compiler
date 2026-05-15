@@ -127,11 +127,12 @@ Implemented now:
   public instance properties including inherited public slots, inherited
   non-public instance slots with declaring-class ownership, single-parent
   metadata, execution-time registration for reached nested class declarations,
-  a metadata-only core `Exception` class seed,
+  metadata-only core `Exception` and `stdClass` class seeds,
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
-  and bounded `clone` expressions that allocate fresh handles and shallow-copy
+  bounded dynamic property-name reads/writes for existing public slots and
+  `stdClass` public dynamic slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
   current property slots when no `__clone` method is declared
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
@@ -1251,7 +1252,7 @@ unsupported.
 Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
-object property reads/writes, instance method calls, and
+object property reads/writes including dynamic property-name forms, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct
 string-name metadata-exists false-folding slice and string/string

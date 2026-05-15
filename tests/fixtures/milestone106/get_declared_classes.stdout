@@ -1,8 +1,9 @@
 Array
 (
     [0] => Exception
-    [1] => Box
-    [2] => Profile
+    [1] => stdClass
+    [2] => Box
+    [3] => Profile
 )
-3|Exception|Box|Profile
-Exception|Box|Profile
+4|Exception|stdClass|Box
+Exception|stdClass|Box

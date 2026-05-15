@@ -1,2 +1,2 @@
-parse error at 7:7: unsupported dynamic property access: dynamic property names are not implemented
+runtime error at 5:1: undefined property Box::$missing
 

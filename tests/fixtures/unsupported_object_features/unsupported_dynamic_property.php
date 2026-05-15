@@ -1,7 +1,5 @@
 <?php
-class Box {
-    public $name;
-}
+class Box {}
 $box = new Box();
-$property = "name";
-$box->$property;
+$property = "missing";
+$box->$property = 1;

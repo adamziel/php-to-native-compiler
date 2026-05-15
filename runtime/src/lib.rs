@@ -1689,6 +1689,9 @@ impl PhpClassTable {
             .declare_class("Exception")
             .expect("core class table should start empty");
         classes
+            .declare_class("stdClass")
+            .expect("core class table should contain only Exception before stdClass");
+        classes
     }
 
     pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
@@ -2297,6 +2300,42 @@ impl PhpObject {
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
         property.value = value;
+        Ok(())
+    }
+
+    pub fn write_dynamic_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].value = value;
+            return Ok(());
+        }
+
+        if properties
+            .iter()
+            .any(|property| property.name == name && property.visibility != Visibility::Public)
+        {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        if !self.class_name.eq_ignore_ascii_case("stdClass") {
+            return Err(RuntimeError::undefined_property(
+                self.class_name.clone(),
+                name,
+            ));
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            value,
+        });
         Ok(())
     }
 
@@ -6710,6 +6749,13 @@ mod tests {
         assert!(exception.parent_id().is_none());
         assert!(exception.properties().is_empty());
         assert!(exception.methods().is_empty());
+
+        let stdclass = classes.lookup_class("stdclass").unwrap();
+        assert_eq!(stdclass.name(), "stdClass");
+        assert_eq!(stdclass.id().index(), 1);
+        assert!(stdclass.parent_id().is_none());
+        assert!(stdclass.properties().is_empty());
+        assert!(stdclass.methods().is_empty());
     }
 
     #[test]

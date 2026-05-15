@@ -260,6 +260,11 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    DynamicProperty {
+        object: String,
+        property: Expr,
+        span: Span,
+    },
     StaticProperty {
         class_name: String,
         property: String,
@@ -374,6 +379,7 @@ impl AssignTarget {
             | AssignTarget::ArrayIndex { span, .. }
             | AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::Property { span, .. }
+            | AssignTarget::DynamicProperty { span, .. }
             | AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
@@ -576,6 +582,11 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    DynamicProperty {
+        target: Box<Expr>,
+        property: Box<Expr>,
+        span: Span,
+    },
     StaticProperty {
         class_name: String,
         property: String,
@@ -771,6 +782,7 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }
             | Expr::Property { span, .. }
+            | Expr::DynamicProperty { span, .. }
             | Expr::StaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }

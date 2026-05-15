@@ -40,9 +40,14 @@
   materialize undefined or `null` target variables as arrays, and return the
   appended value. Direct object-property assignment expressions evaluate the
   right-hand expression, then write existing declared public property slots on
-  direct object variables. Append-at-depth, nested compound assignment,
-  nested `??=`, nested increment/decrement, mixed object/property/ArrayAccess
-  targets, dynamic property names, missing property materialization,
+  direct object variables. Dynamic property-name reads and direct assignment
+  expressions such as `$object->$name` and `$object->$name = expr` are
+  supported for direct object variables when the property-name expression
+  evaluates to a string or integer name and resolves to an existing public
+  slot; writes can also materialize public dynamic slots on `stdClass`
+  objects. Append-at-depth, nested compound assignment, nested `??=`, nested
+  increment/decrement, mixed object/property/ArrayAccess
+  targets, non-`stdClass` missing property materialization,
   references/copy-on-write, and native lowering remain unsupported. Simple
   positional statement-form array destructuring `list($a, $b) = expr;` is
   supported for direct variable targets when the right-hand side evaluates to a
@@ -673,7 +678,7 @@
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
-  anonymous class expressions, dynamic property names,
+  anonymous class expressions,
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
@@ -982,7 +987,14 @@
   `$object::method(...)`/`$className::method(...)`, `self::method(...)`, and
   `parent::method(...)` static method dispatch is supported for the current
   visible declared/inherited static-method subset.
-  Dynamic method names, dynamic property names, non-public
+  Dynamic instance property names are supported only for existing public slots
+  on current object values and public dynamic slots on `stdClass`, using
+  string or integer property-name values. Dynamic methods, dynamic static
+  property names, non-public dynamic property access, magic property hooks,
+  dynamic property-name `isset`/`empty`/`??`/`??=`, compound assignment,
+  increment/decrement, string interpolation, non-`stdClass` missing-property
+  creation, and exact PHP dynamic-property notices/deprecations remain
+  unsupported. Non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant
   semantics, clone behavior beyond the current shallow property-slot copy, `__clone`,
@@ -990,7 +1002,7 @@
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries beyond the current
-  metadata-only `Exception` seed for `get_declared_classes`,
+  metadata-only `Exception` and `stdClass` seeds for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
   declared/built-in/internal trait entries for `get_declared_traits`,
   anonymous classes, exact native class/interface/trait ordering, exact PHP
@@ -2841,8 +2853,9 @@
   multi-property declarations, typed/multiple/final/interface/trait/enum class
   constants, typed static properties, static property storage removal, late
   static binding, magic methods, namespaces,
-  autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, dynamic method names, protected method visibility outside
+  autoloading, anonymous classes, attributes, reflection, dynamic properties
+  beyond `stdClass` public slot materialization, dynamic property-name forms
+  beyond existing public slots and `stdClass`, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
   current private/protected method context, broader
   constructor visibility context, static member
@@ -2992,8 +3005,10 @@
   namespace-scoped constants, grouped imports, function imports, constant
   imports, namespace-qualified function calls, `__NAMESPACE__`, string-name
   import expansion, autoload-aware lookup, and namespace-aware native lowering
-- dynamic method names and dynamic property names; `$object->$name` and
-  `$object->$method()` currently fail with stable parse diagnostics
+- dynamic method names; `$object->$method()` currently fails with a stable
+  parse diagnostic. Dynamic property-name support is limited to existing
+  public slots and `stdClass` public dynamic slots, without magic methods,
+  non-public dynamic access, or exact notice/deprecation behavior
 - private instance method dispatch outside same-class method context,
   protected instance method dispatch outside same-class/child method context,
   non-static methods through dynamic static receivers, and `$this` outside
@@ -3163,7 +3178,8 @@
   enclosing unsupported constructs may reject before lowering nested
   assignment values. Nested
   append/offset assignment expressions, append-offset chained assignment
-  expressions, dynamic property names, append-offset `??=` targets, reference
+  expressions, dynamic property names beyond the current direct
+  `$object->$name` assignment slice, append-offset `??=` targets, reference
   assignment, copy-on-write container aliasing, exact native error objects, and
   native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct

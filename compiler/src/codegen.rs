@@ -449,7 +449,7 @@ impl LlvmGenerator {
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::AppendIndex { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Expr::Property { span, .. } => {
+            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             Expr::MethodCall { span, .. } => {
@@ -910,7 +910,7 @@ impl LlvmGenerator {
             AssignTarget::NestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. } => {
+            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
@@ -3229,7 +3229,7 @@ impl CGenerator {
             Expr::AppendIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Property { span, .. } => {
+            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::MethodCall { span, .. } => {
@@ -3694,7 +3694,7 @@ impl CGenerator {
             AssignTarget::NestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. } => {
+            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }

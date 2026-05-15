@@ -8,9 +8,10 @@ not-trait
 Array
 (
     [0] => Exception
-    [1] => App\State\Box
-    [2] => App\State\Mode
-    [3] => App\State\Status
+    [1] => stdClass
+    [2] => App\State\Box
+    [3] => App\State\Mode
+    [4] => App\State\Status
 )
 --- stdout end ---
 stderr:
