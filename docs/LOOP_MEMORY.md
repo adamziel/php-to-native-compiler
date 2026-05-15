@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T10:02:35Z
+
+- Checkpoint before this task:
+  `35d5135 runtime: add bounded mysqli report`, pushed to `origin/master`.
+- Task attempted: Milestone 799, bounded `mysqli_init()` placeholder handle
+  for the reached WordPress `wpdb::db_connect()` startup path immediately
+  after `mysqli_report( MYSQLI_REPORT_OFF )`.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone799/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata`,
+  `cargo test -p phpc --test mysqli_extension mysqli_init_returns_current_placeholder_handle -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone799`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:2082:17: undefined function strpos()`.
+- Remaining semantic gaps: real mysqli initialization, host/database
+  connections, resources/objects with connection state, query/result behavior,
+  escaping, charset handling, warning/error routing, exact diagnostics, PDO,
+  and native database lowering remain unsupported.
+- Next concrete task: add a bounded `strpos()` implementation for the reached
+  WordPress `parse_db_host()` startup path while keeping empty-needle behavior,
+  offsets, binary/encoding details, invalid argument diagnostics, array/object
+  arguments, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T09:47:10Z
 
 - Checkpoint before this task:

@@ -1691,6 +1691,24 @@ impl PhpClassTable {
         classes
             .declare_class("stdClass")
             .expect("core class table should contain only Exception before stdClass");
+        let mysqli_id = classes
+            .declare_class("mysqli")
+            .expect("core class table should contain Exception and stdClass before mysqli");
+        let mysqli = classes
+            .get_mut(mysqli_id)
+            .expect("declared mysqli class id should resolve");
+        mysqli
+            .add_property(PhpPropertyMetadata::instance(
+                "connect_errno",
+                Visibility::Public,
+            ))
+            .expect("mysqli core metadata should not duplicate connect_errno");
+        mysqli
+            .add_property(PhpPropertyMetadata::instance(
+                "connect_error",
+                Visibility::Public,
+            ))
+            .expect("mysqli core metadata should not duplicate connect_error");
         classes
     }
 
@@ -6835,6 +6853,20 @@ mod tests {
         assert!(stdclass.parent_id().is_none());
         assert!(stdclass.properties().is_empty());
         assert!(stdclass.methods().is_empty());
+
+        let mysqli = classes.lookup_class("mysqli").unwrap();
+        assert_eq!(mysqli.name(), "mysqli");
+        assert_eq!(mysqli.id().index(), 2);
+        assert!(mysqli.parent_id().is_none());
+        assert_eq!(
+            mysqli
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["connect_errno", "connect_error"]
+        );
+        assert!(mysqli.methods().is_empty());
     }
 
     #[test]

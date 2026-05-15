@@ -7310,19 +7310,27 @@ handled.
   accepts `MYSQLI_REPORT_OFF` and `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`,
   stores the current mode, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1972:16: undefined function mysqli_init()`.
-- [ ] Runtime/database lane: add an honest `mysqli_init()` boundary for the
+- [x] Runtime/database lane: add an honest `mysqli_init()` boundary for the
   reached WordPress startup path. Decide whether to return a minimal mysqli
   object/resource handle that only survives until the next connection call, or
   to report a stable unsupported database initialization diagnostic. Keep real
   connections, host IO, query/result behavior, escaping, charset state,
   warning/error routing, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 799 returns a placeholder `mysqli` object with `connect_errno = 0`
+  and `connect_error = null`, exposes `mysqli_init` through dynamic lookup and
+  native function metadata, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:2082:17: undefined function strpos()`.
+- [ ] Runtime/string lane: add a bounded `strpos()` implementation for the
+  reached WordPress `parse_db_host()` path. Preserve exact PHP behavior for
+  empty needles, offsets, false-vs-zero return checks, binary string matching,
+  invalid argument diagnostics, array/object arguments, and native lowering
+  unless those slices are implemented and tested.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 798 checkpoint, the latest committed checkpoint
-  is `4397c40 runtime: add bounded magic class constant`, covering
-  Milestone 797.
+- Before the current Milestone 799 checkpoint, the latest committed checkpoint
+  is `35d5135 runtime: add bounded mysqli report`, covering Milestone 798.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

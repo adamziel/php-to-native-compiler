@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 799, a bounded `mysqli_init()` placeholder handle for the
+  current WordPress `wpdb::db_connect()` startup path immediately after
+  `mysqli_report( MYSQLI_REPORT_OFF )`. The runtime now exposes
+  `mysqli_init` through function/callability metadata and dynamic
+  string-valued calls, declares a core `mysqli` class shape, and returns a
+  placeholder `mysqli` object with `connect_errno` set to `0` and
+  `connect_error` set to `null`. This is not real mysqli initialization,
+  connection state, host I/O, resources, queries, result sets, escaping,
+  charset handling, warning/error routing, exact PHP diagnostics, or native
+  database lowering. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past the reached `mysqli_init()` call to
+  `runtime error at <bootstrap-shim>:2082:17: undefined function strpos()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata`,
+  `cargo test -p phpc --test mysqli_extension mysqli_init_returns_current_placeholder_handle -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone799`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 798, a bounded `mysqli_report()` compatibility boundary for
   the current WordPress `mysqli_report( MYSQLI_REPORT_OFF )` startup path in
   `wp-includes/class-wpdb.php:1970`. The runtime now exposes

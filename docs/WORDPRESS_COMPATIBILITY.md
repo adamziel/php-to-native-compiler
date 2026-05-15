@@ -870,6 +870,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real mysqli extension state, `mysqli_init()`, connections,
   resources/objects, query/result behavior, warning/error routing, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 799 implements a bounded `mysqli_init()` placeholder-handle
+  boundary for the reached `wpdb::db_connect()` startup path after
+  `mysqli_report()`. It returns a placeholder `mysqli` object with
+  `connect_errno = 0` and `connect_error = null`, and the real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2082:17: undefined function strpos()`.
+  This is not real mysqli initialization, connection state, host I/O,
+  resources, query/result behavior, escaping, charset handling,
+  warning/error routing, exact diagnostics, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

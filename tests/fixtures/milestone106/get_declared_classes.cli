@@ -4,10 +4,11 @@ Array
 (
     [0] => Exception
     [1] => stdClass
-    [2] => Box
-    [3] => Profile
+    [2] => mysqli
+    [3] => Box
+    [4] => Profile
 )
-4|Exception|stdClass|Box
-Exception|stdClass|Box--- stdout end ---
+5|Exception|stdClass|mysqli
+Exception|stdClass|mysqli--- stdout end ---
 stderr:
 --- stderr end ---

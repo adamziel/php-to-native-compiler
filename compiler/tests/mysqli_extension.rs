@@ -91,6 +91,26 @@ mysqli_report("off");
 }
 
 #[test]
+fn mysqli_init_returns_current_placeholder_handle() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_init";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+echo "|", get_class($handle);
+echo "|", $handle->connect_errno;
+echo "|", $handle->connect_error === null ? "null" : "set";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|mysqli|0|null");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -117,12 +137,14 @@ echo function_exists("mysqli_connect") ? "1" : "0";
 echo is_callable("mysqli_connect") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
+echo function_exists("mysqli_init") ? "1" : "0";
+echo is_callable("mysqli_init") ? "1" : "0";
 echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

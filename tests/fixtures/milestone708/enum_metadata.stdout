@@ -7,8 +7,9 @@ Array
 (
     [0] => Exception
     [1] => stdClass
-    [2] => App\State\Box
-    [3] => App\State\Mode
-    [4] => App\State\Status
+    [2] => mysqli
+    [3] => App\State\Box
+    [4] => App\State\Mode
+    [5] => App\State\Status
 )
 

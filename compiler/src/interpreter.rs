@@ -3690,6 +3690,28 @@ impl Interpreter {
         Ok(class.name().to_string())
     }
 
+    fn create_mysqli_placeholder(&mut self, span: Span) -> CompileResult<Value> {
+        let class_id = self.classes.lookup_class_id("mysqli").ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class("mysqli core placeholder"),
+            )
+        })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core mysqli class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("connect_errno", Value::Int(0))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("connect_error", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -7274,6 +7296,10 @@ impl Interpreter {
                 self.mysqli_report_mode = mode;
                 Ok(Value::Bool(true))
             }
+            "mysqli_init" => {
+                expect_arity(name, &args, 0, span)?;
+                self.create_mysqli_placeholder(span)
+            }
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9825,6 +9851,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "mysqli_connect"
             | "mysqli_report"
+            | "mysqli_init"
             | "file_exists"
             | "is_dir"
             | "is_readable"

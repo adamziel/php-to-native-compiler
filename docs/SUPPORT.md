@@ -463,9 +463,10 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `mysqli_connect`, `mysqli_report`, `header`, `header_remove`,
-  `headers_sent`, `abs`, `assert`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
+  `function_exists`, `extension_loaded`, `mysqli_connect`, `mysqli_report`,
+  `mysqli_init`, `header`, `header_remove`, `headers_sent`, `abs`, `assert`,
+  `get_class`, `is_object`, `get_debug_type`, `class_exists`,
+  `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
@@ -595,10 +596,12 @@
   unsupported runtime diagnostic. `mysqli_report($mode)` accepts the current
   WordPress startup modes `MYSQLI_REPORT_OFF` and
   `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`, stores the current mode, and
-  returns `true`. Mysqli resources/objects, host connections, initialization,
-  queries, result sets, escaping, charset handling, errors/warnings,
-  transactions, configuration beyond the report-mode flag, PDO behavior, and
-  native database calls are not implemented.
+  returns `true`. `mysqli_init()` returns a current placeholder `mysqli` object
+  with `connect_errno` set to `0` and `connect_error` set to `null`, but it is
+  not backed by a host connection. Host connections, real mysqli
+  resources/objects, queries, result sets, escaping, charset handling,
+  errors/warnings, transactions, configuration beyond the report-mode flag,
+  PDO behavior, and native database calls are not implemented.
   `assert($assertion, $description = null)` evaluates one or two arguments
   normally and returns `true` for truthy assertions. The optional description
   is inert metadata in this slice and may be `null`, bool, int, float, or
@@ -2014,7 +2017,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `str_contains`, `preg_match`, `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `mysqli_connect`, `mysqli_report`,
+  `mysqli_connect`, `mysqli_report`, `mysqli_init`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2321,8 +2324,9 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_report`, `header`, `header_remove`,
-  `headers_sent`, `get_class`, `is_object`, `get_debug_type`,
+  `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
+  `mysqli_report`, `mysqli_init`, `header`, `header_remove`, `headers_sent`,
+  `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
@@ -2454,8 +2458,10 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_report`, `header`, `header_remove`, `headers_sent`, `assert`,
-  `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
+  `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_report`,
+  `mysqli_init`, `header`, `header_remove`, `headers_sent`, `assert`,
+  `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
+  `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
@@ -2515,11 +2521,11 @@
   current bounded compatibility registry, returns false for other names, and
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
-  `mysqli_connect` and `mysqli_report` are recognized for
+  `mysqli_connect`, `mysqli_report`, and `mysqli_init` are recognized for
   function/callability metadata and dynamic lookup. Direct and dynamic
   connection calls are a stable unsupported runtime boundary, and direct native
-  `mysqli_connect(...)`/`mysqli_report(...)` calls still reject under the
-  function-call boundary.
+  `mysqli_connect(...)`/`mysqli_report(...)`/`mysqli_init(...)` calls still
+  reject under the function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
@@ -4093,12 +4099,13 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
-- `mysqli_connect()`/`mysqli_report()` beyond the current metadata/report-mode
+- `mysqli_connect()`/`mysqli_report()`/`mysqli_init()` beyond the current
+  metadata/report-mode/placeholder-object
   boundary: mysqli extension loading, host/database connections,
-  `mysqli_init()`, mysqli resources/objects, queries, result sets, prepared
-  statements, escaping, charset handling, errors/warnings, transactions,
-  configuration beyond the current report-mode flag, PDO behavior, exact PHP
-  diagnostics, and native database calls
+  mysqli resources/objects with real connection state, queries, result sets,
+  prepared statements, escaping, charset handling, errors/warnings,
+  transactions, configuration beyond the current report-mode flag, PDO
+  behavior, exact PHP diagnostics, and native database calls
 - `version_compare()` outside the current numeric-component subset: PHP's full
   version-string grammar, pre-release labels, arbitrary separators, invalid
   argument diagnostics, extension version coupling, and native lowering
