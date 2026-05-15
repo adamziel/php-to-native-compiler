@@ -334,6 +334,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   WordPress bootstrap support; it only makes the post-static-closure long path
   measurable and points the next lane at runtime tracing or an execution
   budget.
+  Milestone 740 adds that runtime execution-step budget through
+  `PHPC_MAX_EXECUTION_STEPS`, but the real bootstrap-shim probe still times out
+  at `30s` with budgets as low as `100`, zero stdout, and no stderr. This
+  means the current long path is not ordinary statement execution; the next
+  measurement lane needs parser/include/declaration-registration tracing or a
+  pre-execution budget.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

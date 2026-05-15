@@ -31,8 +31,13 @@ pub struct Execution {
     pub exit_code: i32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RunOptions {
+    pub max_execution_steps: Option<usize>,
+}
+
 pub fn run_program(program: &Program) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program, None)?;
+    let mut interpreter = Interpreter::from_program(program, None, RunOptions::default())?;
     interpreter.run(program)
 }
 
@@ -40,12 +45,31 @@ pub fn run_program_with_source_file(
     program: &Program,
     source_file: impl Into<String>,
 ) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program, Some(source_file.into()))?;
+    let mut interpreter =
+        Interpreter::from_program(program, Some(source_file.into()), RunOptions::default())?;
+    interpreter.run(program)
+}
+
+pub fn run_program_with_options(
+    program: &Program,
+    options: RunOptions,
+) -> CompileResult<Execution> {
+    let mut interpreter = Interpreter::from_program(program, None, options)?;
+    interpreter.run(program)
+}
+
+pub fn run_program_with_source_file_and_options(
+    program: &Program,
+    source_file: impl Into<String>,
+    options: RunOptions,
+) -> CompileResult<Execution> {
+    let mut interpreter = Interpreter::from_program(program, Some(source_file.into()), options)?;
     interpreter.run(program)
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
-    Interpreter::from_program(program, None).map(|interpreter| interpreter.classes)
+    Interpreter::from_program(program, None, RunOptions::default())
+        .map(|interpreter| interpreter.classes)
 }
 
 struct Interpreter {
@@ -66,6 +90,8 @@ struct Interpreter {
     active_static_locals: Vec<Vec<String>>,
     global_symbols: Rc<RefCell<HashMap<String, Value>>>,
     source_file: Option<String>,
+    max_execution_steps: Option<usize>,
+    execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
     next_closure_id: i64,
@@ -289,7 +315,11 @@ enum Flow {
 }
 
 impl Interpreter {
-    fn from_program(program: &Program, source_file: Option<String>) -> CompileResult<Self> {
+    fn from_program(
+        program: &Program,
+        source_file: Option<String>,
+        options: RunOptions,
+    ) -> CompileResult<Self> {
         let mut functions = HashMap::new();
         let mut interfaces = Vec::new();
         let mut interface_lookup = HashMap::new();
@@ -394,6 +424,8 @@ impl Interpreter {
             active_static_locals: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             source_file,
+            max_execution_steps: options.max_execution_steps,
+            execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
             next_closure_id: 1,
@@ -645,6 +677,7 @@ impl Interpreter {
     }
 
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
+        self.tick(stmt.span())?;
         match stmt {
             Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(Flow::Normal),
             Stmt::Echo { exprs, .. } => {
@@ -708,9 +741,15 @@ impl Interpreter {
                 }
             }
             Stmt::While {
-                condition, body, ..
+                condition,
+                body,
+                span,
             } => {
-                while self.evaluate(condition, scope)?.is_truthy() {
+                loop {
+                    self.tick(*span)?;
+                    if !self.evaluate(condition, scope)?.is_truthy() {
+                        break;
+                    }
                     match self.execute_statements(body, scope)? {
                         Flow::Normal => {}
                         Flow::Continue { depth, .. } if depth <= 1 => {}
@@ -735,9 +774,12 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::DoWhile {
-                body, condition, ..
+                body,
+                condition,
+                span,
             } => {
                 loop {
+                    self.tick(*span)?;
                     match self.execute_statements(body, scope)? {
                         Flow::Normal => {}
                         Flow::Continue { depth, .. } if depth <= 1 => {}
@@ -770,13 +812,14 @@ impl Interpreter {
                 condition,
                 increment,
                 body,
-                ..
+                span,
             } => {
                 if let Some(initializer) = initializer {
                     self.execute_for_action(initializer, scope)?;
                 }
 
                 loop {
+                    self.tick(*span)?;
                     if let Some(condition) = condition {
                         if !self.evaluate(condition, scope)?.is_truthy() {
                             break;
@@ -834,6 +877,7 @@ impl Interpreter {
                 };
 
                 for entry in array.entries() {
+                    self.tick(*span)?;
                     if let Some(key) = key {
                         scope.write_static(key, value_from_array_key(&entry.key));
                     }
@@ -962,6 +1006,30 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
         }
+    }
+
+    fn tick(&mut self, span: Span) -> CompileResult<()> {
+        if let Some(max_steps) = self.max_execution_steps {
+            if self.execution_steps >= max_steps {
+                let source = self.source_file.as_deref().unwrap_or("<unknown>");
+                let function_context = self
+                    .function_context
+                    .last()
+                    .map(|name| format!("; function {name}()"))
+                    .unwrap_or_default();
+                return Err(Diagnostic::new(
+                    Phase::Runtime,
+                    span.line,
+                    span.column,
+                    format!(
+                        "maximum execution step budget exceeded after {max_steps} step(s); last location {source}:{}:{}{function_context}",
+                        span.line, span.column
+                    ),
+                ));
+            }
+        }
+        self.execution_steps += 1;
+        Ok(())
     }
 
     fn execute_static_local_declaration(

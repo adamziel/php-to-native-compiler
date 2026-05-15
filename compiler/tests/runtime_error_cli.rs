@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn cli_runtime_error_snapshots_match_committed_outputs() {
@@ -36,6 +37,40 @@ fn cli_runtime_error_snapshots_match_committed_outputs() {
 
         assert_eq!(actual, expected, "CLI snapshot mismatch for {fixture_arg}");
     }
+}
+
+#[test]
+fn cli_execution_step_budget_env_reports_source_location() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let fixture = std::env::temp_dir().join(format!(
+        "phpc-execution-budget-{}-{unique}.php",
+        std::process::id()
+    ));
+    fs::write(&fixture, "<?php\nwhile (true) {\n}\n").expect("write execution budget fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PHPC_MAX_EXECUTION_STEPS", "3")
+        .args(["run", fixture.to_str().expect("fixture path is UTF-8")])
+        .output()
+        .expect("run phpc with execution step budget");
+
+    let _ = fs::remove_file(&fixture);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("runtime error at "));
+    assert!(stderr.contains(":2:1: maximum execution step budget exceeded after 3 step(s); "));
+    assert!(stderr.contains("last location "));
+    assert!(stderr.contains(":2:1\n"));
 }
 
 fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {

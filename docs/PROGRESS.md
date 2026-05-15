@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 740, a bounded execution-step budget for `phpc run`. The
+  interpreter now accepts `RunOptions { max_execution_steps }`, the CLI reads
+  `PHPC_MAX_EXECUTION_STEPS`, and statement execution plus empty loop-body
+  iterations fail with a stable runtime diagnostic that names the last source
+  location and current function context when the budget is exhausted. This is a
+  runtime execution budget, not a parser or declaration-registration budget.
+  Focused tests cover library and CLI behavior, including empty-body infinite
+  loops. Probing the local WordPress 6.9.4 tree with
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100` still leaves the
+  bootstrap-shim probe at `timed_out: yes`, exit `124`, zero stdout, and no
+  stderr, while the direct probe still reports the `ABSPATH` runtime error.
+  That means the current WordPress long path is before normal statement budget
+  exhaustion, likely while parsing/registering included source; the next task
+  is include/parser/declaration tracing or budgeting. Focused verification so
+  far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test runtime_errors execution_step_budget -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli execution_step_budget -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 739, timeout-bounded WordPress inventory probes so external
   WordPress compatibility measurements cannot hang after a blocker is removed.
   `tools/wordpress-inventory.sh` now wraps both the direct `wp-settings.php`

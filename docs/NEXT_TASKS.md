@@ -6802,16 +6802,24 @@ handled.
   success. Milestone 739 adds `WORDPRESS_PROBE_TIMEOUT` support and reports
   the current local WordPress 6.9.4 bootstrap shim as `timed_out: yes` at
   `10s`, exit `124`, zero stdout, and no stderr.
-- [ ] Runtime diagnostics lane: add a bounded execution budget or trace mode
+- [x] Runtime diagnostics lane: add a bounded execution budget or trace mode
   for `phpc run` that reports the last source span/function/include frame
   before timeout/step exhaustion, then use it on the post-Milestone 738
   WordPress bootstrap shim to identify the next concrete loop or runtime
-  blocker.
+  blocker. Milestone 740 adds `PHPC_MAX_EXECUTION_STEPS` and proves it catches
+  runtime loops, but the real bootstrap shim still times out at `30s` even
+  with `PHPC_MAX_EXECUTION_STEPS=100`, so the long path is before normal
+  statement execution budget exhaustion.
+- [ ] Parser/include diagnostics lane: add tracing or a bounded budget around
+  include parsing and declaration registration, then rerun the WordPress
+  bootstrap shim to identify the current long path before implementing another
+  PHP feature.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 739 checkpoint, the latest committed checkpoint
-  is `c101b88 parser: add bounded static closures`, covering Milestone 738.
+- Before the current Milestone 740 checkpoint, the latest committed checkpoint
+  is `2611266 tools: bound wordpress inventory probes`, covering Milestone
+  739.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

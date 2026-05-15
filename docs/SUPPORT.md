@@ -1276,6 +1276,11 @@
   loop or switch level at a time; `continue 2;` can target an outer loop from
   inside a switch. Dynamic depth expressions, zero/negative depths, too-large
   depths, exact PHP diagnostics, and native lowering remain unsupported.
+  `phpc run` also has an opt-in execution-step budget through
+  `PHPC_MAX_EXECUTION_STEPS`. When the budget is exhausted during statement
+  execution or empty loop-body iteration, it reports the last source location
+  and current function context. This budget does not count parser work,
+  declaration registration, or native lowering.
   Exception syntax is rejected separately at parse time, and native lowering is
   not implemented.
 - Switch: statement-form brace `switch` and alternate

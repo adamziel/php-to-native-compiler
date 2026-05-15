@@ -1036,6 +1036,10 @@ and arrow function expressions allocate inert runtime closure values in
 Static closure binding semantics are not represented yet. Arrow values do not
 bind implicit captures or execute their synthetic return bodies; invocation and
 callable integration remain explicit runtime boundaries.
+`phpc run` supports an opt-in execution-step budget via
+`PHPC_MAX_EXECUTION_STEPS`; it is enforced at statement execution and loop
+iteration boundaries to diagnose runtime loops, but it intentionally does not
+count parser work, declaration registration, or native lowering.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T15:25:00Z
+
+- Checkpoint before this task:
+  `2611266 tools: bound wordpress inventory probes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 740, bounded `phpc run` execution-step budget and
+  WordPress bootstrap-shim probe with `PHPC_MAX_EXECUTION_STEPS`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/lib.rs`, `compiler/src/main.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/runtime_error_cli.rs`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test runtime_errors execution_step_budget -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli execution_step_budget -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: `PHPC_MAX_EXECUTION_STEPS` catches normal statement
+  execution loops and empty loop bodies, but it does not count parser work,
+  include parsing, declaration registration, or native lowering. The direct
+  WordPress probe still stops at undefined `ABSPATH`; the bootstrap-shim probe
+  still times out at `30s` with budgets as low as `100`, zero stdout, and no
+  stderr.
+- Next concrete task: add parser/include/declaration-registration tracing or a
+  pre-execution budget, then rerun the bootstrap shim to identify the current
+  long path.
+
 ## Loop Event 2026-05-15T14:45:00Z
 
 - Checkpoint before this task:

@@ -1,6 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::interpreter::MAX_USER_FUNCTION_CALL_DEPTH;
-use php_compiler::run_source;
+use php_compiler::{run_source, run_source_with_execution_step_limit};
 use std::thread;
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
@@ -342,5 +342,47 @@ echo loop(0);
             "maximum user function call depth exceeded for loop(): limit {}",
             MAX_USER_FUNCTION_CALL_DEPTH
         )
+    );
+}
+
+#[test]
+fn execution_step_budget_reports_last_loop_location() {
+    let error = run_source_with_execution_step_limit(
+        r#"<?php
+$i = 0;
+while (true) {
+    $i = $i + 1;
+}
+"#,
+        8,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "maximum execution step budget exceeded after 8 step(s); last location <unknown>:3:1"
+    );
+}
+
+#[test]
+fn execution_step_budget_catches_empty_loop_bodies() {
+    let error = run_source_with_execution_step_limit(
+        r#"<?php
+while (true) {
+}
+"#,
+        3,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "maximum execution step budget exceeded after 3 step(s); last location <unknown>:2:1"
     );
 }

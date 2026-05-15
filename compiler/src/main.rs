@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use php_compiler::codegen::{emit_assembly, emit_llvm_ir};
 use php_compiler::error::{CompileResult, Diagnostic, Phase};
-use php_compiler::interpreter::run_program_with_source_file;
+use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{run_fixture_dir_with_options, FixtureRunOptions};
 
@@ -82,11 +82,34 @@ fn command_run(args: &[String]) -> CompileResult<u8> {
     let input = PathBuf::from(&args[0]);
     let source = read_source(&input)?;
     let program = parse_source(&source).map_err(|error| error.with_file(&input))?;
-    let execution = run_program_with_source_file(&program, input.display().to_string())
-        .map_err(|error| error.with_file(&input))?;
+    let options = run_options_from_env()?;
+    let execution =
+        run_program_with_source_file_and_options(&program, input.display().to_string(), options)
+            .map_err(|error| error.with_file(&input))?;
     print!("{}", execution.stdout);
     eprint!("{}", execution.stderr);
     Ok(execution.exit_code as u8)
+}
+
+fn run_options_from_env() -> CompileResult<RunOptions> {
+    let max_execution_steps = match env::var("PHPC_MAX_EXECUTION_STEPS") {
+        Ok(value) if !value.trim().is_empty() => {
+            let parsed = value.trim().parse::<usize>().map_err(|_| {
+                Diagnostic::new(
+                    Phase::Cli,
+                    0,
+                    0,
+                    "PHPC_MAX_EXECUTION_STEPS must be a non-negative integer",
+                )
+            })?;
+            Some(parsed)
+        }
+        _ => None,
+    };
+
+    Ok(RunOptions {
+        max_execution_steps,
+    })
 }
 
 fn command_test(args: &[String]) -> CompileResult<u8> {

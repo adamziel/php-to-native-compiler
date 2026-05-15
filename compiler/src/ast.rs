@@ -182,6 +182,52 @@ pub enum Stmt {
     },
 }
 
+impl Stmt {
+    pub fn span(&self) -> Span {
+        match self {
+            Stmt::Namespace { span, .. }
+            | Stmt::Use { span, .. }
+            | Stmt::Echo { span, .. }
+            | Stmt::Print { span, .. }
+            | Stmt::Assign { span, .. }
+            | Stmt::CompoundAssign { span, .. }
+            | Stmt::IncrementDecrement { span, .. }
+            | Stmt::NullCoalesceAssign { span, .. }
+            | Stmt::Expr { span, .. }
+            | Stmt::Goto { span, .. }
+            | Stmt::Label { span, .. }
+            | Stmt::If { span, .. }
+            | Stmt::While { span, .. }
+            | Stmt::DoWhile { span, .. }
+            | Stmt::For { span, .. }
+            | Stmt::Switch { span, .. }
+            | Stmt::Foreach { span, .. }
+            | Stmt::UnsetVariable { span, .. }
+            | Stmt::UnsetArrayIndex { span, .. }
+            | Stmt::UnsetStaticProperty { span, .. }
+            | Stmt::UnsetSelfStaticProperty { span, .. }
+            | Stmt::UnsetParentStaticProperty { span, .. }
+            | Stmt::UnsetLateStaticProperty { span, .. }
+            | Stmt::UnsetMany { span, .. }
+            | Stmt::ConstDeclaration { span, .. }
+            | Stmt::Require { span, .. }
+            | Stmt::Include { span, .. }
+            | Stmt::Return { span, .. }
+            | Stmt::Throw { span, .. }
+            | Stmt::Try { span, .. }
+            | Stmt::Break { span, .. }
+            | Stmt::Continue { span, .. }
+            | Stmt::Global { span, .. }
+            | Stmt::StaticLocal { span, .. } => *span,
+            Stmt::Function(function) => function.span,
+            Stmt::Interface(interface) => interface.span,
+            Stmt::Trait(trait_decl) => trait_decl.span,
+            Stmt::Enum(enum_decl) => enum_decl.span,
+            Stmt::Class(class) => class.span,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct UseImport {
     pub name: String,

@@ -8,7 +8,7 @@ pub mod test_runner;
 
 use ast::Program;
 use error::CompileResult;
-use interpreter::Execution;
+use interpreter::{Execution, RunOptions};
 use php_runtime::PhpClassTable;
 
 pub use codegen::native_runtime_scalar_echo_probe_ir;
@@ -28,6 +28,19 @@ pub fn run_source_with_source_file(
 ) -> CompileResult<Execution> {
     let program = parse(source)?;
     interpreter::run_program_with_source_file(&program, source_file)
+}
+
+pub fn run_source_with_execution_step_limit(
+    source: &str,
+    max_execution_steps: usize,
+) -> CompileResult<Execution> {
+    let program = parse(source)?;
+    interpreter::run_program_with_options(
+        &program,
+        RunOptions {
+            max_execution_steps: Some(max_execution_steps),
+        },
+    )
 }
 
 pub fn class_metadata_source(source: &str) -> CompileResult<PhpClassTable> {

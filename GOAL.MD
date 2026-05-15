@@ -221,7 +221,11 @@ with `WORDPRESS_PROBE_TIMEOUT=10s`, the direct probe still reports the
 `ABSPATH` runtime error and the bootstrap-shim probe reports `timed_out: yes`,
 exit `124`, zero stdout, and no stderr. The next step is a runtime execution
 budget or trace mode to identify the last source span/function/include frame
-before the shim times out.
+before the shim times out. Milestone 740 added `PHPC_MAX_EXECUTION_STEPS`,
+which catches statement-execution loops, but the bootstrap shim still times out
+at `30s` even with `PHPC_MAX_EXECUTION_STEPS=100`; the current long path is
+therefore before ordinary statement execution budget exhaustion and needs
+parser/include/declaration-registration tracing.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -340,7 +344,8 @@ The repository already has a working Rust workspace with:
   string interpolation, bounded heredoc/nowdoc syntax, bounded chained
   interpolation, bounded static-closure parsing, and timeout-bounded WordPress
   inventory probes. It still lacks a runtime trace or execution budget for the
-  post-static-closure bootstrap-shim timeout.
+  post-static-closure bootstrap-shim timeout that covers parser/include work;
+  the current execution-step budget only covers statement execution.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
