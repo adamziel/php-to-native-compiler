@@ -24,9 +24,12 @@ direct root variables through `global $name, ...;`; imported names route direct
 reads and writes through the shared root symbol table, while `unset($name)`
 drops the local import without deleting the root value. Top-level `global`
 declarations preserve existing root values and materialize missing listed names
-as `null`, matching the reached WordPress bootstrap initialization shape. This is still a
-materialized-symbol-table model, not PHP's full reference-backed alias,
-`$GLOBALS`, copy-on-write, dynamic global-name, or included-file scope model.
+as `null`, matching the reached WordPress bootstrap initialization shape.
+Direct string-keyed `$GLOBALS['name']` reads and writes are a bounded
+root-symbol-table route for the reached WordPress object-cache bootstrap
+assignment. This is still a materialized-symbol-table model, not PHP's full
+reference-backed alias, recursive `$GLOBALS` array, copy-on-write, dynamic
+global-name, or included-file scope model.
 
 ## Compiler Crate
 
@@ -65,7 +68,9 @@ targets keep a variable or object-property root plus evaluated index
 expressions so the interpreter can materialize missing array containers under
 the current no-reference/no-copy-on-write model. Direct object-property
 array-offset compound assignment reuses the object-property root plus evaluated
-index path for the current read-modify-write slice. Mixed
+index path for the current read-modify-write slice. Direct object-property
+array-offset `isset(...)` reuses the same visible property plus evaluated index
+path for the current presence-check slice. Mixed
 object/property/ArrayAccess paths and other nested read-modify-write forms
 remain explicit boundaries.
 Unset targets follow the same conservative pattern: direct variables,

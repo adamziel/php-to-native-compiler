@@ -113,8 +113,11 @@ provides the conventional `$table_prefix = 'wp_';` startup variable, and
 bounded `preg_match()` now covers the reached table-prefix validation guard;
 bounded `wpdb` dynamic table-name properties now cover the reached
 `wpdb::$categories` assignment path; direct object-property array-offset
-compound assignment now covers the reached object-cache mutation path; it now
-stops at missing object-cache bootstrap state for `add_global_groups()`.
+compound assignment now covers the reached object-cache mutation path; direct
+`$GLOBALS['name']` reads/writes now cover the reached object-cache bootstrap
+global assignment; direct object-property array-offset `isset(...)` now covers
+the reached `WP_Hook::add_filter()` priority check; it now stops at missing
+bounded `ksort()` support for `WP_Hook::add_filter()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -380,8 +383,12 @@ Milestone 810 added the exact WordPress table-prefix validation
 `preg_match()` guard. Milestone 811 added bounded `wpdb` dynamic public
 table-name property materialization. Milestone 812 added direct
 object-property array-offset compound assignment for the reached object-cache
-mutation path. The current frontier is now missing object-cache bootstrap state
-for `add_global_groups()`.
+mutation path. Milestone 813 added bounded direct `$GLOBALS['name']`
+read/write routing to the root global table for the reached object-cache
+bootstrap assignment. Milestone 814 added direct object-property array-offset
+`isset(...)` for the reached `WP_Hook::add_filter()` priority check. The
+current frontier is now missing bounded `ksort()` support for the reached
+`WP_Hook::add_filter()` priority ordering path.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -548,9 +555,12 @@ The repository already has a working Rust workspace with:
   `preg_match()` now covers the reached table-prefix validation guard. Bounded
   `wpdb` dynamic public table-name properties cover the reached
   `wpdb::$categories` initialization path. Direct object-property array-offset
-  compound assignment covers the reached object-cache mutation path.
-  The next bottleneck is missing object-cache bootstrap state for
-  `add_global_groups()`.
+  compound assignment covers the reached object-cache mutation path. Bounded
+  direct `$GLOBALS['name']` read/write routing covers the reached object-cache
+  bootstrap global assignment, and direct object-property array-offset
+  `isset(...)` covers the reached `WP_Hook::add_filter()` priority check.
+  The next bottleneck is missing bounded `ksort()` support for the reached
+  `WP_Hook::add_filter()` priority ordering path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

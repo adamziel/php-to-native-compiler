@@ -96,6 +96,7 @@ incorrect native code.
   `static` variables, defaults, trailing variadic parameters, returns,
   dynamic string-valued calls,
   bounded function-scope `global $name, ...;` imports for direct variables,
+  bounded direct string-keyed `$GLOBALS['name']` root-symbol reads/writes,
   bounded namespace-scoped function declarations and unqualified same-namespace
   calls with global fallback lookup,
   inert no-capture anonymous and arrow closure values,
@@ -151,7 +152,8 @@ incorrect native code.
   property reads/writes, inherited instance property slots with
   declaring-class ownership, private same-declaring-class and protected
   same-class/child property reads/writes, `isset`/`empty`, read-modify-write,
-  and null-coalescing forms, compatible public/protected inherited property
+  direct object-property array-offset `isset(...)`, and null-coalescing forms,
+  compatible public/protected inherited property
   redeclarations sharing one runtime slot,
   braced nested class declarations that register only when execution reaches
   the `class` statement,

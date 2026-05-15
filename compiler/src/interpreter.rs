@@ -136,6 +136,13 @@ fn is_auto_global_name(name: &str) -> bool {
     name == "_SERVER"
 }
 
+fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
+    match key {
+        ArrayKey::String(name) => Some(name),
+        ArrayKey::Int(_) => None,
+    }
+}
+
 fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -284,6 +291,13 @@ impl SymbolTable {
         self.symbols.borrow().get(name).cloned()
     }
 
+    fn read_global_name(&self, name: &str) -> Option<Value> {
+        match &self.global_symbols {
+            Some(global_symbols) => global_symbols.borrow().get(name).cloned(),
+            None => self.symbols.borrow().get(name).cloned(),
+        }
+    }
+
     fn write_named(&mut self, name: &str, value: Value) {
         if self.imported_globals.contains(name)
             || (is_auto_global_name(name) && self.global_symbols.is_some())
@@ -294,6 +308,17 @@ impl SymbolTable {
             }
         }
         self.symbols.borrow_mut().insert(name.to_string(), value);
+    }
+
+    fn write_global_name(&mut self, name: &str, value: Value) {
+        match &self.global_symbols {
+            Some(global_symbols) => {
+                global_symbols.borrow_mut().insert(name.to_string(), value);
+            }
+            None => {
+                self.symbols.borrow_mut().insert(name.to_string(), value);
+            }
+        }
     }
 }
 
@@ -2468,6 +2493,19 @@ impl Interpreter {
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
                 let value = self.evaluate_container_reference_source_value(source, span, scope)?;
+                if name == "GLOBALS" {
+                    let Some(global_name) = globals_offset_name(&key) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "only string-keyed direct offset writes are implemented",
+                            ),
+                        ));
+                    };
+                    scope.write_global_name(global_name, value);
+                    return Ok(());
+                }
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -2580,6 +2618,28 @@ impl Interpreter {
                     None => None,
                 };
                 let value = self.evaluate(expr, scope)?;
+                if name == "GLOBALS" {
+                    let Some(key) = key.as_ref() else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "append-offset writes are not implemented",
+                            ),
+                        ));
+                    };
+                    let Some(global_name) = globals_offset_name(key) else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "only string-keyed direct offset writes are implemented",
+                            ),
+                        ));
+                    };
+                    scope.write_global_name(global_name, value.clone());
+                    return Ok(value);
+                }
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -4109,6 +4169,24 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        if let Expr::Variable(name, _) = target {
+            if name == "GLOBALS" {
+                let key = self.evaluate_array_key(index, scope)?;
+                let Some(global_name) = globals_offset_name(&key) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "$GLOBALS",
+                            "only string-keyed direct offset reads are implemented",
+                        ),
+                    ));
+                };
+                return scope.read_global_name(global_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_variable(global_name))
+                });
+            }
+        }
+
         let target_value = self.evaluate(target, scope)?;
         let key = self.evaluate_array_key(index, scope)?;
 
@@ -9319,7 +9397,7 @@ impl Interpreter {
                 target,
                 index,
                 ..
-            } => self.is_direct_array_offset_path_set(target, index, caller_scope),
+            } => self.is_supported_array_offset_path_set(target, index, caller_scope),
             Expr::Property {
                 target,
                 property,
@@ -9343,25 +9421,55 @@ impl Interpreter {
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "isset()",
-                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             )),
         }
     }
 
-    fn is_direct_array_offset_path_set(
+    fn is_supported_array_offset_path_set(
         &mut self,
         target: &Expr,
         index: &Expr,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        if let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        {
+            let mut keys = Vec::with_capacity(indices.len());
+            for index in indices {
+                keys.push(self.evaluate_array_key(index, caller_scope)?);
+            }
+
+            if name == "GLOBALS" {
+                let Some(global_name) = keys.first().and_then(globals_offset_name) else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            "isset()",
+                            "only string-keyed direct $GLOBALS offset operands are implemented",
+                        ),
+                    ));
+                };
+                return match caller_scope.read_global_name(global_name) {
+                    Some(value) => Ok(Self::array_path_isset(&value, &keys[1..])),
+                    None => Ok(false),
+                };
+            }
+
+            return match caller_scope.read_named(name) {
+                Some(value) => Ok(Self::array_path_isset(&value, &keys)),
+                None => Ok(false),
+            };
+        }
+
+        let Some((object_name, property, indices)) =
+            Self::collect_direct_object_property_array_index_path(target, index)
         else {
             return Err(runtime_error(
                 target.span(),
                 RuntimeError::unsupported_call(
                     "isset()",
-                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -9371,7 +9479,15 @@ impl Interpreter {
             keys.push(self.evaluate_array_key(index, caller_scope)?);
         }
 
-        match caller_scope.read_named(name) {
+        let Some(Value::Object(object)) = caller_scope.read_named(object_name) else {
+            return Ok(false);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object
+            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(target.span(), error))?
+        {
             Some(value) => Ok(Self::array_path_isset(&value, &keys)),
             None => Ok(false),
         }
@@ -9389,7 +9505,7 @@ impl Interpreter {
                 target.span(),
                     RuntimeError::unsupported_call(
                         "isset()",
-                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                        "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -9447,6 +9563,33 @@ impl Interpreter {
                 Expr::Variable(name, _) => {
                     indices.reverse();
                     return Some((name, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn collect_direct_object_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a str, &'a str, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::Property {
+                    target, property, ..
+                } => {
+                    let Expr::Variable(name, _) = target.as_ref() else {
+                        return None;
+                    };
+                    indices.reverse();
+                    return Some((name, property, indices));
                 }
                 Expr::Index { target, index, .. } => {
                     indices.push(index);

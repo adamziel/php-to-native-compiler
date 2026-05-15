@@ -266,9 +266,12 @@
   from the root global symbol table, materializes missing globals as `null`,
   routes direct reads and writes through the shared root slot, and treats
   `unset($name)` after import as removing the local import without deleting the
-  root global value. Reference-backed alias objects, `$GLOBALS`, dynamic global
-  names, exact warning/notice behavior, included-file scope interactions,
-  copy-on-write, and native lowering remain unsupported.
+  root global value. Direct string-keyed `$GLOBALS['name']` reads and writes
+  route to the same root global symbol table from top-level and function scope.
+  Reference-backed alias objects, full PHP `$GLOBALS` array materialization,
+  recursive `$GLOBALS` contents, non-string keyed `$GLOBALS` access, dynamic
+  global names, exact warning/notice behavior, included-file scope
+  interactions, copy-on-write, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `PHP_SELF`, `SCRIPT_NAME`, and `QUERY_STRING`. Direct function-scope reads
@@ -426,6 +429,11 @@
 - `isset($array[$key])` and nested direct-variable rooted array offset paths
   such as `isset($array[$outer][$inner])` over the current integer/string key
   subset
+- direct object-property array-offset `isset(...)` paths such as
+  `isset($object->items[$outer][$inner])` over visible array-valued properties
+  and the current integer/string key subset. Missing/null/non-array path
+  components return false; dynamic property paths, ArrayAccess, references,
+  copy-on-write, and native lowering remain unsupported.
 - `empty($name)`, `empty($array[$key])`,
   `empty($object->publicProperty)`, and supported static property operands for
   direct variables, direct array-variable offset operands, direct
@@ -3176,8 +3184,9 @@
   operands, direct array offset operands such as `isset($array[$key])` and
   nested direct-variable rooted array offset paths such as
   `isset($array[$outer][$inner])`, direct public object-property operands such
-  as `isset($object->name)`, and supported static property operands such as
-  `isset(ClassName::$prop)`.
+  as `isset($object->name)`, direct object-property array offset operands such
+  as `isset($object->items[$outer][$inner])`, and supported static property
+  operands such as `isset(ClassName::$prop)`.
   In active method context, direct private operands owned by the active
   declaring class and protected operands owned by the active class or an
   ancestor are also supported.
@@ -3374,7 +3383,8 @@
   Complex assignment lvalues outside the documented direct-variable,
   direct/nested array-offset, append/append-at-depth, direct object-property,
   and supported static-property target subset, nested/complex
-  non-variable or object-dimension `isset(...)` array offset operands,
+  non-variable, dynamic object-property, or mixed object/ArrayAccess
+  `isset(...)` array offset operands,
   nested/complex `empty(...)` array offset operands, native
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
@@ -3461,9 +3471,11 @@
   member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
-- full `global`/`$GLOBALS` semantics: reference-backed aliases, dynamic global
-  names, superglobals, included-file scope interactions, copy-on-write, exact
-  warning/notice behavior, and native lowering
+- full `global`/`$GLOBALS` semantics beyond direct string-keyed `$GLOBALS`
+  root-symbol reads/writes: reference-backed aliases, recursive `$GLOBALS`
+  materialization, dynamic global names, superglobals, included-file scope
+  interactions, copy-on-write, exact warning/notice behavior, and native
+  lowering
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters

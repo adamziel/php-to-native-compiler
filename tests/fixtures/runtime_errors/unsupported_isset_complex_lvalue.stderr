@@ -1,2 +1,2 @@
-runtime error at 3:12: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported
+runtime error at 3:12: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported
 

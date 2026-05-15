@@ -297,7 +297,7 @@ fn complex_isset_operands_remain_explicitly_unsupported() {
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported"
+        "unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported"
     );
 }
 

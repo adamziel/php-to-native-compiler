@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone814/wordpress_hook_object_property_isset.php"
+  ],
+  "stdin": "",
+  "stdout": "new|registered",
+  "stderr": "",
+  "exit": 0
+}

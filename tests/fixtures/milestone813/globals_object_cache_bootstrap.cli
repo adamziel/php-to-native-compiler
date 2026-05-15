@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone813/globals_object_cache_bootstrap.php"
+  ],
+  "stdin": "",
+  "stdout": "users|sites",
+  "stderr": "",
+  "exit": 0
+}

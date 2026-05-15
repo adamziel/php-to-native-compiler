@@ -4,6 +4,47 @@
 
 Implemented:
 
+- Added Milestone 814, direct object-property array-offset `isset(...)` for
+  the reached WordPress hook registration path. `isset($this->callbacks[
+  $priority ])` and nested direct object-property array paths now read the
+  visible property through the active visibility context, evaluate keys left to
+  right, return false for missing/null/non-array path components, and return
+  true only when the final value is non-null. This is not arbitrary
+  object-dimension `isset(...)`, dynamic property paths, ArrayAccess,
+  references/copy-on-write, exact diagnostics, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past
+  `WP_Hook::add_filter()`'s reached
+  `$priority_existed = isset( $this->callbacks[ $priority ] );` path to
+  `runtime error at <bootstrap-shim>:98:4: undefined function ksort()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test array_isset object_property_array_offset_isset -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone814`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
+- Added Milestone 813, bounded direct `$GLOBALS['name']` root-symbol routing
+  for the reached WordPress object-cache bootstrap path. Direct string-keyed
+  `$GLOBALS[...]` reads and writes now route to the root global symbol table
+  from top-level and function scopes, allowing `wp_cache_init()` to assign
+  `$GLOBALS['wp_object_cache'] = new WP_Object_Cache();` and later
+  `global $wp_object_cache;` imports to see the same object. This is not full
+  PHP `$GLOBALS` array aliasing, recursive `$GLOBALS` materialization,
+  non-string keyed `$GLOBALS` access, dynamic global names, references,
+  copy-on-write, exact warning/notice behavior, included-file scope fidelity,
+  or native lowering. The real WordPress 6.9.4 bootstrap-shim probe advances
+  past the previous
+  `unsupported call add_global_groups(): receiver must be object, got null`
+  failure to the reached `WP_Hook::add_filter()` object-property array
+  `isset(...)` path, which Milestone 814 then covers. Focused verification so
+  far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals globals_direct_string_offsets -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone813`, and
+  the same real WordPress inventory probe.
+
 - Added Milestone 812, direct object-property array-offset compound assignment
   for the reached WordPress object-cache mutation path. The parser and
   interpreter now accept targets such as

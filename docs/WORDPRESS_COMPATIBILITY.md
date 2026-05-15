@@ -990,6 +990,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   assignment, mixed object/property/ArrayAccess targets,
   references/copy-on-write, native lowering, real object-cache bootstrap, or
   WordPress bootstrap support.
+  Milestone 813 implements bounded direct `$GLOBALS['name']` root-symbol
+  routing for the reached `wp_cache_init()` object-cache assignment, so later
+  `global $wp_object_cache;` imports see the object written through
+  `$GLOBALS['wp_object_cache']`. This is not full PHP `$GLOBALS` array aliasing,
+  recursive `$GLOBALS` materialization, non-string keyed `$GLOBALS`, dynamic
+  globals, references/copy-on-write, exact warning/notice behavior, or native
+  lowering. Milestone 814 implements direct object-property array-offset
+  `isset(...)` for the reached `WP_Hook::add_filter()` priority check
+  `$priority_existed = isset( $this->callbacks[ $priority ] );`. This is not
+  arbitrary object-dimension `isset(...)`, dynamic property paths, ArrayAccess,
+  references/copy-on-write, exact diagnostics, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:98:4: undefined function ksort()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

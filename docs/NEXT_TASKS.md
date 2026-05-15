@@ -7454,17 +7454,33 @@ handled.
   assignment for the reached `$this->cache[ $group ][ $key ] += $offset;`
   object-cache path and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:359:2: unsupported call add_global_groups(): receiver must be object, got null`.
-- [ ] Runtime/object-cache lane: model the reached object-cache bootstrap state
+- [x] Runtime/object-cache lane: model the reached object-cache bootstrap state
   so `wp_cache_add_global_groups()` calls `add_global_groups()` on a real
   `WP_Object_Cache` placeholder instead of `null`. Keep real cache persistence,
   cache groups, eviction, global/non-persistent group semantics, object-cache
   drop-ins, exact diagnostics, and native lowering named unless implemented.
+  Milestone 813 supports bounded direct `$GLOBALS['name']` root-symbol routing
+  for the reached `wp_cache_init()` assignment and advances the real
+  bootstrap-shim probe to the reached `WP_Hook::add_filter()` object-property
+  array `isset(...)` path.
+- [x] Runtime/hook lane: support the reached direct object-property
+  array-offset `isset(...)` path in `WP_Hook::add_filter()` while keeping
+  arbitrary object-dimension `isset(...)`, dynamic property paths, ArrayAccess,
+  references/copy-on-write, exact diagnostics, and native lowering named unless
+  implemented. Milestone 814 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:98:4: undefined function ksort()`.
+- [ ] Runtime/array-ordering lane: implement the reached bounded
+  `ksort($this->callbacks, SORT_NUMERIC)` behavior for `WP_Hook::add_filter()`
+  without claiming full PHP sort semantics. Keep by-reference argument
+  handling outside the reached target shapes, locale/string/natural sorts,
+  mixed key comparison edge cases, stable-sort guarantees, exact diagnostics,
+  and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 812 checkpoint, the latest committed checkpoint
-  is `7d99331 runtime: add bounded wpdb dynamic table slots`, covering
-  Milestone 811.
+- Before the current Milestone 813/814 checkpoint, the latest committed
+  checkpoint is `70aa138 runtime: add bounded object property nested compound`,
+  covering Milestone 812.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

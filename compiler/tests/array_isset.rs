@@ -149,6 +149,29 @@ if (isset($missing[key_name("outer")][key_name("inner")])) {
 }
 
 #[test]
+fn object_property_array_offset_isset_matches_supported_php_subset() {
+    let source = r#"<?php
+class Hook {
+    public $callbacks = array();
+
+    public function add($priority) {
+        echo isset($this->callbacks[$priority]) ? "seen" : "new";
+        $this->callbacks[$priority]["id"] = "registered";
+        echo "|", isset($this->callbacks[$priority]["id"]) ? "set" : "missing";
+        echo "|", isset($this->callbacks[$priority]["null"]) ? "null-set" : "null-missing";
+    }
+}
+
+$hook = new Hook();
+$hook->add(10);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "new|set|null-missing");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn non_variable_array_offset_isset_operands_remain_explicitly_unsupported() {
     let error = runtime_error("<?php\nfunction make() { return [1]; }\necho isset(make()[0]);\n");
 
@@ -156,6 +179,6 @@ fn non_variable_array_offset_isset_operands_remain_explicitly_unsupported() {
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported"
+        "unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported"
     );
 }

@@ -68,6 +68,30 @@ echo $_SERVER["HTTP_HOST"];
 }
 
 #[test]
+fn globals_direct_string_offsets_route_function_scope_writes_to_root() {
+    let execution = run_source(
+        r#"<?php
+function boot_cache() {
+    $GLOBALS["wp_object_cache"] = "ready";
+}
+
+function use_cache() {
+    global $wp_object_cache;
+    echo $wp_object_cache;
+}
+
+boot_cache();
+use_cache();
+echo "|", $GLOBALS["wp_object_cache"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ready|ready");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
     let error = runtime_error("<?php\necho $_GET;\n");
 
