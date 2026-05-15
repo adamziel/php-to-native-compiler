@@ -1,0 +1,1 @@
+system PHP populates SAPI-specific $_SERVER state; phpc seeds a deterministic CLI placeholder.

@@ -7685,16 +7685,24 @@ handled.
   cleanup used by `wp_guess_url()`. The real bootstrap-shim probe now advances
   to
   `runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
-- [ ] Runtime/superglobal lane: seed or otherwise bound the reached
+- [x] Runtime/superglobal lane: seed or otherwise bound the reached
   `$_SERVER['HTTP_HOST']` startup path in the WordPress bootstrap shim without
   claiming a full SAPI/request environment. Keep host header validation,
   proxy/web-server state, request routing, HTTPS/port handling, exact warnings,
   and native lowering named unless implemented.
+  Milestone 838 seeds `HTTP_HOST` as `localhost` in the deterministic CLI
+  `$_SERVER` placeholder. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
+- [ ] Runtime/string lane: implement the next bounded `rtrim()` path reached
+  by the WordPress bootstrap shim. Keep broad charlist range behavior,
+  binary/null-byte edge cases, object/resource operands, exact diagnostics, and
+  native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 837 checkpoint, the latest committed checkpoint
-  is `186016e runtime: add bounded substr`, covering Milestone 836.
+- Before the current Milestone 838 checkpoint, the latest committed checkpoint
+  is `37056a1 runtime: add wordpress preg replace path tail`, covering
+  Milestone 837.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

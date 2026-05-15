@@ -523,6 +523,7 @@ impl Interpreter {
         let mut server = PhpArray::new();
         server.insert("SERVER_SOFTWARE", Value::String("phpc".to_string()));
         server.insert("REQUEST_URI", Value::String("/".to_string()));
+        server.insert("HTTP_HOST", Value::String("localhost".to_string()));
         server.insert("PHP_SELF", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_FILENAME", Value::String("/index.php".to_string()));

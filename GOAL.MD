@@ -129,10 +129,11 @@ object/class-string static property access for the PHPMailer validator
 assignment, deterministic CLI `$_SERVER['SCRIPT_FILENAME']` startup state, and
 the reached `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` guard,
 bounded `substr()` string slicing for the following bootstrap path, and bounded
-`preg_replace()` path-tail cleanup. As of
-Milestone 837, direct `wp-settings.php` still stops at missing `ABSPATH`, while
+`preg_replace()` path-tail cleanup, plus deterministic `HTTP_HOST` startup
+state. As of
+Milestone 838, direct `wp-settings.php` still stops at missing `ABSPATH`, while
 the bootstrap shim now stops at
-`runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
+`runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -448,9 +449,10 @@ writes. Milestone 834 seeds the deterministic CLI
 `$_SERVER['SCRIPT_FILENAME']` startup key, and
 Milestone 835 covers the reached `str_ends_with()` CGI guard, Milestone 836
 covers bounded `substr()` slicing, and Milestone 837 covers the reached
-`preg_replace('#/[^/]*$#i', '', ...)` path-tail cleanup. The current
+`preg_replace('#/[^/]*$#i', '', ...)` path-tail cleanup. Milestone 838 seeds
+the reached deterministic `$_SERVER['HTTP_HOST']` placeholder. The current
 bootstrap-shim frontier is now
-`runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
+`runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -651,8 +653,9 @@ The repository already has a working Rust workspace with:
   `SCRIPT_FILENAME` CLI seed covers the reached URL-guessing read, and a
   bounded `str_ends_with()` slice covers the following CGI guard, bounded
   `substr()` covers the next string-slicing path, and bounded `preg_replace()`
-  covers the reached path-tail cleanup. The next bottleneck is missing
-  `$_SERVER['HTTP_HOST']` request state.
+  covers the reached path-tail cleanup, and deterministic `HTTP_HOST` startup
+  state covers the next host read. The next bottleneck is `rtrim()` in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -974,12 +977,12 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 837 is the active checkpoint candidate: bounded `preg_replace()`
-  path-tail cleanup advanced the real WordPress bootstrap shim to missing
-  `$_SERVER['HTTP_HOST']`.
-- The next immediate WordPress-directed runtime lane is a bounded `HTTP_HOST`
-  startup path, with broader SAPI/request semantics and native lowering named
-  unless implemented.
+- Milestone 838 is the active checkpoint candidate: deterministic `HTTP_HOST`
+  startup state advanced the real WordPress bootstrap shim to missing
+  `rtrim()`.
+- The next immediate WordPress-directed runtime lane is a bounded `rtrim()`
+  slice, with broader charlist/binary string semantics and native lowering
+  named unless implemented.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

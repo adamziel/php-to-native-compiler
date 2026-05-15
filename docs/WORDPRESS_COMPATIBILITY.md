@@ -1198,6 +1198,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   limit/count output, exact diagnostics, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
+  Milestone 838 seeds `$_SERVER['HTTP_HOST']` as deterministic `localhost` for
+  the reached `wp_guess_url()` path. This is not full SAPI/request state,
+  trusted Host-header validation, proxy/web-server routing, HTTPS/port
+  handling, exact warnings, or native lowering. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

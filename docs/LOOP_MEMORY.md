@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `37056a1 runtime: add wordpress preg replace path tail`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 838, bounded deterministic
+  `$_SERVER['HTTP_HOST']` CLI startup state for the reached WordPress
+  `wp_guess_url()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/superglobals.rs`, `tests/fixtures/milestone838/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone838`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: full SAPI/request population, trusted Host-header
+  validation, proxy/web-server routing, HTTPS/port inference, sessions/cookies,
+  exact warnings, and native lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
+- Next concrete task: run the full checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: seed http host server default"` if the full
+  gate passes. Milestone 839 should bound the reached `rtrim()` path without
+  claiming broad string charlist coverage.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `186016e runtime: add bounded substr`, pushed to `origin/master`.
 - Task attempted: Milestone 837, bounded `preg_replace()` path-tail cleanup for
   the reached WordPress `wp_guess_url()` path.
