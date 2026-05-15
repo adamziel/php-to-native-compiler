@@ -676,8 +676,8 @@
   keys may currently be string literals, integer literals, bare string keys, or
   variable keys that coerce through the current array-key rules. Nested
   offsets, dynamic property names, static properties, `${...}`, variable
-  variables, arbitrary expression interpolation, heredoc, nowdoc, exact
-  diagnostics, and native lowering remain unsupported.
+  variables, arbitrary expression interpolation, exact diagnostics, and native
+  lowering remain unsupported.
 - syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
   before functions, classes, class members, and parameters. Attribute metadata,
   reflection visibility, target validation, namespace-aware attribute names,
@@ -3084,10 +3084,12 @@
   label diagnostics, jumps into nested blocks, cross-function jumps, included
   file label boundaries, `finally` interaction, and native lowering remains
   unsupported.
-- heredoc/nowdoc string syntax currently fails with a stable lex diagnostic
-  before multiline string tokenization, interpolation, indentation stripping,
-  exact label parsing, runtime string construction, or native string lowering
-  exists.
+- heredoc/nowdoc string syntax supports the current unindented identifier-label
+  subset. Heredoc behaves like double-quoted strings over the current
+  interpolation parts, while nowdoc remains literal. Indentation stripping,
+  quoted labels beyond the simple current form, arbitrary label whitespace,
+  malformed-label recovery, exact diagnostics, and native lowering remain
+  unsupported.
 - Full ternary conditional expressions `$condition ? $if_true : $if_false`
   execute over the current expression/value subset with truthiness-based
   condition selection and lazy branch evaluation. Short ternary expressions

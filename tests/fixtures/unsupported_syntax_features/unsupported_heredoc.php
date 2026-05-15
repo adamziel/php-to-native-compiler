@@ -1,5 +1,5 @@
 <?php
 $text = <<<TXT
 hello
-TXT;
+    TXT;
 echo $text;

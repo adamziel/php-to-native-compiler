@@ -1,1 +1,1 @@
-
+Documents the current boundary for indented heredoc terminators; host PHP accepts indentation stripping in modern versions.

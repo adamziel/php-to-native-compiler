@@ -306,6 +306,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   arbitrary expression interpolation, heredoc/nowdoc, exact diagnostics, or
   native lowering. The bootstrap-shim probe now reaches
   `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
+  Milestone 736 adds bounded heredoc/nowdoc syntax for unindented identifier
+  labels, with heredoc using the current interpolation subset and nowdoc
+  staying literal. This is not indentation stripping, full quoted-label
+  handling, arbitrary label whitespace, malformed-label recovery, exact
+  diagnostics, or native lowering. The bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -252,12 +252,10 @@ impl<'a> Lexer<'a> {
                         TokenKind::LessEqual
                     } else if self.match_char('<') {
                         if self.match_char('<') {
-                            return Err(self.error_at(
-                                span,
-                                "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented",
-                            ));
+                            self.lex_heredoc(span)?
+                        } else {
+                            TokenKind::LeftShift
                         }
-                        TokenKind::LeftShift
                     } else {
                         TokenKind::Less
                     }
@@ -531,6 +529,145 @@ impl<'a> Lexer<'a> {
         }
 
         Err(self.error_at(span, "unterminated string literal"))
+    }
+
+    fn lex_heredoc(&mut self, span: Span) -> CompileResult<TokenKind> {
+        while matches!(self.peek(), Some(' ' | '\t')) {
+            self.advance();
+        }
+
+        let interpolate = match self.peek() {
+            Some('\'') => {
+                self.advance();
+                false
+            }
+            Some('"') => {
+                self.advance();
+                true
+            }
+            _ => true,
+        };
+
+        let Some(first) = self.peek() else {
+            return Err(self.error_at(span, "unterminated heredoc/nowdoc string literal"));
+        };
+        if !is_identifier_start(first) {
+            return Err(self.error_at(span, unsupported_heredoc_message()));
+        }
+        let label = self.lex_identifier_name();
+
+        if !interpolate || self.peek() == Some('"') {
+            let quote = if interpolate { '"' } else { '\'' };
+            if self.peek() == Some(quote) {
+                self.advance();
+            } else if !interpolate {
+                return Err(self.error_at(span, unsupported_heredoc_message()));
+            }
+        }
+
+        while matches!(self.peek(), Some(' ' | '\t')) {
+            self.advance();
+        }
+
+        if self.peek() == Some('\r') {
+            self.advance();
+        }
+        if self.peek() != Some('\n') {
+            return Err(self.error_at(span, unsupported_heredoc_message()));
+        }
+        self.advance();
+
+        let mut value = String::new();
+        let mut parts = Vec::new();
+
+        while !self.is_at_end() {
+            if self.at_heredoc_terminator(&label) {
+                self.consume_heredoc_terminator(&label);
+                trim_heredoc_final_newline(&mut value, &mut parts);
+                if !parts.is_empty() {
+                    if !value.is_empty() {
+                        parts.push(InterpolatedStringPart::Literal(value));
+                    }
+                    return Ok(TokenKind::InterpolatedString(parts));
+                }
+                return Ok(TokenKind::StringLiteral(value));
+            }
+
+            let ch = self.peek().expect("checked not at end");
+            if interpolate && ch == '\\' {
+                self.advance();
+                let Some(escaped) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated heredoc string literal"));
+                };
+                value.push(self.advance_escaped_string_char(escaped));
+                continue;
+            }
+
+            if interpolate && ch == '$' {
+                if matches!(self.peek_next(), Some(next) if is_identifier_start(next)) {
+                    self.advance();
+                    if !value.is_empty() {
+                        parts.push(InterpolatedStringPart::Literal(value));
+                        value = String::new();
+                    }
+
+                    let name = self.lex_identifier_name();
+                    let part = self.lex_interpolated_suffix(name, span)?;
+                    parts.push(part);
+                    continue;
+                }
+
+                if matches!(self.peek_next(), Some('$' | '{')) {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+            }
+
+            if interpolate && ch == '{' && self.peek_next() == Some('$') {
+                self.advance();
+                self.advance();
+                if !value.is_empty() {
+                    parts.push(InterpolatedStringPart::Literal(value));
+                    value = String::new();
+                }
+
+                let Some(first) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated heredoc string literal"));
+                };
+                if !is_identifier_start(first) {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+
+                let name = self.lex_identifier_name();
+                let part = self.lex_interpolated_suffix(name, span)?;
+                if self.peek() != Some('}') {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+                self.advance();
+                parts.push(part);
+                continue;
+            }
+
+            value.push(self.advance());
+        }
+
+        Err(self.error_at(span, "unterminated heredoc/nowdoc string literal"))
+    }
+
+    fn consume_heredoc_terminator(&mut self, label: &str) {
+        for _ in label.chars() {
+            self.advance();
+        }
+    }
+
+    fn at_heredoc_terminator(&self, label: &str) -> bool {
+        if self.column != 1 || !self.starts_with(label) {
+            return false;
+        }
+        let start = self.byte_index() + label.len();
+        matches!(
+            self.source[start..].chars().next(),
+            None | Some(';' | '\r' | '\n')
+        )
     }
 
     fn lex_identifier_name(&mut self) -> String {
@@ -829,4 +966,29 @@ fn is_identifier_part(ch: char) -> bool {
 
 fn unsupported_string_interpolation_message() -> &'static str {
     "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
+}
+
+fn unsupported_heredoc_message() -> &'static str {
+    "unsupported heredoc/nowdoc string syntax: only unindented identifier labels are implemented; indentation stripping, label expressions, and malformed labels are not implemented"
+}
+
+fn trim_heredoc_final_newline(value: &mut String, parts: &mut [InterpolatedStringPart]) {
+    if trim_one_line_ending(value) {
+        return;
+    }
+
+    if let Some(InterpolatedStringPart::Literal(last)) = parts.last_mut() {
+        trim_one_line_ending(last);
+    }
+}
+
+fn trim_one_line_ending(value: &mut String) -> bool {
+    if !value.ends_with('\n') {
+        return false;
+    }
+    value.pop();
+    if value.ends_with('\r') {
+        value.pop();
+    }
+    true
 }

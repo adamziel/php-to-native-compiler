@@ -6765,16 +6765,27 @@ handled.
   dynamic/static properties, `${...}`, arbitrary expressions, heredoc/nowdoc,
   and native lowering unsupported, and advances the real bootstrap-shim probe to
   `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
-- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+- [x] Parser/string lane: implement or explicitly bound the next WordPress
   6.9.4 bootstrap-shim heredoc/nowdoc blocker at `<bootstrap-shim>:4225:9`,
   with tests, CLI coverage, docs, and named unsupported edges for label parsing,
   indentation stripping, interpolation, nowdoc non-interpolation, source spans,
-  exact diagnostics, and native lowering.
+  exact diagnostics, and native lowering. The Milestone 736 slice accepts
+  unindented identifier-label heredoc/nowdoc, trims the line ending before the
+  terminator, evaluates heredoc with the current interpolation subset, keeps
+  nowdoc literal, and advances the real bootstrap-shim probe to
+  `lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
+- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+  6.9.4 bootstrap-shim nested interpolation blocker at `<bootstrap-shim>:7267:17`,
+  likely covering chained object-property/array-offset interpolation such as
+  `{$block->context['displayLayout']['columns']}`, with tests, CLI coverage,
+  docs, and named unsupported edges for chain parsing, null/non-array/non-object
+  diagnostics, dynamic properties, static properties, `${...}`, exact
+  diagnostics, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 735 checkpoint, the latest committed checkpoint
-  is `75fb2e4 runtime: add bounded file_exists`, covering Milestone 734.
+- Before the current Milestone 736 checkpoint, the latest committed checkpoint
+  is `7d41fcb parser: add bounded interpolated offsets`, covering Milestone 735.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

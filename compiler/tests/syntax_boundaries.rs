@@ -48,32 +48,56 @@ echo $upper[1], "\n";
 }
 
 #[test]
-fn unsupported_heredoc_nowdoc_syntax_has_stable_lex_errors() {
+fn heredoc_and_nowdoc_strings_execute_current_unindented_label_subset() {
+    let execution = run_source(
+        r#"<?php
+$name = "Ada";
+$items = ["code" => 42];
+$text = <<<TXT
+hello {$name}
+code: {$items['code']}
+TXT;
+$literal = <<<'TXT'
+literal $name
+TXT;
+echo $text, $literal;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada\ncode: 42literal $name");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unsupported_heredoc_nowdoc_forms_have_stable_lex_errors() {
     let cases = [
-        ("<?php\n$text = <<<TXT\nhello\nTXT;\n", 2, 9),
-        ("<?php\n$text = <<<'TXT'\nhello\nTXT;\n", 2, 9),
+        (
+            "<?php\n$text = <<<TXT\nhello\n    TXT;\n",
+            "unterminated heredoc/nowdoc string literal",
+        ),
+        (
+            "<?php\n$text = <<<123\nhello\n123;\n",
+            "unsupported heredoc/nowdoc string syntax: only unindented identifier labels are implemented; indentation stripping, label expressions, and malformed labels are not implemented",
+        ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, message) in cases {
         let error = lex_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented"
-        );
+        assert_eq!(error.line, 2);
+        assert_eq!(error.column, 9);
+        assert_eq!(error.message, message);
     }
 }
 
 #[test]
-fn emit_ir_rejects_heredoc_nowdoc_syntax_at_lex_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$text = <<<TXT\nhello\nTXT;\n").unwrap_err();
+fn emit_ir_rejects_interpolated_heredoc_until_native_string_runtime_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$name = \"Ada\";\necho <<<TXT\nhello {$name}\nTXT;\n")
+            .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Lex);
-    assert_eq!(
-        error.message,
-        "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(error.message.contains("LLVM concatenation lowering"));
 }
 
 #[test]

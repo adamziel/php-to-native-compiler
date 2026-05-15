@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T12:05:00Z
+
+- Checkpoint before this task:
+  `7d41fcb parser: add bounded interpolated offsets`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 736, bounded heredoc/nowdoc syntax for the real
+  WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:4225:9`.
+- Files changed so far: `compiler/src/lexer.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `compiler/tests/heredoc_cli.rs`,
+  `tests/fixtures/milestone736/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_heredoc.*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test syntax_boundaries heredoc -- --test-threads=1`,
+  `cargo test -p phpc --test heredoc_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone736`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: indentation stripping, broader quoted-label forms,
+  arbitrary label whitespace, malformed-label recovery, exact diagnostics, and
+  native lowering remain unsupported for heredoc/nowdoc. The direct WordPress
+  probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
+- Next concrete task: implement or explicitly bound chained interpolation such
+  as `{$block->context['displayLayout']['columns']}` while keeping dynamic
+  properties, static properties, `${...}`, exact diagnostics, and native
+  lowering explicit.
+
 ## Loop Event 2026-05-15T11:05:00Z
 
 - Checkpoint before this task: `75fb2e4 runtime: add bounded file_exists`,

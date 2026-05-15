@@ -1359,10 +1359,12 @@ remain explicit unsupported zones.
 
 ## Heredoc/Nowdoc Boundary
 
-Heredoc and nowdoc syntax is rejected by the lexer with a stable diagnostic
-before multiline string tokenization. The compiler does not yet model label
-parsing, interpolation, indentation stripping, runtime string construction, or
-native string lowering for these forms.
+Heredoc and nowdoc syntax is tokenized directly in the lexer for the current
+unindented identifier-label subset. Heredoc reuses the existing double-quoted
+interpolation parts, while nowdoc emits a literal string. The lexer trims the
+line ending immediately before the terminator to match PHP's runtime value.
+Indentation stripping, broader quoted-label forms, malformed-label recovery,
+exact diagnostics, and native lowering remain explicit boundaries.
 
 ## Fixture Tests
 
