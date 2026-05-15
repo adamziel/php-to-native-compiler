@@ -515,8 +515,9 @@
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
   `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
-  `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
-  `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
+  `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
+  `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
+  `mysqli_data_seek`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
@@ -830,12 +831,15 @@
   executing SQL. For the exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
+  `mysqli_num_rows($result)` returns `0`,
   `mysqli_fetch_field($result)` and `mysqli_fetch_object($result)` return
   `false`, and `mysqli_free_result($result)` returns `null` for that
   placeholder empty result. For the exact deterministic seed-post query
   `SELECT ID, post_title FROM wp_posts WHERE ID = 1`, `mysqli_query()` returns
   a placeholder `mysqli_result` with two fields, `ID` and `post_title`, and
   one row. `mysqli_num_fields($result)` returns `2`,
+  `mysqli_num_rows($result)` returns `1` without advancing the shared row
+  cursor,
   `mysqli_fetch_field($result)` returns `stdClass` objects whose `name`
   properties are `ID` and `post_title` before returning `false`, and
   `mysqli_fetch_object($result)` returns one `stdClass` row with `ID = 1` and
@@ -2338,7 +2342,9 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
-  `mysqli_fetch_assoc`, `mysqli_fetch_field`, `mysqli_num_fields`,
+  `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
+  `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
+  `mysqli_data_seek`,
   `mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
   `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
@@ -2877,7 +2883,9 @@
   `mysqli_errno(...)`/`mysqli_error(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
+  `mysqli_fetch_row(...)`/`mysqli_fetch_array(...)`/
   `mysqli_fetch_field(...)`/`mysqli_num_fields(...)`/
+  `mysqli_num_rows(...)`/`mysqli_data_seek(...)`/
   `mysqli_free_result(...)`/`mysqli_more_results(...)`/
   `mysqli_next_result(...)`/`mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
@@ -4521,7 +4529,8 @@
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
-  `mysqli_fetch_field()`/`mysqli_num_fields()`/`mysqli_free_result()`/
+  `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
+  `mysqli_num_rows()`/`mysqli_data_seek()`/`mysqli_free_result()`/
   `mysqli_more_results()`/`mysqli_next_result()`/`mysqli_report()`/
   `mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and

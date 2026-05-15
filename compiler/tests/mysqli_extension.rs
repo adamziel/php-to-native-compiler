@@ -489,6 +489,32 @@ echo mysqli_data_seek($result, -1) ? "seek" : "no-seek";
 }
 
 #[test]
+fn mysqli_num_rows_counts_placeholder_rows_without_advancing_cursor() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$empty = mysqli_query($handle, "SELECT * FROM wp_posts WHERE 1 = 0");
+echo mysqli_num_rows($empty);
+echo "|";
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo mysqli_num_rows($result);
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["post_title"];
+echo "|";
+echo mysqli_num_rows($result);
+echo "|";
+echo mysqli_fetch_assoc($result) === false ? "no-row" : "row";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|1|Hello world placeholder|1|no-row");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_fetch_array_accepts_current_seed_row_modes() {
     let execution = run_source(
         r#"<?php
@@ -781,6 +807,8 @@ echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_num_fields") ? "1" : "0";
 echo is_callable("mysqli_num_fields") ? "1" : "0";
+echo function_exists("mysqli_num_rows") ? "1" : "0";
+echo is_callable("mysqli_num_rows") ? "1" : "0";
 echo function_exists("mysqli_data_seek") ? "1" : "0";
 echo is_callable("mysqli_data_seek") ? "1" : "0";
 echo function_exists("mysqli_free_result") ? "1" : "0";
@@ -801,7 +829,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 44, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 46, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

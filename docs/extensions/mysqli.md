@@ -5,7 +5,8 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_query`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
-`mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_free_result`,
+`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
+`mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_report`, and
 `mysqli_init` are currently visible through
 `function_exists()`, `is_callable()`, dynamic string-valued function lookup,
@@ -40,6 +41,7 @@ without executing SQL or producing a result resource.
 `mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
 placeholder `mysqli_result` object for the first deterministic empty result
 lifecycle boundary. `mysqli_num_fields($result)` returns `0`,
+`mysqli_num_rows($result)` returns `0`,
 `mysqli_fetch_field($result)` and `mysqli_fetch_object($result)` return
 `false`, and `mysqli_free_result($result)` returns `null`. For the placeholder
 connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
@@ -50,6 +52,7 @@ metadata, or model real result resources.
 returns a placeholder `mysqli_result` object with deterministic interpreter
 state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
 `post_title` is `Hello world placeholder`. `mysqli_num_fields()` returns `2`,
+`mysqli_num_rows()` returns `1` without advancing the shared row cursor,
 `mysqli_fetch_field()` returns `stdClass` objects with a `name` property for
 those two fields and then `false`, and `mysqli_fetch_object()` returns one
 `stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
@@ -91,6 +94,7 @@ real resources or connected objects beyond the placeholder shapes, no real
 server metadata, no query execution beyond the documented deterministic
 queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
-numeric or mixed fetch modes, no errors/warnings, no transactions, no
-configuration beyond the current report-mode flag, no PDO bridge, and no
-native database lowering.
+fetch modes beyond the documented placeholder row shapes, no real row-count
+or affected-row state beyond placeholder result counts, no errors/warnings, no
+transactions, no configuration beyond the current report-mode flag, no PDO
+bridge, and no native database lowering.

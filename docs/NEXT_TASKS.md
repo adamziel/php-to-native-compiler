@@ -7980,16 +7980,25 @@ handled.
   result, and drains placeholder multi-result state. It is not real WordPress
   `wpdb` result caching, SQL execution, database state, cache behavior,
   warnings/errors, broad cursor semantics, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next result/database boundary after
+- [x] Runtime/mysqli lane: inspect the next result/database boundary after
   placeholder cursor reset and choose a small tested slice, such as deterministic
   `mysqli_num_rows()` for placeholder results or a named boundary for affected
   rows/insert IDs before any broader SQL execution.
+  Milestone 867 implements bounded `mysqli_num_rows($result)` for placeholder
+  result state. It returns the stored buffered row count for the exact empty
+  result and deterministic seed-post result, does not advance the fetch cursor,
+  and is visible through runtime and native metadata lookup. This is not real
+  buffered/unbuffered result behavior, SQL execution, database state,
+  affected-row/insert-id state, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+  `mysqli_num_rows()` through a WordPress-shaped result-count path without
+  claiming real `wpdb` database state or query fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `660e122 runtime: add mysqli data seek placeholder`, covering Milestone 865
-  before the current Milestone 866 candidate.
+  `5d172fe tests: add wordpress wpdb data seek smoke`, covering Milestone 866
+  before the current Milestone 867 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

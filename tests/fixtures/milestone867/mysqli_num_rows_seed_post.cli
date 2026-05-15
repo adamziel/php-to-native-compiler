@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone867/mysqli_num_rows_seed_post.php
+0
+empty
+1
+1|Hello world placeholder
+1
+no-row

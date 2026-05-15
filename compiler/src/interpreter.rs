@@ -4518,6 +4518,13 @@ impl Interpreter {
         Ok(Value::Int(state.fields.len() as i64))
     }
 
+    fn call_mysqli_num_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_num_rows", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_num_rows()", &args[0], span)?;
+        let state = self.mysqli_result_state("mysqli_num_rows()", result_id, span)?;
+        Ok(Value::Int(state.rows.len() as i64))
+    }
+
     fn call_mysqli_data_seek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_data_seek", args, 2, span)?;
         let result_id = expect_mysqli_result_handle("mysqli_data_seek()", &args[0], span)?;
@@ -8951,6 +8958,7 @@ impl Interpreter {
             "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
+            "mysqli_num_rows" => self.call_mysqli_num_rows(&args, span),
             "mysqli_data_seek" => self.call_mysqli_data_seek(&args, span),
             "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
             "mysqli_more_results" => self.call_mysqli_more_results(&args, span),
@@ -11878,6 +11886,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
+            | "mysqli_num_rows"
             | "mysqli_data_seek"
             | "mysqli_free_result"
             | "mysqli_more_results"

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 867, bounded `mysqli_num_rows()` support for interpreter
+  placeholder result state. The runtime now accepts
+  `mysqli_num_rows($result)` for current placeholder `mysqli_result` objects,
+  returns the stored row count for both the exact empty-result and deterministic
+  seed-post result boundaries, leaves the shared fetch cursor unchanged, and
+  exposes the function through runtime and native metadata lookup. The CLI
+  fixture proves the `0` empty-result count, the `1` seed-post count, and that
+  counting after a fetch still reports the original buffered placeholder row
+  count. This is not real buffered/unbuffered MySQLi result behavior, SQL
+  execution, database state, affected-row/insert-id state, warnings/errors, or
+  native database lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_num_rows_counts_placeholder_rows_without_advancing_cursor -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone867`.
+
 - Added Milestone 866, a synthetic WordPress-shaped `wpdb::get_results()`
   smoke that reads the deterministic seed-post placeholder result, rewinds it
   with `mysqli_data_seek($result, 0)`, and reads the same placeholder row again

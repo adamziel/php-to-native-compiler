@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `5d172fe tests: add wordpress wpdb data seek smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 867, bounded `mysqli_num_rows()` support for
+  interpreter placeholder result state.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone867/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_num_rows_counts_placeholder_rows_without_advancing_cursor -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone867`, and
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed.
+- Current WordPress frontier: placeholder MySQLi result state can expose a
+  buffered row count for the exact empty-result and seed-post result
+  boundaries without moving the fetch cursor.
+- Remaining semantic gaps: real buffered/unbuffered result behavior, SQL
+  execution, database state, affected-row/insert-id state, query parsing,
+  warnings/errors, real WordPress `wpdb` fidelity, and native database lowering
+  remain missing.
+- Next concrete task: run focused Rust and fixture verification, then
+  whitespace checks and the serialized checkpoint gate if the focused checks
+  pass.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `660e122 runtime: add mysqli data seek placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 866, a synthetic WordPress-shaped
