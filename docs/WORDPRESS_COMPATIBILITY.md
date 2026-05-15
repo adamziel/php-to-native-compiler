@@ -1367,7 +1367,9 @@ historical blockers and remaining full-support gaps include:
   bookkeeping smoke without claiming real WordPress transaction fidelity.
   Milestone 887 adds deterministic clean `mysqli_sqlstate()` and
   `mysqli_warning_count()` placeholder metadata without real SQLSTATE,
-  warning-count, or host error-state tracking.
+  warning-count, or host error-state tracking. Milestone 888 wires that clean
+  placeholder metadata through a synthetic WordPress-shaped `wpdb` error-state
+  bookkeeping smoke without claiming real database warning/error fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

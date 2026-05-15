@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone888/wpdb_error_state_metadata.php
+00000
+0
+
+00000
+0
+checked

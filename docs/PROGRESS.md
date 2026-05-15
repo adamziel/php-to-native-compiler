@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 888, a synthetic WordPress-shaped `wpdb` error-state
+  bookkeeping smoke that calls the bounded clean `mysqli_errno()`,
+  `mysqli_error()`, `mysqli_sqlstate()`, and `mysqli_warning_count()`
+  placeholder paths, records local error metadata, and verifies that the
+  placeholder boundary ran. This is a harness smoke only; it does not add real
+  WordPress database error fidelity, SQLSTATE tracking, warning-count tracking,
+  host database integration, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone888`.
+
 - Added Milestone 887, bounded `mysqli_sqlstate()` and
   `mysqli_warning_count()` support for placeholder MySQLi handles. The runtime
   now accepts both functions for current placeholder `mysqli` objects, returns

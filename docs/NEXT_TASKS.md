@@ -8198,16 +8198,26 @@ handled.
   and native metadata lookup. This is not real SQLSTATE tracking,
   warning-count tracking, host database integration, warnings/errors, or
   native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_sqlstate()`/`mysqli_warning_count()` placeholders through
   WordPress-shaped error-state bookkeeping without claiming real database
   warning/error fidelity.
+  Milestone 888 adds a `phpc-only` synthetic `wpdb` fixture that calls
+  `mysqli_errno()`, `mysqli_error()`, `mysqli_sqlstate()`, and
+  `mysqli_warning_count()` on the placeholder handle, records local error-state
+  bookkeeping, and verifies the clean deterministic metadata. It is not real
+  WordPress database error fidelity, SQLSTATE tracking, warning-count tracking,
+  host database integration, warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after clean
+  error-state metadata and choose a small tested slice, such as deterministic
+  `mysqli_get_client_info()`/`mysqli_get_proto_info()` metadata or a sharper
+  named diagnostic, before broader SQL execution or real host state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5ea242b tests: add wordpress wpdb commit rollback smoke`, covering
-  Milestone 886 before the current Milestone 887 candidate.
+  `afaaa0d runtime: add mysqli clean error state placeholders`, covering
+  Milestone 887 before the current Milestone 888 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

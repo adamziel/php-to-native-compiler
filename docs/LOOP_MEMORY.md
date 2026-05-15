@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `afaaa0d runtime: add mysqli clean error state placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 888, a synthetic WordPress-shaped `wpdb`
+  error-state bookkeeping smoke over deterministic clean MySQLi error-state
+  metadata.
+- Files changed so far: `tests/fixtures/milestone888/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone888`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped error-state bookkeeping path
+  can now record deterministic clean errno, error string, SQLSTATE, and
+  warning-count metadata.
+- Remaining semantic gaps: real WordPress database error fidelity, SQLSTATE
+  tracking, warning-count tracking, host database integration, warning/error
+  fidelity, database state mutation, and native database lowering remain
+  missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, inspect the next small MySQLi metadata
+  or diagnostic boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `5ea242b tests: add wordpress wpdb commit rollback smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 887, bounded `mysqli_sqlstate()` and
