@@ -1362,7 +1362,9 @@ historical blockers and remaining full-support gaps include:
   claiming real WordPress transaction fidelity. Milestone 885 adds bounded
   deterministic `mysqli_commit()`/`mysqli_rollback()` placeholder success
   without real transaction state, savepoints, database mutation, warning/error
-  fidelity, or host database integration.
+  fidelity, or host database integration. Milestone 886 wires those
+  placeholders through a synthetic WordPress-shaped `wpdb` commit/rollback
+  bookkeeping smoke without claiming real WordPress transaction fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

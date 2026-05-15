@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone886/wpdb_commit_rollback_boundary.php
+begin-commit
+committed
+begin-rollback
+rolled-back
+commit-checked
+rollback-checked
+wp-rollback
+4

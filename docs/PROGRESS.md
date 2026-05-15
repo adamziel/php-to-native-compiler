@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 886, a synthetic WordPress-shaped `wpdb`
+  transaction-completion bookkeeping smoke that calls the bounded
+  `mysqli_commit($this->dbh, 0, $name)` and
+  `mysqli_rollback($this->dbh, 0, $name)` placeholder paths after placeholder
+  transaction starts, records local commit/rollback state, and verifies that
+  all four placeholder transaction calls ran. This is a harness smoke only; it
+  does not add real WordPress transaction fidelity, real transaction state,
+  autocommit state mutation, database mutation, savepoints, host database
+  integration, warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone886`.
+
 - Added Milestone 885, bounded `mysqli_commit()` and `mysqli_rollback()`
   support for placeholder MySQLi handles. The runtime now accepts
   `mysqli_commit($handle)` and `mysqli_rollback($handle)`, plus optional flags

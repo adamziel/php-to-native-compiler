@@ -1,0 +1,8 @@
+begin-commit
+committed
+begin-rollback
+rolled-back
+commit-checked
+rollback-checked
+wp-rollback
+4

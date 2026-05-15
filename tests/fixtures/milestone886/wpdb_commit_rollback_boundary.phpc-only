@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic `mysqli_commit()` and
+`mysqli_rollback()` placeholders through a WordPress-shaped `wpdb` transaction
+bookkeeping path. System PHP would require the mysqli extension and a real host
+connection to commit or roll back actual transaction state.
