@@ -534,6 +534,35 @@ injects this file into every prompt. Each Codex pass should update it with:
   behavior, coercions, cache invalidation, diagnostics, and native-lowering
   gaps.
 
+## Loop Event 2026-05-15T07:39:43Z
+
+- Checkpoint before this task:
+  `89b57ac runtime: add nested isset`, pushed to `origin/master`.
+- Task attempted: Milestone 780, bounded `is_readable()` for the WordPress
+  fatal-error-handler override check.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/is_readable_builtin.rs`,
+  `tests/fixtures/milestone780/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test is_readable_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone780`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: include-path lookup, stream wrappers,
+  symlink/canonicalization policy, portable permission modeling, warning
+  behavior, non-string coercions, stat-cache behavior, open_basedir, exact
+  diagnostics, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:95:2: undefined function register_shutdown_function()`,
+  corresponding to `wp-includes/error-protection.php:95`.
+- Next concrete task: implement a bounded `register_shutdown_function()` slice
+  for the reached fatal-error-handler registration path while documenting
+  callback invocation ordering, arguments, by-reference callbacks, output
+  buffering, destructor/finally interaction, fatal-error context, diagnostics,
+  and native-lowering gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

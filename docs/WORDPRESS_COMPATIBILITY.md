@@ -731,6 +731,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   non-variable array roots, object dimensions, nested `empty(...)`/`??` parity,
   PHP warning/notice suppression details, references/copy-on-write, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 780 implements bounded local-path `is_readable()` for that reached
+  check. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:95:2: undefined function register_shutdown_function()`,
+  corresponding to `wp-includes/error-protection.php:95`. This is not full
+  filesystem support, stream wrappers, include-path lookup, portable permission
+  modeling, stat-cache behavior, exact diagnostics, native lowering, shutdown
+  function semantics, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

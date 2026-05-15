@@ -419,6 +419,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
+  `is_readable`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -569,6 +570,13 @@
   fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
+  `is_readable($path)` accepts one string local path, rejects stream-wrapper
+  paths, returns `false` for missing paths, and checks host readability for
+  files with `File::open` and directories with `read_dir`. It shares the same
+  current relative path policy as `file_exists`. Include-path lookup, stream
+  wrappers, canonicalization/symlink policy, portable permissions, warning
+  behavior, non-string coercions, stat-cache behavior, open_basedir,
+  partial-output behavior, and native lowering remain unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. It currently records no autoload stack and never invokes the
@@ -1919,7 +1927,8 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `min`, `dirname`, `file_exists`, `mysqli_connect`,
+  `strtolower`, `trim`, `str_contains`, `min`, `dirname`, `file_exists`,
+  `is_readable`, `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2339,7 +2348,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `is_readable`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,

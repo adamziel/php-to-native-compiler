@@ -7145,17 +7145,28 @@ handled.
   `isset(...)` and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:87:38: undefined function is_readable()`,
   corresponding to `wp-includes/error-protection.php:87`.
-- [ ] Filesystem/runtime lane: implement a bounded `is_readable()` builtin
+- [x] Filesystem/runtime lane: implement a bounded `is_readable()` builtin
   slice for the reached WordPress fatal-error-handler override check, starting
   with one string path argument and host filesystem metadata. Keep stream
   wrappers, include_path behavior, permissions portability, warning behavior,
   non-string coercions, cache invalidation, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 780 implements the local one-string path slice and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:95:2: undefined function register_shutdown_function()`,
+  corresponding to `wp-includes/error-protection.php:95`.
+- [ ] Runtime/SAPI lane: implement a bounded `register_shutdown_function()`
+  slice for the reached WordPress fatal-error-handler registration path,
+  starting with accepting/registering callable metadata without executing
+  shutdown callbacks unless a tested shutdown phase exists. Keep callback
+  invocation ordering, argument passing, by-reference callbacks, output
+  buffering, destructor/finally interaction, fatal-error context,
+  exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 779 checkpoint, the latest committed checkpoint
-  is `e3e58ba runtime: add bounded min`, covering Milestone 778.
+- Before the current Milestone 780 checkpoint, the latest committed checkpoint
+  is `89b57ac runtime: add nested isset`, covering Milestone 779.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

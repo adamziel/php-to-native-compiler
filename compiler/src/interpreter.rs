@@ -7133,6 +7133,42 @@ impl Interpreter {
                     )),
                 }
             }
+            "is_readable" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "is_readable()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        let readable = if metadata.is_dir() {
+                            fs::read_dir(&metadata_path).is_ok()
+                        } else {
+                            fs::File::open(&metadata_path).is_ok()
+                        };
+                        Ok(Value::Bool(readable))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "is_readable()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "header" => call_header(&args, span),
             "header_remove" => call_header_remove(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
@@ -9416,6 +9452,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "mysqli_connect"
             | "file_exists"
+            | "is_readable"
             | "header"
             | "header_remove"
             | "headers_sent"

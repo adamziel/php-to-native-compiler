@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 780, bounded `is_readable()` for the current WordPress
+  fatal-error-handler override check. The runtime now accepts one string local
+  path, rejects stream-wrapper paths, checks missing paths as `false`, checks
+  files with host `File::open`, checks directories with host `read_dir`,
+  exposes the builtin through function/callability metadata and dynamic
+  string-valued calls, and keeps direct native calls behind the generic
+  function-call lowering boundary. Include-path lookup, stream wrappers,
+  symlink/canonicalization policy, portable permission modeling, warning
+  behavior, non-string coercions, stat-cache behavior, open_basedir, exact
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past `is_readable()` in
+  `wp-includes/error-protection.php:87` to
+  `runtime error at <bootstrap-shim>:95:2: undefined function register_shutdown_function()`,
+  corresponding to `wp-includes/error-protection.php:95`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test is_readable_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone780`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 779, bounded nested direct-variable array-offset `isset(...)`
   for the current WordPress `wp_is_ini_value_changeable()` path. The runtime
   now accepts direct variable rooted array-offset paths such as
