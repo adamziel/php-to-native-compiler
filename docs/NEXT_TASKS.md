@@ -7192,16 +7192,24 @@ handled.
   Milestone 784 implements a bounded slash-delimited literal pattern slice and
   advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:635:3: undefined function error_reporting()`.
-- [ ] Error/reporting runtime lane: implement a bounded `error_reporting()`
+- [x] Error/reporting runtime lane: implement a bounded `error_reporting()`
   slice for the reached WordPress startup path. Keep mutable reporting masks,
   constants such as `E_ALL`, interaction with warnings/notices/deprecations,
   ini state, previous-mask return behavior, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 785 implements bounded integer mask state plus reached `E_*`
+  constants and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:666:10: undefined function is_dir()`.
+- [ ] Filesystem runtime lane: implement a bounded `is_dir()` slice for the
+  reached WordPress startup path. Keep stream wrappers, include-path behavior,
+  symlink/canonicalization policy, permission/open_basedir behavior,
+  non-string coercions, stat-cache behavior, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 784 checkpoint, the latest committed checkpoint
-  is `4c972e8 runtime: add bounded server state`, covering Milestone 783.
+- Before the current Milestone 785 checkpoint, the latest committed checkpoint
+  is `8756b29 runtime: add bounded preg match`, covering Milestone 784.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

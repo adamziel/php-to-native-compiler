@@ -95,6 +95,7 @@ struct Interpreter {
     static_locals: HashMap<(String, String), Value>,
     active_static_locals: Vec<Vec<String>>,
     global_symbols: Rc<RefCell<HashMap<String, Value>>>,
+    error_reporting_mask: i64,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -454,6 +455,7 @@ impl Interpreter {
             static_locals: HashMap::new(),
             active_static_locals: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
+            error_reporting_mask: PHP_E_ALL,
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -5970,6 +5972,7 @@ impl Interpreter {
             "str_contains" => call_str_contains(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
+            "error_reporting" => self.call_error_reporting(args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "implode" => call_implode(&args, span),
@@ -8035,6 +8038,38 @@ impl Interpreter {
         self.call_callable_with_values(callable, args[1..].to_vec(), span)
     }
 
+    fn call_error_reporting(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "error_reporting()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.error_reporting_mask;
+        if let Some(mask) = args.first() {
+            let Value::Int(mask) = mask else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "error_reporting()",
+                        format!(
+                            "mask must be int in the current subset, got {}",
+                            mask.type_name()
+                        ),
+                    ),
+                ));
+            };
+            self.error_reporting_mask = *mask;
+        }
+
+        Ok(Value::Int(previous))
+    }
+
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array), callback] => {
@@ -9468,6 +9503,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_contains"
             | "str_replace"
             | "preg_match"
+            | "error_reporting"
             | "sprintf"
             | "call_user_func"
             | "implode"
@@ -9606,12 +9642,45 @@ fn dirname_once(path: &str) -> String {
     }
 }
 
+const PHP_E_ERROR: i64 = 1;
+const PHP_E_WARNING: i64 = 2;
+const PHP_E_PARSE: i64 = 4;
+const PHP_E_NOTICE: i64 = 8;
+const PHP_E_CORE_ERROR: i64 = 16;
+const PHP_E_CORE_WARNING: i64 = 32;
+const PHP_E_COMPILE_ERROR: i64 = 64;
+const PHP_E_COMPILE_WARNING: i64 = 128;
+const PHP_E_USER_ERROR: i64 = 256;
+const PHP_E_USER_WARNING: i64 = 512;
+const PHP_E_USER_NOTICE: i64 = 1024;
+const PHP_E_STRICT: i64 = 2048;
+const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
+const PHP_E_DEPRECATED: i64 = 8192;
+const PHP_E_USER_DEPRECATED: i64 = 16384;
+const PHP_E_ALL: i64 = 32767;
+
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
+        "E_ERROR" => Some(Value::Int(PHP_E_ERROR)),
+        "E_WARNING" => Some(Value::Int(PHP_E_WARNING)),
+        "E_PARSE" => Some(Value::Int(PHP_E_PARSE)),
+        "E_NOTICE" => Some(Value::Int(PHP_E_NOTICE)),
+        "E_CORE_ERROR" => Some(Value::Int(PHP_E_CORE_ERROR)),
+        "E_CORE_WARNING" => Some(Value::Int(PHP_E_CORE_WARNING)),
+        "E_COMPILE_ERROR" => Some(Value::Int(PHP_E_COMPILE_ERROR)),
+        "E_COMPILE_WARNING" => Some(Value::Int(PHP_E_COMPILE_WARNING)),
+        "E_USER_ERROR" => Some(Value::Int(PHP_E_USER_ERROR)),
+        "E_USER_WARNING" => Some(Value::Int(PHP_E_USER_WARNING)),
+        "E_USER_NOTICE" => Some(Value::Int(PHP_E_USER_NOTICE)),
+        "E_STRICT" => Some(Value::Int(PHP_E_STRICT)),
+        "E_RECOVERABLE_ERROR" => Some(Value::Int(PHP_E_RECOVERABLE_ERROR)),
+        "E_DEPRECATED" => Some(Value::Int(PHP_E_DEPRECATED)),
+        "E_USER_DEPRECATED" => Some(Value::Int(PHP_E_USER_DEPRECATED)),
+        "E_ALL" => Some(Value::Int(PHP_E_ALL)),
         "CASE_LOWER" => Some(Value::Int(0)),
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),

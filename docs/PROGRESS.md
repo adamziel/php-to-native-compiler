@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 785, bounded `error_reporting()` mask state for the current
+  WordPress startup path. The runtime now exposes the reached `E_*` error mask
+  constants, initializes the current reporting mask to `E_ALL`, returns the
+  current mask for no-argument `error_reporting()`, accepts one integer mask,
+  stores it, returns the previous mask, exposes the builtin through
+  function/callability metadata and dynamic string-valued calls, and keeps
+  direct native calls behind the generic function-call lowering boundary.
+  PHP's warning/notice/deprecation machinery, diagnostic filtering, ini
+  integration, disabled-function policy, non-integer coercions, exact
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the reached error-reporting
+  mask call to
+  `runtime error at <bootstrap-shim>:666:10: undefined function is_dir()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test error_reporting_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone785`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 784, bounded `preg_match()` for the current WordPress
   `wp_fix_server_vars()` SAPI-name path. The runtime now accepts exactly two
   current scalar/null string-convertible arguments, supports slash-delimited

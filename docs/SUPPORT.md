@@ -354,6 +354,12 @@
   compatibility string `8.3.0`, `PHP_INT_MAX` evaluates to the
   host-independent 64-bit integer maximum, and `PHP_SAPI` evaluates to the
   current deterministic `cli` SAPI string.
+- exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
+  `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
+  `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,
+  `E_STRICT`, `E_RECOVERABLE_ERROR`, `E_DEPRECATED`, `E_USER_DEPRECATED`, and
+  `E_ALL` with the current PHP 8.3-compatible integer values used by
+  `error_reporting()`
 - runtime-defined constants through `define($name, $value)` over the current
   unqualified or qualified string-name and scalar/array value subset;
   `constant($name)` accepts unqualified names and qualified lookup names with
@@ -376,7 +382,7 @@
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
-  `PHP_INT_MAX`, and `PHP_SAPI`
+  `PHP_INT_MAX`, `PHP_SAPI`, and documented `E_*` error mask
   constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
@@ -428,7 +434,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `preg_match`, `str_replace`,
-  `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
+  `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -535,6 +541,12 @@
   offsets, full PCRE syntax, pattern modifiers, invalid-pattern warnings,
   byte/Unicode edge cases, broad coercions, exact diagnostics, and native
   lowering remain unsupported.
+  `error_reporting($mask = null)` supports no arguments to read the current
+  integer mask and one integer argument to store a new current mask while
+  returning the previous mask. The interpreter initializes the mask to `E_ALL`.
+  PHP's warning/notice/deprecation filtering, ini integration,
+  disabled-function policy, non-integer coercions, exact diagnostics, and
+  native lowering remain unsupported.
   `str_replace($search, $replace, $subject)` supports the current scalar/null
   string-convertible subset for all three arguments and returns the subject
   unchanged for an empty search string. Array search/replace/subject forms,
@@ -1958,7 +1970,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `preg_match`, `min`, `dirname`, `file_exists`,
+  `strtolower`, `trim`, `str_contains`, `preg_match`, `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
@@ -2255,7 +2267,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `preg_match`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
+  `str_contains`, `preg_match`, `str_replace`, `error_reporting`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -3980,8 +3992,8 @@
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
-  `PHP_INT_MAX`, `PHP_SAPI`, and runtime-defined unqualified constants in the
-  current name/value subset; PHP
+  `PHP_INT_MAX`, `PHP_SAPI`, the documented `E_*` error mask constants, and
+  runtime-defined unqualified constants in the current name/value subset; PHP
   version component constants such as `PHP_MAJOR_VERSION`, patch-level host
   version coupling, SAPI/build metadata beyond the deterministic `cli` string,
   full extension constant catalogs, unsupported `define(...)` names
@@ -4057,6 +4069,10 @@
   offsets, full PCRE syntax, modifiers, invalid-pattern warnings, byte/Unicode
   behavior, broad coercions, exact diagnostics, and native lowering beyond
   function-table introspection
+- `error_reporting()` outside the current no-argument read and one-integer
+  mask-set subset: warning/notice/deprecation filtering, ini integration,
+  disabled-function policy, non-integer coercions, exact diagnostics, and
+  native lowering beyond function-table introspection
 - `min()` outside the current two-or-more integer argument subset: array-form
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table

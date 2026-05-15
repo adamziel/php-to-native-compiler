@@ -768,6 +768,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full PCRE support, captures/matches output, flags, offsets,
   invalid-pattern warning behavior, byte/Unicode regex fidelity, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 785 implements bounded `error_reporting()` integer mask state and
+  the reached `E_*` constants. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:666:10: undefined function is_dir()`.
+  This is not PHP warning/notice/deprecation filtering, ini integration,
+  disabled-function policy, exact diagnostics, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

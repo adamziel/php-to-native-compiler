@@ -75,16 +75,16 @@ bounded leading-numeric `(int)` string-cast slice, bounded `str_contains()`,
 bounded integer `min()`, and bounded nested direct-variable array-offset
 `isset(...)`, bounded local-path `is_readable()`, bounded shutdown
 registration, bounded `date_default_timezone_set('UTC')`, bounded
-deterministic CLI `$_SERVER`/`PHP_SAPI` startup state, and bounded
-`preg_match()`. The current shim frontier
+deterministic CLI `$_SERVER`/`PHP_SAPI` startup state, bounded
+`preg_match()`, and bounded `error_reporting()` mask state. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
 `is_readable()` filesystem builtin in the fatal-error-handler override check
 and the fatal-error-handler `register_shutdown_function()` registration, past
 timezone setup, past the first request/SAPI startup state, and past the first
-regex startup guard; it now stops at missing `error_reporting()` in the
-WordPress startup error-reporting path.
+regex startup guard, and past the first error-reporting mask setup; it now
+stops at missing `is_dir()` in the WordPress startup filesystem path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -314,9 +314,10 @@ Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
 Milestone 781 added bounded `register_shutdown_function()` registration, and
 Milestone 782 added bounded `date_default_timezone_set('UTC')`. Milestone 783
 added bounded deterministic CLI `$_SERVER` and `PHP_SAPI` startup state.
-Milestone 784 added bounded `preg_match()` for the reached SAPI-name pattern,
-and the current frontier is now missing `error_reporting()` in WordPress
-startup error-reporting state.
+Milestone 784 added bounded `preg_match()` for the reached SAPI-name pattern.
+Milestone 785 added bounded `error_reporting()` mask state and reached `E_*`
+constants, and the current frontier is now missing `is_dir()` in WordPress
+startup filesystem state.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -460,8 +461,9 @@ The repository already has a working Rust workspace with:
   `str_contains()`, bounded integer `min()`, bounded nested direct-variable
   array-offset `isset(...)`, bounded local-path `is_readable()`, bounded
   shutdown registration, bounded timezone setting, bounded deterministic
-  CLI `$_SERVER`/`PHP_SAPI` startup state, and bounded `preg_match()`. The next
-  bottleneck is `error_reporting()` in the WordPress bootstrap shim.
+  CLI `$_SERVER`/`PHP_SAPI` startup state, bounded `preg_match()`, and bounded
+  `error_reporting()` mask state. The next bottleneck is `is_dir()` in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

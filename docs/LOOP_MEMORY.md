@@ -26,6 +26,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:08:36Z
+
+- Checkpoint before this task:
+  `8756b29 runtime: add bounded preg match`, pushed to `origin/master`.
+- Task attempted: Milestone 785, bounded `error_reporting()` integer mask state
+  for the reached WordPress startup path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/error_reporting_builtin.rs`,
+  `tests/fixtures/milestone785/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test error_reporting_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone785`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: PHP warning/notice/deprecation filtering, ini
+  integration, disabled-function policy, non-integer coercions, exact
+  diagnostics, native lowering, and broad PHP error subsystem behavior remain
+  unsupported.
+- Next concrete task: implement a bounded `is_dir()` filesystem slice for the
+  reached WordPress startup path while documenting stream wrappers,
+  include-path behavior, symlink/canonicalization policy, permissions,
+  open_basedir, stat cache, coercions, exact diagnostics, and native lowering
+  unless implemented.
+
 ## Loop Event 2026-05-15T08:02:56Z
 
 - Checkpoint before this task:
