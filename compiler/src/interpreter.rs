@@ -10010,9 +10010,7 @@ impl BoundedPregPattern {
             "only slash-delimited patterns with a closing delimiter are implemented in the current subset"
                 .to_string()
         })?;
-        if !modifiers.is_empty() {
-            return Err("pattern modifiers are not implemented in the current subset".to_string());
-        }
+        validate_bounded_preg_modifiers(modifiers)?;
 
         let (starts_with_anchor, body) = match body.strip_prefix('^') {
             Some(rest) => (true, rest),
@@ -10045,6 +10043,13 @@ impl BoundedPregPattern {
 fn split_slash_delimited_pattern(pattern: &str) -> Option<(&str, &str)> {
     let index = pattern.rfind('/')?;
     Some((&pattern[..index], &pattern[index + 1..]))
+}
+
+fn validate_bounded_preg_modifiers(modifiers: &str) -> Result<(), String> {
+    match modifiers {
+        "" | "u" => Ok(()),
+        _ => Err("only the u pattern modifier is implemented in the current subset".to_string()),
+    }
 }
 
 fn decode_bounded_preg_literal(body: &str) -> Result<String, String> {

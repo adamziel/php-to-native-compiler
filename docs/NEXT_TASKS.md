@@ -7244,16 +7244,23 @@ handled.
   Milestone 790 implements explicit capture binding for inert closure values
   and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:70:2: unsupported call preg_match(): pattern modifiers are not implemented in the current subset`.
-- [ ] Regex runtime lane: widen bounded `preg_match()` for the reached
+- [x] Regex runtime lane: widen bounded `preg_match()` for the reached
   `//u` startup probe. Keep full PCRE syntax, captures/matches output, flags,
   offsets, warning/error-handler routing, Unicode semantics, broad modifiers,
   exact diagnostics, and native lowering named unless implemented.
+  Milestone 791 implements bounded `u`-modifier handling for the existing
+  literal subset and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:71:2: undefined function restore_error_handler()`.
+- [ ] Error-handler runtime lane: implement bounded `restore_error_handler()`
+  for the reached WordPress `_wp_can_use_pcre_u()` cleanup path. Keep true
+  handler-stack behavior, handler invocation, warning/notice/deprecation
+  routing, error-level filtering, shutdown/fatal interactions, exact PHP
+  diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 790 checkpoint, the latest committed checkpoint
-  is `440b4ea runtime: add bounded error handler registration`, covering
-  Milestone 789.
+- Before the current Milestone 791 checkpoint, the latest committed checkpoint
+  is `4a35cee runtime: add bounded closure captures`, covering Milestone 790.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

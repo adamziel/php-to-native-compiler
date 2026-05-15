@@ -23,11 +23,17 @@ echo "|";
 echo preg_match('/dex/', 'index.php');
 echo "|";
 echo preg_match('/^index\.php$/', 'index.php');
+echo "|";
+echo preg_match('//u', '');
+echo "|";
+echo preg_match('//u', 'wordpress');
+echo "|";
+echo preg_match('/^wp$/u', 'wp');
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|0|1|1|1");
+    assert_eq!(execution.stdout, "1|0|1|1|1|1|1|1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -73,6 +79,18 @@ preg_match('/wp.*/', 'wp-settings');
     assert_eq!(
         unsupported_pattern.message,
         "unsupported call preg_match(): regex metacharacter * is not implemented in the current subset"
+    );
+
+    let unsupported_modifier = runtime_error(
+        r#"<?php
+preg_match('/wp/i', 'WP');
+"#,
+    );
+    assert_eq!(unsupported_modifier.line, 2);
+    assert_eq!(unsupported_modifier.column, 1);
+    assert_eq!(
+        unsupported_modifier.message,
+        "unsupported call preg_match(): only the u pattern modifier is implemented in the current subset"
     );
 
     let array_subject = runtime_error(

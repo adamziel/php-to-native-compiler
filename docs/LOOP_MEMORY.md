@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:46:05Z
+
+- Checkpoint before this task:
+  `4a35cee runtime: add bounded closure captures`, pushed to `origin/master`.
+- Task attempted: Milestone 791, bounded `preg_match()` `u`-modifier handling
+  for the reached WordPress `_wp_can_use_pcre_u()` startup probe.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_match_builtin.rs`, `tests/fixtures/milestone791/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test preg_match_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone791`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:71:2: undefined function restore_error_handler()`.
+- Remaining semantic gaps: captures/matches output, flags, offsets, full PCRE
+  syntax, modifiers other than `u`, invalid-pattern warning behavior,
+  warning/error-handler routing, byte/Unicode behavior beyond the current
+  runtime string model, exact diagnostics, broad regex support, and native
+  lowering remain unsupported.
+- Next concrete task: implement bounded `restore_error_handler()` for the
+  reached cleanup path while keeping true handler-stack behavior, handler
+  invocation, warning/notice/deprecation routing, error-level filtering,
+  shutdown/fatal interactions, exact diagnostics, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T08:41:09Z
 
 - Checkpoint before this task:

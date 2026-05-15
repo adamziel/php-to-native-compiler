@@ -538,12 +538,14 @@
   `preg_match($pattern, $subject)` supports exactly two scalar/null
   string-convertible arguments. The current regex slice supports
   slash-delimited literal contains/prefix/suffix/exact patterns with `^` and
-  `$` anchors plus a small literal escape subset, returns integer `1` for a
-  match and `0` for no match, and exists to cover the reached WordPress
-  `wp_fix_server_vars()` SAPI-name pattern. Captures/matches output, flags,
-  offsets, full PCRE syntax, pattern modifiers, invalid-pattern warnings,
-  byte/Unicode edge cases, broad coercions, exact diagnostics, and native
-  lowering remain unsupported.
+  `$` anchors plus a small literal escape subset, accepts the `u` modifier as
+  a no-op over the current valid UTF-8 runtime strings, returns integer `1`
+  for a match and `0` for no match, and exists to cover the reached WordPress
+  `wp_fix_server_vars()` SAPI-name pattern plus `_wp_can_use_pcre_u()`'s
+  `//u` startup probe. Captures/matches output, flags, offsets, full PCRE
+  syntax, modifiers other than `u`, invalid-pattern warnings, byte/Unicode
+  edge cases, broad coercions, exact diagnostics, and native lowering remain
+  unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
   returning the previous mask. The interpreter initializes the mask to `E_ALL`.
@@ -4097,9 +4099,10 @@
   native lowering beyond function-table introspection
 - `preg_match()` outside the current two-argument slash-delimited literal
   contains/prefix/suffix/exact pattern subset: captures/matches output, flags,
-  offsets, full PCRE syntax, modifiers, invalid-pattern warnings, byte/Unicode
-  behavior, broad coercions, exact diagnostics, and native lowering beyond
-  function-table introspection
+  offsets, full PCRE syntax, modifiers other than `u`, invalid-pattern
+  warnings, byte/Unicode behavior beyond the current valid UTF-8 string model,
+  broad coercions, exact diagnostics, and native lowering beyond function-table
+  introspection
 - `error_reporting()` outside the current no-argument read and one-integer
   mask-set subset: warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and

@@ -808,6 +808,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not closure invocation, true by-reference aliasing, copy-on-write,
   callback execution, warning/error-handler routing, full regex/PCRE support,
   native lowering, or WordPress bootstrap support.
+  Milestone 791 implements bounded `preg_match()` `u`-modifier handling for
+  the reached `_wp_can_use_pcre_u()` startup probe. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:71:2: undefined function restore_error_handler()`.
+  This is not captures/matches output, flags, offsets, broad PCRE/modifier
+  support, warning/error-handler routing, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
