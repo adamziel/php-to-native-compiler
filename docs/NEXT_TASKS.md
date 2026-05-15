@@ -8119,16 +8119,27 @@ handled.
   WordPress server-status fidelity, live connection inspection, query counters,
   thread/table metadata, host database integration, warnings/errors, or native
   lowering.
-- [ ] Runtime/mysqli lane: inspect the next database boundary after
+- [x] Runtime/mysqli lane: inspect the next database boundary after
   placeholder server metadata and choose a small tested slice, such as a named
   `mysqli_autocommit()`/transaction boundary or deterministic placeholder
   error-state metadata, before broader SQL execution is claimed.
+  Milestone 881 implements bounded `mysqli_autocommit($handle, $mode)` for
+  placeholder `mysqli` objects. It accepts boolean modes, returns
+  deterministic `true`, rejects non-`mysqli` handles and non-bool modes with
+  stable diagnostics, and is visible through runtime and native metadata
+  lookup. This is not real autocommit state, transaction start/end,
+  commit/rollback behavior, host database integration, warnings/errors, or
+  native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+  bounded `mysqli_autocommit()` placeholder through a WordPress-shaped
+  transaction/autocommit bookkeeping method without claiming real transaction
+  or database-state behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `63956d1 runtime: add mysqli stat placeholder`, covering Milestone 879
-  before the current Milestone 880 candidate.
+  `cf22320 tests: add wordpress wpdb stat smoke`, covering Milestone 880
+  before the current Milestone 881 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

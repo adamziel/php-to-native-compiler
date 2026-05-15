@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 881, bounded `mysqli_autocommit()` support for placeholder
+  MySQLi handles. The runtime now accepts
+  `mysqli_autocommit($handle, false)` and
+  `mysqli_autocommit($handle, true)` for current placeholder `mysqli` objects,
+  returns deterministic `true`, rejects non-`mysqli` handles and non-bool modes
+  with stable diagnostics, and exposes the name through runtime and native
+  metadata lookup. This is not real autocommit state, transaction start/end,
+  commit/rollback behavior, host database integration, warning/error fidelity,
+  or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_autocommit -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone881`.
+
 - Added Milestone 880, a synthetic WordPress-shaped `wpdb` server-status
   metadata smoke that calls the bounded `mysqli_stat($this->dbh)` placeholder
   path, records deterministic zeroed status metadata on local object state, and

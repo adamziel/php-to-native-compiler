@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone881/mysqli_autocommit_placeholder.php
+yes|callable
+off
+on
+dynamic

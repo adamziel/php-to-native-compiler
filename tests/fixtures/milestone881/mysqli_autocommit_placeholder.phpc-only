@@ -1,0 +1,3 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_autocommit()`
+boundary. System PHP would require the mysqli extension and a real host
+connection to change actual transaction/autocommit state.

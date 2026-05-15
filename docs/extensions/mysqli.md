@@ -3,7 +3,7 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_get_host_info`, `mysqli_stat`, `mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
+`mysqli_get_host_info`, `mysqli_stat`, `mysqli_autocommit`, `mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
@@ -42,6 +42,11 @@ transport, socket, protocol, or live connection.
 `mysqli_stat($handle)` accepts the placeholder object and returns deterministic
 zeroed server-status metadata. It does not query real counters, thread/table
 state, uptime, live connection status, or server state.
+
+`mysqli_autocommit($handle, bool $mode)` accepts the placeholder object and a
+boolean mode, returning deterministic `true`. It does not mutate real
+autocommit state, start or end transactions, commit, roll back, emit
+warnings/errors, or touch host database state.
 
 `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
 returns deterministic `true` for the reached WordPress charset setup shape.
@@ -127,6 +132,7 @@ fetch modes beyond the documented placeholder row shapes, no real row-count
 state beyond placeholder result counts, no real affected-row or insert-id state
 beyond deterministic zero clean state, no real connection liveness checks or
 reconnect behavior beyond deterministic ping success, no real
-charset/collation negotiation, no errors/warnings, no transactions, no
+autocommit or transaction state beyond deterministic autocommit success, no
+charset/collation negotiation, no errors/warnings, no commit/rollback behavior, no
 configuration beyond the current report-mode flag, no PDO bridge, and no
 native database lowering.
