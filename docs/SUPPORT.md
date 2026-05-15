@@ -636,15 +636,12 @@
   `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
-- narrow `require`, `require_once`, `include`, and `include_once` statement
-  execution for local string paths, including constant/string concatenation,
-  source-file-relative path resolution, included file declaration registration,
-  caller-scope execution, and `_once` de-duplication by resolved local file.
-  Declaration-order dependencies across included files remain outside this
-  slice.
-- explicit parse diagnostics for unsupported include/require syntax:
-  expression-form `include`, expression-form `include_once`, expression-form
-  `require`, and expression-form `require_once`
+- narrow `require`, `require_once`, `include`, and `include_once` execution
+  for local string paths in statement and expression position, including
+  constant/string concatenation, source-file-relative path resolution, included
+  file declaration registration, caller-scope execution, include return values,
+  and `_once` de-duplication by resolved local file. Declaration-order
+  dependencies across included files remain outside this slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - one unbracketed named `namespace` declaration per file, plus simple
   top-level class `use` imports with optional `as` aliases. Class declarations
@@ -784,21 +781,22 @@
   unparenthesized chained coalescing, references/copy-on-write, exact native
   error objects, and native lowering remain unsupported.
 - Include/require: `require path;`, `require_once path;`, `include path;`,
-  and `include_once path;` execute for paths that evaluate to strings in the
-  current subset, including constant and string-concatenated paths such as
-  `ABSPATH . WPINC .
+  and `include_once path;` execute in statement position and expression
+  position for paths that evaluate to strings in the current subset, including
+  constant and string-concatenated paths such as `ABSPATH . WPINC .
   '/load.php'`. Absolute paths resolve directly; relative paths resolve
-  against the source file containing the statement. Included files are parsed
-  with `<?php`, register top-level functions/classes, run in the caller symbol
-  table, and treat top-level `return` as returning to the including file.
-  `require_once` and `include_once` de-duplicate by resolved local file.
-  Expression-form `include`, expression-form `include_once`, expression-form
-  `require`, expression-form `require_once`, missing-file include
+  against the source file containing the construct. Included files are parsed
+  with `<?php`, register top-level functions/classes, and run in the caller
+  symbol table. Statement forms ignore top-level include return values.
+  Expression forms return the included file's top-level `return` value, return
+  `1` when the file completes normally, and return `true` for `_once`
+  constructs when the resolved file was already loaded. `require_once` and
+  `include_once` de-duplicate by resolved local file, including files loaded
+  first through non-once `require`/`include`. Missing-file include
   warning/recovery, include-path lookup, stream wrappers, URL includes,
-  `phar://`, opcache behavior, autoload
-  interaction, include return values, source mapping for functions/classes
-  after include, and PHP's exact warning-vs-fatal recovery behavior are not
-  implemented.
+  `phar://`, opcache behavior, autoload interaction, declaration-order edge
+  cases, source mapping for functions/classes after include, PHP's exact
+  warning-vs-fatal recovery behavior, and native lowering are not implemented.
 - Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
   with a stable parse diagnostic. The planned first executable slice treats
   `eval` as a language construct with one string-valued argument, parses that
@@ -3049,13 +3047,11 @@
 - nested/complex array assignment lvalues
 - string offset access
 - references
-- include/require forms outside the narrow local `require path;`,
-  `require_once path;`, `include path;`, and `include_once path;` statements:
-  expression-form `include`, expression-form `include_once`, expression-form
-  `require`, expression-form `require_once`, include-path lookup, streams/URLs,
-  declaration-order
-  dependencies across required files, and exact PHP warning/fatal recovery
-  behavior remain unsupported
+- include/require behavior outside the narrow local string-path statement and
+  expression subset: include-path lookup, streams/URLs, `phar://`, autoload
+  interaction, opcache behavior, declaration-order dependencies across
+  required files, exact PHP warning/fatal recovery behavior, and native
+  lowering remain unsupported
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
 - namespace forms outside the current one-unbracketed-namespace/simple-class-use

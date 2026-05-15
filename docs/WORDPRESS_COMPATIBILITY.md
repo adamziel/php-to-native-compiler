@@ -543,6 +543,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   expression-form include execution, include return-value behavior, generic
   dynamic include semantics, exact PHP diagnostics, or WordPress bootstrap
   support.
+  Milestone 759 implements expression-form `include`, `include_once`,
+  `require`, and `require_once` for the current local-file subset, including
+  include return values, normal-completion return value `1`, and `_once`
+  duplicate return value `true`. After that slice, the direct
+  `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
+  This is not full include-path lookup, stream wrapper, phar, autoload,
+  opcache, exact warning/fatal, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

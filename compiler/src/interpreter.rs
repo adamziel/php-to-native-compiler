@@ -1239,6 +1239,24 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
+        let (flow, _) = self.evaluate_file_include(path, once, required, span, scope)?;
+        match flow {
+            Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
+            Flow::Exit(code) => Ok(Flow::Exit(code)),
+            Flow::Break { depth, span } => Ok(Flow::Break { depth, span }),
+            Flow::Continue { depth, span } => Ok(Flow::Continue { depth, span }),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+        }
+    }
+
+    fn evaluate_file_include(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        required: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Value)> {
         let construct = if required {
             if once {
                 "require_once"
@@ -1265,16 +1283,10 @@ impl Interpreter {
         if self.trace_includes {
             eprintln!("phpc trace include: {}", path.source_file.display());
         }
-        let once_key = if once {
-            Some(fs::canonicalize(&path.read_path).unwrap_or_else(|_| path.read_path.clone()))
-        } else {
-            None
-        };
-        if once_key
-            .as_ref()
-            .is_some_and(|key| self.required_once.contains(key))
-        {
-            return Ok(Flow::Normal);
+        let include_key =
+            fs::canonicalize(&path.read_path).unwrap_or_else(|_| path.read_path.clone());
+        if once && self.required_once.contains(&include_key) {
+            return Ok((Flow::Normal, Value::Bool(true)));
         }
 
         let source = fs::read_to_string(&path.read_path).map_err(|error| {
@@ -1298,9 +1310,7 @@ impl Interpreter {
             )
         })?;
         let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
-        if let Some(key) = once_key {
-            self.required_once.insert(key);
-        }
+        self.required_once.insert(include_key);
 
         let previous_source_file = self.source_file.clone();
         self.source_file = Some(path.source_file.display().to_string());
@@ -1311,10 +1321,11 @@ impl Interpreter {
         self.source_file = previous_source_file;
 
         match flow? {
-            Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
-            Flow::Exit(code) => Ok(Flow::Exit(code)),
-            Flow::Break { depth, span } => Ok(Flow::Break { depth, span }),
-            Flow::Continue { depth, span } => Ok(Flow::Continue { depth, span }),
+            Flow::Normal => Ok((Flow::Normal, Value::Int(1))),
+            Flow::Return(value) => Ok((Flow::Normal, value)),
+            Flow::Exit(code) => Ok((Flow::Exit(code), Value::Null)),
+            Flow::Break { depth, span } => Ok((Flow::Break { depth, span }, Value::Null)),
+            Flow::Continue { depth, span } => Ok((Flow::Continue { depth, span }, Value::Null)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -1852,6 +1863,42 @@ impl Interpreter {
                 self.apply_unary(*op, value, *span)
             }
             Expr::ErrorControl { expr, .. } => self.evaluate(expr, scope),
+            Expr::Include { path, once, span } => {
+                let (flow, value) = self.evaluate_file_include(path, *once, false, *span, scope)?;
+                match flow {
+                    Flow::Normal | Flow::Return(_) => Ok(value),
+                    Flow::Exit(_) => Ok(Value::Null),
+                    Flow::Break { span, .. } => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+                    )),
+                    Flow::Continue { span, .. } => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue cannot be used outside a loop",
+                        ),
+                    )),
+                    Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+                }
+            }
+            Expr::Require { path, once, span } => {
+                let (flow, value) = self.evaluate_file_include(path, *once, true, *span, scope)?;
+                match flow {
+                    Flow::Normal | Flow::Return(_) => Ok(value),
+                    Flow::Exit(_) => Ok(Value::Null),
+                    Flow::Break { span, .. } => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+                    )),
+                    Flow::Continue { span, .. } => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue cannot be used outside a loop",
+                        ),
+                    )),
+                    Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
+                }
+            }
             Expr::Cast { kind, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_cast(*kind, value, *span)

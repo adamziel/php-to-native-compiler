@@ -127,10 +127,11 @@ incorrect native code.
   thrown exception, finally bodies execute after normal try completion, and
   reached throws still report a stable runtime diagnostic before catch matching
   or unwinding exists
-- narrow `require`, `require_once`, `include`, and `include_once` statement
-  execution for local string paths, including constant/string-concatenated
-  paths resolved relative to the current source file, included files executing
-  in caller scope, and `_once` de-duplication by resolved local file
+- narrow `require`, `require_once`, `include`, and `include_once` execution
+  for local string paths in statement and expression position, including
+  constant/string-concatenated paths resolved relative to the current source
+  file, included files executing in caller scope, include return values, and
+  `_once` de-duplication by resolved local file
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -187,8 +188,8 @@ incorrect native code.
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
-include/require breadth beyond the current narrow local
-`require`/`require_once`/`include`/`include_once` statement slice, eval,
+include/require breadth beyond the current narrow local string-path statement
+and expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and

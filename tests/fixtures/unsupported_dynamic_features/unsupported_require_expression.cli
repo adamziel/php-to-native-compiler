@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_require_expression.php:2:7: unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files
---- stderr end ---

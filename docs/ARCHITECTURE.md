@@ -1289,8 +1289,8 @@ the named unsupported edge cases.
 ## Include/Require Resolution Design
 
 The first executable include/require slice is now a narrow `require path;`,
-`require_once path;`, `include path;`, and `include_once path;` statement subset
-for local files. It uses these rules:
+`require_once path;`, `include path;`, and `include_once path;` subset for
+local files in statement and expression position. It uses these rules:
 
 - the interpreter carries the current file path in runtime execution context
 - only paths that evaluate to PHP strings are accepted
@@ -1300,18 +1300,21 @@ for local files. It uses these rules:
 - included files are parsed as PHP files with `<?php`, register top-level
   function/class declarations into the active interpreter, and execute in the
   caller scope
-- `require_once` and `include_once` de-duplicate by resolved local file
-- top-level `return` in a required file returns to the including file for the
-  current statement form
+- `require_once` and `include_once` de-duplicate by resolved local file,
+  including files first loaded through non-once `require` or `include`
+- top-level `return` in an included file returns to the including file
+- statement forms ignore the include return value
+- expression forms return the included file's top-level return value, `1` for
+  normal completion, or `true` when a `_once` construct skips an already loaded
+  file
 - native lowering rejects include/require until file loading, scope effects,
   and return-value behavior have explicit lowering support
 
-Unsupported include/require behavior remains: expression-form `include`,
-expression-form `include_once`, expression-form `require`, expression-form
-`require_once`, missing-file warning/recovery for executed `include` statements,
-include return values, `include_path` lookup, process-current-working-directory
-behavior beyond the fallback used when no source file is available, stream wrappers, `phar://`, URL
-includes, autoload interaction, opcache behavior,
+Unsupported include/require behavior remains: missing-file warning/recovery for
+executed `include` statements, `include_path` lookup,
+process-current-working-directory behavior beyond the fallback used when no
+source file is available, stream wrappers, `phar://`, URL includes, autoload
+interaction, opcache behavior,
 declaration-order dependencies such as a required file declaring `class Child
 extends Base` only after requiring the base class, exact source mapping for
 declarations after include, and PHP's warning-vs-fatal recovery details.

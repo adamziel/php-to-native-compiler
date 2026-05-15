@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+include=from-return,changed
+normal=1,normal-side
+once=once-value,1,1
+require=required-value,1,required-side--- stdout end ---
+stderr:
+--- stderr end ---

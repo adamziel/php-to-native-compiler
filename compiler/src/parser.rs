@@ -3548,18 +3548,10 @@ impl Parser {
             TokenKind::Try | TokenKind::Catch | TokenKind::Finally => {
                 Err(self.error_at(token.span, unsupported_try_catch_finally_message()))
             }
-            TokenKind::Include => {
-                Err(self.error_at(token.span, unsupported_include_expression_message()))
-            }
-            TokenKind::IncludeOnce => {
-                Err(self.error_at(token.span, unsupported_include_once_expression_message()))
-            }
-            TokenKind::Require => {
-                Err(self.error_at(token.span, unsupported_require_expression_message()))
-            }
-            TokenKind::RequireOnce => {
-                Err(self.error_at(token.span, unsupported_require_once_expression_message()))
-            }
+            TokenKind::Include => self.parse_include_expression(false, token.span),
+            TokenKind::IncludeOnce => self.parse_include_expression(true, token.span),
+            TokenKind::Require => self.parse_require_expression(false, token.span),
+            TokenKind::RequireOnce => self.parse_require_expression(true, token.span),
             TokenKind::Ampersand => Err(self.error_at(
                 token.span,
                 "unsupported reference expression: references are not implemented",
@@ -4095,6 +4087,24 @@ impl Parser {
         })
     }
 
+    fn parse_include_expression(&mut self, once: bool, span: Span) -> CompileResult<Expr> {
+        let path = self.parse_expression()?;
+        Ok(Expr::Include {
+            path: Box::new(path),
+            once,
+            span,
+        })
+    }
+
+    fn parse_require_expression(&mut self, once: bool, span: Span) -> CompileResult<Expr> {
+        let path = self.parse_expression()?;
+        Ok(Expr::Require {
+            path: Box::new(path),
+            once,
+            span,
+        })
+    }
+
     fn consume_instanceof_class_name(&mut self) -> CompileResult<String> {
         let token = self.advance().clone();
         match token.kind {
@@ -4292,6 +4302,8 @@ impl Parser {
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
+            | Expr::Include { .. }
+            | Expr::Require { .. }
             | Expr::New { .. }
             | Expr::Clone { .. } => Err(self.error_at(
                 expr.span(),
@@ -4371,6 +4383,8 @@ impl Parser {
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
+            | Expr::Include { .. }
+            | Expr::Require { .. }
             | Expr::New { .. }
             | Expr::Clone { .. } => Err(self.error_at(
                 expr.span(),
@@ -4469,6 +4483,9 @@ impl Parser {
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
             | Expr::Cast { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::Include { path, .. } | Expr::Require { path, .. } => {
+                Self::expr_contains_assignment(path)
+            }
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -4593,6 +4610,9 @@ impl Parser {
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
             | Expr::Cast { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
+            Expr::Include { path, .. } | Expr::Require { path, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(path)
+            }
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -4685,6 +4705,9 @@ impl Parser {
             Expr::Unary { expr, .. }
             | Expr::ErrorControl { expr, .. }
             | Expr::Cast { expr, .. } => Self::find_append_index_span(expr),
+            Expr::Include { path, .. } | Expr::Require { path, .. } => {
+                Self::find_append_index_span(path)
+            }
             Expr::Assign { expr, .. }
             | Expr::CompoundAssign { expr, .. }
             | Expr::NullCoalesceAssign { expr, .. } => Self::find_append_index_span(expr),
@@ -5267,22 +5290,6 @@ fn include_require_name(kind: &TokenKind) -> Option<&'static str> {
 
 fn unsupported_include_require_message(construct: &str) -> String {
     format!("unsupported {construct}: include/require resolution and execution are not implemented")
-}
-
-fn unsupported_require_expression_message() -> &'static str {
-    "unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files"
-}
-
-fn unsupported_require_once_expression_message() -> &'static str {
-    "unsupported require_once expression: expression-form require_once is not implemented; use statement-form require_once path; for local files"
-}
-
-fn unsupported_include_expression_message() -> &'static str {
-    "unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files"
-}
-
-fn unsupported_include_once_expression_message() -> &'static str {
-    "unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files"
 }
 
 fn is_parameter_type_start(kind: &TokenKind) -> bool {

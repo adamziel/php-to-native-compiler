@@ -550,6 +550,9 @@ impl LlvmGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
+            Expr::Include { span, .. } | Expr::Require { span, .. } => {
+                Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
+            }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
@@ -3340,6 +3343,9 @@ impl CGenerator {
             }
             Expr::ErrorControl { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION))
+            }
+            Expr::Include { span, .. } | Expr::Require { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION)),
             Expr::Assign { span, .. }

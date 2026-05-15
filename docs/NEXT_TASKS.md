@@ -6932,17 +6932,28 @@ handled.
   implements that direct-object-property nested array unset subset and
   advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:24:13: unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files`.
-- [ ] Runtime/include lane: implement or explicitly bound expression-form
+- [x] Runtime/include lane: implement or explicitly bound expression-form
   `include` with return values for the next real WordPress bootstrap-shim
   blocker at `<bootstrap-shim>:24:13`, corresponding to
   `$result = include $this->file;` in
   `wp-includes/l10n/class-wp-translation-file-php.php`.
+  Milestone 759 implements expression-form `include`, `include_once`,
+  `require`, and `require_once` for the current local-file subset, including
+  include return values and `_once` loaded-file return values. It advances the
+  real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
+- [ ] Parser/runtime lane: implement or explicitly bound the next array
+  destructuring shape for the real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:1557:9`, while preserving the existing simple positional
+  `list($a, $b) = expr;` statement subset and documenting unsupported keyed,
+  nested, skipped-slot, reference, expression-position, and non-variable
+  target semantics.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 758 checkpoint, the latest committed checkpoint
-  is `e2f50ec runtime: add object property nested array writes`, covering
-  Milestone 757.
+- Before the current Milestone 759 checkpoint, the latest committed checkpoint
+  is `5d54308 runtime: add object property nested unset`, covering Milestone
+  758.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

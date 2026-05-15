@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_include_once.php:2:7: unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files
---- stderr end ---

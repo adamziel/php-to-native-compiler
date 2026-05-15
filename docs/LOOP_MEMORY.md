@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T05:38:21Z
+
+- Checkpoint before this task:
+  `5d54308 runtime: add object property nested unset`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 759, expression-form `include`/`require` return
+  values for the WordPress translation-file blocker.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone759/*`,
+  removed stale unsupported include-expression fixtures, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`,
+  `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features include -- --nocapture`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone759`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: include/require expressions are limited to the
+  existing local string-path subset. Missing-file include warning recovery,
+  `include_path`, stream wrappers/URLs, `phar://`, opcache, autoload,
+  declaration-order edge cases, exact PHP warning/fatal behavior, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
+- Next concrete task: implement or explicitly bound the reached short/non-simple
+  array destructuring shape while keeping keyed, nested, skipped-slot,
+  reference, expression-position, and non-variable target semantics named.
+
 ## Loop Event 2026-05-16T01:45:00Z
 
 - Checkpoint before this task:

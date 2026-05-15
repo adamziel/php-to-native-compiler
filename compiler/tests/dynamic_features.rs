@@ -201,48 +201,76 @@ echo "comment";
 }
 
 #[test]
-fn include_require_constructs_are_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
-$ok = include 'config.php';
-"#,
-            2,
-            7,
-            "unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files",
-        ),
-        (
-            r#"<?php
-$ok = include_once 'config.php';
-"#,
-            2,
-            7,
-            "unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files",
-        ),
-        (
-            r#"<?php
-$ok = require 'bootstrap.php';
-"#,
-            2,
-            7,
-            "unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files",
-        ),
-        (
-            r#"<?php
-$ok = require_once 'bootstrap.php';
-"#,
-            2,
-            7,
-            "unsupported require_once expression: expression-form require_once is not implemented; use statement-form require_once path; for local files",
-        ),
-    ];
+fn include_require_expressions_return_values_and_share_caller_scope() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-include-expression-{}-{}",
+        std::process::id(),
+        "returns"
+    ));
+    fs::create_dir_all(&root).expect("create include expression fixture directory");
+    let main = root.join("index.php");
+    let returner = root.join("returner.php");
+    let normal = root.join("normal.php");
+    let once = root.join("once.php");
+    let required = root.join("required.php");
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    fs::write(
+        &returner,
+        r#"<?php
+$side = "changed";
+return "from-return";
+"#,
+    )
+    .expect("write returner include file");
+    fs::write(
+        &normal,
+        r#"<?php
+$normal_side = "normal-side";
+"#,
+    )
+    .expect("write normal include file");
+    fs::write(
+        &once,
+        r#"<?php
+$count = ($count ?? 0) + 1;
+return "once-value";
+"#,
+    )
+    .expect("write once include file");
+    fs::write(
+        &required,
+        r#"<?php
+$required_side = "required-side";
+return "required-value";
+"#,
+    )
+    .expect("write required include file");
+
+    let source = r#"<?php
+$path = 'returner.php';
+$first = include $path;
+echo "first=", $first, ",", $side, "\n";
+
+$normal = include 'normal.php';
+echo "normal=", $normal, ",", $normal_side, "\n";
+
+$count = 0;
+$once_first = include_once 'once.php';
+$once_second = include_once './once.php';
+echo "once=", $once_first, ",", $once_second, ",", $count, "\n";
+
+$required = require 'required.php';
+$required_once = require_once './required.php';
+echo "required=", $required, ",", $required_once, ",", $required_side;
+"#;
+    fs::write(&main, source).expect("write main include expression file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first=from-return,changed\nnormal=1,normal-side\nonce=once-value,1,1\nrequired=required-value,1,required-side"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -545,6 +573,10 @@ fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
         "<?php\nrequire_once 'bootstrap.php';\n",
         "<?php\ninclude 'bootstrap.php';\n",
         "<?php\ninclude_once 'bootstrap.php';\n",
+        "<?php\n$ok = require 'bootstrap.php';\n",
+        "<?php\n$ok = require_once 'bootstrap.php';\n",
+        "<?php\n$ok = include 'bootstrap.php';\n",
+        "<?php\n$ok = include_once 'bootstrap.php';\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

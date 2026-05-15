@@ -751,6 +751,16 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    Include {
+        path: Box<Expr>,
+        once: bool,
+        span: Span,
+    },
+    Require {
+        path: Box<Expr>,
+        once: bool,
+        span: Span,
+    },
     Cast {
         kind: CastKind,
         expr: Box<Expr>,
@@ -877,6 +887,8 @@ impl Expr {
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
             | Expr::ErrorControl { span, .. }
+            | Expr::Include { span, .. }
+            | Expr::Require { span, .. }
             | Expr::Cast { span, .. }
             | Expr::Ternary { span, .. }
             | Expr::ShortTernary { span, .. }

@@ -61,12 +61,12 @@ lets the project move toward that goal while preserving correctness.
 Recent WordPress-directed milestones have been walking the real WordPress
 6.9.4 bootstrap-shim forward through concrete blockers: references as explicit
 runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
-instantiation, and now direct-object-property nested array assignment and
-append-at-depth assignment plus nested object-property array-offset
-`unset(...)`. The current shim frontier is expression-form `include` with a
-return value in `wp-includes/l10n/class-wp-translation-file-php.php`. Each step is
-intentionally small because it only counts after parser/runtime code, tests,
-CLI fixtures, docs, and named unsupported edges are in place.
+instantiation, direct-object-property nested array assignment, nested
+object-property array-offset `unset(...)`, and expression-form
+`include`/`require` return values. The current shim frontier is short/non-simple
+array destructuring at `<bootstrap-shim>:1557:9`. Each step is intentionally
+small because it only counts after parser/runtime code, tests, CLI fixtures,
+docs, and named unsupported edges are in place.
 
 ## Compatibility North Star
 
@@ -264,8 +264,12 @@ declarations as runtime boundaries. Milestone 755 then parsed class and method
 modifiers for the current metadata subset; the current bootstrap-shim blocker
 then became broader magic class-name resolution at `<bootstrap-shim>:63:26`.
 Milestone 756 resolved `new self`, `new parent`, and `new static` in active
-class/method contexts; the current bootstrap-shim blocker is now an unsupported
-assignment-expression target at `<bootstrap-shim>:131:70`.
+class/method contexts. Milestone 757 added direct-object-property nested array
+assignment and append-at-depth assignment. Milestone 758 added nested
+object-property array-offset `unset(...)`. Milestone 759 then added
+expression-form `include`, `include_once`, `require`, and `require_once` return
+values for the current local-file subset; the current bootstrap-shim blocker is
+now short/non-simple array destructuring at `<bootstrap-shim>:1557:9`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -274,8 +278,8 @@ destructors/reuse, and exact PHP diagnostics.
   generated code, stack frames, heap management, runtime helper calls,
   process-level execution semantics, and native diagnostics.
 - The interpreter is missing large parts of PHP syntax and semantics:
-  namespaces, include/require breadth beyond the first local
-  `require`/`require_once`/`include`/`include_once` slice, autoload, references,
+  namespaces, include/require breadth beyond the current local string-path
+  statement/expression slice, autoload, references,
   copy-on-write, closures with real binding/invocation, generators,
   exceptions, type declarations,
   attributes, destructuring, spreads, resources, and exact warning/recovery

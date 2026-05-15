@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 759, expression-form `include`, `include_once`, `require`,
+  and `require_once` for the current local-file include subset. These
+  constructs now evaluate a string path expression, execute in caller scope,
+  propagate top-level return values when used as expressions, return `1` for
+  normal include completion, and return `true` for `_once` constructs when the
+  resolved file was already loaded. The runtime now tracks resolved loaded
+  files for both once and non-once includes so `require_once` after `require`
+  follows PHP's loaded-file behavior in the covered subset. Missing-file
+  include warning recovery, `include_path`, stream wrappers/URLs, `phar://`,
+  opcache behavior, autoload interaction, declaration-order edge cases, exact
+  warning/fatal behavior, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `$result = include $this->file;` blocker in
+  `wp-includes/l10n/class-wp-translation-file-php.php` to
+  `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features include -- --nocapture`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone759`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 758, nested object-property array-offset `unset(...)` for
   direct object variables and named properties. The parser now accepts forms
   such as `unset($object->items[$outer][$inner])` while preserving the existing
