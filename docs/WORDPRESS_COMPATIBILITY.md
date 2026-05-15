@@ -162,8 +162,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `<bootstrap-shim>:68:9` is covered by Milestone 716 for truthy assertion
   guards used by the sodium compatibility bootstrap. This is not full PHP
   assertion policy, callback, `AssertionError`, warning/fatal, or native
-  support. The bootstrap-shim probe now reaches
+  support. It then advanced to
   `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
+  That previous dynamic constant-name probe is covered by Milestone 717's
+  simple double-quoted `$name` interpolation slice for runtime string names.
+  This is not full string interpolation, sodium support, extension constant
+  catalog support, class-constant string lookup, or native lowering. The real
+  inventory now reports direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `lex error at <bootstrap-shim>:468:12: unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

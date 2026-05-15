@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+1|ok
+0
+literal:$constant
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -452,6 +452,10 @@ pub enum Expr {
     Int(i64, Span),
     Float(f64, Span),
     String(String, Span),
+    InterpolatedString {
+        parts: Vec<InterpolatedStringPart>,
+        span: Span,
+    },
     Variable(String, Span),
     MagicLine {
         span: Span,
@@ -646,6 +650,12 @@ pub enum Expr {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolatedStringPart {
+    Literal(String),
+    Variable(String),
+}
+
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
@@ -654,6 +664,7 @@ impl Expr {
             | Expr::Int(_, span)
             | Expr::Float(_, span)
             | Expr::String(_, span)
+            | Expr::InterpolatedString { span, .. }
             | Expr::Variable(_, span)
             | Expr::MagicLine { span }
             | Expr::MagicFile { span }

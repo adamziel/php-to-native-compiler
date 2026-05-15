@@ -857,6 +857,54 @@ echo defined("\\123BAD");
 }
 
 #[test]
+fn double_quoted_strings_interpolate_simple_variables_for_constant_name_builtins() {
+    let execution = run_source(
+        r#"<?php
+$constant = "RUNTIME";
+define("APP_RUNTIME", "ok");
+echo defined("APP_$constant") ? "1" : "0";
+echo "|", constant("APP_$constant"), "\n";
+$constant = "MISSING";
+echo defined("APP_$constant") ? "1" : "0", "\n";
+echo "literal:\$constant", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|ok\n0\nliteral:$constant\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn braced_string_interpolation_remains_a_named_boundary() {
+    let error = lex_error(
+        r#"<?php
+echo "APP_{$constant}";
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented"
+    );
+}
+
+#[test]
+fn undefined_variables_in_string_interpolation_use_current_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+echo "APP_$constant";
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined variable '$constant'");
+}
+
+#[test]
 fn top_level_const_declarations_populate_constant_table() {
     let execution = run_source(
         r#"<?php

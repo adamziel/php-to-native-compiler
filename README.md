@@ -103,8 +103,9 @@ incorrect native code.
   statement-form `list($a, $b) = expr;` assignment over numeric keys
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,
-  runtime-defined constants with bounded qualified string names, and executable
-  magic constants documented in the support matrix
+  runtime-defined constants with bounded qualified string names, simple
+  interpolated runtime string names for `defined()`/`constant()`, and
+  executable magic constants documented in the support matrix
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
   can parse and be skipped, while reached throws report a stable runtime
   diagnostic without constructing exception objects or unwinding the stack
@@ -183,6 +184,7 @@ exact PHP nested class declaration timing and fatal behavior, real
 throw/catch execution,
 bare namespace constant fallback reads, class-constant lookup through
 `defined()`/`constant()`, full extension constant catalogs,
+braced/complex double-quoted string interpolation, heredoc/nowdoc,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

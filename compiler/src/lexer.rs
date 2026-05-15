@@ -1,4 +1,4 @@
-use crate::ast::Span;
+use crate::ast::{InterpolatedStringPart, Span};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,6 +15,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     StringLiteral(String),
+    InterpolatedString(Vec<InterpolatedStringPart>),
     Echo,
     Print,
     Function,
@@ -424,10 +425,18 @@ impl<'a> Lexer<'a> {
 
     fn lex_string(&mut self, quote: char, span: Span) -> CompileResult<TokenKind> {
         let mut value = String::new();
+        let mut parts = Vec::new();
+        let interpolate = quote == '"';
 
         while let Some(ch) = self.peek() {
             if ch == quote {
                 self.advance();
+                if !parts.is_empty() {
+                    if !value.is_empty() {
+                        parts.push(InterpolatedStringPart::Literal(value));
+                    }
+                    return Ok(TokenKind::InterpolatedString(parts));
+                }
                 return Ok(TokenKind::StringLiteral(value));
             }
 
@@ -470,6 +479,42 @@ impl<'a> Lexer<'a> {
                 };
                 value.push(escaped);
                 continue;
+            }
+
+            if interpolate && ch == '$' {
+                if matches!(self.peek_next(), Some(next) if is_identifier_start(next)) {
+                    self.advance();
+                    if !value.is_empty() {
+                        parts.push(InterpolatedStringPart::Literal(value));
+                        value = String::new();
+                    }
+
+                    let mut name = String::new();
+                    name.push(self.advance());
+                    while let Some(next) = self.peek() {
+                        if is_identifier_part(next) {
+                            name.push(self.advance());
+                        } else {
+                            break;
+                        }
+                    }
+                    parts.push(InterpolatedStringPart::Variable(name));
+                    continue;
+                }
+
+                if matches!(self.peek_next(), Some('$' | '{')) {
+                    return Err(self.error_at(
+                        span,
+                        "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented",
+                    ));
+                }
+            }
+
+            if interpolate && ch == '{' && self.peek_next() == Some('$') {
+                return Err(self.error_at(
+                    span,
+                    "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented",
+                ));
             }
 
             value.push(self.advance());

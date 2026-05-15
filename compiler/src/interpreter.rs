@@ -14,7 +14,8 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
     ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    InterpolatedStringPart, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -1261,6 +1262,9 @@ impl Interpreter {
             Expr::Int(value, _) => Ok(Value::Int(*value)),
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
+            Expr::InterpolatedString { parts, span } => {
+                self.evaluate_interpolated_string(parts, *span, scope)
+            }
             Expr::Variable(name, span) => {
                 if name.eq_ignore_ascii_case("this") && scope.read_named("this").is_none() {
                     return Err(runtime_error(
@@ -2943,6 +2947,28 @@ impl Interpreter {
             Some(declaring_class_id),
             Some(receiver_class_id),
         )
+    }
+
+    fn evaluate_interpolated_string(
+        &self,
+        parts: &[InterpolatedStringPart],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let mut output = String::new();
+        for part in parts {
+            match part {
+                InterpolatedStringPart::Literal(value) => output.push_str(value),
+                InterpolatedStringPart::Variable(name) => {
+                    let value = scope.read_static(name, span)?;
+                    let text = value
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(span, error))?;
+                    output.push_str(&text);
+                }
+            }
+        }
+        Ok(Value::String(output))
     }
 
     fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {

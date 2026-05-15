@@ -3012,6 +3012,10 @@ impl Parser {
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
+            TokenKind::InterpolatedString(parts) => Ok(Expr::InterpolatedString {
+                parts,
+                span: token.span,
+            }),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBracket => {
                 self.parse_array_literal(token.span, ArrayLiteralDelimiter::Short)
@@ -3752,6 +3756,7 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::SelfClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
@@ -3824,6 +3829,7 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::ClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
@@ -3940,6 +3946,7 @@ impl Parser {
             | Expr::Int(_, _)
             | Expr::Float(_, _)
             | Expr::String(_, _)
+            | Expr::InterpolatedString { .. }
             | Expr::Variable(_, _)
             | Expr::MagicLine { .. }
             | Expr::MagicFile { .. }
@@ -4055,6 +4062,7 @@ impl Parser {
             | Expr::Int(_, _)
             | Expr::Float(_, _)
             | Expr::String(_, _)
+            | Expr::InterpolatedString { .. }
             | Expr::Variable(_, _)
             | Expr::MagicLine { .. }
             | Expr::MagicFile { .. }
@@ -4144,6 +4152,7 @@ impl Parser {
             | Expr::Int(_, _)
             | Expr::Float(_, _)
             | Expr::String(_, _)
+            | Expr::InterpolatedString { .. }
             | Expr::Variable(_, _)
             | Expr::MagicLine { .. }
             | Expr::MagicFile { .. }
@@ -4592,6 +4601,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Int(_) => "integer literal",
         TokenKind::Float(_) => "float literal",
         TokenKind::StringLiteral(_) => "string literal",
+        TokenKind::InterpolatedString(_) => "interpolated string literal",
         TokenKind::Echo => "echo",
         TokenKind::Print => "print",
         TokenKind::Function => "function",

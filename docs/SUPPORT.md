@@ -7,7 +7,9 @@
 - `print` statements
 - decimal and hexadecimal integer literals in the current signed 64-bit subset
 - float literals
-- single-quoted and double-quoted string literals with basic escapes
+- single-quoted and double-quoted string literals with basic escapes; double
+  quoted strings additionally support simple `$name` interpolation over the
+  current variable table
 - `null`, `true`, and `false`
 - magic constants `__LINE__`, evaluated from the expression token's source
   line, `__FILE__`, evaluated from the current `phpc run` input path when one
@@ -262,8 +264,9 @@
   `constant($name)` accepts unqualified names and qualified lookup names with
   an optional leading global namespace separator; `defined($name)` reports
   whether a supported unqualified or qualified name exists in the current
-  built-in/runtime-defined constant table; string-valued dynamic calls to
-  `define`, `constant`, and `defined` use the same path
+  built-in/runtime-defined constant table; simple double-quoted `$name`
+  interpolation can build those runtime string names, and string-valued dynamic
+  calls to `define`, `constant`, and `defined` use the same path
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
 - top-level single and grouped `const NAME = value;` declarations for
@@ -598,6 +601,10 @@
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
+- explicit lex diagnostics for unsupported braced or complex double-quoted
+  string interpolation such as `"APP_{$constant}"`. Only simple `$name`
+  interpolation is implemented; array offsets, object/static properties,
+  variable variables, `${...}`, heredoc, and nowdoc remain unsupported.
 - syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
   before functions, classes, class members, and parameters. Attribute metadata,
   reflection visibility, target validation, namespace-aware attribute names,
@@ -1663,7 +1670,9 @@
   unqualified constant names with a uniform answer against the current exact
   built-in constant table. Qualified names such as
   `\Sodium\CRYPTO_AUTH_BYTES` and `Sodium\CRYPTO_AUTH_BYTES` remain rejected
-  in native lowering. Exact `CASE_LOWER`, `CASE_UPPER`,
+  in native lowering, and interpolated string-name operands remain rejected
+  before folding so native output cannot erase the runtime lookup boundary.
+  Exact `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` names fold to true;
   other supported unqualified names fold to false. The Milestone 569 and 573

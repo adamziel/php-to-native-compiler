@@ -418,6 +418,9 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
+            Expr::InterpolatedString { span, .. } => {
+                Err(self.unsupported(*span, LLVM_CONCAT_REJECTION))
+            }
             Expr::MagicLine { span }
             | Expr::MagicFile { span }
             | Expr::MagicDir { span }
@@ -663,6 +666,9 @@ impl LlvmGenerator {
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
         if args.len() != 1 {
+            return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
+        }
+        if matches!(args[0], Expr::InterpolatedString { .. }) {
             return Err(self.unsupported(span, LLVM_GLOBAL_CONSTANT_REJECTION));
         }
 
@@ -3183,6 +3189,9 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
+            Expr::InterpolatedString { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_CONCAT_REJECTION))
+            }
             Expr::MagicLine { span }
             | Expr::MagicFile { span }
             | Expr::MagicDir { span }
@@ -3430,6 +3439,9 @@ impl CGenerator {
 
     fn emit_defined_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
         if args.len() != 1 {
+            return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
+        }
+        if matches!(args[0], Expr::InterpolatedString { .. }) {
             return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
         }
 

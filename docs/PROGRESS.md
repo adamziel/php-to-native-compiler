@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added Milestone 717, a bounded simple double-quoted string interpolation
+  slice through `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker
+  `defined("SODIUM_$constant")` at `<bootstrap-shim>:106:10`. The lexer now
+  preserves non-interpolated strings as ordinary string literals, represents
+  simple `$name` interpolation as a distinct AST form, and rejects braced or
+  complex interpolation with a stable lex diagnostic. The runtime evaluates
+  interpolated parts through the active symbol table and PHP-shaped
+  echo-string conversion, so interpolated names can feed the existing
+  `defined()`/`constant()` runtime name validation. Native `defined(...)`
+  rejects interpolated string-name operands before folding so the native path
+  cannot erase runtime constant lookup semantics. Braced interpolation,
+  `${...}`, variable variables, array offsets, object/static properties,
+  heredoc/nowdoc, undefined-variable compatibility warnings, class constants
+  through `defined()`/`constant()`, full extension constant catalogs, exact PHP
+  diagnostics, partial-output behavior, and native lowering remain explicit.
+  The real WordPress 6.9.4 inventory now reports direct `wp-settings.php`
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `lex error at <bootstrap-shim>:468:12: unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary interpolated -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone717`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone717`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
 - Added Milestone 716, a bounded `assert()` runtime builtin slice through
   `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:68:9`. `assert($assertion, $description = null)` now

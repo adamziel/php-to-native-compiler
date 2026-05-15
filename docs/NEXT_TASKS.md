@@ -6565,17 +6565,26 @@ handled.
   `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
   while the bootstrap-shim probe reaches
   `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
-- [ ] Runtime/constants lane: implement or explicitly bound the real WordPress
+- [x] Runtime/constants lane: implemented the real WordPress
   6.9.4 bootstrap-shim dynamic constant-name probe
-  `defined("SODIUM_$constant")` at `<bootstrap-shim>:106:10`, with tests, CLI
-  coverage, docs, and named unsupported edges for variable interpolation,
-  dynamic extension constant aliases, full extension constant catalogs, exact
-  PHP diagnostics, partial-output behavior, and native lowering.
+  `defined("SODIUM_$constant")` at `<bootstrap-shim>:106:10`. The Milestone
+  717 slice adds simple double-quoted `$name` interpolation for runtime string
+  names, keeps braced/complex interpolation, dynamic extension constant
+  aliases, class-constant string lookup, full extension constant catalogs,
+  exact PHP diagnostics, partial-output behavior, and native lowering
+  unsupported, and advances the real bootstrap-shim probe to
+  `lex error at <bootstrap-shim>:468:12: unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented`.
+- [ ] Parser/runtime lane: implement or explicitly bound the real WordPress
+  6.9.4 bootstrap-shim braced/complex string interpolation blocker at
+  `<bootstrap-shim>:468:12`, with tests, CLI coverage, docs, and named
+  unsupported edges for array-offset interpolation, object/static properties,
+  variable variables, heredoc/nowdoc, exact PHP diagnostics, partial-output
+  behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 716 work, the latest committed checkpoint is
-  `03d502c runtime: add qualified namespace constants`, covering Milestone 715.
+- Before the current Milestone 717 work, the latest committed checkpoint is
+  `6bb2775 runtime: add bounded assert builtin`, covering Milestone 716.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
