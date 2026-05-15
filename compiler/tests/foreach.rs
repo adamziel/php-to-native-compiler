@@ -80,6 +80,45 @@ echo "after:", $item;
 }
 
 #[test]
+fn foreach_by_reference_syntax_inside_unexecuted_function_body_is_registered() {
+    let execution = php_compiler::run_source(
+        r#"<?php
+function sort_recursive(&$items) {
+    foreach ($items as &$item) {
+        if (is_array($item)) {
+            sort_recursive($item);
+        }
+    }
+}
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_reports_stable_runtime_boundary_when_reached() {
+    let error = runtime_error(
+        r#"<?php
+$items = [1];
+foreach ($items as &$item) {
+    echo $item;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call foreach: by-reference iteration is not implemented; only by-value iteration is supported"
+    );
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php

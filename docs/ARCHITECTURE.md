@@ -152,6 +152,10 @@ statement-form direct variable sources. It deliberately does not add a
 `Reference` runtime value or alias-backed symbol-table slots. The current value
 model remains boxed values in materialized symbol tables; PHP reference
 containers and copy-on-write remain future runtime work.
+By-reference `foreach` value syntax is likewise represented only far enough to
+preserve a stable runtime boundary when reached; it does not mutate array slots
+through aliases, preserve lingering loop-variable references, or implement PHP
+copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods, typed/default property compatibility, broader

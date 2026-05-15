@@ -1266,12 +1266,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LParen, "expected '(' after foreach")?;
         let iterable = self.parse_expression()?;
         self.consume_foreach_as()?;
-        if self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_foreach_reference_message(),
-            ));
-        }
+        let first_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
             return Err(self.error_at(
                 self.peek().span,
@@ -1280,13 +1275,16 @@ impl Parser {
         }
         let (first_variable, _) =
             self.consume_variable_with_span("expected foreach value variable")?;
-        let (key, value) = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
-            if self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+        let (key, value, by_reference) = if self
+            .match_token(|kind| matches!(kind, TokenKind::FatArrow))
+        {
+            if first_by_reference {
                 return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_foreach_reference_message(),
-                ));
+                        span,
+                        "unsupported foreach: key variables cannot be by-reference in the current subset",
+                    ));
             }
+            let value_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
             if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
                 return Err(self.error_at(
                     self.peek().span,
@@ -1294,9 +1292,9 @@ impl Parser {
                 ));
             }
             let (value, _) = self.consume_variable_with_span("expected foreach value variable")?;
-            (Some(first_variable), value)
+            (Some(first_variable), value, value_by_reference)
         } else {
-            (None, first_variable)
+            (None, first_variable, first_by_reference)
         };
         self.consume_keyword(
             TokenKind::RParen,
@@ -1308,6 +1306,7 @@ impl Parser {
             iterable,
             key,
             value,
+            by_reference,
             body,
             span,
         })
@@ -5162,10 +5161,6 @@ fn unsupported_object_property_unset_message() -> &'static str {
 
 fn unsupported_foreach_expression_message() -> &'static str {
     "unsupported foreach: foreach is only supported as a statement in the current subset"
-}
-
-fn unsupported_foreach_reference_message() -> &'static str {
-    "unsupported foreach: by-reference iteration is not implemented; only by-value iteration is supported"
 }
 
 fn unsupported_foreach_destructuring_message() -> &'static str {

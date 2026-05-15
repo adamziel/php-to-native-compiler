@@ -1096,17 +1096,6 @@ fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-$items = [1];
-FOREACH ($items as &$item) {
-    echo $item;
-}
-"#,
-            3,
-            20,
-            "unsupported foreach: by-reference iteration is not implemented; only by-value iteration is supported",
-        ),
-        (
-            r#"<?php
 $items = [[1]];
 foreach ($items as [$item]) {
     echo $item;
@@ -1126,6 +1115,17 @@ foreach ($items as $key => [$item]) {
             3,
             28,
             "unsupported foreach: destructuring loop targets are not implemented",
+        ),
+        (
+            r#"<?php
+$items = [1];
+foreach ($items as &$key => $item) {
+    echo $item;
+}
+"#,
+            3,
+            1,
+            "unsupported foreach: key variables cannot be by-reference in the current subset",
         ),
         (
             r#"<?php

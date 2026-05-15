@@ -392,6 +392,20 @@ The first bootstrap probe is expected to fail. Known blockers include:
   by-reference iteration is not implemented; only by-value iteration is
   supported`. This is not reference support, by-reference foreach support, or
   WordPress bootstrap support.
+  Milestone 747 accepts by-reference `foreach` value syntax as a runtime
+  boundary, so `foreach ($items as &$value)` and
+  `foreach ($items as $key => &$value)` can appear in guarded or
+  declaration-contained code without blocking parse. Reached loops still fail
+  with the stable unsupported by-reference iteration runtime diagnostic. After
+  that slice, the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches `parse error at <bootstrap-shim>:5188:31: expected ';' after reference assignment`,
+  corresponding to `wp-includes/functions.php` assigning a reference from an
+  array offset source with `$input_array = &$input_array[ $path_element ];`.
+  This is not executable by-reference foreach support, general reference
+  assignment support, aliasing, copy-on-write, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

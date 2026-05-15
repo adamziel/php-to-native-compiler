@@ -873,9 +873,19 @@ impl Interpreter {
                 iterable,
                 key,
                 value,
+                by_reference,
                 body,
                 span,
             } => {
+                if *by_reference {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "foreach",
+                            "by-reference iteration is not implemented; only by-value iteration is supported",
+                        ),
+                    ));
+                }
                 let iterable = self.evaluate(iterable, scope)?;
                 let array = match iterable {
                     Value::Array(array) => array,

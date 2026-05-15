@@ -161,7 +161,11 @@
   current scalar loose-comparison subset, including `case`, `default`, `:` or
   `;` case/default separators, fallthrough, and `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
-  ordered arrays
+  ordered arrays. By-reference value forms such as
+  `foreach ($array as &$value)` and `foreach ($array as $key => &$value)` parse
+  as runtime boundaries so guarded or declaration-contained code can be loaded,
+  but reached loops report `unsupported call foreach: by-reference iteration is
+  not implemented; only by-value iteration is supported`.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
@@ -634,7 +638,7 @@
   current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `unset($object->property)` before
   object property uninitialization semantics exist
-- explicit parse diagnostics for unsupported `foreach` by-reference iteration,
+- explicit parse diagnostics for unsupported `foreach` key-by-reference forms,
   destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported expression-position `for` and
   comma-separated `for` header expression lists
@@ -1218,7 +1222,9 @@
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
   $key => $value)` additionally writes the current integer or string key as an
-  `int` or `string` value to the direct key loop variable. Missing key reads
+  `int` or `string` value to the direct key loop variable. By-reference value
+  iteration forms parse but remain runtime boundaries; they do not create
+  aliases, mutate array slots by reference, or model copy-on-write. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
@@ -3079,8 +3085,8 @@
   static-property diagnostic operands, including object property removal,
   append-offset unset, and nested/complex operands; these fail with stable
   parse diagnostics
-- by-reference `foreach`, object iteration, destructuring loop targets, and
-  expression-form `foreach`
+- executable by-reference `foreach`, object iteration, destructuring loop
+  targets, key-by-reference loop variables, and expression-form `foreach`
 - comma-separated `for` initializer, condition, or increment expression lists;
   only zero or one expression or assignment is supported in each header slot
 - expression-form `for`; `for` is only supported as a statement

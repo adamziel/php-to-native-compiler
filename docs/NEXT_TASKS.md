@@ -6847,14 +6847,22 @@ handled.
   expressions for the next real WordPress bootstrap-shim blocker at
   `<bootstrap-shim>:4955:17`. Milestone 746 accepts statement-form
   by-reference assignment as a runtime boundary for direct variable sources.
-- [ ] Foreach/value-model lane: implement or explicitly bound by-reference
+- [x] Foreach/value-model lane: implement or explicitly bound by-reference
   `foreach` iteration for the next real WordPress bootstrap-shim blocker at
-  `<bootstrap-shim>:5047:28`.
+  `<bootstrap-shim>:5047:28`. Milestone 747 accepts by-reference foreach value
+  syntax as a runtime boundary and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:5188:31: expected ';' after reference assignment`.
+- [ ] References/value-model lane: implement or explicitly bound
+  by-reference assignment from direct array-offset sources for the next real
+  WordPress bootstrap-shim blocker at `<bootstrap-shim>:5188:31`,
+  corresponding to `$input_array = &$input_array[ $path_element ];` in
+  `wp-includes/functions.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 746 checkpoint, the latest committed checkpoint
-  is `2273e71 runtime: add bounded dynamic properties`, covering Milestone 745.
+- Before the current Milestone 747 checkpoint, the latest committed checkpoint
+  is `246152e parser: bound reference assignment syntax`, covering Milestone
+  746.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

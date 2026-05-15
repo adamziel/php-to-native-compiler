@@ -103,6 +103,7 @@ pub enum Stmt {
         iterable: Expr,
         key: Option<String>,
         value: String,
+        by_reference: bool,
         body: Vec<Stmt>,
         span: Span,
     },

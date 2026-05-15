@@ -1,0 +1,1 @@
+phpc parses by-reference foreach as a runtime boundary; it does not implement PHP reference aliases, by-reference iteration, or copy-on-write.

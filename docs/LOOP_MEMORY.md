@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T20:25:00Z
+
+- Checkpoint before this task:
+  `246152e parser: bound reference assignment syntax`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 747, by-reference `foreach` value syntax as a
+  runtime boundary.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/foreach.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone747/foreach_by_reference_unreached.*`,
+  `tests/fixtures/milestone747/foreach_by_reference_reached.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test foreach by_reference -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_foreach_forms -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone747`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: by-reference `foreach` is syntax-only plus runtime
+  boundary. Alias cells, reference containers, copy-on-write, mutation during
+  iteration, lingering loop-variable references, object/Traversable iteration,
+  destructuring targets, exact diagnostics, and native lowering remain
+  unsupported. Direct `wp-settings.php` still stops on undefined `ABSPATH`;
+  the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:5188:31: expected ';' after reference assignment`,
+  corresponding to `$input_array = &$input_array[ $path_element ];`.
+- Next concrete task: implement or explicitly bound reference assignment from
+  direct array-offset sources, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T19:55:00Z
 
 - Checkpoint before this task:
