@@ -1407,7 +1407,11 @@ historical blockers and remaining full-support gaps include:
   changes, warning/error fidelity, or native database lowering. Milestone 900
   wires that placeholder through a synthetic WordPress-shaped `wpdb`
   charset/collation bookkeeping smoke without claiming real WordPress
-  charset/collation negotiation or escaping fidelity.
+  charset/collation negotiation or escaping fidelity. Milestone 901 adds
+  deterministic `mysqli_character_set_name()` placeholder charset-name
+  metadata without real charset negotiation, connection charset state tracking,
+  escaping behavior changes, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

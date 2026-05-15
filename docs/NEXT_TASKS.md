@@ -8338,16 +8338,28 @@ handled.
   WordPress charset/collation negotiation, connection charset state, escaping
   fidelity, client-library/server metadata inspection, host database
   integration, warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after charset
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after charset
   metadata placeholders and choose a small tested slice, such as deterministic
   `mysqli_character_set_name()` metadata or a sharper named diagnostic, before
   broader SQL execution or real host state is claimed.
+  Milestone 901 implements bounded deterministic
+  `mysqli_character_set_name($handle)` metadata. It accepts current
+  placeholder `mysqli` handles, returns deterministic `utf8mb4`, rejects
+  non-`mysqli` handles with stable diagnostics, and is visible through runtime
+  and native metadata lookup. This is not real charset negotiation,
+  client-library/server metadata inspection, connection charset state tracking,
+  collation state, escaping behavior changes, warnings/errors, or native
+  database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_character_set_name()` placeholder through WordPress-shaped
+  charset-name bookkeeping without claiming real charset negotiation or
+  escaping fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `dc9d6cb runtime: add mysqli charset metadata`, covering Milestone 899
-  before the current Milestone 900 candidate.
+  `120009b tests: add wordpress wpdb charset metadata smoke`, covering
+  Milestone 900 before the current Milestone 901 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

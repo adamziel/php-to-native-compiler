@@ -5,7 +5,8 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-`mysqli_get_charset`, `mysqli_stat`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
+`mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_stat`,
+`mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
@@ -73,6 +74,10 @@ placeholder: `charset = "utf8mb4"`, `collation = "utf8mb4_unicode_520_ci"`,
 `state = 0`. It does not negotiate or inspect a real connection charset,
 reflect client-library/server metadata, track collation changes, or affect
 escaping.
+
+`mysqli_character_set_name($handle)` accepts the placeholder object and returns
+deterministic `utf8mb4`. It does not inspect, negotiate, or track a real
+connection character set.
 
 `mysqli_get_connection_stats($handle)` accepts the placeholder object and
 returns an eight-key deterministic statistics array:

@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_character_set_name()` metadata. System PHP needs a real mysqli
+connection and reports the active connection character set name supplied by the
+client library and server.

@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 901, bounded `mysqli_character_set_name()` support for
+  deterministic placeholder MySQLi charset-name metadata. The runtime accepts
+  `mysqli_character_set_name($handle)` for current placeholder `mysqli`
+  objects, returns deterministic `utf8mb4`, rejects non-`mysqli` handles with
+  stable diagnostics, and exposes the name through runtime and native metadata
+  lookup. This is not real charset negotiation, client-library/server metadata
+  inspection, connection charset state tracking, collation state, escaping
+  behavior changes, PHP warning/error fidelity, or native database lowering.
+  Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_set_charset -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone901`.
+
 - Added Milestone 900, a synthetic WordPress-shaped `wpdb` charset/collation
   bookkeeping smoke that calls the bounded
   `mysqli_get_charset($this->dbh)` placeholder path, records deterministic

@@ -381,11 +381,14 @@ fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
         r#"<?php
 $call = "mysqli_set_charset";
 $charset_call = "mysqli_get_charset";
+$name_call = "mysqli_character_set_name";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
 echo "|";
 echo is_callable($charset_call) ? "charset-callable" : "charset-missing";
+echo "|";
+echo is_callable($name_call) ? "name-callable" : "name-missing";
 $handle = mysqli_init();
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 echo "|";
@@ -408,13 +411,17 @@ echo "|";
 echo $charset->state;
 echo "|";
 echo $dynamic->charset;
+echo "|";
+echo mysqli_character_set_name($handle);
+echo "|";
+echo $name_call($handle);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|charset-callable|set|dynamic|utf8mb4|utf8mb4_unicode_520_ci|1|4|246|0|utf8mb4"
+        "yes|callable|charset-callable|name-callable|set|dynamic|utf8mb4|utf8mb4_unicode_520_ci|1|4|246|0|utf8mb4|utf8mb4|utf8mb4"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -985,6 +992,21 @@ mysqli_get_charset("not-a-handle");
     assert_eq!(
         bad_get_charset_handle.message,
         "unsupported call mysqli_get_charset(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_charset_name_handle = run_source(
+        r#"<?php
+mysqli_character_set_name("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_charset_name_handle.phase, Phase::Runtime);
+    assert_eq!(bad_charset_name_handle.line, 2);
+    assert_eq!(bad_charset_name_handle.column, 1);
+    assert_eq!(
+        bad_charset_name_handle.message,
+        "unsupported call mysqli_character_set_name(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -1579,6 +1601,8 @@ echo function_exists("mysqli_thread_id") ? "1" : "0";
 echo is_callable("mysqli_thread_id") ? "1" : "0";
 echo function_exists("mysqli_get_charset") ? "1" : "0";
 echo is_callable("mysqli_get_charset") ? "1" : "0";
+echo function_exists("mysqli_character_set_name") ? "1" : "0";
+echo is_callable("mysqli_character_set_name") ? "1" : "0";
 echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
@@ -1647,7 +1671,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 84, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 86, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1727,6 +1751,18 @@ mysqli_get_host_info(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_charset(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_character_set_name(mysqli_init());
 "#,
     )
     .unwrap_err();
