@@ -8465,15 +8465,23 @@ handled.
   visible through runtime and native metadata lookup. This is not real warning
   objects, warning iteration, SQL warning metadata, host database state,
   warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_get_warnings()` placeholder through a WordPress-shaped query
   warning bookkeeping method without claiming real SQL warning metadata.
+  Milestone 914 adds a `phpc-only` synthetic `wpdb` fixture that records clean
+  `mysqli_get_warnings()` placeholder metadata after a placeholder charset setup
+  query. It is not real SQL warning objects, warning iteration, warnings,
+  errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi result or metadata boundary
+  used by WordPress after clean warning-chain state, such as
+  `mysqli_store_result()`/`mysqli_use_result()` or a sharper unsupported
+  diagnostic, before claiming broader result lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1f87f2f tests: add wordpress wpdb info smoke`, covering Milestone 912 before
-  the current Milestone 913 candidate.
+  `a239efe runtime: add mysqli warnings placeholder`, covering Milestone 913
+  before the current Milestone 914 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

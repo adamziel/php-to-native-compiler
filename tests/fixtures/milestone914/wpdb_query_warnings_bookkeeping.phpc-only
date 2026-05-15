@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_warnings()` clean warning-chain state through a WordPress-shaped
+`wpdb` query warning bookkeeping method after a placeholder charset setup
+query. System PHP needs a real mysqli connection and host extension warning
+state; phpc only records local `wpdb` bookkeeping around clean placeholder
+state.

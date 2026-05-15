@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 914, a synthetic WordPress-shaped `wpdb` query-warning
+  bookkeeping smoke that calls the bounded `mysqli_get_warnings($this->dbh)`
+  placeholder after the deterministic charset setup query, records clean local
+  warning-chain metadata, and verifies that the query warning bookkeeping
+  boundary ran. This is a harness smoke only; it does not add real WordPress
+  SQL warning objects, warning iteration, host database state, PHP
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone914`.
+
 - Added Milestone 913, bounded `mysqli_get_warnings()` support for
   deterministic placeholder MySQLi clean warning-chain metadata. The runtime
   accepts current placeholder `mysqli` handles, returns deterministic clean
