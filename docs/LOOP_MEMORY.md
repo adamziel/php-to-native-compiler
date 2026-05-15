@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `66548f5 tests: add wordpress wpdb close smoke`, pushed to `origin/master`.
+- Task attempted: Milestone 907, bounded deterministic `mysqli_options()`
+  placeholder client-option support for `MYSQLI_OPT_INT_AND_FLOAT_NATIVE`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone907/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` initially caught formatting, `cargo fmt` was applied,
+  rerun `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_options -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone907`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/mysqli_extension.rs tests/fixtures/milestone907 docs/PROGRESS.md docs/SUPPORT.md docs/extensions/mysqli.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: placeholder MySQLi startup options are being
+  extended to cover the reached native int/float result option.
+- Remaining semantic gaps: real client-option negotiation, result
+  type-conversion behavior, connection state mutation, host database
+  integration, warning/error fidelity, database state mutation, and native
+  database lowering remain missing.
+- Next concrete task: run focused MySQLi and fixture verification, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, add a synthetic WordPress-shaped `wpdb` options bookkeeping smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ce6da47 runtime: add mysqli close placeholder`, pushed to `origin/master`.
 - Task attempted: Milestone 906, a synthetic WordPress-shaped `wpdb` close
   bookkeeping smoke over deterministic `mysqli_close()` placeholder lifecycle

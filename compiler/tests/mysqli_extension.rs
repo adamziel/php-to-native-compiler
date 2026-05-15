@@ -315,6 +315,29 @@ echo $call($handle) ? "closed" : "open";
 }
 
 #[test]
+fn mysqli_options_accepts_current_int_and_float_native_placeholder_option() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_options";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+echo "|";
+echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? MYSQLI_OPT_INT_AND_FLOAT_NATIVE : "missing";
+echo "|";
+echo mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true) ? "set" : "failed";
+echo "|";
+echo $call($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1) ? "set" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|201|set|set");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_stat_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -858,6 +881,54 @@ mysqli_close("not-a-handle");
     assert_eq!(
         bad_handle.message,
         "unsupported call mysqli_close(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_options_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_options("not-a-handle", MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_options(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_option = run_source(
+        r#"<?php
+mysqli_options(mysqli_init(), 0, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_option.phase, Phase::Runtime);
+    assert_eq!(bad_option.line, 2);
+    assert_eq!(bad_option.column, 1);
+    assert_eq!(
+        bad_option.message,
+        "unsupported call mysqli_options(): only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got 0"
+    );
+
+    let bad_value = run_source(
+        r#"<?php
+mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_value.phase, Phase::Runtime);
+    assert_eq!(bad_value.line, 2);
+    assert_eq!(bad_value.column, 1);
+    assert_eq!(
+        bad_value.message,
+        "unsupported call mysqli_options(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
     );
 }
 
@@ -1687,6 +1758,8 @@ echo function_exists("mysqli_field_count") ? "1" : "0";
 echo is_callable("mysqli_field_count") ? "1" : "0";
 echo function_exists("mysqli_close") ? "1" : "0";
 echo is_callable("mysqli_close") ? "1" : "0";
+echo function_exists("mysqli_options") ? "1" : "0";
+echo is_callable("mysqli_options") ? "1" : "0";
 echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
@@ -1751,11 +1824,12 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
 echo defined("MYSQLI_ASSOC") ? "1" : "0";
 echo defined("MYSQLI_NUM") ? "1" : "0";
 echo defined("MYSQLI_BOTH") ? "1" : "0";
+echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 90, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 93, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1871,6 +1945,18 @@ mysqli_field_count(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_close(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
 "#,
     )
     .unwrap_err();

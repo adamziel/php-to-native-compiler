@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 907, bounded `mysqli_options()` support for deterministic
+  placeholder MySQLi client-option metadata. The runtime accepts
+  `mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` for
+  current placeholder `mysqli` objects and bool/int values, returns
+  deterministic `true`, exposes `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` as `201`,
+  rejects unsupported handles/options/values with stable diagnostics, and
+  exposes the name through runtime and native metadata lookup. This is not
+  real client-option negotiation, result type-conversion behavior, connection
+  state mutation, host database integration, PHP warning/error fidelity, or
+  native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_options -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone907`.
+
 - Added Milestone 906, a synthetic WordPress-shaped `wpdb` close bookkeeping
   smoke that calls the bounded `mysqli_close($this->dbh)` placeholder path,
   records deterministic local teardown metadata, and verifies that the

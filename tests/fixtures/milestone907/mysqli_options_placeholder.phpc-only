@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_options()`
+boundary for `MYSQLI_OPT_INT_AND_FLOAT_NATIVE`. System PHP needs a real mysqli
+handle and applies a client option that affects result type conversion; phpc
+only validates the current placeholder shape and returns true.

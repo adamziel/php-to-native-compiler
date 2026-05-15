@@ -6234,7 +6234,8 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         | "MYSQLI_REPORT_STRICT"
         | "MYSQLI_ASSOC"
         | "MYSQLI_NUM"
-        | "MYSQLI_BOTH" => true,
+        | "MYSQLI_BOTH"
+        | "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => true,
         _ => false,
     }
 }
@@ -6354,6 +6355,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_character_set_name"
             | "mysqli_field_count"
             | "mysqli_close"
+            | "mysqli_options"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone907/mysqli_options_placeholder.php
+yes
+callable
+201
+set
+set

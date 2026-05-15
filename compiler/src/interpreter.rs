@@ -4281,6 +4281,50 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_options(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_options", args, 3, span)?;
+        expect_mysqli_handle("mysqli_options()", &args[0], span)?;
+        match &args[1] {
+            Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE) => {}
+            Value::Int(option) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_options()",
+                        format!(
+                            "only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got {option}"
+                        ),
+                    ),
+                ));
+            }
+            value => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_options()",
+                        format!(
+                            "option must be int in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        match &args[2] {
+            Value::Bool(_) | Value::Int(_) => Ok(Value::Bool(true)),
+            value => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_options()",
+                    format!(
+                        "value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
@@ -9307,6 +9351,7 @@ impl Interpreter {
             "mysqli_character_set_name" => self.call_mysqli_character_set_name(&args, span),
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
             "mysqli_close" => self.call_mysqli_close(&args, span),
+            "mysqli_options" => self.call_mysqli_options(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
@@ -12257,6 +12302,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_character_set_name"
             | "mysqli_field_count"
             | "mysqli_close"
+            | "mysqli_options"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"
@@ -12389,6 +12435,7 @@ const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
 const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
+const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -12426,6 +12473,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_ASSOC" => Some(Value::Int(PHP_MYSQLI_ASSOC)),
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
+        "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => Some(Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE)),
         _ => None,
     }
 }

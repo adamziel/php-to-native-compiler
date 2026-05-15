@@ -8398,16 +8398,26 @@ handled.
   the close path ran. It is not real WordPress disconnect behavior, host
   connection teardown, handle invalidation, server resource release,
   close-after-use diagnostics, warnings/errors, or native database lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi option or lifecycle
+- [x] Runtime/mysqli lane: inspect the next MySQLi option or lifecycle
   boundary used by WordPress, such as `mysqli_options()` and the related option
   constants, before claiming real client-option negotiation or host connection
   state.
+  Milestone 907 implements bounded deterministic `mysqli_options($handle,
+  MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` support for bool/int option values.
+  It exposes `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` as `201`, returns deterministic
+  `true`, rejects unsupported handles/options/values with stable diagnostics,
+  and is visible through runtime and native metadata lookup. This is not real
+  client-option negotiation, result type-conversion behavior, connection state
+  mutation, warnings/errors, host database integration, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_options()` placeholder through a WordPress-shaped connection
+  initialization method without claiming real client-option behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ce6da47 runtime: add mysqli close placeholder`, covering Milestone 905
-  before the current Milestone 906 candidate.
+  `66548f5 tests: add wordpress wpdb close smoke`, covering Milestone 906
+  before the current Milestone 907 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
