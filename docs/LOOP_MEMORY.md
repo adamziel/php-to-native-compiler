@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T06:15:00Z
+
+- Checkpoint before this task: `73877fb runtime: add bounded PHP_VERSION`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 728, bounded `version_compare()` execution for the
+  real WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:162:7`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/version_compare_builtin.rs`,
+  `compiler/tests/version_compare_cli.rs`, `tests/fixtures/milestone728/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test version_compare_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test version_compare_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone728`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone728`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: PHP's full version-string grammar, pre-release
+  labels and ordering, arbitrary separators, invalid-argument warnings,
+  `phpversion()` and extension version coupling, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:183:28: undefined function sprintf()`.
+- Next concrete task: implement or explicitly bound `sprintf()` while keeping
+  PHP's full format grammar, argument reordering, width/precision/star
+  modifiers, locale behavior, array/object/resource conversions, warning
+  behavior, partial-output behavior, and native lowering explicit.
+
 ## Loop Event 2026-05-15T05:45:00Z
 
 - Checkpoint before this task: `dce21ab runtime: add bounded global imports`,

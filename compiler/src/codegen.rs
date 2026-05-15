@@ -6185,6 +6185,7 @@ fn is_native_known_function_name(name: &str) -> bool {
         "define"
             | "strlen"
             | "dirname"
+            | "version_compare"
             | "count"
             | "constant"
             | "defined"

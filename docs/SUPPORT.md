@@ -342,8 +342,8 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `dirname`, `isset`, `empty`, `count`,
-  `define`, `constant`, `defined`,
+- builtins for the documented subset: `strlen`, `dirname`, `version_compare`,
+  `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -389,6 +389,13 @@
   namespace/autoload behavior, exact native `TypeError` behavior, native
   lowering, and the environment-specific legacy `is_real` alias are not
   implemented.
+  `version_compare($version1, $version2, $operator = null)` supports string
+  versions made of dot, hyphen, or underscore separated non-negative integer
+  components. With two arguments it returns `-1`, `0`, or `1`; with a string
+  operator it returns a boolean for `<`/`lt`, `<=`/`le`, `>`/`gt`, `>=`/`ge`,
+  `==`/`=`/`eq`, and `!=`/`<>`/`ne`. PHP's full version grammar, pre-release
+  labels, arbitrary separators, invalid-argument warnings, extension version
+  coupling, and native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
@@ -3659,6 +3666,9 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
+- `version_compare()` outside the current numeric-component subset: PHP's full
+  version-string grammar, pre-release labels, arbitrary separators, invalid
+  argument diagnostics, extension version coupling, and native lowering
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
   canonicalization, symlink resolution, null-byte behavior, broad scalar

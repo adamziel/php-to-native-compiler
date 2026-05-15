@@ -194,9 +194,11 @@ then advanced past loop-depth `break 2;` by letting active loops and switches
 consume positive integer literal `break N;`/`continue N;` depths. Milestone
 726 then advanced past function-scope `global $name, ...;` imports by routing
 direct imported globals through the root symbol table. Milestone 727 then
-added the deterministic `PHP_VERSION` compatibility constant. The next visible
-bootstrap-shim blocker is now missing `version_compare()`:
-`runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
+added the deterministic `PHP_VERSION` compatibility constant. Milestone 728
+then advanced past the first `version_compare()` guard with a bounded
+numeric-component comparator. The next visible bootstrap-shim blocker is now
+missing `sprintf()`:
+`runtime error at <bootstrap-shim>:183:28: undefined function sprintf()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -306,8 +308,9 @@ The repository already has a working Rust workspace with:
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
   probe currently advances through bounded loop-depth control flow,
-  function-scope `global` imports, and the `PHP_VERSION` compatibility
-  constant, then stops at missing `version_compare()`. The direct
+  function-scope `global` imports, the `PHP_VERSION` compatibility constant,
+  and the first bounded `version_compare()` slice, then stops at missing
+  `sprintf()`. The direct
   `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

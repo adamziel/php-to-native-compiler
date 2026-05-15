@@ -248,6 +248,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   behavior, and native constant values explicit. The bootstrap-shim probe now
   reaches
   `runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
+  Milestone 728 covers bounded `version_compare()` for numeric version strings
+  and the operator forms needed by the first WordPress PHP-version guard. This
+  is not PHP's full version grammar, pre-release ordering, arbitrary
+  separators, invalid-argument warnings, `phpversion()`/extension version
+  coupling, exact diagnostics, partial-output behavior, or native lowering.
+  The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:183:28: undefined function sprintf()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

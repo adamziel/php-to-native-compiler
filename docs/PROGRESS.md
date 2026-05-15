@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 728, bounded `version_compare()` execution through
+  `phpc run` for numeric version strings. The builtin accepts two or three
+  arguments, requires the first two versions to be strings made of dot,
+  hyphen, or underscore separated non-negative integer components, returns
+  `-1`/`0`/`1` without an operator, and supports string operators
+  `<`/`lt`, `<=`/`le`, `>`/`gt`, `>=`/`ge`, `==`/`=`/`eq`, and
+  `!=`/`<>`/`ne`. It is available through string-valued dynamic calls and the
+  current callable-name table. PHP's full version grammar, pre-release labels,
+  arbitrary separators, invalid-argument warnings, `phpversion()` and
+  extension version coupling, exact PHP diagnostics, partial-output behavior,
+  and native lowering remain unsupported. The direct WordPress probe still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `version_compare()`
+  blocker at `<bootstrap-shim>:162:7` and now stops at
+  `runtime error at <bootstrap-shim>:183:28: undefined function sprintf()`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test version_compare_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test version_compare_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone728`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone728`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 727, bounded `PHP_VERSION` execution for the current
   deterministic PHP 8.3 compatibility target. Bare `PHP_VERSION`,
   `constant("PHP_VERSION")`, dynamic `constant($name)`, and

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -4756,6 +4757,7 @@ impl Interpreter {
 
                 Ok(Value::String(dirname_path(path, levels)))
             }
+            "version_compare" => call_version_compare(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -7896,6 +7898,7 @@ fn is_builtin(name: &str) -> bool {
         "define"
             | "strlen"
             | "dirname"
+            | "version_compare"
             | "count"
             | "constant"
             | "defined"
@@ -8080,6 +8083,128 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
             .find_map(|entry| unsupported_runtime_constant_value_type(&entry.value)),
         Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
+    }
+}
+
+fn call_version_compare(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "version_compare()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let left = version_compare_string_arg(&args[0], "first", span)?;
+    let right = version_compare_string_arg(&args[1], "second", span)?;
+    let ordering = compare_bounded_versions(left, right).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "version_compare()",
+                "version strings must use dot, hyphen, or underscore separated non-negative integer components in the current subset",
+            ),
+        )
+    })?;
+
+    match args.get(2) {
+        None => Ok(Value::Int(match ordering {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        })),
+        Some(Value::String(operator)) => Ok(Value::Bool(version_compare_operator_result(
+            ordering, operator, span,
+        )?)),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "version_compare()",
+                format!(
+                    "operator argument must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn version_compare_string_arg<'a>(
+    value: &'a Value,
+    label: &str,
+    span: Span,
+) -> CompileResult<&'a str> {
+    match value {
+        Value::String(value) => Ok(value),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "version_compare()",
+                format!(
+                    "{label} version argument must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn compare_bounded_versions(left: &str, right: &str) -> Option<Ordering> {
+    let left = parse_bounded_version(left)?;
+    let right = parse_bounded_version(right)?;
+    let len = left.len().min(right.len());
+
+    for index in 0..len {
+        let left = left.get(index).copied().unwrap_or(0);
+        let right = right.get(index).copied().unwrap_or(0);
+        match left.cmp(&right) {
+            Ordering::Equal => {}
+            ordering => return Some(ordering),
+        }
+    }
+
+    Some(left.len().cmp(&right.len()))
+}
+
+fn parse_bounded_version(value: &str) -> Option<Vec<i64>> {
+    if value.is_empty() {
+        return None;
+    }
+
+    value
+        .split(['.', '-', '_'])
+        .map(|part| {
+            if part.is_empty() || !part.chars().all(|ch| ch.is_ascii_digit()) {
+                None
+            } else {
+                part.parse::<i64>().ok()
+            }
+        })
+        .collect()
+}
+
+fn version_compare_operator_result(
+    ordering: Ordering,
+    operator: &str,
+    span: Span,
+) -> CompileResult<bool> {
+    match operator.to_ascii_lowercase().as_str() {
+        "<" | "lt" => Ok(ordering == Ordering::Less),
+        "<=" | "le" => Ok(matches!(ordering, Ordering::Less | Ordering::Equal)),
+        ">" | "gt" => Ok(ordering == Ordering::Greater),
+        ">=" | "ge" => Ok(matches!(ordering, Ordering::Greater | Ordering::Equal)),
+        "==" | "=" | "eq" => Ok(ordering == Ordering::Equal),
+        "!=" | "<>" | "ne" => Ok(ordering != Ordering::Equal),
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "version_compare()",
+                format!("unsupported operator {operator} in the current subset"),
+            ),
+        )),
     }
 }
 

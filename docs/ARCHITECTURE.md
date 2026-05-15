@@ -827,6 +827,11 @@ Unix-style local paths. Native `function_exists("dirname")` and
 `is_callable("dirname")` use the known-function table, but direct native
 `dirname(...)` calls still reject under the function-call boundary until native
 path policy and string-return lowering are proven.
+`version_compare()` is likewise interpreter-only: `phpc run` supports a
+bounded numeric-component version grammar for WordPress bootstrap guards, while
+native `function_exists("version_compare")` can see the name through the known
+function table and direct native calls still reject under the function-call
+boundary.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

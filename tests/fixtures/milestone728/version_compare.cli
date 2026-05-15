@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+-1
+-1
+1
+lt|ge|eq--- stdout end ---
+stderr:
+--- stderr end ---
