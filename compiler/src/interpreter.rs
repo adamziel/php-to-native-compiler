@@ -6004,6 +6004,7 @@ impl Interpreter {
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "ini_get" => call_ini_get(&args, span),
+            "min" => call_min(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9321,6 +9322,7 @@ fn is_builtin(name: &str) -> bool {
             | "version_compare"
             | "microtime"
             | "ini_get"
+            | "min"
             | "count"
             | "constant"
             | "defined"
@@ -9451,6 +9453,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
+        "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "CASE_LOWER" => Some(Value::Int(0)),
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
@@ -10044,6 +10047,81 @@ fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
             ),
         )),
     }
+}
+
+fn call_min(args: &[Value], span: Span) -> CompileResult<Value> {
+    if matches!(args, [Value::Array(_)]) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "min()",
+                "array argument forms are not implemented in the current subset",
+            ),
+        ));
+    }
+
+    if args.len() < 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch("min()", ArityExpectation::AtLeast(2), args.len()),
+        ));
+    }
+
+    let mut minimum = match &args[0] {
+        Value::Int(value) => *value,
+        Value::Array(_) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "min()",
+                    "array argument forms are not implemented in the current subset",
+                ),
+            ));
+        }
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "min()",
+                    format!(
+                        "arguments must be integers in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    for value in &args[1..] {
+        match value {
+            Value::Int(value) => {
+                minimum = minimum.min(*value);
+            }
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "min()",
+                        "array argument forms are not implemented in the current subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "min()",
+                        format!(
+                            "arguments must be integers in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(Value::Int(minimum))
 }
 
 fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {

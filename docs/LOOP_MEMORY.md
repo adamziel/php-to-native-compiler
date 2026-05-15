@@ -480,6 +480,30 @@ injects this file into every prompt. Each Codex pass should update it with:
   `wp_convert_hr_to_bytes()` path while documenting array forms, mixed-type
   comparisons, object/resource operands, diagnostics, and native-lowering gaps.
 
+## Loop Event 2026-05-15T12:18:00Z
+
+- Checkpoint before this task:
+  `1d41bec runtime: add bounded str_contains`, pushed to `origin/master`.
+- Task attempted: Milestone 778, bounded integer `min()` and `PHP_INT_MAX` for
+  the WordPress `wp_convert_hr_to_bytes()` clamp.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/min_builtin.rs`,
+  `tests/fixtures/milestone778/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test min_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone778`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: array-form `min([..])`, mixed-type comparison
+  rules, float/string/bool/null/object/resource operands, exact diagnostics,
+  and native lowering remain unsupported. Direct `wp-settings.php` still stops
+  on undefined `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:1724:14: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
+- Next concrete task: implement a bounded nested array-offset `isset(...)`
+  operand slice for the reached `wp_is_ini_value_changeable()` path while
+  documenting warning suppression, arbitrary expressions, object dimensions,
+  references/copy-on-write, diagnostics, and native-lowering gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

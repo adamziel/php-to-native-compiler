@@ -7125,16 +7125,27 @@ handled.
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1700:9: undefined function min()`,
   corresponding to `wp-includes/load.php:1700`.
-- [ ] Math/value builtin lane: implement a bounded `min()` slice for the next
+- [x] Math/value builtin lane: implement a bounded `min()` slice for the next
   WordPress bootstrap blocker, starting with the reached two integer arguments
   in `wp_convert_hr_to_bytes()`. Keep array argument forms, mixed-type
   comparison rules, object/resource operands, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 778 implements integer `min()` plus `PHP_INT_MAX` and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1724:14: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
+  corresponding to `isset( $ini_all[ $setting ]['access'] )` in
+  `wp-includes/load.php:1724`.
+- [ ] Runtime/null-aware lane: implement a bounded nested array-offset
+  `isset(...)` operand slice for the reached WordPress
+  `isset( $ini_all[ $setting ]['access'] )` path, preserving false for missing
+  or null intermediates without warnings. Keep arbitrary expressions, object
+  dimensions, references/copy-on-write, exact warning suppression, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 777 checkpoint, the latest committed checkpoint
-  is `f01182b runtime: add bounded leading int casts`, covering Milestone 776.
+- Before the current Milestone 778 checkpoint, the latest committed checkpoint
+  is `1d41bec runtime: add bounded str_contains`, covering Milestone 777.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -906,6 +906,10 @@ and native lowering remain out of scope.
 current scalar/null string-convertible haystack and needle values. It uses the
 current UTF-8 runtime string representation, keeps PHP's empty-needle `true`
 result, and leaves binary string edge cases and native lowering out of scope.
+`min()` is an interpreter-only bounded integer helper for the current WordPress
+memory-limit clamp. It accepts two or more integer arguments and returns the
+smallest integer, while array-form calls, mixed-type comparison rules, and
+native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native
@@ -987,11 +991,11 @@ as direct `ClassName::CONST`. This does not model bare namespace constant
 fallback reads, autoload-triggered class discovery, broader `self`/`parent`/
 `static` string names, host extension loading, full extension constant
 inventories, or native lowering.
-Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID` and
-`PHP_VERSION` PHP 8.3 compatibility-target constants in the built-in answer
-table. Bare global constant reads and `constant($name)` still stay behind the
-native global-constant boundary until generated code has a real constant table
-and version-policy model.
+Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`,
+`PHP_VERSION`, and 64-bit `PHP_INT_MAX` compatibility-target constants in the
+built-in answer table. Bare global constant reads and `constant($name)` still
+stay behind the native global-constant boundary until generated code has a real
+constant table and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
 against the current deterministic bounded compatibility registry: `json` and
 `hash` fold to true, while other names fold to false. Native code does not
@@ -1021,8 +1025,8 @@ string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.
 Exact `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_BOTH`,
 `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`, `SORT_NUMERIC`, `SORT_STRING`,
-`PHP_VERSION_ID`, and `PHP_VERSION` names fold true, while other supported
-unqualified names fold false.
+`PHP_VERSION_ID`, `PHP_VERSION`, and `PHP_INT_MAX` names fold true, while other
+supported unqualified names fold false.
 Runtime-defined constants, source-order constant declarations, `define(...)`,
 `constant(...)`, qualified names such as `\Sodium\CRYPTO_AUTH_BYTES`,
 unsupported names, namespace-aware lookup, and exact native errors remain

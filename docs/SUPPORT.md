@@ -338,10 +338,12 @@
   ancestor, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION`. The
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
+  `PHP_INT_MAX`. The
   integer constants evaluate to `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the
   current deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION`
-  evaluates to the deterministic compatibility string `8.3.0`.
+  evaluates to the deterministic compatibility string `8.3.0`, and
+  `PHP_INT_MAX` evaluates to the host-independent 64-bit integer maximum.
 - runtime-defined constants through `define($name, $value)` over the current
   unqualified or qualified string-name and scalar/array value subset;
   `constant($name)` accepts unqualified names and qualified lookup names with
@@ -363,7 +365,8 @@
   supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION`
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
+  `PHP_INT_MAX`
   constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
@@ -415,7 +418,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
-  `version_compare`, `microtime`, `ini_get`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
+  `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -516,6 +519,10 @@
   unchanged for an empty search string. Array search/replace/subject forms,
   the fourth `$count` output argument, object/resource coercions, exact warning
   behavior, binary string edge cases, and native lowering remain unsupported.
+  `min($value, ...$values)` supports two or more integer arguments and returns
+  the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
+  float/string/bool/null/object/resource operands, exact PHP diagnostics, and
+  native lowering remain unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins and forwards evaluated
   positional values through the current value-call path. Array callables,
@@ -1911,7 +1918,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `dirname`, `file_exists`, `mysqli_connect`,
+  `strtolower`, `trim`, `str_contains`, `min`, `dirname`, `file_exists`, `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -1941,7 +1948,8 @@
   before folding so native output cannot erase the runtime lookup boundary.
   Exact `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION` names
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
+  `PHP_INT_MAX` names
   fold to true;
   other supported unqualified names fold to false. The Milestone 569 and 573
   snapshots cover the `SORT_REGULAR` and `SORT_NUMERIC` additions without
@@ -2205,7 +2213,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `count`,
+  `str_contains`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2330,7 +2338,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -2442,6 +2450,10 @@
   haystack and needle subset as the builtin section above; direct native
   `str_contains(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
+  `min` accepts the same current integer-only variadic subset as the builtin
+  section above; direct native `min(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3921,8 +3933,9 @@
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
-  runtime-defined unqualified constants in the current name/value subset; PHP
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
+  `PHP_INT_MAX`, and runtime-defined unqualified constants in the current
+  name/value subset; PHP
   version component constants such as `PHP_MAJOR_VERSION`, patch-level host
   version coupling, SAPIs/build metadata, full extension constant catalogs,
   unsupported `define(...)` names
@@ -3993,6 +4006,10 @@
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and
   native lowering beyond function-table introspection
+- `min()` outside the current two-or-more integer argument subset: array-form
+  calls, mixed-type comparison rules, float/string/bool/null/object/resource
+  operands, exact PHP diagnostics, and native lowering beyond function-table
+  introspection
 - `str_replace()` outside the current scalar/null string-convertible
   three-argument subset: array search/replace/subject forms, the fourth
   `$count` output argument, object/resource coercions, exact warning behavior,

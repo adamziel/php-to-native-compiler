@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 778, bounded integer `min()` and `PHP_INT_MAX` for the
+  current WordPress `wp_convert_hr_to_bytes()` clamp. The runtime now exposes
+  `PHP_INT_MAX`, accepts two or more integer arguments to `min()`, returns the
+  smallest integer, exposes the builtin through function/callability metadata
+  and dynamic string-valued calls, and keeps direct native calls behind the
+  generic function-call lowering boundary. Array-form `min([..])`, mixed-type
+  comparison rules, float/string/bool/null/object/resource operands, exact PHP
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the reached `min()` call to
+  `runtime error at <bootstrap-shim>:1724:14: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
+  corresponding to the nested `isset( $ini_all[ $setting ]['access'] )` check
+  in `wp-includes/load.php:1724`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test min_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone778`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 777, bounded `str_contains()` for the current WordPress
   `wp_convert_hr_to_bytes()` suffix checks. The runtime now accepts two
   current scalar/null string-convertible arguments, uses Rust string containment

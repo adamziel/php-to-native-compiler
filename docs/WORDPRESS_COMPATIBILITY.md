@@ -716,6 +716,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   compatibility beyond valid UTF-8 runtime strings, array/object/resource
   coercions, exact diagnostics, native lowering, or WordPress bootstrap
   support.
+  Milestone 778 implements bounded integer `min()` and `PHP_INT_MAX` for the
+  reached memory-limit clamp. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1724:14: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
+  corresponding to the nested `isset( $ini_all[ $setting ]['access'] )` check
+  in `wp-includes/load.php:1724`. This is not array-form `min()`, mixed-type
+  comparison rules, broad `isset(...)` expression support, exact diagnostics,
+  native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

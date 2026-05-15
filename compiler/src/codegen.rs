@@ -6182,6 +6182,7 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
     match name {
         "PHP_VERSION"
         | "PHP_VERSION_ID"
+        | "PHP_INT_MAX"
         | "CASE_LOWER"
         | "CASE_UPPER"
         | "ARRAY_FILTER_USE_BOTH"
@@ -6221,6 +6222,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "version_compare"
             | "microtime"
             | "ini_get"
+            | "min"
             | "count"
             | "constant"
             | "defined"
