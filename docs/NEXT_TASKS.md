@@ -7407,16 +7407,27 @@ handled.
   `SELECT @@SESSION.sql_mode`, returns `false` as a deterministic
   empty/no-result boundary, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1203:14: undefined function mysqli_select_db()`.
-- [ ] Runtime/database lane: add bounded `mysqli_select_db()` support for the
+- [x] Runtime/database lane: add bounded `mysqli_select_db()` support for the
   reached WordPress `select()` path. Start with the placeholder `mysqli` object
   and scalar/null database-name argument shape reached by the probe; keep real
   database selection, connection state, errors/warnings, exact diagnostics, and
   native database lowering named unless implemented.
+  Milestone 808 accepts the placeholder `mysqli` object and string/null
+  database names, returns deterministic `true`, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:143:28: undefined variable '$table_prefix'`.
+- [ ] WordPress/config lane: model the reached `$table_prefix` startup state in
+  the bootstrap-shim inventory path. Decide whether the inventory shim should
+  define the WordPress config variable before loading `wp-settings.php`, or
+  whether the runtime should provide a documented compatibility default. Keep
+  real `wp-config.php` loading, secret/key constants, database credentials,
+  multisite table-prefix validation, exact diagnostics, and native lowering
+  named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 807 checkpoint, the latest committed checkpoint
-  is `b2c047b runtime: add bounded compact`, covering Milestone 806.
+- Before the current Milestone 808 checkpoint, the latest committed checkpoint
+  is `40c8e40 runtime: add bounded mysqli query`, covering Milestone 807.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

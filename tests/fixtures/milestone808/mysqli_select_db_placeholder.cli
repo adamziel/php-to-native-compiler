@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+selected|null-ok
+--- stdout end ---
+stderr:
+--- stderr end ---

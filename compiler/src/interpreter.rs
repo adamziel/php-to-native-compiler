@@ -3926,6 +3926,48 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_select_db(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_select_db", args, 2, span)?;
+        let Value::Object(handle) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_select_db()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_select_db()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {} object",
+                        handle.class_name()
+                    ),
+                ),
+            ));
+        }
+        if !matches!(args[1], Value::String(_) | Value::Null) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_select_db()",
+                    format!(
+                        "database argument must be string or null in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        }
+
+        Ok(Value::Bool(true))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -7614,6 +7656,7 @@ impl Interpreter {
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
+            "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -10203,6 +10246,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
             | "mysqli_query"
+            | "mysqli_select_db"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

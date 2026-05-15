@@ -466,7 +466,8 @@
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
+  `mysqli_select_db`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -644,6 +645,9 @@
   handle and that exact WordPress SQL mode probe, returning `false` as a
   deterministic empty/no-result boundary so WordPress skips SQL mode
   normalization without executing SQL.
+  `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
+  string or null database name, returning deterministic `true` for the reached
+  WordPress `wpdb::select()` path without selecting a real database.
   Host connections, real mysqli
   resources/objects, queries, result sets, escaping, charset handling,
   errors/warnings, transactions, configuration beyond the report-mode flag,
@@ -2071,7 +2075,8 @@
   `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`,
   `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`, `mysqli_report`, `mysqli_init`,
+  `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
+  `mysqli_query`, `mysqli_select_db`, `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2381,7 +2386,8 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
+  `mysqli_select_db`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
@@ -2581,16 +2587,18 @@
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_query`, `mysqli_report`, and `mysqli_init` are recognized for
+  `mysqli_query`, `mysqli_select_db`, `mysqli_report`, and `mysqli_init` are recognized for
   function/callability metadata and dynamic lookup. `mysqli_real_connect(...)`
   executes only the current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
   placeholder string, and `mysqli_query(...)` returns only the current false
-  SQL-mode-probe boundary; direct `mysqli_connect(...)` calls are still a
-  stable unsupported runtime boundary, and direct native
+  SQL-mode-probe boundary; `mysqli_select_db(...)` returns only deterministic
+  success for the placeholder handle; direct `mysqli_connect(...)` calls are
+  still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
-  `mysqli_get_server_info(...)`/`mysqli_query(...)`/`mysqli_report(...)`/
-  `mysqli_init(...)` calls still reject under the function-call boundary.
+  `mysqli_get_server_info(...)`/`mysqli_query(...)`/
+  `mysqli_select_db(...)`/`mysqli_report(...)`/`mysqli_init(...)` calls still
+  reject under the function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
@@ -4174,10 +4182,10 @@
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
-  `mysqli_query()`/
+  `mysqli_query()`/`mysqli_select_db()`/
   `mysqli_report()`/`mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
-  fake server-info/SQL-mode-query boundary: mysqli extension loading, host/database connections,
+  fake server-info/SQL-mode-query/database-selection boundary: mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, queries, result sets,
   prepared statements, escaping, charset handling, errors/warnings,
   transactions, configuration beyond the current report-mode flag, PDO

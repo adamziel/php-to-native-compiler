@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T14:06:00Z
+
+- Checkpoint before this task:
+  `40c8e40 runtime: add bounded mysqli query`, pushed to `origin/master`.
+- Task attempted: Milestone 808, bounded `mysqli_select_db()` support for the
+  reached WordPress `wpdb::select()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone808/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone808`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:143:28: undefined variable '$table_prefix'`.
+- Remaining semantic gaps: real database selection, database existence
+  validation, connection state, host I/O, SQL errors/warnings, exact
+  diagnostics, and native database lowering remain unsupported.
+- Next concrete task: model the reached `$table_prefix` startup state in the
+  WordPress bootstrap-shim inventory path while keeping real `wp-config.php`
+  loading, secret/key constants, database credentials, multisite validation,
+  exact diagnostics, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T13:45:00Z
 
 - Checkpoint before this task:

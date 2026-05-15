@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic success for placeholder mysqli database selection, while system PHP depends on a real host MySQL connection and database.

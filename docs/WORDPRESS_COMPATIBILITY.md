@@ -949,6 +949,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real query execution, result resources, row iteration,
   SQL errors/warnings, connection state, native database lowering, or
   WordPress bootstrap support.
+  Milestone 808 implements bounded `mysqli_select_db()` for the placeholder
+  `mysqli` object and string/null database names, returning deterministic
+  `true`. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:143:28: undefined variable '$table_prefix'`.
+  This is not real database selection, database existence validation,
+  connection state, host I/O, exact diagnostics, native database lowering, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

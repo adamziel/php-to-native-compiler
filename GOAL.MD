@@ -107,8 +107,9 @@ mode call, the reached `mysqli_init()` handle creation, bounded `strpos()`
 and `substr_count()` matching, the reached `preg_match()` matches-output path,
 the reached `mysqli_real_connect()` placeholder-success path, and the reached
 `preg_replace()` database-version cleanup path, and the reached
-`mysqli_query()` SQL-mode empty-result boundary; it now stops at
-`mysqli_select_db()`.
+`mysqli_query()` SQL-mode empty-result boundary, and the reached
+`mysqli_select_db()` placeholder-success path; it now stops at undefined
+`$table_prefix` startup state.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -366,8 +367,10 @@ version cleanup path. Milestone 805 added deterministic
 `mysqli_get_server_info()` placeholder server metadata for the current fake
 mysqli handle. Milestone 806 added bounded `compact()` caller-scope variable
 packing for the reached charset/collation path. Milestone 807 added bounded
-`mysqli_query()` false-result behavior for the reached SQL mode probe. The
-current frontier is now `mysqli_select_db()` in WordPress startup.
+`mysqli_query()` false-result behavior for the reached SQL mode probe.
+Milestone 808 added bounded deterministic `mysqli_select_db()` success for the
+placeholder handle. The current frontier is now undefined `$table_prefix`
+startup state in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -528,8 +531,10 @@ The repository already has a working Rust workspace with:
   db-host parse path, and bounded `mysqli_real_connect()` deterministic
   placeholder success, bounded `preg_replace()` database-version cleanup,
   bounded `mysqli_get_server_info()` placeholder metadata, bounded `compact()`
-  caller-scope packing, and bounded `mysqli_query()` false-result behavior.
-  The next bottleneck is `mysqli_select_db()` in the WordPress bootstrap shim.
+  caller-scope packing, bounded `mysqli_query()` false-result behavior, and
+  bounded `mysqli_select_db()` deterministic success.
+  The next bottleneck is `$table_prefix` startup state in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

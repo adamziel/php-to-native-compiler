@@ -186,6 +186,28 @@ echo $call($handle, "SELECT @@SESSION.sql_mode") === false ? "dynamic" : "result
 }
 
 #[test]
+fn mysqli_select_db_accepts_current_placeholder_handle() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_select_db";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_select_db($handle, "wordpress") ? "selected" : "failed";
+echo "|";
+echo $call($handle, null) ? "dynamic" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|selected|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_real_connect_rejects_forms_outside_current_boundary() {
     let error = run_source(
         r#"<?php
@@ -272,6 +294,40 @@ mysqli_query($handle, "SELECT 1");
 }
 
 #[test]
+fn mysqli_select_db_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_select_db("not-a-handle", "wordpress");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_select_db(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_database = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_select_db($handle, ["wordpress"]);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_database.phase, Phase::Runtime);
+    assert_eq!(bad_database.line, 3);
+    assert_eq!(bad_database.column, 1);
+    assert_eq!(
+        bad_database.message,
+        "unsupported call mysqli_select_db(): database argument must be string or null in the current subset, got array"
+    );
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -302,6 +358,8 @@ echo function_exists("mysqli_get_server_info") ? "1" : "0";
 echo is_callable("mysqli_get_server_info") ? "1" : "0";
 echo function_exists("mysqli_query") ? "1" : "0";
 echo is_callable("mysqli_query") ? "1" : "0";
+echo function_exists("mysqli_select_db") ? "1" : "0";
+echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -311,7 +369,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 13, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 15, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -367,6 +425,18 @@ mysqli_get_server_info(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_query(mysqli_init(), "SELECT @@SESSION.sql_mode");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_select_db(mysqli_init(), "wordpress");
 "#,
     )
     .unwrap_err();
