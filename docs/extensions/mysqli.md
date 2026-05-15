@@ -94,6 +94,11 @@ placeholder object and return deterministic `0` for the clean placeholder
 connection state. They do not track real mutation queries, insert IDs, errors,
 warnings, or transaction state.
 
+Mutation SQL passed to `mysqli_query()`, currently recognized by leading
+`INSERT`, `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported
+diagnostic. It does not change placeholder table state, affected-row metadata,
+insert IDs, transactions, errors, or warnings.
+
 Calling `mysqli_connect(...)` is still a stable unsupported runtime boundary:
 
 ```text

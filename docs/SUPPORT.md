@@ -871,6 +871,9 @@
   `mysqli_error($handle)` returns an empty string.
   `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return
   deterministic `0` for the clean placeholder connection state.
+  Mutation SQL passed to `mysqli_query()`, currently recognized by leading
+  `INSERT`, `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported
+  diagnostic instead of changing connection or table state.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.

@@ -8042,16 +8042,26 @@ handled.
   It is not real WordPress charset negotiation, collation behavior, connection
   state, SQL escaping charset fidelity, warnings/errors, host database
   integration, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next database boundary after charset
+- [x] Runtime/mysqli lane: inspect the next database boundary after charset
   setup and choose a small tested slice, such as a named unsupported diagnostic
   for mutation SQL (`INSERT`/`UPDATE`/`DELETE`) or a deterministic placeholder
   for one reached WordPress metadata/update query before broader SQL execution.
+  Milestone 873 adds a sharper `mysqli_query()` mutation-SQL boundary for
+  `INSERT`, `UPDATE`, `DELETE`, and `REPLACE` query strings. These now report
+  that mutation SQL is not implemented and that affected-row/insert-id state is
+  deterministic clean placeholder metadata, instead of falling through to the
+  generic query rejection. This is not mutation SQL execution, real
+  affected-row/insert-id state, transactions, database state, warnings/errors,
+  host database integration, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+  explicit mutation-SQL boundary through WordPress-shaped query bookkeeping
+  without claiming real update/insert/delete behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `84dca7d runtime: add mysqli set charset placeholder`, covering Milestone 871
-  before the current Milestone 872 candidate.
+  `9242882 tests: add wordpress wpdb set charset smoke`, covering Milestone
+  872 before the current Milestone 873 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

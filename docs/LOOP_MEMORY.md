@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `9242882 tests: add wordpress wpdb set charset smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 873, an explicit `mysqli_query()` mutation-SQL
+  unsupported boundary for placeholder MySQLi handling.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone873/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_rejects_forms_outside_current_boundary -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone873`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: WordPress-shaped mutation queries now stop at a
+  named boundary that states placeholder affected-row/insert-id state is clean
+  metadata only.
+- Remaining semantic gaps: mutation SQL execution, real affected-row and
+  insert-id state, transactions, database state, warnings/errors, host database
+  integration, real WordPress `wpdb` fidelity, and native database lowering
+  remain missing.
+- Next concrete task: run focused Rust and fixture verification, then
+  whitespace checks and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `84dca7d runtime: add mysqli set charset placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 872, a synthetic WordPress-shaped

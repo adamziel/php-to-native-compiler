@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone873/mysqli_mutation_query_boundary.php:3:1: unsupported call mysqli_query(): mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got UPDATE wp_options SET option_value = '1' WHERE option_name = 'blog_public'
+--- stderr end ---

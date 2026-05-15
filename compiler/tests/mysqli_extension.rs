@@ -715,6 +715,22 @@ mysqli_query($handle, "SELECT * FROM wp_posts WHERE ID = 1");
         "unsupported call mysqli_query(): non-empty mysqli result sets are not implemented in the current subset; only deterministic WordPress SQL mode, charset setup, empty options, metadata, and exact empty-result placeholders are supported; got SELECT * FROM wp_posts WHERE ID = 1"
     );
 
+    let unsupported_mutation = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_query($handle, "UPDATE wp_options SET option_value = '1' WHERE option_name = 'blog_public'");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_mutation.phase, Phase::Runtime);
+    assert_eq!(unsupported_mutation.line, 3);
+    assert_eq!(unsupported_mutation.column, 1);
+    assert_eq!(
+        unsupported_mutation.message,
+        "unsupported call mysqli_query(): mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got UPDATE wp_options SET option_value = '1' WHERE option_name = 'blog_public'"
+    );
+
     let bad_errno_handle = run_source(
         r#"<?php
 mysqli_errno("not-a-handle");

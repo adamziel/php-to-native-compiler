@@ -4306,6 +4306,18 @@ impl Interpreter {
             ));
         }
 
+        if is_mysqli_mutation_query(query) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got {query}"
+                    ),
+                ),
+            ));
+        }
+
         Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -12210,6 +12222,19 @@ fn is_mysqli_select_query(query: &str) -> bool {
         .split_whitespace()
         .next()
         .is_some_and(|keyword| keyword.eq_ignore_ascii_case("SELECT"))
+}
+
+fn is_mysqli_mutation_query(query: &str) -> bool {
+    query
+        .trim_start()
+        .split_whitespace()
+        .next()
+        .is_some_and(|keyword| {
+            matches!(
+                keyword.to_ascii_uppercase().as_str(),
+                "INSERT" | "UPDATE" | "DELETE" | "REPLACE"
+            )
+        })
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {

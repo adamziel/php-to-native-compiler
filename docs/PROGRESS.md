@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 873, a sharper `mysqli_query()` mutation-SQL boundary for
+  placeholder MySQLi handling. `INSERT`, `UPDATE`, `DELETE`, and `REPLACE`
+  query strings now report a stable diagnostic that mutation SQL is not
+  implemented and that affected-row/insert-id state remains deterministic clean
+  placeholder metadata, instead of falling through to the generic query
+  boundary. The CLI fixture exercises the reached WordPress-shaped
+  `UPDATE wp_options ...` form as an explicit unsupported runtime error. This
+  is not mutation SQL execution, real affected-row or insert-id state,
+  transactions, database state, warnings/errors, host database integration, or
+  native database lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_rejects_forms_outside_current_boundary -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone873`.
+
 - Added Milestone 872, a synthetic WordPress-shaped `wpdb::set_charset()`
   smoke that calls the bounded `mysqli_set_charset($this->dbh, "utf8mb4")`
   placeholder path, records the requested charset/collation on the local
