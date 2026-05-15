@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 822, bounded `ltrim()` support for the reached WordPress
+  `wpdb::check_safe_collation()` query classification path. The runtime now
+  exposes `ltrim` through function/callability metadata and dynamic
+  string-valued calls, supports one scalar/null string-convertible value with
+  PHP's default left-trim whitespace mask, and supports a second non-empty
+  literal character mask without range syntax, including the reached
+  `"\r\n\t ("` mask and slash-path masks. This is not full PHP charlist range
+  semantics, empty-mask behavior, binary/null-byte edge cases beyond current
+  runtime strings, array/object/resource coercions, exact diagnostics, or
+  native lowering. The real WordPress 6.9.4 bootstrap-shim probe now advances
+  past `ltrim( $query, "\r\n\t (" )` in `wp-includes/class-wpdb.php:3495` to
+  `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone822`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 821, strict identity for current ordered arrays. The runtime
   now lets `===` and `!==` compare arrays by length, identical normalized
   integer/string keys in the same insertion order, and recursive strict value

@@ -6955,6 +6955,7 @@ impl Interpreter {
             }
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
+            "ltrim" => call_ltrim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "strpos" => call_strpos(&args, span),
@@ -10723,6 +10724,7 @@ fn is_builtin(name: &str) -> bool {
             | "strlen"
             | "strtolower"
             | "trim"
+            | "ltrim"
             | "strcasecmp"
             | "str_contains"
             | "strpos"
@@ -11096,6 +11098,74 @@ fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(
         value
             .trim_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
+            .to_string(),
+    ))
+}
+
+fn call_ltrim(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "ltrim()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("ltrim()", "arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+
+    if args.len() == 2 {
+        if matches!(args[1], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ltrim()",
+                    "character mask arrays are not supported",
+                ),
+            ));
+        }
+
+        let mask = args[1]
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+        if mask.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ltrim()",
+                    "empty character masks are not implemented in the current subset",
+                ),
+            ));
+        }
+        if mask.contains("..") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ltrim()",
+                    "character mask ranges are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        return Ok(Value::String(
+            value.trim_start_matches(|ch| mask.contains(ch)).to_string(),
+        ));
+    }
+
+    Ok(Value::String(
+        value
+            .trim_start_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
             .to_string(),
     ))
 }

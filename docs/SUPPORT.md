@@ -476,7 +476,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `strtolower`, `trim`,
+- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `strcasecmp`, `str_contains`, `strpos`, `preg_match`, `preg_replace`, `str_replace`,
   `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
@@ -571,6 +571,13 @@
   strings. Custom character masks, binary/null-byte string edge cases beyond
   the current represented runtime-string subset, array/object/resource
   coercions, exact PHP diagnostics, and native lowering remain unsupported.
+  `ltrim($value)` supports the same default whitespace mask on the left side.
+  `ltrim($value, $mask)` also supports non-empty literal character masks
+  without range syntax, including the reached WordPress `'/'` and
+  `"\r\n\t ("` masks. Character-mask ranges, empty masks, binary/null-byte
+  edge cases beyond the current represented runtime-string subset,
+  array/object/resource coercions, exact PHP diagnostics, and native lowering
+  remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares with ASCII case folding, and returns
   `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
@@ -2702,6 +2709,10 @@
   subset as the builtin section above; direct native `trim(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
+  `ltrim` accepts the same current default-mask and literal-character-mask
+  scalar/null string-convertible subset as the builtin section above; direct
+  native `ltrim(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
   `str_contains` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
   `str_contains(...)` calls still reject under the function-call boundary,
@@ -4299,6 +4310,11 @@
   edge cases beyond the current represented runtime-string subset,
   array/object/resource coercions, exact PHP diagnostics, and native lowering
   beyond function-table introspection
+- `ltrim()` outside the current scalar/null string-convertible default-mask and
+  non-empty literal-character-mask subset: character-mask ranges,
+  binary/null-byte string edge cases beyond the current represented
+  runtime-string subset, array/object/resource coercions, exact PHP
+  diagnostics, and native lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and

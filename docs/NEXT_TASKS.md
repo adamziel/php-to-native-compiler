@@ -7531,16 +7531,27 @@ handled.
   Milestone 821 advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
   likely in the localization path around `wp-includes/l10n.php:1051`.
-- [ ] Runtime/string lane: implement the reached bounded `ltrim($value, '/')`
-  behavior for WordPress localization/plugin-path handling. Keep broad
-  character-mask range semantics, binary/invalid UTF-8 behavior, array/object
-  coercions, exact warnings/errors, locale-sensitive assumptions, and native
-  lowering named unless implemented.
+- [x] Runtime/string lane: implement the reached bounded `ltrim($value, $mask)`
+  behavior for WordPress path/query handling. Keep broad character-mask range
+  semantics, binary/invalid UTF-8 behavior, array/object coercions, exact
+  warnings/errors, locale-sensitive assumptions, and native lowering named
+  unless implemented.
+  Milestone 822 covers default-mask and non-empty literal-mask `ltrim()`
+  calls, including slash masks and `"\r\n\t ("`, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:3496`.
+- [ ] Runtime/regex lane: extend the bounded `preg_match()` subset for the
+  reached case-insensitive `i` modifier in
+  `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i`. Keep broad PCRE syntax,
+  modifier combinations, captures beyond the current subset, warnings/errors,
+  Unicode/locale details, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 821 checkpoint, the latest committed checkpoint
-  is `f0d13dc runtime: add bounded hmac hashing`, covering Milestone 820.
+- Before the current Milestone 822 checkpoint, the latest committed checkpoint
+  is `f447ce0 runtime: add ordered array strict identity`, covering Milestone
+  821.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

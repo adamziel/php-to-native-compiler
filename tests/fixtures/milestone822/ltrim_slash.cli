@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone822/ltrim_slash.php"
+  ],
+  "stdin": "",
+  "stdout": "wp-content/plugins\nabc\n|SELECT|mu-plugins",
+  "stderr": "",
+  "exit": 0
+}

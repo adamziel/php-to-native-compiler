@@ -1066,6 +1066,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
   likely in the localization path around `wp-includes/l10n.php:1051`.
+  Milestone 822 implements bounded `ltrim()` for scalar/null
+  string-convertible values with PHP's default left-trim mask and non-empty
+  literal character masks without range syntax. This covers the reached
+  `wpdb::check_safe_collation()` query trim at
+  `wp-includes/class-wpdb.php:3495`, including the `"\r\n\t ("` mask. This is
+  not full PHP charlist range semantics, empty-mask behavior, binary/null-byte
+  edge cases beyond current runtime strings, array/object/resource coercions,
+  exact diagnostics, or native lowering. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

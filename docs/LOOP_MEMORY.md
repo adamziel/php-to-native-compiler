@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T13:15:00Z
+
+- Checkpoint before this task:
+  `f447ce0 runtime: add ordered array strict identity`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 822, bounded `ltrim()` for the reached WordPress
+  `wpdb::check_safe_collation()` query classification path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/string_trim_builtin.rs`,
+  `tests/fixtures/milestone822/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone822`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:3496`.
+- Remaining semantic gaps: full PHP charlist range semantics, empty-mask
+  behavior, binary/null-byte string edge cases beyond represented runtime
+  strings, array/object/resource coercions, exact diagnostics, native lowering,
+  and real WordPress bootstrap support remain unsupported.
+- Next concrete task: extend bounded `preg_match()` for the reached
+  case-insensitive `i` modifier in
+  `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i`, while keeping broad PCRE,
+  modifier combinations, capture behavior, exact warnings/errors, and native
+  lowering named unless implemented.
+
 ## Loop Event 2026-05-15T12:45:00Z
 
 - Checkpoint before this task:
