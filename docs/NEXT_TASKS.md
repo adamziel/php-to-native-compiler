@@ -7135,17 +7135,27 @@ handled.
   `runtime error at <bootstrap-shim>:1724:14: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
   corresponding to `isset( $ini_all[ $setting ]['access'] )` in
   `wp-includes/load.php:1724`.
-- [ ] Runtime/null-aware lane: implement a bounded nested array-offset
+- [x] Runtime/null-aware lane: implement a bounded nested array-offset
   `isset(...)` operand slice for the reached WordPress
   `isset( $ini_all[ $setting ]['access'] )` path, preserving false for missing
   or null intermediates without warnings. Keep arbitrary expressions, object
   dimensions, references/copy-on-write, exact warning suppression, and native
   lowering named unless implemented.
+  Milestone 779 implements direct-variable rooted nested array-offset
+  `isset(...)` and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:87:38: undefined function is_readable()`,
+  corresponding to `wp-includes/error-protection.php:87`.
+- [ ] Filesystem/runtime lane: implement a bounded `is_readable()` builtin
+  slice for the reached WordPress fatal-error-handler override check, starting
+  with one string path argument and host filesystem metadata. Keep stream
+  wrappers, include_path behavior, permissions portability, warning behavior,
+  non-string coercions, cache invalidation, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 778 checkpoint, the latest committed checkpoint
-  is `1d41bec runtime: add bounded str_contains`, covering Milestone 777.
+- Before the current Milestone 779 checkpoint, the latest committed checkpoint
+  is `e3e58ba runtime: add bounded min`, covering Milestone 778.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

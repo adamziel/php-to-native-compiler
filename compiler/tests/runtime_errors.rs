@@ -291,7 +291,7 @@ fn isset_can_check_undefined_variables_without_reading_them() {
 
 #[test]
 fn complex_isset_operands_remain_explicitly_unsupported() {
-    let error = runtime_error("<?php\n$items = [[1]];\necho isset($items[0][0]);\n");
+    let error = runtime_error("<?php\nfunction make() { return [1]; }\necho isset(make()[0]);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 12);

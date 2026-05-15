@@ -1,3 +1,3 @@
 <?php
-$items = [[1]];
-echo isset($items[0][0]);
+function make() { return [1]; }
+echo isset(make()[0]);

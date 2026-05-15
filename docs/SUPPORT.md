@@ -382,8 +382,9 @@
   `unset(...)` operands execute left to right
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
-- `isset($array[$key])` for direct array-variable offset operands over the
-  current integer/string key subset
+- `isset($array[$key])` and nested direct-variable rooted array offset paths
+  such as `isset($array[$outer][$inner])` over the current integer/string key
+  subset
 - `empty($name)`, `empty($array[$key])`,
   `empty($object->publicProperty)`, and supported static property operands for
   direct variables, direct array-variable offset operands, direct
@@ -2965,16 +2966,19 @@
   non-array haystacks and rejects array or object needles/values when
   encountered. `array_search` is also available through string-valued dynamic
   function calls. `isset` supports direct variable
-  operands, direct array offset operands such as `isset($array[$key])`,
-  direct public object-property operands such as `isset($object->name)`, and
-  supported static property operands such as `isset(ClassName::$prop)`.
+  operands, direct array offset operands such as `isset($array[$key])` and
+  nested direct-variable rooted array offset paths such as
+  `isset($array[$outer][$inner])`, direct public object-property operands such
+  as `isset($object->name)`, and supported static property operands such as
+  `isset(ClassName::$prop)`.
   In active method context, direct private operands owned by the active
   declaring class and protected operands owned by the active class or an
   ancestor are also supported.
   `isset` can safely check undefined
-  variables, missing/null array slots, undefined array variables, non-array
-  array targets, and undefined object-property targets. Nested array offsets,
-  append offset operands, dynamic property names, non-public property operands
+  variables, missing/null array slots, missing/null intermediate array path
+  entries, undefined array variables, non-array array targets, and undefined
+  object-property targets. Non-variable array roots, append offset operands,
+  object dimensions, dynamic property names, non-public property operands
   outside the current private/protected visibility context, complex lvalues,
   and general expression operands remain unsupported. `empty`
   supports one direct variable operand, one direct array offset operand such
@@ -3156,7 +3160,8 @@
   Complex assignment lvalues outside the documented direct-variable,
   direct/nested array-offset, append/append-at-depth, direct object-property,
   and supported static-property target subset, nested/complex
-  `isset(...)` and `empty(...)` array offset operands, native
+  non-variable or object-dimension `isset(...)` array offset operands,
+  nested/complex `empty(...)` array offset operands, native
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
   targets, array destructuring assignments with keyed, nested, reference,

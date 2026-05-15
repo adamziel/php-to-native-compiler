@@ -72,12 +72,12 @@ a bounded `mysqli_connect` function-table boundary, top-level `global`
 null-materialization, bounded `microtime(true)`, and bounded deterministic
 `ini_get()` registry reads, bounded `strtolower()`, bounded `trim()`, a
 bounded leading-numeric `(int)` string-cast slice, bounded `str_contains()`,
-and bounded integer `min()`. The current shim frontier
+bounded integer `min()`, and bounded nested direct-variable array-offset
+`isset(...)`. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
-initialization in `wp-includes/plugin.php:39`; it now stops at a complex
-nested `isset($ini_all[$setting]['access'])` operand in
-`wp_is_ini_value_changeable()`.
+initialization in `wp-includes/plugin.php:39`; it now stops at a missing
+`is_readable()` filesystem builtin in the fatal-error-handler override check.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -302,8 +302,9 @@ bootstrap-shim frontier is now an undefined `trim()` call in
 `wp_convert_hr_to_bytes()`. Milestone 775 added bounded default-mask `trim()`;
 Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
 777 added bounded `str_contains()`. Milestone 778 added bounded integer
-`min()`, and the current frontier is now a complex nested `isset(...)` operand
-in `wp_is_ini_value_changeable()`.
+`min()`. Milestone 779 added bounded nested direct-variable array-offset
+`isset(...)`, and the current frontier is now `is_readable()` in the
+WordPress fatal-error-handler override check.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -444,8 +445,9 @@ The repository already has a working Rust workspace with:
   null-materialization, bounded `microtime(true)`, and bounded deterministic
   `ini_get()` registry reads, bounded `strtolower()`, and bounded default-mask
   `trim()`, bounded leading-numeric `(int)` string casts, bounded
-  `str_contains()`, and bounded integer `min()`. The next bottleneck is a
-  complex nested `isset(...)` operand in the WordPress bootstrap shim.
+  `str_contains()`, bounded integer `min()`, and bounded nested
+  direct-variable array-offset `isset(...)`. The next bottleneck is
+  `is_readable()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

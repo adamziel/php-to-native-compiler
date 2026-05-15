@@ -723,6 +723,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   in `wp-includes/load.php:1724`. This is not array-form `min()`, mixed-type
   comparison rules, broad `isset(...)` expression support, exact diagnostics,
   native lowering, or WordPress bootstrap support.
+  Milestone 779 implements bounded direct-variable rooted nested array-offset
+  `isset(...)` for that reached path. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:87:38: undefined function is_readable()`,
+  corresponding to `wp-includes/error-protection.php:87`. This is not
+  non-variable array roots, object dimensions, nested `empty(...)`/`??` parity,
+  PHP warning/notice suppression details, references/copy-on-write, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

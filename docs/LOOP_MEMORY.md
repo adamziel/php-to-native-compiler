@@ -504,6 +504,36 @@ injects this file into every prompt. Each Codex pass should update it with:
   documenting warning suppression, arbitrary expressions, object dimensions,
   references/copy-on-write, diagnostics, and native-lowering gaps.
 
+## Loop Event 2026-05-15T07:34:47Z
+
+- Checkpoint before this task:
+  `e3e58ba runtime: add bounded min`, pushed to `origin/master`.
+- Task attempted: Milestone 779, bounded nested direct-variable array-offset
+  `isset(...)` for the WordPress `wp_is_ini_value_changeable()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_isset.rs`, `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone779/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test array_isset`,
+  `cargo test -p phpc --test runtime_errors complex_isset_operands_remain_explicitly_unsupported -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone779`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: non-variable array roots, object dimensions, append
+  dimensions, nested `empty(...)`/`??` parity, warning/notice suppression
+  details, references/copy-on-write, exact diagnostics, and native lowering
+  remain unsupported. Direct `wp-settings.php` still stops on undefined
+  `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:87:38: undefined function is_readable()`,
+  corresponding to `wp-includes/error-protection.php:87`.
+- Next concrete task: implement a bounded `is_readable()` filesystem builtin
+  slice for the reached fatal-error-handler override check while documenting
+  stream wrappers, include_path behavior, permissions portability, warning
+  behavior, coercions, cache invalidation, diagnostics, and native-lowering
+  gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

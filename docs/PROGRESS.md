@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 779, bounded nested direct-variable array-offset `isset(...)`
+  for the current WordPress `wp_is_ini_value_changeable()` path. The runtime
+  now accepts direct variable rooted array-offset paths such as
+  `isset($array[$outer][$inner])`, evaluates all index expressions left to
+  right, returns false for missing roots, missing intermediate keys, `null`
+  intermediates, scalar/non-array intermediates, and final `null` values, and
+  preserves multi-operand `isset(...)` short-circuit behavior. Non-variable
+  array roots such as `isset(make()[0])`, object dimensions, append/read
+  dimensions, nested `empty(...)`/`??` parity, PHP warning/notice suppression
+  details, references/copy-on-write, exact diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past `isset( $ini_all[ $setting ]['access'] )` in
+  `wp-includes/load.php:1724` to
+  `runtime error at <bootstrap-shim>:87:38: undefined function is_readable()`,
+  corresponding to `wp-includes/error-protection.php:87`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test array_isset`,
+  `cargo test -p phpc --test runtime_errors complex_isset_operands_remain_explicitly_unsupported -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone779`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 778, bounded integer `min()` and `PHP_INT_MAX` for the
   current WordPress `wp_convert_hr_to_bytes()` clamp. The runtime now exposes
   `PHP_INT_MAX`, accepts two or more integer arguments to `min()`, returns the

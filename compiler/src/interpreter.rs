@@ -8364,7 +8364,7 @@ impl Interpreter {
                 target,
                 index,
                 ..
-            } => self.is_direct_array_offset_set(target, index, caller_scope),
+            } => self.is_direct_array_offset_path_set(target, index, caller_scope),
             Expr::Property {
                 target,
                 property,
@@ -8394,28 +8394,31 @@ impl Interpreter {
         }
     }
 
-    fn is_direct_array_offset_set(
+    fn is_direct_array_offset_path_set(
         &mut self,
         target: &Expr,
         index: &Expr,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        let Expr::Variable(name, _) = target else {
+        let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        else {
             return Err(runtime_error(
                 target.span(),
-                    RuntimeError::unsupported_call(
-                        "isset()",
-                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                RuntimeError::unsupported_call(
+                    "isset()",
+                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             ));
         };
 
+        let mut keys = Vec::with_capacity(indices.len());
+        for index in indices {
+            keys.push(self.evaluate_array_key(index, caller_scope)?);
+        }
+
         match caller_scope.read_named(name) {
-            Some(Value::Array(array)) => {
-                let key = self.evaluate_array_key(index, caller_scope)?;
-                Ok(matches!(array.get(key), Some(value) if !matches!(value, Value::Null)))
-            }
-            Some(_) | None => Ok(false),
+            Some(value) => Ok(Self::array_path_isset(&value, &keys)),
+            None => Ok(false),
         }
     }
 
@@ -8475,6 +8478,44 @@ impl Interpreter {
         Ok(self
             .evaluate_late_static_property_for_null_coalescing(property, span)?
             .is_some())
+    }
+
+    fn collect_direct_variable_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a str, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::Variable(name, _) => {
+                    indices.reverse();
+                    return Some((name, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn array_path_isset(value: &Value, keys: &[ArrayKey]) -> bool {
+        let mut current = value;
+
+        for key in keys {
+            let Value::Array(array) = current else {
+                return false;
+            };
+            let Some(next) = array.get(key.clone()) else {
+                return false;
+            };
+            current = next;
+        }
+
+        !matches!(current, Value::Null)
     }
 
     fn call_empty(
