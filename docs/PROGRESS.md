@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 850, a deterministic `mysqli_query()` boundary for the
+  reached WordPress charset setup query
+  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` in
+  `wp-includes/class-wpdb.php:935`. The placeholder `mysqli` object now
+  returns `true` for that exact no-result setup statement without changing real
+  connection charset state, executing SQL, or claiming real database support.
+  Result resources, charset negotiation, SQL execution, error-state fidelity,
+  and native database calls remain unsupported. The real WordPress 6.9.4
+  front-controller probe now exits `0` with no stdout under the deterministic
+  placeholder database and CLI assumptions; include tracing ends at
+  `<wordpress-root>/wp-includes/pluggable.php`. This is not full WordPress
+  support: plugin/theme/admin/REST flows, real request rendering, real
+  database state, HTTP/filesystem services, SAPI behavior, and native lowering
+  remain unproven. Direct `wp-settings.php` still stops at undefined
+  `ABSPATH`, while the bootstrap-shim probe also exits `0`. Focused
+  verification so far: `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone850`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 849, bounded `vsprintf()` support for the reached WordPress
   `wpdb::prepare()` formatting call in `wp-includes/class-wpdb.php:1763`.
   The existing formatter now also supports the WordPress-shaped `%d`, `%f`/

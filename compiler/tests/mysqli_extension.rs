@@ -331,6 +331,22 @@ mysqli_get_server_info("not-a-handle");
 }
 
 #[test]
+fn mysqli_query_accepts_current_wordpress_charset_setup_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
+echo $result === true ? "charset-ok" : "charset-result";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "charset-ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -360,7 +376,7 @@ mysqli_query($handle, "SELECT 1");
     assert_eq!(unsupported_query.column, 1);
     assert_eq!(
         unsupported_query.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SELECT 1"
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got SELECT 1"
     );
 
     let bad_errno_handle = run_source(

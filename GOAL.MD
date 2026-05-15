@@ -994,15 +994,14 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 849 is the active checkpoint candidate: bounded `vsprintf()`
-  support covers the reached `wpdb::prepare()` formatting call in the
-  front-controller probe.
-- The next immediate WordPress-directed lane is the following
-  `mysqli_query()` charset setup statement
-  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` reached from
-  `wp-includes/class-wpdb.php:935`. This should be handled only as a bounded
-  deterministic database placeholder slice, without claiming real database,
-  plugin/theme, admin, REST, HTTP, SAPI, or native WordPress support.
+- Milestone 850 is the active checkpoint candidate: a deterministic
+  `mysqli_query()` placeholder boundary covers the reached WordPress charset
+  setup statement and the `wp-blog-header.php` front-controller probe now exits
+  `0` with no stdout under current placeholder database and CLI assumptions.
+- The next immediate WordPress-directed lane is to turn that passing
+  front-controller probe into a committed deterministic smoke target while
+  preserving the distinction between placeholder CLI/bootstrap success and full
+  WordPress support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

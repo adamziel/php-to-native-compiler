@@ -1276,6 +1276,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   expands the shared formatter for the reached `%s`/`%d`/`%F` WordPress
   prepare subset. The real front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
+  Milestone 850 adds a deterministic `true` boundary for that exact
+  `mysqli_query()` charset setup statement. The real front-controller probe
+  now exits `0` with no stdout under the current placeholder database and CLI
+  assumptions; with include tracing enabled, stderr contains include trace
+  lines ending at `<wordpress-root>/wp-includes/pluggable.php`. This proves a
+  bounded smoke path, not plugin/theme/admin/REST, real database, HTTP,
+  filesystem, SAPI, rendered request, or native WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

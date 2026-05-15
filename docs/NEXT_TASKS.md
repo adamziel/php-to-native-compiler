@@ -7803,17 +7803,26 @@ handled.
   the shared formatter for the reached `%s`/`%d`/`%F` WordPress prepare
   shapes. The real front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
-- [ ] Runtime/mysqli lane: inspect and implement the reached WordPress
+- [x] Runtime/mysqli lane: inspect and implement the reached WordPress
   `mysqli_query()` charset setup statement
   `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` as a deterministic
   placeholder boundary. Keep real DB connections, result resources, charset
   negotiation, SQL execution, error-state fidelity, and native lowering named
   unless implemented.
+  Milestone 850 returns `true` for that exact placeholder setup query. The real
+  front-controller probe now exits `0` with no stdout under deterministic
+  placeholder database and CLI assumptions; this is still not full WordPress,
+  plugin/theme/admin/REST, real database, HTTP/filesystem, SAPI, or native
+  support.
+- [ ] WordPress harness lane: add a committed deterministic fixture or smoke
+  target for the now-passing `wp-blog-header.php` front-controller probe,
+  while preserving the clear distinction between placeholder CLI/bootstrap
+  success and full WordPress request support.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 849 checkpoint, the latest committed checkpoint
-  is `21164a6 runtime: add wordpress wpdb preg split`, covering Milestone 848.
+- Before the current Milestone 850 checkpoint, the latest committed checkpoint
+  is `28dd354 runtime: add wordpress wpdb vsprintf`, covering Milestone 849.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

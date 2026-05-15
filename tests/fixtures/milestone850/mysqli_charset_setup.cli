@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+charset-ok
+--- stdout end ---
+stderr:
+--- stderr end ---

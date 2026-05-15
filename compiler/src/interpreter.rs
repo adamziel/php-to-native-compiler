@@ -4170,6 +4170,10 @@ impl Interpreter {
             ));
         };
 
+        if is_wordpress_charset_setup_query(query) {
+            return Ok(Value::Bool(true));
+        }
+
         if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
             return Ok(Value::Bool(false));
         }
@@ -4179,7 +4183,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_query()",
                 format!(
-                    "only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
+                    "only the WordPress SQL mode probe, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
                 ),
             ),
         ))
@@ -11791,6 +11795,10 @@ fn is_wordpress_empty_options_query(query: &str) -> bool {
     }
 
     false
+}
+
+fn is_wordpress_charset_setup_query(query: &str) -> bool {
+    query == "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'"
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {

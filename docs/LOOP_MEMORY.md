@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `28dd354 runtime: add wordpress wpdb vsprintf`, pushed to `origin/master`.
+- Task attempted: Milestone 850, deterministic `mysqli_query()` boundary for
+  the reached WordPress charset setup statement
+  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone850/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone850`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed. The fixture is `phpc-only` because system PHP would require a real
+  database connection.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  undefined `ABSPATH`; the bootstrap shim exits `0`; the front-controller probe
+  now exits `0` with no stdout under deterministic placeholder database and CLI
+  assumptions.
+- Remaining semantic gaps: this is not full WordPress support; plugin/theme,
+  admin, REST, real request rendering, real database state, HTTP/filesystem
+  services, SAPI behavior, and native lowering remain unproven.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress mysqli charset setup"`.
+  The next milestone should add a committed deterministic front-controller
+  smoke target for the now-passing probe.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `21164a6 runtime: add wordpress wpdb preg split`, pushed to
   `origin/master`.
 - Task attempted: Milestone 849, bounded `vsprintf()` support for the reached

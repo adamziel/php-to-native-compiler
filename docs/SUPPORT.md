@@ -813,6 +813,10 @@
   handle and that exact WordPress SQL mode probe, returning `false` as a
   deterministic empty/no-result boundary so WordPress skips SQL mode
   normalization without executing SQL. `mysqli_query(...)` also accepts the
+  reached WordPress charset setup query
+  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`, returning `true`
+  as a deterministic successful no-result boundary without changing real
+  connection charset state. `mysqli_query(...)` also accepts the
   reached WordPress options-table bootstrap reads
   `SELECT option_name, option_value FROM <prefix>options WHERE autoload IN (
   'yes', 'on', 'auto-on', 'auto' )` and
@@ -2821,7 +2825,8 @@
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
   placeholder string, and `mysqli_query(...)` returns only the current false
-  SQL-mode-probe and WordPress empty-options-query boundaries;
+  SQL-mode-probe, true charset-setup, and WordPress empty-options-query
+  boundaries;
   `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
   diagnostics; `mysqli_select_db(...)` returns only deterministic
   success for the placeholder handle; `mysqli_real_escape_string(...)` returns
@@ -4475,7 +4480,7 @@
   `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_report()`/`mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
-  fake server-info/SQL-mode-query/database-selection/escaping boundary:
+  fake server-info/SQL-mode-query/charset-setup/database-selection/escaping boundary:
   mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, queries, result sets,
   prepared statements, connection charset state, binary or invalid-string
