@@ -6370,6 +6370,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_error"
             | "mysqli_sqlstate"
             | "mysqli_warning_count"
+            | "mysqli_info"
             | "mysqli_affected_rows"
             | "mysqli_insert_id"
             | "mysqli_ping"

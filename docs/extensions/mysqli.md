@@ -11,7 +11,7 @@ Status: boundary only.
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
-`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
+`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
@@ -133,10 +133,11 @@ autocommit state, handle savepoints, emit warnings/errors, or touch host
 database state.
 
 `mysqli_errno($handle)`, `mysqli_error($handle)`,
-`mysqli_sqlstate($handle)`, and `mysqli_warning_count($handle)` expose
-deterministic clean placeholder metadata: `0`, an empty string, `00000`, and
-`0`. They do not track real host database SQLSTATE, warnings, warning counts,
-or PHP warning/error behavior.
+`mysqli_sqlstate($handle)`, `mysqli_warning_count($handle)`, and
+`mysqli_info($handle)` expose deterministic clean placeholder metadata: `0`,
+an empty string, `00000`, `0`, and `null`. They do not track real host
+database SQLSTATE, warnings, warning counts, statement information strings, or
+PHP warning/error behavior.
 
 `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
 returns deterministic `true` for the reached WordPress charset setup shape.
@@ -219,8 +220,9 @@ server, host/transport, client/protocol, connection-statistics, or server-status
 queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
 fetch modes beyond the documented placeholder row shapes, no real row-count
-state beyond placeholder result counts, no real affected-row or insert-id state
-beyond deterministic zero clean state, no real connection liveness checks or
+state beyond placeholder result counts, no real statement-info state beyond
+deterministic null clean state, no real affected-row or insert-id state beyond
+deterministic zero clean state, no real connection liveness checks or
 reconnect behavior beyond deterministic ping success, no real
 autocommit or transaction state beyond deterministic autocommit and
 begin-transaction/commit/rollback success, no

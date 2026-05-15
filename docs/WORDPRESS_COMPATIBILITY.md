@@ -1438,7 +1438,10 @@ historical blockers and remaining full-support gaps include:
   report-mode behavior, PHP warning/error/exception fidelity, or native
   database lowering. Milestone 910 wires that placeholder through a synthetic
   WordPress-shaped `wpdb` connection error-state bookkeeping smoke without
-  claiming real connection failure fidelity.
+  claiming real connection failure fidelity. Milestone 911 adds deterministic
+  `mysqli_info()` clean statement-information metadata without real SQL
+  statement-info tracking, mutation summaries, host database state,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

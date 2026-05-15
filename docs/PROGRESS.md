@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 911, bounded `mysqli_info()` support for deterministic
+  placeholder MySQLi clean statement-information metadata. The runtime accepts
+  current placeholder `mysqli` handles, returns deterministic clean state
+  (`null`), rejects non-`mysqli` handles with stable diagnostics, and exposes
+  the name through runtime and native metadata lookup. This is not real
+  statement information tracking, mutation summaries, host database state, PHP
+  warning/error fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_error_state_metadata -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone911`.
+
 - Added Milestone 910, a synthetic WordPress-shaped `wpdb` connect-error
   bookkeeping smoke that calls the bounded `mysqli_connect_errno()` and
   `mysqli_connect_error()` placeholder paths after placeholder options/connect,

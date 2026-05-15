@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone911/mysqli_info_metadata.php
+yes
+callable
+null
+null

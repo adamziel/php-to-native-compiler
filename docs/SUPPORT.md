@@ -522,7 +522,7 @@
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
-  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -867,6 +867,10 @@
   clean connect-error state, `0` and `null`, without tracking failed connection
   attempts, host extension state, report-mode behavior, or exact PHP warning
   and exception behavior.
+  `mysqli_info($handle)` accepts the placeholder object and returns
+  deterministic clean-state statement information `null` without tracking real
+  statement metadata, mutation summaries, warning/error behavior, or SQL
+  execution state.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
   counters plus deterministic placeholder connection counters, without real
@@ -2438,7 +2442,7 @@
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
-  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -2762,7 +2766,7 @@
   `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
-  `mysqli_sqlstate`, `mysqli_warning_count`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
@@ -2909,7 +2913,7 @@
   `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
-  `mysqli_sqlstate`, `mysqli_warning_count`,
+  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
@@ -2999,7 +3003,8 @@
   returns only deterministic placeholder charset/collation metadata,
   `mysqli_character_set_name(...)` returns only deterministic placeholder
   charset-name metadata, `mysqli_field_count(...)` returns only deterministic
-  placeholder clean field-count metadata,
+  placeholder clean field-count metadata, `mysqli_info(...)` returns only
+  deterministic placeholder clean statement-information metadata,
   `mysqli_get_connection_stats(...)` returns only deterministic placeholder
   connection-statistics metadata, `mysqli_stat(...)` returns only deterministic
   zeroed server-status metadata, `mysqli_autocommit(...)` returns only
@@ -3036,7 +3041,7 @@
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_sqlstate(...)`/
-  `mysqli_warning_count(...)`/
+  `mysqli_warning_count(...)`/`mysqli_info(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
@@ -4692,7 +4697,7 @@
   `mysqli_field_count()`/
   `mysqli_get_connection_stats()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
-  `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/

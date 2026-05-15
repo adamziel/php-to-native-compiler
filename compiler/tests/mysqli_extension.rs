@@ -640,9 +640,12 @@ fn mysqli_error_state_metadata_returns_clean_placeholder_state() {
         r#"<?php
 $sqlstate = "mysqli_sqlstate";
 $warnings = "mysqli_warning_count";
+$info = "mysqli_info";
 echo function_exists($sqlstate) ? "yes" : "no";
 echo "|";
 echo is_callable($warnings) ? "callable" : "missing";
+echo "|";
+echo is_callable($info) ? "info-callable" : "info-missing";
 $handle = mysqli_init();
 echo "|";
 echo mysqli_errno($handle);
@@ -652,16 +655,23 @@ echo "|";
 echo mysqli_sqlstate($handle);
 echo "|";
 echo mysqli_warning_count($handle);
+echo "|";
+echo mysqli_info($handle) === null ? "null" : mysqli_info($handle);
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 echo "|";
 echo $sqlstate($handle);
 echo "|";
 echo $warnings($handle);
+echo "|";
+echo $info($handle) === null ? "null" : $info($handle);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|0||00000|0|00000|0");
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|info-callable|0||00000|0|null|00000|0|null"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -1728,6 +1738,21 @@ mysqli_warning_count("not-a-handle");
         bad_warning_count_handle.message,
         "unsupported call mysqli_warning_count(): first argument must be mysqli object in the current subset, got string"
     );
+
+    let bad_info_handle = run_source(
+        r#"<?php
+mysqli_info("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_info_handle.phase, Phase::Runtime);
+    assert_eq!(bad_info_handle.line, 2);
+    assert_eq!(bad_info_handle.column, 1);
+    assert_eq!(
+        bad_info_handle.message,
+        "unsupported call mysqli_info(): first argument must be mysqli object in the current subset, got string"
+    );
 }
 
 #[test]
@@ -1849,6 +1874,8 @@ echo function_exists("mysqli_sqlstate") ? "1" : "0";
 echo is_callable("mysqli_sqlstate") ? "1" : "0";
 echo function_exists("mysqli_warning_count") ? "1" : "0";
 echo is_callable("mysqli_warning_count") ? "1" : "0";
+echo function_exists("mysqli_info") ? "1" : "0";
+echo is_callable("mysqli_info") ? "1" : "0";
 echo function_exists("mysqli_affected_rows") ? "1" : "0";
 echo is_callable("mysqli_affected_rows") ? "1" : "0";
 echo function_exists("mysqli_insert_id") ? "1" : "0";
@@ -1894,7 +1921,7 @@ echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 97, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 99, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2226,6 +2253,18 @@ mysqli_sqlstate(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_warning_count(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_info(mysqli_init());
 "#,
     )
     .unwrap_err();

@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_info()` clean
+statement-information state after a placeholder WordPress charset setup query.
+System PHP needs a real mysqli connection and reports host extension statement
+metadata; phpc only returns clean placeholder state.

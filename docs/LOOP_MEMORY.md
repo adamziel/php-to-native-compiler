@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `4eb8e06 tests: add wordpress wpdb connect error smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 911, bounded deterministic `mysqli_info()` clean
+  statement-information metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone911/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed and
+  `cargo test -p phpc --test mysqli_extension mysqli_error_state_metadata -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed with 55 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone911`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi diagnostic metadata is being
+  extended from clean errno/error/SQLSTATE/warning-count state to clean
+  statement-information state.
+- Remaining semantic gaps: real statement information tracking, mutation
+  summaries, warnings/errors, host database state, SQL execution, and native
+  database lowering remain missing.
+- Next concrete task: run fixture verification, the full focused MySQLi test,
+  whitespace checks, and the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, add a synthetic WordPress-shaped `wpdb` query bookkeeping
+  smoke for `mysqli_info()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `41f305b runtime: add mysqli connect error metadata`, pushed to
   `origin/master`.
 - Task attempted: Milestone 910, a synthetic WordPress-shaped `wpdb`
