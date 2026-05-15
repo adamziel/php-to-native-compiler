@@ -399,7 +399,7 @@ impl Interpreter {
         let mut classes = PhpClassTable::with_core_classes();
         for stmt in &program.statements {
             match stmt {
-                Stmt::Function(function) => {
+                Stmt::Function(function) if !function.is_nested => {
                     let key = function.name.to_ascii_lowercase();
                     if functions.contains_key(&key) {
                         return Err(runtime_error(
@@ -590,7 +590,7 @@ impl Interpreter {
     fn register_included_declarations(&mut self, program: &Program) -> CompileResult<()> {
         for stmt in &program.statements {
             match stmt {
-                Stmt::Function(function) => {
+                Stmt::Function(function) if !function.is_nested => {
                     let key = function.name.to_ascii_lowercase();
                     if self.functions.contains_key(&key) {
                         return Err(runtime_error(
@@ -727,6 +727,21 @@ impl Interpreter {
             return Err(error);
         }
 
+        Ok(())
+    }
+
+    fn register_nested_function_declaration(
+        &mut self,
+        function: &FunctionDecl,
+    ) -> CompileResult<()> {
+        let key = function.name.to_ascii_lowercase();
+        if self.functions.contains_key(&key) {
+            return Err(runtime_error(
+                function.span,
+                RuntimeError::duplicate_function(callable_name(&function.name)),
+            ));
+        }
+        self.functions.insert(key, Rc::new(function.clone()));
         Ok(())
     }
 
@@ -1171,9 +1186,13 @@ impl Interpreter {
             Stmt::Include { path, once, span } => {
                 self.execute_file_include(path, *once, false, *span, scope)
             }
-            Stmt::Function(_) | Stmt::Interface(_) | Stmt::Trait(_) | Stmt::Enum(_) => {
+            Stmt::Function(function) => {
+                if function.is_nested {
+                    self.register_nested_function_declaration(function)?;
+                }
                 Ok(Flow::Normal)
             }
+            Stmt::Interface(_) | Stmt::Trait(_) | Stmt::Enum(_) => Ok(Flow::Normal),
             Stmt::Class(class) => {
                 if class.is_nested {
                     self.register_nested_class_declaration(class)?;

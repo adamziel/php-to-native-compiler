@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `5e2340e runtime: add bounded rtrim`, pushed to `origin/master`.
+- Task attempted: Milestone 840, runtime registration for
+  conditional/nested function declarations, covering the reached guarded
+  WordPress `wp_redirect()` declaration in `pluggable.php`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`,
+  `compiler/tests/nested_class_declarations.rs`,
+  `tests/fixtures/milestone840/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test nested_class_declarations -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone840`,
+  `cargo build -p phpc`, `git diff --check`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: unbraced nested declarations, full PHP declaration
+  timing edge cases, closure invocation, autoload-aware callable discovery,
+  reference-return alias binding, and native lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:1565:15: undefined function preg_replace_callback()`.
+- Next concrete task: run `cargo build -p phpc`, `git diff --check`, then the
+  full checkpoint gate. If green, checkpoint with
+  `tools/checkpoint.sh "runtime: register conditional functions"`.
+  Milestone 841 should inspect the reached `preg_replace_callback()` call and
+  implement only the smallest honest WordPress bootstrap subset.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `7c58ddb runtime: seed http host server default`, pushed to `origin/master`.
 - Task attempted: Milestone 839, bounded `rtrim()` support for the reached
   WordPress `wp_guess_url()` path normalization.

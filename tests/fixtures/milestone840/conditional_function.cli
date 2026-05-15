@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+declared|redirect:/wp-admin/install.php|302
+--- stdout end ---
+stderr:
+--- stderr end ---

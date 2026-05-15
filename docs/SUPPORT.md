@@ -231,7 +231,15 @@
 - function declarations with optional trailing commas in parameter lists,
   trailing variadic parameters such as `...$items` that collect extra
   positional arguments into a current ordered array, and syntax-only
-  parameter/return type annotations for the current metadata slice
+  parameter/return type annotations for the current metadata slice. Top-level
+  function declarations are registered before execution. Conditional or
+  declaration-contained function declarations are registered only when
+  execution reaches the declaration, so guarded forms such as
+  `if (!function_exists("name")) { function name() {} }` work for the current
+  braced statement-body subset. Skipped nested declarations remain absent, and
+  repeated executed declarations report duplicate-function diagnostics.
+  Unbraced nested declarations, full declaration timing edge cases,
+  reference-return alias binding, and native lowering remain unsupported.
 - positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions, with optional
@@ -732,7 +740,9 @@
   partial-output behavior, and native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
-  builtins, and rejects non-string names in the current subset.
+  builtins. Conditional/nested user-function declarations become visible only
+  after their declaration statement executes. Non-string names are rejected in
+  the current subset.
   `mysqli_connect(...)` is currently a database-extension boundary only: the
   name is visible through function/callability metadata and dynamic
   string-valued calls, but any attempted connection call reports a stable

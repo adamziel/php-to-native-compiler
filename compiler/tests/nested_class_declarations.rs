@@ -75,6 +75,110 @@ echo FunctionBox::label(), "\n";
 }
 
 #[test]
+fn nested_function_declarations_register_when_executed() {
+    let execution = run_source(
+        r#"<?php
+if (!function_exists("conditional_label")) {
+    function conditional_label($value = "ok") {
+        return "label:" . $value;
+    }
+}
+
+echo function_exists("conditional_label"), "\n";
+echo conditional_label(), "\n";
+echo conditional_label("wp"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\nlabel:ok\nlabel:wp\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn skipped_nested_function_declarations_do_not_register() {
+    let execution = run_source(
+        r#"<?php
+if (false) {
+    function skipped_nested_function() {
+        return "no";
+    }
+}
+
+echo function_exists("skipped_nested_function"), "\n";
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "\nafter\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn repeated_nested_function_declarations_report_duplicate_function() {
+    let error = run_source(
+        r#"<?php
+if (true) {
+    function repeated_nested_function() {}
+}
+
+if (true) {
+    function repeated_nested_function() {}
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 5);
+    assert_eq!(
+        error.message,
+        "function repeated_nested_function() is already defined"
+    );
+}
+
+#[test]
+fn required_files_can_execute_guarded_nested_function_declarations() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-nested-function-{}-{}",
+        std::process::id(),
+        "require"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create nested function require fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+if (!function_exists("wp_redirect")) {
+    function wp_redirect($location, $status = 302) {
+        echo "redirect:", $location, "|", $status;
+        return true;
+    }
+}
+"#,
+    )
+    .expect("write required nested function fixture");
+
+    let source = r#"<?php
+require 'lib.php';
+require 'lib.php';
+echo function_exists("wp_redirect") ? "declared|" : "missing|";
+wp_redirect("/install.php");
+"#;
+    fs::write(&main, source).expect("write main nested function fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "declared|redirect:/install.php|302");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn required_files_can_execute_guarded_nested_class_declarations() {
     let root = std::env::temp_dir().join(format!(
         "phpc-nested-class-{}-{}",

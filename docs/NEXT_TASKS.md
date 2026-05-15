@@ -7701,15 +7701,27 @@ handled.
   default PHP whitespace mask and non-empty literal character masks such as
   `/`. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
-- [ ] Runtime/WordPress bootstrap lane: decide the smallest honest boundary for
+- [x] Runtime/WordPress bootstrap lane: decide the smallest honest boundary for
   the reached `wp_redirect()` call. Inspect whether the function should have
   been declared by the current include path before adding any runtime shim; do
   not mask an include/declaration registration bug with a broad builtin stub.
+  Milestone 840 confirms `wp_redirect()` is declared conditionally in
+  WordPress `pluggable.php`, and fixes the interpreter to register
+  conditional/nested function declarations when execution reaches them. The
+  real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1565:15: undefined function preg_replace_callback()`.
+- [ ] Runtime/regex callback lane: inspect the reached
+  `preg_replace_callback()` call and implement the smallest honest subset for
+  that exact WordPress bootstrap shape. Do not claim broad PCRE callback
+  replacement support; keep pattern arrays, subject arrays, callback forms,
+  captures/backrefs, limits/count output, invalid-pattern warnings, exact
+  diagnostics, closure invocation gaps, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 839 checkpoint, the latest committed checkpoint
-  is `7c58ddb runtime: seed http host server default`, covering Milestone 838.
+- Before the current Milestone 840 checkpoint, the latest committed checkpoint
+  is `5e2340e runtime: add bounded rtrim`, covering Milestone 839.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

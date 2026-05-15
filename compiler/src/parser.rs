@@ -161,6 +161,7 @@ impl Parser {
         start: Span,
         resolve_namespace: bool,
     ) -> CompileResult<FunctionDecl> {
+        let is_nested = self.nested_statement_depth > 0 || self.function_body_depth > 0;
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
         let name = if resolve_namespace {
@@ -187,6 +188,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body,
+            is_nested,
             span: start,
         })
     }
@@ -523,6 +525,7 @@ impl Parser {
             return_type,
             returns_by_reference,
             body: Vec::new(),
+            is_nested: false,
             span: start,
         })
     }

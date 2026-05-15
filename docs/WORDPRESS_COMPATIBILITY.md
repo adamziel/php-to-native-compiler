@@ -1209,6 +1209,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   binary/null-byte edge cases, object/resource operands, exact diagnostics, or
   native lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
+  Milestone 840 implements runtime registration for conditional/nested
+  function declarations, covering the reached guarded `wp_redirect()`
+  declaration in `wp-includes/pluggable.php` without pretending it is a
+  builtin. This is not full PHP declaration timing for every edge case,
+  unbraced nested declarations, closure invocation, reference-return aliasing,
+  autoload-aware callable discovery, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1565:15: undefined function preg_replace_callback()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

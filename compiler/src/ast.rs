@@ -574,6 +574,7 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeDecl>,
     pub returns_by_reference: bool,
     pub body: Vec<Stmt>,
+    pub is_nested: bool,
     pub span: Span,
 }
 
