@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T17:05:00Z
+
+- Checkpoint before this task:
+  `e8695e0 runtime: add bounded array_pop`, pushed to `origin/master`.
+- Task attempted: Milestone 830, bounded MySQLi empty-result placeholders for
+  the reached WordPress options bootstrap query path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone830/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone830`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to the following `wpdb::query()` query-classification regex.
+- Remaining semantic gaps: host database behavior, real SQL execution, result
+  resources, row fetching, affected rows, insert ids, errors/warnings,
+  charset/collation, prepared statements, transactions, binary/invalid-string
+  behavior, and native database calls remain unsupported.
+- Next concrete task: add the next bounded `preg_match()` slice for the reached
+  `wpdb::query()` DDL/DML classifier regex while keeping broad PCRE behavior,
+  capture fidelity, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T16:35:00Z
 
 - Checkpoint before this task:

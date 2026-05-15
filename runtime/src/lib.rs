@@ -1817,6 +1817,9 @@ impl PhpClassTable {
             ))
             .expect("mysqli core metadata should not duplicate connect_error");
         classes
+            .declare_class("mysqli_result")
+            .expect("core class table should contain mysqli before mysqli_result");
+        classes
     }
 
     pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
@@ -7101,6 +7104,13 @@ mod tests {
             vec!["connect_errno", "connect_error"]
         );
         assert!(mysqli.methods().is_empty());
+
+        let mysqli_result = classes.lookup_class("mysqli_result").unwrap();
+        assert_eq!(mysqli_result.name(), "mysqli_result");
+        assert_eq!(mysqli_result.id().index(), 3);
+        assert!(mysqli_result.parent_id().is_none());
+        assert!(mysqli_result.properties().is_empty());
+        assert!(mysqli_result.methods().is_empty());
     }
 
     #[test]

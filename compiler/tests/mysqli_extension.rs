@@ -186,6 +186,35 @@ echo $call($handle, "SELECT @@SESSION.sql_mode") === false ? "dynamic" : "result
 }
 
 #[test]
+fn mysqli_query_accepts_current_wordpress_options_empty_result_placeholders() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$autoload = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )");
+$fallback = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+echo $autoload === false ? "autoload-empty" : "autoload-result";
+echo "|";
+echo $fallback === false ? "fallback-empty" : "fallback-result";
+echo "|";
+echo mysqli_errno($handle);
+echo "|";
+echo mysqli_error($handle);
+echo "|";
+$errno = "mysqli_errno";
+$error = "mysqli_error";
+echo $errno($handle);
+echo "|";
+echo $error($handle) === "" ? "clean" : "dirty";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "autoload-empty|fallback-empty|0||0|clean");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -316,7 +345,22 @@ mysqli_query($handle, "SELECT 1");
     assert_eq!(unsupported_query.column, 1);
     assert_eq!(
         unsupported_query.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset"
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset"
+    );
+
+    let bad_errno_handle = run_source(
+        r#"<?php
+mysqli_errno("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_errno_handle.phase, Phase::Runtime);
+    assert_eq!(bad_errno_handle.line, 2);
+    assert_eq!(bad_errno_handle.column, 1);
+    assert_eq!(
+        bad_errno_handle.message,
+        "unsupported call mysqli_errno(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -419,6 +463,10 @@ echo function_exists("mysqli_get_server_info") ? "1" : "0";
 echo is_callable("mysqli_get_server_info") ? "1" : "0";
 echo function_exists("mysqli_query") ? "1" : "0";
 echo is_callable("mysqli_query") ? "1" : "0";
+echo function_exists("mysqli_errno") ? "1" : "0";
+echo is_callable("mysqli_errno") ? "1" : "0";
+echo function_exists("mysqli_error") ? "1" : "0";
+echo is_callable("mysqli_error") ? "1" : "0";
 echo function_exists("mysqli_select_db") ? "1" : "0";
 echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_real_escape_string") ? "1" : "0";
@@ -432,7 +480,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 17, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 21, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -488,6 +536,30 @@ mysqli_get_server_info(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_query(mysqli_init(), "SELECT @@SESSION.sql_mode");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_errno(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_error(mysqli_init());
 "#,
     )
     .unwrap_err();

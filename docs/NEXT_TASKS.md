@@ -7607,17 +7607,27 @@ handled.
   probe to
   `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
   corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
-- [ ] Runtime/mysqli lane: extend the bounded `mysqli_query()` placeholder for
+- [x] Runtime/mysqli lane: extend the bounded `mysqli_query()` placeholder for
   the reached `wpdb::_do_query()` option-query path without claiming real SQL
   execution. Keep host database behavior, result resources, row fetching,
   affected rows, errors/warnings, charset/collation, prepared statements,
   transactions, binary/invalid-string behavior, and native database calls
   named unless implemented.
+  Milestone 830 covers the reached empty WordPress options-table SELECT
+  placeholders plus clean `mysqli_errno()`/`mysqli_error()` bookkeeping for the
+  placeholder handle, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to the following `wpdb::query()` query-classification regex.
+- [ ] Runtime/regex lane: add the next bounded `preg_match()` slice for the
+  reached `wpdb::query()` DDL/DML classifier regex after the empty options
+  query path. Keep broad PCRE parsing, capture fidelity, non-`u`/`i` modifier
+  behavior outside the exact reached patterns, binary/invalid-string behavior,
+  exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 829 checkpoint, the latest committed checkpoint
-  is `e7ab60e runtime: add bounded next`, covering Milestone 828.
+- Before the current Milestone 830 checkpoint, the latest committed checkpoint
+  is `e8695e0 runtime: add bounded array_pop`, covering Milestone 829.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic empty results and clean connection diagnostics for the reached WordPress wp_options bootstrap SELECTs, while system PHP depends on a real host MySQL connection, result resources, and database contents.

@@ -34,10 +34,11 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 4);
+    assert_eq!(classes.classes().len(), 5);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
+    assert_eq!(classes.classes()[3].name(), "mysqli_result");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -1907,7 +1908,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => Box\n    [4] => Profile\n)\n5|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => Box\n    [5] => Profile\n)\n6|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1928,7 +1929,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => App\\Mode\n    [4] => App\\Status\n)\n5\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => App\\Mode\n    [5] => App\\Status\n)\n6\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

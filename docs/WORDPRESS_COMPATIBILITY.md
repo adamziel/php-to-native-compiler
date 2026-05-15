@@ -1134,6 +1134,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
   corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
+  Milestone 830 extends the bounded MySQLi placeholder for the reached
+  `wpdb::_do_query()` options bootstrap path: the current placeholder
+  `mysqli_query()` accepts the WordPress autoloaded-options and all-options
+  `SELECT option_name, option_value FROM <prefix>options...` reads as
+  deterministic empty/no-result boundaries, `mysqli_errno()` returns `0`,
+  `mysqli_error()` returns an empty string, and `mysqli_result` exists as core
+  metadata for reached `instanceof` checks. This is not real SQL execution,
+  real result resources, row fetching, affected rows, insert ids,
+  charset/collation handling, prepared statements, transactions,
+  errors/warnings, or native database integration. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to the following `wpdb::query()` query-classification regex.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

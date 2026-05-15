@@ -497,7 +497,8 @@
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
-  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
+  `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
+  `mysqli_real_escape_string`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
@@ -720,7 +721,14 @@
   `mysqli_query($handle, 'SELECT @@SESSION.sql_mode')` accepts the placeholder
   handle and that exact WordPress SQL mode probe, returning `false` as a
   deterministic empty/no-result boundary so WordPress skips SQL mode
-  normalization without executing SQL.
+  normalization without executing SQL. `mysqli_query(...)` also accepts the
+  reached WordPress options-table bootstrap reads
+  `SELECT option_name, option_value FROM <prefix>options WHERE autoload IN (
+  'yes', 'on', 'auto-on', 'auto' )` and
+  `SELECT option_name, option_value FROM <prefix>options`, returning
+  deterministic empty boundaries without executing SQL. For the same
+  placeholder handle, `mysqli_errno($handle)` returns `0` and
+  `mysqli_error($handle)` returns an empty string.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
@@ -730,7 +738,8 @@
   quote, double quote, and Ctrl-Z characters for the reached
   `wpdb::_real_escape()` option lookup path.
   Host connections, real mysqli
-  resources/objects, queries, result sets, connection charset state, binary or
+  resources/objects, real query execution, result sets, row fetching,
+  affected-row/insert-id state, connection charset state, binary or
   invalid-string behavior, exact escaping edge cases, errors/warnings,
   transactions, configuration beyond the report-mode flag, PDO behavior, and
   native database calls are not implemented.
@@ -2189,7 +2198,8 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_query`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
+  `mysqli_real_escape_string`,
   `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
@@ -2640,8 +2650,8 @@
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
   `uniqid`, `hash_hmac`,
   `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
-  `mysqli_get_server_info`, `mysqli_query`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_get_server_info`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
@@ -2705,19 +2715,22 @@
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_query`, `mysqli_select_db`, `mysqli_real_escape_string`,
-  `mysqli_report`, and `mysqli_init` are recognized for function/callability
+  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
+  `mysqli_real_escape_string`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
   placeholder string, and `mysqli_query(...)` returns only the current false
-  SQL-mode-probe boundary; `mysqli_select_db(...)` returns only deterministic
+  SQL-mode-probe and WordPress empty-options-query boundaries;
+  `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
+  diagnostics; `mysqli_select_db(...)` returns only deterministic
   success for the placeholder handle; `mysqli_real_escape_string(...)` returns
   only deterministic escaping over the placeholder handle and current
   scalar/null string-convertible values; direct `mysqli_connect(...)` calls
   are still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
   `mysqli_get_server_info(...)`/`mysqli_query(...)`/
+  `mysqli_errno(...)`/`mysqli_error(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls still reject under the
   function-call boundary.

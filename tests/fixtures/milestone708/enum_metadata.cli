@@ -9,9 +9,11 @@ Array
 (
     [0] => Exception
     [1] => stdClass
-    [2] => App\State\Box
-    [3] => App\State\Mode
-    [4] => App\State\Status
+    [2] => mysqli
+    [3] => mysqli_result
+    [4] => App\State\Box
+    [5] => App\State\Mode
+    [6] => App\State\Status
 )
 --- stdout end ---
 stderr:

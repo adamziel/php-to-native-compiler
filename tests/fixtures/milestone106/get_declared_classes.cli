@@ -5,10 +5,11 @@ Array
     [0] => Exception
     [1] => stdClass
     [2] => mysqli
-    [3] => Box
-    [4] => Profile
+    [3] => mysqli_result
+    [4] => Box
+    [5] => Profile
 )
-5|Exception|stdClass|mysqli
+6|Exception|stdClass|mysqli
 Exception|stdClass|mysqli--- stdout end ---
 stderr:
 --- stderr end ---

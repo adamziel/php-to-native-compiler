@@ -4115,7 +4115,7 @@ impl Interpreter {
             ));
         };
 
-        if query == "SELECT @@SESSION.sql_mode" {
+        if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
             return Ok(Value::Bool(false));
         }
 
@@ -4123,9 +4123,21 @@ impl Interpreter {
             span,
             RuntimeError::unsupported_call(
                 "mysqli_query()",
-                "only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset",
+                "only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset",
             ),
         ))
+    }
+
+    fn call_mysqli_errno(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_errno", args, 1, span)?;
+        expect_mysqli_handle("mysqli_errno()", &args[0], span)?;
+        Ok(Value::Int(0))
+    }
+
+    fn call_mysqli_error(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_error", args, 1, span)?;
+        expect_mysqli_handle("mysqli_error()", &args[0], span)?;
+        Ok(Value::String(String::new()))
     }
 
     fn call_mysqli_select_db(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -8428,6 +8440,8 @@ impl Interpreter {
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
+            "mysqli_errno" => self.call_mysqli_errno(&args, span),
+            "mysqli_error" => self.call_mysqli_error(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_report" => {
@@ -11296,6 +11310,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
             | "mysqli_query"
+            | "mysqli_errno"
+            | "mysqli_error"
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
             | "mysqli_report"
@@ -11506,6 +11522,56 @@ fn mysql_escape_string(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn is_wordpress_empty_options_query(query: &str) -> bool {
+    let query = query.trim();
+    if !query
+        .strip_prefix("SELECT option_name, option_value FROM ")
+        .is_some_and(|rest| rest.contains("options"))
+    {
+        return false;
+    }
+
+    let Some(rest) = query.strip_prefix("SELECT option_name, option_value FROM ") else {
+        return false;
+    };
+    let Some((table, suffix)) = rest.split_once(' ') else {
+        return rest.ends_with("options");
+    };
+    if !table.ends_with("options") {
+        return false;
+    }
+
+    suffix == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+}
+
+fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
+    let Value::Object(handle) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli object in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli object in the current subset, got {} object",
+                    handle.class_name()
+                ),
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn string_builtin_argument(

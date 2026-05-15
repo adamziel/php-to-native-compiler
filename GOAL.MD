@@ -424,10 +424,12 @@ dispatch shape for string callbacks, public method array callables, and
 integer-keyed positional argument arrays. Milestone 828 covers the reached
 bounded `next()` cursor-advance path for direct arrays and
 `$this->iterations[$level]`. Milestone 829 covers the reached direct-variable
-`array_pop()` hook cleanup path. The current frontier is now a reached
-`mysqli_query()` call in `wpdb::_do_query()`, reported by the bootstrap shim
-as
-`runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`.
+`array_pop()` hook cleanup path. Milestone 830 covers the reached empty
+WordPress options-table `mysqli_query()` placeholders in `wpdb::_do_query()`
+plus clean `mysqli_errno()`/`mysqli_error()` bookkeeping for the placeholder
+handle. The current frontier is now the following `wpdb::query()` regex
+classifier, reported by the bootstrap shim as
+`runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -615,9 +617,11 @@ The repository already has a working Rust workspace with:
   ordered-array first-value shape. Bounded `call_user_func_array()` covers the
   reached hook-dispatch callable shape. Bounded `next()` covers the reached
   array-pointer iteration shape. Bounded `array_pop()` covers the reached hook
-  cleanup shape. The next bottleneck is widening `mysqli_query()` beyond the
-  existing SQL-mode probe to the reached `wpdb::_do_query()` option-query
-  path without claiming real database execution.
+  cleanup shape. Bounded `mysqli_query()` options-table placeholders plus
+  clean `mysqli_errno()` and `mysqli_error()` bookkeeping cover the reached
+  `wpdb::_do_query()` empty options query path without claiming real database
+  execution. The next bottleneck is the following `wpdb::query()`
+  `preg_match()` classifier regex.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

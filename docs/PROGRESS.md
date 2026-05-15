@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 830, a bounded MySQLi empty-result placeholder for the
+  reached WordPress options bootstrap query path. The interpreter now accepts
+  `mysqli_query($handle, "SELECT option_name, option_value FROM <prefix>options WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )")`
+  and `mysqli_query($handle, "SELECT option_name, option_value FROM <prefix>options")`
+  for the current placeholder `mysqli` handle, returning deterministic
+  `false`/empty boundaries without executing SQL. It also exposes
+  `mysqli_errno($handle)` as `0` and `mysqli_error($handle)` as an empty string
+  for the clean placeholder bookkeeping path, and seeds `mysqli_result`
+  metadata so reached `instanceof mysqli_result` checks can evaluate honestly.
+  Host database connections, real SQL execution, real result resources, row
+  fetching, affected-row and insert-id state, connection charset/collation,
+  prepared statements, transactions, error/warning fidelity, and native
+  database calls remain unsupported. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances past the reached `wpdb::_do_query()` options SELECT to
+  `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
+  corresponding to the following `wpdb::query()` query-classification regex.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone830`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 829, bounded direct-variable `array_pop()` support for the
   reached WordPress hook cleanup path. The runtime now removes and returns the
   last inserted array value, returns `null` for empty arrays, updates the
