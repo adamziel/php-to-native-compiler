@@ -6263,6 +6263,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "str_replace"
             | "preg_match"
             | "preg_replace"
+            | "preg_replace_callback"
             | "compact"
             | "error_reporting"
             | "sprintf"

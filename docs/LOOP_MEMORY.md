@@ -29,6 +29,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `831a2e8 runtime: register conditional functions`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 841, bounded `preg_replace_callback()` support for
+  the reached WordPress `wp_sanitize_redirect()` UTF-8 sanitizer callback.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`,
+  `compiler/tests/preg_replace_callback_builtin.rs`,
+  `tests/fixtures/milestone841/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_callback_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone841`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: pattern arrays, subject arrays, callback
+  arrays/closures/method callables, broad callback invocation,
+  captures/backrefs beyond the matched full string, limit/count/flags
+  arguments, invalid-pattern warnings, exact diagnostics, and native lowering
+  remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress preg replace callback"`.
+  Milestone 842 should widen bounded `preg_replace()` only for the reached
+  WordPress redirect sanitizer cleanup pattern.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `5e2340e runtime: add bounded rtrim`, pushed to `origin/master`.
 - Task attempted: Milestone 840, runtime registration for
   conditional/nested function declarations, covering the reached guarded

@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 841, a bounded `preg_replace_callback()` path for the
+  reached WordPress `wp_sanitize_redirect()` UTF-8 sanitizer. The interpreter
+  now exposes `preg_replace_callback` through direct calls, string-valued
+  dynamic calls, `function_exists`, and `is_callable` for the exact
+  WordPress verbose UTF-8 sanitizer regex shape and the exact
+  `_wp_sanitize_utf8_in_redirect` string callback, percent-encoding
+  non-ASCII UTF-8 bytes while leaving ASCII redirect paths unchanged. Pattern
+  arrays, subject arrays, callback arrays/closures/method callables, broad
+  callback invocation, captures/backrefs beyond the matched full string,
+  limit/count/flags arguments, invalid-pattern warnings, exact diagnostics,
+  and native lowering remain unsupported; native function-table introspection
+  recognizes the name while direct native calls still reject under the generic
+  function-call boundary. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_callback_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone841`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 840, runtime registration for conditional/nested function
   declarations. Top-level functions still register before execution, while
   functions declared inside executed statement/function bodies now register

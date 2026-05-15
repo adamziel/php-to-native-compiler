@@ -7710,18 +7710,30 @@ handled.
   conditional/nested function declarations when execution reaches them. The
   real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:1565:15: undefined function preg_replace_callback()`.
-- [ ] Runtime/regex callback lane: inspect the reached
+- [x] Runtime/regex callback lane: inspect the reached
   `preg_replace_callback()` call and implement the smallest honest subset for
   that exact WordPress bootstrap shape. Do not claim broad PCRE callback
   replacement support; keep pattern arrays, subject arrays, callback forms,
   captures/backrefs, limits/count output, invalid-pattern warnings, exact
   diagnostics, closure invocation gaps, and native lowering named unless
   implemented.
+  Milestone 841 covers the exact `wp_sanitize_redirect()` UTF-8 sanitizer
+  pattern and `_wp_sanitize_utf8_in_redirect` string callback. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
+- [ ] Runtime/regex lane: widen bounded `preg_replace()` only for the reached
+  WordPress redirect sanitizer cleanup pattern
+  `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i` with an empty replacement string.
+  Keep pattern arrays, replacement arrays, subject arrays, callbacks,
+  captures/backrefs, limit/count output, invalid-pattern warnings,
+  byte/Unicode edge cases, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 840 checkpoint, the latest committed checkpoint
-  is `5e2340e runtime: add bounded rtrim`, covering Milestone 839.
+- Before the current Milestone 841 checkpoint, the latest committed checkpoint
+  is `831a2e8 runtime: register conditional functions`, covering
+  Milestone 840.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

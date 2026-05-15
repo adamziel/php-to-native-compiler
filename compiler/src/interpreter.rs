@@ -6264,6 +6264,13 @@ impl Interpreter {
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
+                if key == "preg_replace_callback" {
+                    let mut values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        values.push(self.evaluate(arg, caller_scope)?);
+                    }
+                    return self.call_preg_replace_callback(values, span);
+                }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
@@ -6309,6 +6316,13 @@ impl Interpreter {
                 }
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
+                }
+                if key == "preg_replace_callback" {
+                    let mut values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        values.push(self.evaluate(arg, caller_scope)?);
+                    }
+                    return self.call_preg_replace_callback(values, span);
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
@@ -7350,6 +7364,7 @@ impl Interpreter {
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
+            "preg_replace_callback" => self.call_preg_replace_callback(args, span),
             "compact" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -11402,6 +11417,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_replace"
             | "preg_match"
             | "preg_replace"
+            | "preg_replace_callback"
             | "compact"
             | "error_reporting"
             | "sprintf"
@@ -12328,6 +12344,86 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let end = subject.rfind('/').unwrap_or(subject.len());
     Ok(Value::String(subject[..end].to_string()))
+}
+
+impl Interpreter {
+    fn call_preg_replace_callback(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if !(3..=6).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "preg_replace_callback()",
+                    ArityExpectation::Between { min: 3, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace_callback()",
+                    "limit, count output, and flags arguments are not implemented; pass exactly three arguments in the current subset",
+                ),
+            ));
+        }
+
+        let pattern =
+            string_contains_argument("preg_replace_callback()", "pattern", &args[0], span)?;
+        let callback =
+            string_contains_argument("preg_replace_callback()", "callback", &args[1], span)?;
+        let subject =
+            string_contains_argument("preg_replace_callback()", "subject", &args[2], span)?;
+
+        if !is_wordpress_sanitize_redirect_utf8_pattern(&pattern) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace_callback()",
+                    "only the WordPress wp_sanitize_redirect() UTF-8 sanitizer pattern is implemented in the current subset",
+                ),
+            ));
+        }
+
+        if callback != "_wp_sanitize_utf8_in_redirect" {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace_callback()",
+                    "only the WordPress _wp_sanitize_utf8_in_redirect string callback is implemented in the current subset",
+                ),
+            ));
+        }
+
+        Ok(Value::String(percent_encode_non_ascii_utf8(&subject)))
+    }
+}
+
+fn is_wordpress_sanitize_redirect_utf8_pattern(pattern: &str) -> bool {
+    let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
+    compact.starts_with("/((?:")
+        && (compact.contains("[\\xC2-\\xDF][\\x80-\\xBF]")
+            || compact.contains("[xC2-xDF][x80-xBF]"))
+        && (compact.contains("[\\xF1-\\xF3][\\x80-\\xBF]{3}")
+            || compact.contains("[xF1-xF3][x80-xBF]{3}"))
+        && compact.contains("){1,40}")
+        && compact.ends_with(")/x")
+}
+
+fn percent_encode_non_ascii_utf8(subject: &str) -> String {
+    let mut output = String::with_capacity(subject.len());
+    for ch in subject.chars() {
+        if ch.is_ascii() {
+            output.push(ch);
+        } else {
+            for byte in ch.to_string().as_bytes() {
+                output.push('%');
+                output.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    output
 }
 
 fn is_compact_variable_name(name: &str) -> bool {

@@ -1217,6 +1217,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   autoload-aware callable discovery, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:1565:15: undefined function preg_replace_callback()`.
+  Milestone 841 implements the bounded `preg_replace_callback()` path for the
+  reached `wp_sanitize_redirect()` UTF-8 sanitizer regex and exact
+  `_wp_sanitize_utf8_in_redirect` string callback. This is not broad PCRE
+  callback replacement, pattern/subject arrays, callback arrays/closures/method
+  callables, limit/count/flags handling, exact diagnostics, or native lowering.
+  The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
