@@ -8294,17 +8294,28 @@ handled.
   client/server traffic accounting, query accounting, memory accounting,
   connection reuse state, host database integration, warnings/errors, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after
   connection-statistics placeholders and choose a small tested slice, such as
   deterministic `mysqli_thread_id()`/`mysqli_get_charset()` metadata or a
   sharper named diagnostic, before broader SQL execution or real host state is
   claimed.
+  Milestone 897 implements bounded deterministic `mysqli_thread_id($handle)`
+  metadata. It accepts current placeholder `mysqli` handles, returns
+  deterministic integer id `1`, rejects non-`mysqli` handles with stable
+  diagnostics, and is visible through runtime and native metadata lookup. This
+  is not real server-thread inspection, server-side thread allocation,
+  connection identity, reconnect behavior, `mysqli_kill()` integration, host
+  database integration, warnings/errors, or native database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_thread_id()` placeholder through WordPress-shaped connection
+  metadata bookkeeping without claiming real server-thread or connection-id
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0085c02 runtime: add mysqli connection stats placeholder`, covering
-  Milestone 895 before the current Milestone 896 candidate.
+  `986e5f2 tests: add wordpress wpdb connection stats smoke`, covering
+  Milestone 896 before the current Milestone 897 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `986e5f2 tests: add wordpress wpdb connection stats smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 897, bounded deterministic `mysqli_thread_id()`
+  placeholder metadata for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone897/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone897`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/mysqli_extension.rs tests/fixtures/milestone897 docs/PROGRESS.md docs/SUPPORT.md docs/extensions/mysqli.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: placeholder MySQLi metadata is being extended
+  from connection statistics to deterministic connection thread-id metadata.
+- Remaining semantic gaps: real server-thread inspection, server-side thread
+  allocation, connection identity, reconnect behavior, `mysqli_kill()`
+  integration, host database integration, warning/error fidelity, database
+  state mutation, and native database lowering remain missing.
+- Next concrete task: run focused MySQLi and fixture verification, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, add a synthetic WordPress-shaped `wpdb` thread-id bookkeeping
+  smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `0085c02 runtime: add mysqli connection stats placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 896, a synthetic WordPress-shaped `wpdb`

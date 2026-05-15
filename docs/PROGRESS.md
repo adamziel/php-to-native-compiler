@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 897, bounded `mysqli_thread_id()` support for deterministic
+  placeholder MySQLi thread-id metadata. The runtime accepts
+  `mysqli_thread_id($handle)` for current placeholder `mysqli` objects,
+  returns deterministic integer id `1`, rejects non-`mysqli` handles with
+  stable diagnostics, and exposes the name through runtime and native metadata
+  lookup. This is not real server-thread inspection, server-side thread
+  allocation, connection identity, reconnect behavior, `mysqli_kill()`
+  integration, host database integration, PHP warning/error fidelity, or
+  native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone897`.
+
 - Added Milestone 896, a synthetic WordPress-shaped `wpdb`
   connection-statistics bookkeeping smoke that calls the bounded
   `mysqli_get_connection_stats($this->dbh)` placeholder path, records stable

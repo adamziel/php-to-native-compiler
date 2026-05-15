@@ -1394,7 +1394,11 @@ historical blockers and remaining full-support gaps include:
   integration, or native database lowering. Milestone 896 wires that
   placeholder through a synthetic WordPress-shaped `wpdb`
   connection-statistics bookkeeping smoke without claiming real WordPress
-  database connection-statistics fidelity.
+  database connection-statistics fidelity. Milestone 897 adds deterministic
+  `mysqli_thread_id()` placeholder metadata without real server-thread
+  inspection, connection identity, reconnect behavior, `mysqli_kill()`
+  integration, host database integration, warning/error fidelity, or native
+  database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

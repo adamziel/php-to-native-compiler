@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone897/mysqli_thread_id_metadata.php
+yes
+callable
+1
+1

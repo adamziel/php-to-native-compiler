@@ -4,8 +4,8 @@ Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
-`mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_stat`,
-`mysqli_get_connection_stats`, `mysqli_autocommit`,
+`mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
+`mysqli_stat`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
@@ -61,6 +61,10 @@ reflect extension build configuration.
 `mysqli_get_proto_info($handle)` accepts the placeholder object and returns
 deterministic protocol version `10`. It does not negotiate or inspect a real
 server protocol.
+
+`mysqli_thread_id($handle)` accepts the placeholder object and returns
+deterministic thread id `1`. It does not inspect a real server connection,
+allocate server-side threads, or support thread killing/reconnect behavior.
 
 `mysqli_get_connection_stats($handle)` accepts the placeholder object and
 returns an eight-key deterministic statistics array:
