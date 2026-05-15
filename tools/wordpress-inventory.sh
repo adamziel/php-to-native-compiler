@@ -24,6 +24,11 @@ phpc_bin=${PHPC_BIN:-$repo_root/target/debug/phpc}
 if [ ! -x "$phpc_bin" ]; then
   phpc_bin="cargo run -q -p phpc --"
 fi
+probe_timeout=${WORDPRESS_PROBE_TIMEOUT:-30s}
+has_timeout=0
+if command -v timeout >/dev/null 2>&1; then
+  has_timeout=1
+fi
 
 display_root=$wp_root
 display_phpc_bin=$phpc_bin
@@ -81,13 +86,28 @@ run_probe() {
   display_path=$3
 
   set +e
-  # shellcheck disable=SC2086
-  $phpc_bin run "$command_path" >"$tmp_stdout" 2>"$tmp_stderr"
+  if [ "$has_timeout" -eq 1 ]; then
+    # shellcheck disable=SC2086
+    timeout "$probe_timeout" $phpc_bin run "$command_path" >"$tmp_stdout" 2>"$tmp_stderr"
+  else
+    # shellcheck disable=SC2086
+    $phpc_bin run "$command_path" >"$tmp_stdout" 2>"$tmp_stderr"
+  fi
   status=$?
   set -e
+  timed_out=no
+  if [ "$has_timeout" -eq 1 ] && [ "$status" -eq 124 ]; then
+    timed_out=yes
+  fi
 
   printf '%s:\n' "$probe_name"
   printf '  command: %s run %s\n' "$display_phpc_bin" "$display_path"
+  if [ "$has_timeout" -eq 1 ]; then
+    printf '  timeout: %s\n' "$probe_timeout"
+  else
+    printf '  timeout: unavailable\n'
+  fi
+  printf '  timed_out: %s\n' "$timed_out"
   printf '  exit: %s\n' "$status"
   printf '  stdout_bytes: %s\n' "$(wc -c <"$tmp_stdout" | tr -d ' ')"
   printf '  first_stderr_line: '

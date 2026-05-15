@@ -26,6 +26,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T14:45:00Z
+
+- Checkpoint before this task:
+  `c101b88 parser: add bounded static closures`, pushed to `origin/master`.
+- Task attempted: Milestone 739, timeout-bounded WordPress inventory probes for
+  the post-static-closure bootstrap-shim long path.
+- Files changed so far: `tools/wordpress-inventory.sh`,
+  `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`, `docs/PROGRESS.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=1s tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=10s tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: the direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe now times out cleanly at `10s`, exit `124`, zero
+  stdout, and no stderr, so the next concrete PHP blocker is not yet known.
+- Next concrete task: add a bounded execution budget or trace mode to report
+  the last source span/function/include frame before step exhaustion, then use
+  it on the bootstrap shim to identify the loop or runtime blocker.
+
 ## Loop Event 2026-05-15T14:10:00Z
 
 - Checkpoint before this task:

@@ -10,6 +10,8 @@ does not vendor WordPress core.
 - Local source variable: `WORDPRESS_ROOT`
 - Inventory command:
   `tools/wordpress-inventory.sh --normalize "$WORDPRESS_ROOT"`
+- Optional timeout override:
+  `WORDPRESS_PROBE_TIMEOUT=10s tools/wordpress-inventory.sh --normalize "$WORDPRESS_ROOT"`
 
 ## Expected Output Policy
 
@@ -19,6 +21,10 @@ Committed inventory snapshots must use normalized output so local paths and
 - the WordPress checkout path with `<wordpress-root>`;
 - the compiler executable path with `<phpc>`;
 - the temporary bootstrap shim path with `<bootstrap-shim>`.
+
+Each probe prints the timeout value and whether it timed out. The default
+timeout is `30s` when the host provides GNU `timeout`; operators can override it
+with `WORDPRESS_PROBE_TIMEOUT`.
 
 Do not commit WordPress core source into this repository until a separate size,
 license, update, and checksum policy is accepted. The committed synthetic

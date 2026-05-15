@@ -6794,18 +6794,24 @@ handled.
   static anonymous closures as inert closure values, keeps binding/capture/
   invocation/callback/native behavior unsupported, and removes the previous
   `expected expression, found static` parser blocker.
-- [ ] WordPress runtime lane: add a timeout-bounded or instrumented
+- [x] WordPress runtime lane: add a timeout-bounded or instrumented
   bootstrap-shim probe after Milestone 738, because the normalized shim no
   longer reports a quick parse error and instead ran for more than a minute
   before manual termination. Use the narrowed probe to identify the next
   concrete runtime blocker or loop without claiming WordPress bootstrap
-  success.
+  success. Milestone 739 adds `WORDPRESS_PROBE_TIMEOUT` support and reports
+  the current local WordPress 6.9.4 bootstrap shim as `timed_out: yes` at
+  `10s`, exit `124`, zero stdout, and no stderr.
+- [ ] Runtime diagnostics lane: add a bounded execution budget or trace mode
+  for `phpc run` that reports the last source span/function/include frame
+  before timeout/step exhaustion, then use it on the post-Milestone 738
+  WordPress bootstrap shim to identify the next concrete loop or runtime
+  blocker.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 738 checkpoint, the latest committed checkpoint
-  is `89b360a parser: add bounded nested interpolation`, covering Milestone
-  737.
+- Before the current Milestone 739 checkpoint, the latest committed checkpoint
+  is `c101b88 parser: add bounded static closures`, covering Milestone 738.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -216,10 +216,12 @@ identifier-label heredoc/nowdoc syntax. Milestone 737 then advanced past the
 first nested interpolation blocker with bounded chained property/array-offset
 interpolation. Milestone 738 then advanced past the first `static function`
 closure parse blocker by treating static anonymous closures as inert closure
-values. The bootstrap-shim probe no longer reports the previous `expected
-expression, found static` error, but it ran for more than a minute without a
-new diagnostic and now needs a timeout-bounded or instrumented runtime probe to
-identify the next concrete path or loop.
+values. Milestone 739 then made the WordPress inventory probes timeout-bounded:
+with `WORDPRESS_PROBE_TIMEOUT=10s`, the direct probe still reports the
+`ABSPATH` runtime error and the bootstrap-shim probe reports `timed_out: yes`,
+exit `124`, zero stdout, and no stderr. The next step is a runtime execution
+budget or trace mode to identify the last source span/function/include frame
+before the shim times out.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -336,9 +338,9 @@ The repository already has a working Rust workspace with:
   `sprintf()`, `header()`, `implode()`, `exit()`, `extension_loaded()`, and
   `file_exists()` slices, plus bounded direct array-offset/object-property
   string interpolation, bounded heredoc/nowdoc syntax, bounded chained
-  interpolation, and bounded static-closure parsing. It still lacks a
-  timeout-bounded diagnosis of the post-static-closure bootstrap-shim runtime
-  path.
+  interpolation, bounded static-closure parsing, and timeout-bounded WordPress
+  inventory probes. It still lacks a runtime trace or execution budget for the
+  post-static-closure bootstrap-shim timeout.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

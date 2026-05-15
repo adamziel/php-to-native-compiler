@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 739, timeout-bounded WordPress inventory probes so external
+  WordPress compatibility measurements cannot hang after a blocker is removed.
+  `tools/wordpress-inventory.sh` now wraps both the direct `wp-settings.php`
+  probe and the generated bootstrap shim with GNU `timeout` when available,
+  defaults to `WORDPRESS_PROBE_TIMEOUT=30s`, and prints `timeout` plus
+  `timed_out` fields for each probe. The synthetic inventory fixture and CLI
+  test now cover the output format, and a dedicated timeout test pins exit
+  `124` reporting for long-running probes. With
+  `WORDPRESS_PROBE_TIMEOUT=10s` against the local WordPress 6.9.4 tree, the
+  direct probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe times out with exit `124`, zero stdout, and no
+  stderr. That means Milestone 738 removed the quick static-closure parser
+  blocker; the next work is runtime tracing or an execution budget to find the
+  loop/long path before claiming a concrete PHP feature blocker. Focused
+  verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=1s tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=10s tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 738, bounded `static function (...) { ... }` anonymous
   closure syntax through `phpc run` for the real WordPress 6.9.4
   bootstrap-shim blocker at `<bootstrap-shim>:856:4`. The parser now accepts

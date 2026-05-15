@@ -17,12 +17,16 @@ syntax_surface_files:
 
 direct_settings_probe:
   command: <phpc> run <wordpress-root>/wp-settings.php
+  timeout: 30s
+  timed_out: no
   exit: 1
   stdout_bytes: 0
   first_stderr_line: runtime error at <wordpress-root>/wp-settings.php:3:9: undefined constant ABSPATH
 
 bootstrap_shim_probe:
   command: <phpc> run <bootstrap-shim>
+  timeout: 30s
+  timed_out: no
   exit: 0
   stdout_bytes: 0
   first_stderr_line: <none>

@@ -327,6 +327,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   without a new diagnostic and was stopped manually; the next compatibility
   task is a timeout-bounded/instrumented shim probe to identify the new runtime
   path or loop.
+  Milestone 739 adds timeout-bounded inventory probes. With
+  `WORDPRESS_PROBE_TIMEOUT=10s`, the direct `wp-settings.php` probe still
+  reaches the `ABSPATH` runtime error, while the bootstrap-shim probe reports
+  `timed_out: yes`, exit `124`, zero stdout, and no stderr. This is not
+  WordPress bootstrap support; it only makes the post-static-closure long path
+  measurable and points the next lane at runtime tracing or an execution
+  budget.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
