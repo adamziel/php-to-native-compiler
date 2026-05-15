@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 832, bounded nested `empty(...)` paths and WordPress
+  metadata-query placeholders. `empty(...)` now supports direct nested
+  array-offset paths such as `empty($items[$outer][$inner])` and direct
+  object-property array-offset paths such as
+  `empty($object->items[$outer][$inner])` over visible properties and the
+  current integer/string array-key subset. It treats missing, null, or
+  non-array path components as empty and evaluates existing values with the
+  current truthiness rules. Arbitrary lvalues, function-call roots, append
+  offsets, ArrayAccess, magic property hooks, references/copy-on-write, exact
+  warning behavior, and native lowering remain unsupported. The bounded
+  MySQLi placeholder also accepts reached WordPress empty metadata probes
+  `SHOW FULL COLUMNS FROM ...` and `DESCRIBE ...` without executing SQL or
+  returning result resources. Broad SQL parsing, database contents, row
+  fetching, affected-row/insert-id state, errors/warnings, and native database
+  integration remain unsupported. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances to
+  `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test empty -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone832`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 831, bounded WordPress `wpdb::query()` classifier and
   option-cache query coverage. `preg_match()` now recognizes the exact
   adjacent DDL/DML classifier patterns

@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic empty results and clean connection diagnostics for the reached WordPress SHOW FULL COLUMNS and DESCRIBE metadata queries, while system PHP depends on a real host MySQL connection, schema metadata, and result resources.

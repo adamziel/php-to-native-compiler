@@ -4123,7 +4123,9 @@ impl Interpreter {
             span,
             RuntimeError::unsupported_call(
                 "mysqli_query()",
-                "only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset",
+                format!(
+                    "only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
+                ),
             ),
         ))
     }
@@ -10393,6 +10395,22 @@ impl Interpreter {
         !matches!(current, Value::Null)
     }
 
+    fn array_path_empty(value: &Value, keys: &[ArrayKey]) -> bool {
+        let mut current = value;
+
+        for key in keys {
+            let Value::Array(array) = current else {
+                return true;
+            };
+            let Some(next) = array.get(key.clone()) else {
+                return true;
+            };
+            current = next;
+        }
+
+        !current.is_truthy()
+    }
+
     fn call_empty(
         &mut self,
         args: &[Expr],
@@ -10419,7 +10437,7 @@ impl Interpreter {
                 .read_named(name)
                 .map_or(true, |value| !value.is_truthy())),
             Expr::Index { target, index, .. } => {
-                self.is_direct_array_offset_empty(target, index, caller_scope)
+                self.is_supported_array_offset_path_empty(target, index, caller_scope)
             }
             Expr::Property {
                 target,
@@ -10444,34 +10462,59 @@ impl Interpreter {
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "empty()",
-                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             )),
         }
     }
 
-    fn is_direct_array_offset_empty(
+    fn is_supported_array_offset_path_empty(
         &mut self,
         target: &Expr,
         index: &Expr,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<bool> {
-        let Expr::Variable(name, _) = target else {
+        if let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        {
+            let mut keys = Vec::with_capacity(indices.len());
+            for index in indices {
+                keys.push(self.evaluate_array_key(index, caller_scope)?);
+            }
+
+            return match caller_scope.read_named(name) {
+                Some(value) => Ok(Self::array_path_empty(&value, &keys)),
+                None => Ok(true),
+            };
+        }
+
+        let Some((object_name, property, indices)) =
+            Self::collect_direct_object_property_array_index_path(target, index)
+        else {
             return Err(runtime_error(
                 target.span(),
                     RuntimeError::unsupported_call(
                         "empty()",
-                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                        "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             ));
         };
 
-        match caller_scope.read_named(name) {
-            Some(Value::Array(array)) => {
-                let key = self.evaluate_array_key(index, caller_scope)?;
-                Ok(array.get(key).map_or(true, |value| !value.is_truthy()))
-            }
-            Some(_) | None => Ok(true),
+        let mut keys = Vec::with_capacity(indices.len());
+        for index in indices {
+            keys.push(self.evaluate_array_key(index, caller_scope)?);
+        }
+
+        let Some(Value::Object(object)) = caller_scope.read_named(object_name) else {
+            return Ok(true);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object
+            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(target.span(), error))?
+        {
+            Some(value) => Ok(Self::array_path_empty(&value, &keys)),
+            None => Ok(true),
         }
     }
 
@@ -10486,8 +10529,8 @@ impl Interpreter {
             return Err(runtime_error(
                 target.span(),
                     RuntimeError::unsupported_call(
-                        "empty()",
-                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
+                    "empty()",
+                    "only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -11526,6 +11569,10 @@ fn mysql_escape_string(value: &str) -> String {
 
 fn is_wordpress_empty_options_query(query: &str) -> bool {
     let query = query.trim();
+    if query.starts_with("SHOW FULL COLUMNS FROM ") || query.starts_with("DESCRIBE ") {
+        return true;
+    }
+
     if let Some(rest) = query.strip_prefix("SELECT option_name, option_value FROM ") {
         let Some((table, suffix)) = rest.split_once(' ') else {
             return rest.ends_with("options");

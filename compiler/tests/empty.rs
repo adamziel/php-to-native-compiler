@@ -120,13 +120,51 @@ if (empty($items[2])) {
 }
 
 #[test]
+fn empty_nested_and_object_property_array_offsets_match_reached_subset() {
+    let source = r#"<?php
+class Bag {
+    public $items = [];
+}
+
+$items = [["value"], [null], [""]];
+$bag = new Bag();
+$bag->items = [["value"], [0], [""]];
+$key = 0;
+
+echo empty($items[0][$key]) ? "nested-present-empty" : "nested-present-set";
+echo "|";
+echo empty($items[1][0]) ? "nested-null-empty" : "nested-null-set";
+echo "|";
+echo empty($items[2][0]) ? "nested-string-empty" : "nested-string-set";
+echo "|";
+echo empty($items[3][0]) ? "nested-missing-empty" : "nested-missing-set";
+echo "|";
+echo empty($bag->items[0][$key]) ? "object-present-empty" : "object-present-set";
+echo "|";
+echo empty($bag->items[1][0]) ? "object-zero-empty" : "object-zero-set";
+echo "|";
+echo empty($bag->items[2][0]) ? "object-string-empty" : "object-string-set";
+echo "|";
+echo empty($bag->items[3][0]) ? "object-missing-empty" : "object-missing-set";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "nested-present-set|nested-null-empty|nested-string-empty|nested-missing-empty|object-present-set|object-zero-empty|object-string-empty|object-missing-empty"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn complex_empty_operands_remain_explicitly_unsupported() {
-    let error = runtime_error("<?php\n$items = [[1]];\necho empty($items[0][0]);\n");
+    let error =
+        runtime_error("<?php\nfunction items() { return [[1]]; }\necho empty(items()[0]);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported"
+        "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported"
     );
 }

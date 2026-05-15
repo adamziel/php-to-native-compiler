@@ -195,6 +195,8 @@ $autoload = mysqli_query($handle, "SELECT option_name, option_value FROM wp_opti
 $fallback = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
 $primed = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name IN ('siteurl','home')");
 $single = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$columns = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_options`");
+$describe = mysqli_query($handle, "DESCRIBE wp_users;");
 echo $autoload === false ? "autoload-empty" : "autoload-result";
 echo "|";
 echo $fallback === false ? "fallback-empty" : "fallback-result";
@@ -202,6 +204,10 @@ echo "|";
 echo $primed === false ? "prime-empty" : "prime-result";
 echo "|";
 echo $single === false ? "single-empty" : "single-result";
+echo "|";
+echo $columns === false ? "columns-empty" : "columns-result";
+echo "|";
+echo $describe === false ? "describe-empty" : "describe-result";
 echo "|";
 echo mysqli_errno($handle);
 echo "|";
@@ -218,7 +224,7 @@ echo $error($handle) === "" ? "clean" : "dirty";
 
     assert_eq!(
         execution.stdout,
-        "autoload-empty|fallback-empty|prime-empty|single-empty|0||0|clean"
+        "autoload-empty|fallback-empty|prime-empty|single-empty|columns-empty|describe-empty|0||0|clean"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -354,7 +360,7 @@ mysqli_query($handle, "SELECT 1");
     assert_eq!(unsupported_query.column, 1);
     assert_eq!(
         unsupported_query.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset"
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SELECT 1"
     );
 
     let bad_errno_handle = run_source(

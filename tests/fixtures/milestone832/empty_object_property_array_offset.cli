@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+present-set|zero-empty|string-empty|missing-empty
+--- stdout end ---
+stderr:
+--- stderr end ---

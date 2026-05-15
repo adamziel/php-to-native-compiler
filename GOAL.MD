@@ -429,9 +429,12 @@ WordPress options-table `mysqli_query()` placeholders in `wpdb::_do_query()`
 plus clean `mysqli_errno()`/`mysqli_error()` bookkeeping for the placeholder
 handle. Milestone 831 covers the adjacent `wpdb::query()` DDL/DML classifier
 regexes plus the reached empty option-name cache-priming and single-option
-MySQLi reads. The current frontier is now a complex `empty(...)` operand,
-reported by the bootstrap shim as
-`runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
+MySQLi reads. Milestone 832 covers the reached direct nested array-offset and
+direct object-property array-offset `empty(...)` paths plus deterministic empty
+MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
+`DESCRIBE ...`. The current frontier is now object-receiver static property
+access, reported by the bootstrap shim as
+`parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -623,8 +626,12 @@ The repository already has a working Rust workspace with:
   clean `mysqli_errno()` and `mysqli_error()` bookkeeping cover the reached
   `wpdb::_do_query()` empty options query path without claiming real database
   execution. Bounded WordPress `preg_match()` query classifiers and empty
-  option-name MySQLi reads cover the following `wpdb::query()` path. The next
-  bottleneck is a reached complex `empty(...)` operand.
+  option-name MySQLi reads cover the following `wpdb::query()` path. Bounded
+  direct nested array-offset and object-property array-offset `empty(...)`
+  paths cover the reached `wpdb::load_col_info()` shape, and deterministic
+  empty MySQLi metadata-query placeholders cover reached `SHOW FULL COLUMNS`
+  and `DESCRIBE` probes. The next bottleneck is object-receiver static
+  property access in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

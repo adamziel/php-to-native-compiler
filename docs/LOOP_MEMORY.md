@@ -22353,3 +22353,39 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: add declared trait metadata"` if the full gate
   passes. Milestone 708 should bound the next WordPress enum declaration
   blocker.
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task: `ef46f3d runtime: add bounded wordpress query
+  classifiers`, pushed to `origin/master`.
+- Task attempted: Milestone 832, bounded nested `empty(...)` paths for direct
+  array offsets and direct object-property array offsets, plus deterministic
+  empty MySQLi placeholders for reached WordPress metadata probes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/empty.rs`, `compiler/tests/mysqli_extension.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone832/*`,
+  `tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test empty -- --nocapture`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone832`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: arbitrary `empty(...)` lvalues, function-call
+  rooted offsets, append offsets, dynamic property names, magic property
+  hooks, ArrayAccess, references/copy-on-write, exact warning behavior, broad
+  SQL parsing/execution, result resources, row fetching, database contents,
+  affected-row/insert-id state, native database integration, and native
+  lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
+- Next concrete task: run `git diff --check` and the full checkpoint gate, then
+  checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded wordpress empty paths"` if the
+  full gate passes. Milestone 833 should bound the reached object-receiver
+  static property/class-constant access diagnostic or implementation slice.

@@ -1156,6 +1156,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`,
   corresponding to a reached complex `empty(...)` operand.
+  Milestone 832 extends `empty(...)` for direct nested array-offset and direct
+  object-property array-offset paths, covering the reached
+  `$this->last_result[$y]` shape in `wpdb::load_col_info()`. It also widens
+  the deterministic empty MySQLi placeholder for reached WordPress metadata
+  probes such as `SHOW FULL COLUMNS FROM ...` and `DESCRIBE ...`. This is not
+  arbitrary lvalue support, magic property/ArrayAccess behavior,
+  references/copy-on-write, broad SQL parsing, result resources, row fetching,
+  database contents, exact warnings/errors, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

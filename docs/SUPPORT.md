@@ -444,11 +444,13 @@
   and the current integer/string key subset. Missing/null/non-array path
   components return false; dynamic property paths, ArrayAccess, references,
   copy-on-write, and native lowering remain unsupported.
-- `empty($name)`, `empty($array[$key])`,
-  `empty($object->publicProperty)`, and supported static property operands for
-  direct variables, direct array-variable offset operands, direct
-  object-variable public-property operands, and the current static property
-  slice over the current value model
+- `empty($name)`, `empty($array[$key])`, nested direct-variable array-offset
+  paths such as `empty($array[$outer][$inner])`,
+  `empty($object->publicProperty)`, direct object-property array-offset paths
+  such as `empty($object->items[$outer][$inner])`, and supported static
+  property operands for direct variables, direct array-variable offset
+  operands, direct object-variable property operands, and the current static
+  property slice over the current value model
 - null coalescing `??` for direct static variables, direct array-variable
   offset operands, direct object-variable public-property operands, private
   object-property operands owned by the active declaring class, protected
@@ -734,9 +736,10 @@
   `SELECT option_name, option_value FROM <prefix>options`, plus the reached
   empty option-cache reads using `WHERE option_name IN (...)` and
   `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
-  returning deterministic empty boundaries without executing SQL. For the same
-  placeholder handle, `mysqli_errno($handle)` returns `0` and
-  `mysqli_error($handle)` returns an empty string.
+  plus reached empty WordPress metadata probes `SHOW FULL COLUMNS FROM ...`
+  and `DESCRIBE ...`, returning deterministic empty boundaries without
+  executing SQL. For the same placeholder handle, `mysqli_errno($handle)`
+  returns `0` and `mysqli_error($handle)` returns an empty string.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
@@ -3346,20 +3349,23 @@
   object dimensions, dynamic property names, non-public property operands
   outside the current private/protected visibility context, complex lvalues,
   and general expression operands remain unsupported. `empty`
-  supports one direct variable operand, one direct array offset operand such
-  as `empty($array[$key])`, one direct public object-property operand such as
-  `empty($object->name)`, or one supported static property operand such as
-  `empty(ClassName::$prop)`. In active method context, direct private operands
-  owned by the active declaring class and protected operands owned by the
-  active class or an ancestor are also supported; undefined variables, missing
-  array keys, undefined array targets, non-array array targets, missing object
-  properties, missing supported static properties,
+  supports one direct variable operand, direct nested array offset operands
+  such as `empty($array[$outer][$inner])`, one direct public object-property
+  operand such as `empty($object->name)`, direct object-property array offset
+  operands such as `empty($object->items[$outer][$inner])`, or one supported
+  static property operand such as `empty(ClassName::$prop)`. In active method
+  context, direct private operands owned by the active declaring class and
+  protected operands owned by the active class or an ancestor are also
+  supported; undefined variables, missing array keys, missing/null/non-array
+  intermediate array path entries, undefined array targets, non-array array
+  targets, missing object properties, missing supported static properties,
   undefined object targets, and non-object property targets are treated as
-  empty, and existing values use the current PHP truthiness rules. Nested array
-  offsets, dynamic property names, non-public property visibility context
-  outside the current private/protected method context, append offset operands, complex lvalues,
-  general expression operands, magic methods, and unsupported array-key
-  coercions remain unsupported.
+  empty, and existing values use the current PHP truthiness rules. Nested
+  offsets rooted in function calls or other non-direct expressions, dynamic
+  property names, non-public property visibility context outside the current
+  private/protected method context, append offset operands, complex lvalues,
+  general expression operands, ArrayAccess, magic methods, and unsupported
+  array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `current`, `next`, `array_pop`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
@@ -4539,10 +4545,12 @@
   diagnostics for invalid arguments, and native lowering beyond direct
   string-name folding for already-lowerable string names
 - PHP standard library beyond documented builtins
-- `empty(...)` operands outside direct variables, direct array offsets, and
-  direct public object-property operands, including nested offsets, dynamic
-  property names, non-public property visibility context, append offsets,
-  complex lvalues, magic methods, and general expressions
+- `empty(...)` operands outside direct variables, direct nested array offsets,
+  direct object-property operands, direct object-property array offsets, and
+  supported static property operands, including function-call rooted offsets,
+  dynamic property names, non-public property visibility context outside the
+  current method-context slice, append offsets, complex lvalues, ArrayAccess,
+  magic methods, and general expressions
 - Zend extension loading
 - WordPress compatibility
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail

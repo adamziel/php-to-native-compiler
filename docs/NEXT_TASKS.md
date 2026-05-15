@@ -7628,17 +7628,29 @@ handled.
   option-name cache-priming and single-option reads. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:3045:17: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
-- [ ] Runtime/expression lane: extend `empty(...)` for the reached complex
+- [x] Runtime/expression lane: extend `empty(...)` for the reached complex
   WordPress operand at `<bootstrap-shim>:3045:17` without broadening arbitrary
   lvalue support beyond tested parser/runtime shapes. Keep magic property
   hooks, ArrayAccess, references/copy-on-write, warning fidelity, and native
   lowering named unless implemented.
+  Milestone 832 covers direct nested array-offset paths and direct
+  object-property array-offset paths, and also widens the deterministic empty
+  MySQLi placeholder for reached `SHOW FULL COLUMNS FROM ...` and
+  `DESCRIBE ...` metadata probes. The real bootstrap-shim probe now advances
+  to
+  `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
+- [ ] Parser/object lane: implement the next bounded object-receiver static
+  property/class-constant parsing and runtime diagnostic slice for the reached
+  WordPress bootstrap-shim blocker at `<bootstrap-shim>:283:14`. Keep broader
+  `static::` forms, dynamic receiver semantics, magic hooks,
+  references/copy-on-write, exact diagnostics, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 831 checkpoint, the latest committed checkpoint
-  is `4ea19c3 runtime: add bounded wordpress mysqli options queries`, covering
-  Milestone 830.
+- Before the current Milestone 832 checkpoint, the latest committed checkpoint
+  is `ef46f3d runtime: add bounded wordpress query classifiers`, covering
+  Milestone 831.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

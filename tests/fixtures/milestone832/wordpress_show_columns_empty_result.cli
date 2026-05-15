@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+columns-empty|describe-empty|0|clean
+--- stdout end ---
+stderr:
+--- stderr end ---

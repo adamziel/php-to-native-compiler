@@ -953,7 +953,7 @@ echo empty(make_box()->name);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported"
+        "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported"
     );
 }
 
