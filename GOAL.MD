@@ -168,7 +168,8 @@ placeholder charset boundary wired through a WordPress-shaped setup method,
 an explicit mutation-SQL unsupported boundary before any placeholder state
 mutation is claimed, and a synthetic `wpdb::query()` bookkeeping smoke that
 reaches that mutation boundary through a WordPress-shaped `UPDATE wp_options`
-path. These are
+path, plus a deterministic `mysqli_ping()` placeholder liveness boundary for
+future WordPress-shaped connection checks. These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
 or native WordPress compatibility.

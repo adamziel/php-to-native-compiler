@@ -900,6 +900,46 @@ mysqli_insert_id("not-a-handle");
 }
 
 #[test]
+fn mysqli_ping_accepts_current_placeholder_handle() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_ping";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_ping($handle) ? "alive" : "down";
+echo "|";
+echo $call($handle) ? "dynamic" : "down";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|alive|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_ping_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_ping("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_ping(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -940,6 +980,8 @@ echo function_exists("mysqli_affected_rows") ? "1" : "0";
 echo is_callable("mysqli_affected_rows") ? "1" : "0";
 echo function_exists("mysqli_insert_id") ? "1" : "0";
 echo is_callable("mysqli_insert_id") ? "1" : "0";
+echo function_exists("mysqli_ping") ? "1" : "0";
+echo is_callable("mysqli_ping") ? "1" : "0";
 echo function_exists("mysqli_select_db") ? "1" : "0";
 echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_real_escape_string") ? "1" : "0";
@@ -978,7 +1020,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 52, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 54, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1058,6 +1100,18 @@ mysqli_errno(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_error(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_ping(mysqli_init());
 "#,
     )
     .unwrap_err();

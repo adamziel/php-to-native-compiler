@@ -8062,17 +8062,26 @@ handled.
   update/insert/delete behavior, SQL execution, affected-row or insert-id
   mutation, transactions, database state, warnings/errors, host database
   integration, partial-output fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next database boundary after explicit
+- [x] Runtime/mysqli lane: inspect the next database boundary after explicit
   mutation-query rejection and choose a small tested slice, such as
   deterministic connection-state metadata (`mysqli_ping()`,
   `mysqli_get_host_info()`, or `mysqli_stat()`) or a sharper named boundary
   for transactions before broader SQL execution.
+  Milestone 875 implements bounded `mysqli_ping($handle)` for placeholder
+  `mysqli` objects. It returns deterministic `true`, rejects non-`mysqli`
+  handles with stable diagnostics, and is visible through runtime and native
+  metadata lookup. This is not a real liveness check, reconnect behavior,
+  socket I/O, host database integration, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+  deterministic `mysqli_ping()` placeholder through a WordPress-shaped
+  connection-check method without claiming real reconnection or database
+  liveness behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e47ac2c runtime: add mysqli mutation query boundary`, covering Milestone
-  873 before the current Milestone 874 candidate.
+  `b4b574b tests: add wordpress wpdb mutation boundary smoke`, covering
+  Milestone 874 before the current Milestone 875 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

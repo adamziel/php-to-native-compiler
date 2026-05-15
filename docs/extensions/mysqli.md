@@ -4,7 +4,7 @@ Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
-`mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+`mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
@@ -94,6 +94,10 @@ placeholder object and return deterministic `0` for the clean placeholder
 connection state. They do not track real mutation queries, insert IDs, errors,
 warnings, or transaction state.
 
+`mysqli_ping($handle)` accepts the placeholder object and returns deterministic
+`true`. It does not check a real socket, reconnect, update connection state,
+emit warnings/errors, or prove host database liveness.
+
 Mutation SQL passed to `mysqli_query()`, currently recognized by leading
 `INSERT`, `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported
 diagnostic. It does not change placeholder table state, affected-row metadata,
@@ -112,6 +116,8 @@ queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
 fetch modes beyond the documented placeholder row shapes, no real row-count
 state beyond placeholder result counts, no real affected-row or insert-id state
-beyond deterministic zero clean state, no real charset/collation negotiation,
-no errors/warnings, no transactions, no configuration beyond the current
-report-mode flag, no PDO bridge, and no native database lowering.
+beyond deterministic zero clean state, no real connection liveness checks or
+reconnect behavior beyond deterministic ping success, no real
+charset/collation negotiation, no errors/warnings, no transactions, no
+configuration beyond the current report-mode flag, no PDO bridge, and no
+native database lowering.

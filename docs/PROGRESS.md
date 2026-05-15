@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 875, bounded `mysqli_ping()` support for placeholder MySQLi
+  handles. The runtime now accepts `mysqli_ping($handle)` for current
+  placeholder `mysqli` objects, returns deterministic `true`, rejects
+  non-`mysqli` handles with a stable diagnostic, and exposes the name through
+  runtime and native metadata lookup. This is not a real connection liveness
+  check, reconnect behavior, socket I/O, host database integration,
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_ping -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1`,
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone875`.
+
 - Added Milestone 874, a synthetic WordPress-shaped `wpdb::query()` smoke that
   reaches the explicit `mysqli_query()` mutation-SQL boundary through local
   WordPress-style query bookkeeping. The fixture records the attempted

@@ -4353,6 +4353,12 @@ impl Interpreter {
         Ok(Value::Int(0))
     }
 
+    fn call_mysqli_ping(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_ping", args, 1, span)?;
+        expect_mysqli_handle("mysqli_ping()", &args[0], span)?;
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_select_db(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_select_db", args, 2, span)?;
         let Value::Object(handle) = &args[0] else {
@@ -9006,6 +9012,7 @@ impl Interpreter {
             "mysqli_error" => self.call_mysqli_error(&args, span),
             "mysqli_affected_rows" => self.call_mysqli_affected_rows(&args, span),
             "mysqli_insert_id" => self.call_mysqli_insert_id(&args, span),
+            "mysqli_ping" => self.call_mysqli_ping(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
@@ -11937,6 +11944,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_error"
             | "mysqli_affected_rows"
             | "mysqli_insert_id"
+            | "mysqli_ping"
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"

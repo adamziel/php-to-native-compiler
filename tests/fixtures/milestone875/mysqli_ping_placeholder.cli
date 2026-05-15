@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone875/mysqli_ping_placeholder.php
+yes|callable
+alive
+dynamic

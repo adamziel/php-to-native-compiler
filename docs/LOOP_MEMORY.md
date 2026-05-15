@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `b4b574b tests: add wordpress wpdb mutation boundary smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 875, bounded `mysqli_ping()` support for current
+  placeholder `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone875/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_ping -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone875`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi handles now have a named
+  deterministic liveness boundary for future WordPress-shaped connection-check
+  paths.
+- Remaining semantic gaps: real connection liveness checks, reconnect
+  behavior, socket I/O, host database integration, warning/error fidelity,
+  real WordPress `wpdb` fidelity, and native database lowering remain missing.
+- Next concrete task: run focused full MySQLi extension tests, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `e47ac2c runtime: add mysqli mutation query boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 874, a synthetic WordPress-shaped

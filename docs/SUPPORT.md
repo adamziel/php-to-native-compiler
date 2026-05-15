@@ -514,7 +514,7 @@
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_set_charset`,
   `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
-  `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
@@ -871,6 +871,9 @@
   `mysqli_error($handle)` returns an empty string.
   `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return
   deterministic `0` for the clean placeholder connection state.
+  `mysqli_ping($handle)` accepts the placeholder handle and returns
+  deterministic `true` as a liveness-check boundary without probing a real
+  connection or reconnecting.
   Mutation SQL passed to `mysqli_query()`, currently recognized by leading
   `INSERT`, `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported
   diagnostic instead of changing connection or table state.
@@ -2350,7 +2353,7 @@
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
-  `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
@@ -2886,7 +2889,8 @@
   synthetic empty-result boundaries;
   `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
   diagnostics; `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
-  only deterministic zero clean-state metadata; `mysqli_select_db(...)`
+  only deterministic zero clean-state metadata; `mysqli_ping(...)` returns only
+  deterministic placeholder liveness success; `mysqli_select_db(...)`
   returns only deterministic success for the placeholder handle;
   `mysqli_real_escape_string(...)` returns
   only deterministic escaping over the placeholder handle and current
@@ -2895,7 +2899,7 @@
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
   `mysqli_get_server_info(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/
-  `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/
+  `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
   `mysqli_fetch_row(...)`/`mysqli_fetch_array(...)`/
@@ -4543,7 +4547,7 @@
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_query()`/`mysqli_set_charset()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
-  `mysqli_affected_rows()`/`mysqli_insert_id()`/
+  `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
   `mysqli_num_rows()`/`mysqli_data_seek()`/`mysqli_free_result()`/
@@ -4551,11 +4555,12 @@
   `mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
   fake server-info/SQL-mode-query/charset-setup/database-selection/escaping/
-  empty-result lifecycle boundary:
+  liveness-check/empty-result lifecycle boundary:
   mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, queries, result sets,
   prepared statements, connection charset state, binary or invalid-string
-  behavior, exact escaping edge cases, errors/warnings, transactions,
+  behavior, exact escaping edge cases, liveness or reconnect behavior,
+  errors/warnings, transactions,
   configuration beyond the current report-mode flag, PDO behavior, exact PHP
   diagnostics, and native database calls
 - `version_compare()` outside the current numeric-component subset: PHP's full

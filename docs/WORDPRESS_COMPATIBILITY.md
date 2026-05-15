@@ -1333,7 +1333,10 @@ historical blockers and remaining full-support gaps include:
   that boundary through a WordPress-shaped `UPDATE wp_options ...` path. This
   does not add real update/insert/delete execution, affected-row or insert-id
   mutation, transactions, database state, partial-output fidelity, or native
-  lowering.
+  lowering. Milestone 875 adds deterministic placeholder `mysqli_ping()`
+  success for current `mysqli` objects as a future connection-check boundary;
+  it does not perform a real connection liveness check, reconnect, socket I/O,
+  or host database integration.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
