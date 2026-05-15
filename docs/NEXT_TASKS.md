@@ -7155,18 +7155,28 @@ handled.
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:95:2: undefined function register_shutdown_function()`,
   corresponding to `wp-includes/error-protection.php:95`.
-- [ ] Runtime/SAPI lane: implement a bounded `register_shutdown_function()`
+- [x] Runtime/SAPI lane: implement a bounded `register_shutdown_function()`
   slice for the reached WordPress fatal-error-handler registration path,
   starting with accepting/registering callable metadata without executing
   shutdown callbacks unless a tested shutdown phase exists. Keep callback
   invocation ordering, argument passing, by-reference callbacks, output
   buffering, destructor/finally interaction, fatal-error context,
   exact diagnostics, and native lowering named unless implemented.
+  Milestone 781 implements current callable validation and PHP-compatible
+  `null` return without executing callbacks, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:73:1: undefined function date_default_timezone_set()`.
+- [ ] Date/time runtime lane: implement a bounded
+  `date_default_timezone_set()` slice for the reached WordPress bootstrap
+  timezone initialization path. Keep timezone identifier validation breadth,
+  global timezone state interactions, `date_default_timezone_get()`, ini/date
+  extension behavior, warning behavior, exact diagnostics, and native lowering
+  named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 780 checkpoint, the latest committed checkpoint
-  is `89b57ac runtime: add nested isset`, covering Milestone 779.
+- Before the current Milestone 781 checkpoint, the latest committed checkpoint
+  is `62ff7c5 runtime: add bounded is_readable`, covering Milestone 780.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

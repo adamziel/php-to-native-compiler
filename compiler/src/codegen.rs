@@ -6276,6 +6276,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_connect"
             | "file_exists"
             | "is_readable"
+            | "register_shutdown_function"
             | "header"
             | "header_remove"
             | "headers_sent"

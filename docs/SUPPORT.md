@@ -419,7 +419,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
-  `is_readable`,
+  `is_readable`, `register_shutdown_function`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -582,6 +582,13 @@
   returns `true`. It currently records no autoload stack and never invokes the
   callback; this is a WordPress bootstrap compatibility boundary, not full SPL
   autoloading.
+  `register_shutdown_function($callback, ...$args)` accepts a currently valid
+  string callable, object/static array callable, or closure plus optional
+  already-evaluated extra arguments and returns `null`. The current slice
+  validates registration only; it does not store or execute callbacks at a
+  shutdown phase. Callback ordering, argument delivery, by-reference callback
+  behavior, output buffering, destructor/finally interaction, fatal-error
+  context, exact diagnostics, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, returns `null`, and records no header state. This is a WordPress
@@ -1928,7 +1935,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `str_contains`, `min`, `dirname`, `file_exists`,
-  `is_readable`, `mysqli_connect`,
+  `is_readable`, `register_shutdown_function`, `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2348,7 +2355,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `is_readable`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `is_readable`, `register_shutdown_function`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,

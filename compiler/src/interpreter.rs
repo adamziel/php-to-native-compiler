@@ -7169,6 +7169,52 @@ impl Interpreter {
                     )),
                 }
             }
+            "register_shutdown_function" => {
+                if args.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "register_shutdown_function()",
+                            ArityExpectation::AtLeast(1),
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                match &args[0] {
+                    Value::String(name) if self.lookup_function(name).is_some() => {
+                        Ok(Value::Null)
+                    }
+                    Value::String(_) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "register_shutdown_function()",
+                            "callback must be a valid callable in the current subset",
+                        ),
+                    )),
+                    Value::Array(array) if is_array_callable_resolved(&self.classes, array) => {
+                        Ok(Value::Null)
+                    }
+                    Value::Array(_) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "register_shutdown_function()",
+                            "callback must be a valid callable in the current subset",
+                        ),
+                    )),
+                    Value::Closure(_) => Ok(Value::Null),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "register_shutdown_function()",
+                            format!(
+                                "callback argument must be string, array callable, or closure in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "header" => call_header(&args, span),
             "header_remove" => call_header_remove(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
@@ -9453,6 +9499,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect"
             | "file_exists"
             | "is_readable"
+            | "register_shutdown_function"
             | "header"
             | "header_remove"
             | "headers_sent"

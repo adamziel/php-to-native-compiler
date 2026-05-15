@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 781, bounded `register_shutdown_function()` registration for
+  the current WordPress fatal-error-handler path. The runtime now accepts one
+  valid current callable plus optional already-evaluated extra arguments,
+  validates string callables, object/static array callables through the current
+  callable metadata slice, and closures, returns PHP-compatible `null`, exposes
+  the builtin through function/callability metadata and dynamic string-valued
+  calls, and keeps direct native calls behind the generic function-call lowering
+  boundary. It deliberately does not execute callbacks at shutdown yet.
+  Callback invocation ordering, argument delivery, by-reference callback
+  behavior, shutdown phase state, output buffering, destructor/finally
+  interaction, fatal-error context, exact diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past `register_shutdown_function( array( $handler, 'handle' ) )`
+  in `wp-includes/error-protection.php:95` to
+  `runtime error at <bootstrap-shim>:73:1: undefined function date_default_timezone_set()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test shutdown_function_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone781`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 780, bounded `is_readable()` for the current WordPress
   fatal-error-handler override check. The runtime now accepts one string local
   path, rejects stream-wrapper paths, checks missing paths as `false`, checks

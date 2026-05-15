@@ -78,7 +78,8 @@ has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
 `is_readable()` filesystem builtin in the fatal-error-handler override check
-and now stops at missing `register_shutdown_function()` shutdown registration.
+and the fatal-error-handler `register_shutdown_function()` registration; it now
+stops at missing `date_default_timezone_set()` timezone initialization.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -304,9 +305,10 @@ bootstrap-shim frontier is now an undefined `trim()` call in
 Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
 777 added bounded `str_contains()`. Milestone 778 added bounded integer
 `min()`. Milestone 779 added bounded nested direct-variable array-offset
-`isset(...)`. Milestone 780 added bounded local-path `is_readable()`, and the
-current frontier is now `register_shutdown_function()` in the WordPress
-fatal-error-handler registration path.
+`isset(...)`. Milestone 780 added bounded local-path `is_readable()`.
+Milestone 781 added bounded `register_shutdown_function()` registration, and
+the current frontier is now `date_default_timezone_set()` in WordPress
+bootstrap startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -449,7 +451,7 @@ The repository already has a working Rust workspace with:
   `trim()`, bounded leading-numeric `(int)` string casts, bounded
   `str_contains()`, bounded integer `min()`, bounded nested direct-variable
   array-offset `isset(...)`, and bounded local-path `is_readable()`. The next
-  bottleneck is `register_shutdown_function()` in the WordPress bootstrap shim.
+  bottleneck is `date_default_timezone_set()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

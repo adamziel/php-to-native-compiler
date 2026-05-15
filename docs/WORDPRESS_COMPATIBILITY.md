@@ -738,6 +738,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   filesystem support, stream wrappers, include-path lookup, portable permission
   modeling, stat-cache behavior, exact diagnostics, native lowering, shutdown
   function semantics, or WordPress bootstrap support.
+  Milestone 781 implements bounded `register_shutdown_function()` registration
+  for the reached fatal-error-handler callable. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:73:1: undefined function date_default_timezone_set()`.
+  This is not shutdown callback execution, callback ordering, argument
+  delivery, fatal-error context, output-buffer/destructor/finally interaction,
+  exact diagnostics, native lowering, date/timezone support, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
