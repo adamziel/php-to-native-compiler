@@ -152,3 +152,7 @@ else
   display_shim="$tmp_shim"
 fi
 run_probe "bootstrap_shim_probe" "$tmp_shim" "$display_shim"
+if [ -f "$wp_root/wp-blog-header.php" ]; then
+  printf '\n'
+  run_probe "front_controller_probe" "$wp_root/wp-blog-header.php" "$display_root/wp-blog-header.php"
+fi

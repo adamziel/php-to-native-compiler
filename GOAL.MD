@@ -994,14 +994,15 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 845 is the active checkpoint candidate: bounded `str_replace()`
-  search-array support advanced the real WordPress bootstrap shim to an exit-0
-  bootstrap-shaped load.
-- The next immediate WordPress-directed lane is to expand the compatibility
-  harness beyond the bootstrap shim into a reproducible WordPress entry flow
-  with documented config and host assumptions, without claiming plugin, theme,
-  admin, REST, database, HTTP, or native WordPress support until those flows
-  have executable coverage.
+- Milestone 846 is the active checkpoint candidate: the WordPress inventory now
+  includes a front-controller probe for `wp-blog-header.php` in addition to the
+  direct settings probe and bootstrap shim.
+- The next immediate WordPress-directed lane is the front-controller runtime
+  blocker at `wp-includes/class-wpdb.php:1511`: a `wpdb::prepare()`
+  placeholder-normalization `preg_replace()` pattern. This should be handled
+  only as a bounded regex replacement slice, without claiming broad PCRE,
+  SQL/database, plugin/theme, admin, REST, HTTP, SAPI, or native WordPress
+  support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

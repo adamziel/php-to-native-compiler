@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 846, a `front_controller_probe` to the WordPress inventory
+  script. In addition to the direct `wp-settings.php` probe and the
+  deterministic bootstrap shim, the inventory now runs `wp-blog-header.php`
+  when present so progress beyond the successful bootstrap-shaped load is
+  measured as a separate entry flow. The synthetic inventory fixture now
+  covers the new probe, and timeout reporting covers all three probes. Against
+  real WordPress 6.9.4, the bootstrap shim still exits `0` with no stdout,
+  while the new front-controller probe reaches
+  `runtime error at <wordpress-root>/wp-blog-header.php:1511:12: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i, mail host cleanup pattern #^www\.#, and KSES null cleanup patterns /[\x00-\x08\x0B\x0C\x0E-\x1F]/ and /\\+0+/ are implemented in the current subset`.
+  Include tracing shows the last included file before that runtime error is
+  `<wordpress-root>/wp-includes/class-wpdb.php`, and the source line is
+  `wp-includes/class-wpdb.php:1511`, the `wpdb::prepare()` placeholder
+  normalization pattern
+  `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` with replacement `'%%\\1'`.
+  This is not front-end, admin, REST, plugin/theme, database, HTTP, SAPI, or
+  native WordPress support. Focused verification so far:
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1 --nocapture`
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 845, bounded `str_replace()` search-array support for the
   same reached WordPress `_deep_replace()` path. The interpreter now accepts a
   search array whose values are scalar/null string-convertible values,

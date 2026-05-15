@@ -1,10 +1,10 @@
 WordPress inventory
 root: <wordpress-root>
 version: 6.9.4
-php_files: 3
+php_files: 6
 
 syntax_surface_files:
-  include_require: 1
+  include_require: 4
   namespaces: 1
   imports: 1
   interfaces: 1
@@ -30,5 +30,14 @@ bootstrap_shim_probe:
   timed_out: no
   exit: 0
   stdout_bytes: 3
+  first_stderr_line: <none>
+  last_stderr_line: <none>
+
+front_controller_probe:
+  command: <phpc> run <wordpress-root>/wp-blog-header.php
+  timeout: 30s
+  timed_out: no
+  exit: 0
+  stdout_bytes: 8
   first_stderr_line: <none>
   last_stderr_line: <none>

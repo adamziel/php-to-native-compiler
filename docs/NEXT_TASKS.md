@@ -7762,18 +7762,29 @@ handled.
   Milestone 845 covers the reached scalar/null string-convertible search-array
   values with scalar replacement/subject and direct-variable count output. The
   real bootstrap-shim probe now exits `0` with no stdout.
-- [ ] WordPress harness lane: expand the compatibility target beyond the
+- [x] WordPress harness lane: expand the compatibility target beyond the
   current bootstrap shim. Add a committed, reproducible next probe for a real
   WordPress entry flow, such as a `wp-load.php`/front-controller shaped harness
   with documented minimal config and host assumptions, without claiming plugin,
   theme, admin, REST, database, HTTP, or native WordPress support until those
   flows have executable coverage.
+  Milestone 846 adds `front_controller_probe` for `wp-blog-header.php` when
+  present. Against real WordPress 6.9.4 it reaches
+  `wp-includes/class-wpdb.php:1511`, the `wpdb::prepare()` placeholder
+  normalization `preg_replace()` pattern
+  `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` with replacement `'%%\\1'`.
+- [ ] Runtime/regex lane: inspect and implement the reached front-controller
+  `preg_replace()` pattern in `wp-includes/class-wpdb.php:1511` only if it can
+  be represented as a bounded honest subset. Keep dynamic PCRE variables,
+  captures/backrefs beyond the reached replacement, arrays, callbacks,
+  limit/count output, exact warnings, invalid patterns, SQL/database semantics,
+  and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 845 checkpoint, the latest committed checkpoint
-  is `a04f814 runtime: add wordpress str replace count`, covering
-  Milestone 844.
+- Before the current Milestone 846 checkpoint, the latest committed checkpoint
+  is `b281211 runtime: add wordpress str replace arrays`, covering
+  Milestone 845.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

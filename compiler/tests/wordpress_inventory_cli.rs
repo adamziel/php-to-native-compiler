@@ -25,6 +25,21 @@ fn wordpress_inventory_normalized_synthetic_snapshot_matches_fixture() {
     )
     .expect("write synthetic wp-settings.php");
     fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\necho 'front';\n",
+    )
+    .expect("write synthetic wp-blog-header.php");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write synthetic wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write synthetic wp-config.php");
+    fs::write(
         wp_includes.join("version.php"),
         "<?php\n$wp_version = '6.9.4';\n",
     )
@@ -78,6 +93,11 @@ fn wordpress_inventory_reports_probe_timeouts() {
     fs::write(wp_root.join("wp-settings.php"), "<?php\nwhile (true) {}\n")
         .expect("write looping synthetic wp-settings.php");
     fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-settings.php';\n",
+    )
+    .expect("write looping synthetic wp-blog-header.php");
+    fs::write(
         wp_includes.join("version.php"),
         "<?php\n$wp_version = '6.9.4';\n",
     )
@@ -106,7 +126,8 @@ fn wordpress_inventory_reports_probe_timeouts() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("direct_settings_probe:\n"));
     assert!(stdout.contains("bootstrap_shim_probe:\n"));
-    assert_eq!(stdout.matches("  timeout: 1s\n").count(), 2);
-    assert_eq!(stdout.matches("  timed_out: yes\n").count(), 2);
-    assert_eq!(stdout.matches("  exit: 124\n").count(), 2);
+    assert!(stdout.contains("front_controller_probe:\n"));
+    assert_eq!(stdout.matches("  timeout: 1s\n").count(), 3);
+    assert_eq!(stdout.matches("  timed_out: yes\n").count(), 3);
+    assert_eq!(stdout.matches("  exit: 124\n").count(), 3);
 }

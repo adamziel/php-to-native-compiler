@@ -42,8 +42,11 @@ PHP-visible output.
 Do not commit WordPress core source into this repository until a separate size,
 license, update, and checksum policy is accepted. The committed synthetic
 inventory fixture proves the output format, keeps the direct `wp-settings.php`
-probe visible, and adds a bootstrap-shim probe for the next compiler/runtime
-blocker after `ABSPATH` and the conventional `$table_prefix = 'wp_';` startup
-state are defined. External WordPress source runs remain an operator-supplied
-compatibility measurement. The shim does not load a real `wp-config.php`,
-database credentials, salts, multisite constants, or host-specific settings.
+probe visible, includes a bootstrap-shim probe for the deterministic
+`ABSPATH`/`$table_prefix` startup state, and includes a front-controller probe
+for `wp-blog-header.php` when present. External WordPress source runs remain an
+operator-supplied compatibility measurement. The shim does not load a real
+`wp-config.php`, database credentials, salts, multisite constants, or
+host-specific settings; the front-controller probe is the first broader entry
+flow and must not be treated as plugin, theme, admin, REST, database, HTTP, or
+native WordPress support by itself.

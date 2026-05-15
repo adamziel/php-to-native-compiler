@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `b281211 runtime: add wordpress str replace arrays`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 846, WordPress inventory front-controller probe for
+  `wp-blog-header.php`.
+- Files changed so far: `tools/wordpress-inventory.sh`,
+  `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`, `docs/PROGRESS.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1 --nocapture`
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim exits `0`; the new front-controller probe reaches
+  `wp-includes/class-wpdb.php:1511`, an unsupported `preg_replace()` pattern
+  in `wpdb::prepare()` placeholder normalization.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "tools: add wordpress front controller probe"`.
+  The next runtime milestone should inspect the reached `preg_replace()` shape
+  without claiming broad PCRE or database semantics.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `a04f814 runtime: add wordpress str replace count`, pushed to
   `origin/master`.
 - Task attempted: Milestone 845, bounded `str_replace()` search-array support

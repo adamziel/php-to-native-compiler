@@ -66,8 +66,12 @@ tool. It reports:
 - rough syntax-surface counts for include/require, namespaces, imports,
   interfaces, traits, enums, inheritance, exceptions, closures, and arrow
   functions;
-- a `phpc run wp-settings.php` bootstrap probe, including exit status and the
-  first stderr line.
+- a `phpc run wp-settings.php` direct settings probe, including exit status and
+  first/last stderr lines;
+- a generated bootstrap-shim probe that defines `ABSPATH` and a conventional
+  `$table_prefix` before requiring `wp-settings.php`;
+- a `wp-blog-header.php` front-controller probe when that file exists, so
+  post-bootstrap entry-flow blockers are tracked separately from the shim.
 
 The syntax counts are intentionally coarse inventory data, not parser support
 claims.
@@ -1252,6 +1256,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   bootstrap-shim probe now exits `0` with no stdout; with include tracing
   enabled, stderr contains include trace lines ending at
   `<wordpress-root>/wp-includes/pluggable.php`.
+  Milestone 846 adds a separate front-controller probe for
+  `wp-blog-header.php`. Against real WordPress 6.9.4 this reaches
+  `wp-includes/class-wpdb.php:1511`, the `wpdb::prepare()` placeholder
+  normalization `preg_replace()` pattern
+  `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` with replacement `'%%\\1'`, and
+  reports that broader PCRE replacement shape as the current front-controller
+  runtime blocker.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
