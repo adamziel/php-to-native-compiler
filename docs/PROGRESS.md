@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 757, direct-object-property nested array assignment and
+  append-at-depth assignment for the current no-reference value model. The
+  parser now accepts targets such as
+  `$object->items[$outer][$inner] = expr`, `$object->items[$outer][] = expr`,
+  and `$object->items[] = expr` for direct object variables and named
+  properties. The interpreter evaluates property path keys left to right before
+  the right-hand expression, materializes `null` property values and
+  missing/`null` intermediate containers as arrays, then writes the resulting
+  array back through the existing visibility-aware property API. Non-array
+  roots or intermediates report the stable invalid-array-access runtime
+  diagnostic. Dynamic property roots, mixed object/property/ArrayAccess paths,
+  object-property compound assignment, object-property `??=`, references,
+  copy-on-write, exact PHP diagnostics, and native lowering remain unsupported.
+  The real WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:131:70` and `<bootstrap-shim>:141:56` object-property
+  nested assignment/append blockers in
+  `wp-includes/l10n/class-wp-translation-controller.php` to
+  `parse error at <bootstrap-shim>:165:19: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_property_nested_array_assignments -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone757`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 756, bounded magic class-name instantiation for `new self`,
   `new parent`, and `new static`. The parser now accepts those forms with or
   without an empty argument list, and the interpreter resolves `self` from the

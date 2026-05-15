@@ -1,0 +1,1 @@
+phpc reports the current stable invalid-array-access diagnostic; system PHP throws a TypeError with stack text.

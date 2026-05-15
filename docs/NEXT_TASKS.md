@@ -6916,13 +6916,24 @@ handled.
   resolving `new self`, `new parent`, and `new static` in active class/method
   contexts and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
-- [ ] Parser/value-model lane: identify and implement or explicitly bound the
+- [x] Parser/value-model lane: identify and implement or explicitly bound the
   next assignment-expression target shape at `<bootstrap-shim>:131:70`.
+  Milestone 757 implements direct-object-property nested array assignment and
+  append-at-depth assignment for targets such as
+  `$this->loaded_files[$translation_file][$locale][$textdomain] = $moe` and
+  `$this->loaded_translations[$locale][$textdomain][] = $moe`, advancing the
+  real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:165:19: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+- [ ] Parser/value-model lane: implement or explicitly bound nested
+  object-property array-offset `unset(...)` for the next real WordPress
+  bootstrap-shim blocker at `<bootstrap-shim>:165:19`, corresponding to
+  `unset( $this->loaded_translations[ $locale ][ $textdomain ][ $i ] );` in
+  `wp-includes/l10n/class-wp-translation-controller.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 756 checkpoint, the latest committed checkpoint
-  is `4af1587 parser: add class modifiers`, covering Milestone 755.
+- Before the current Milestone 757 checkpoint, the latest committed checkpoint
+  is `c106c12 parser: add magic new class names`, covering Milestone 756.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

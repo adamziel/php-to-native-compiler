@@ -2310,13 +2310,48 @@ impl Interpreter {
                     )),
                 }
             }
-            AssignTarget::ObjectPropertyArrayIndex { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "assignment",
-                    "object-property array-offset targets are not implemented",
-                ),
-            )),
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_object_property_nested_array_assignment(
+                    object,
+                    property,
+                    &keys,
+                    value.clone(),
+                    *span,
+                    scope,
+                )?;
+                Ok(value)
+            }
+            AssignTarget::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_object_property_nested_array_append(
+                    object,
+                    property,
+                    &keys,
+                    value.clone(),
+                    *span,
+                    scope,
+                )?;
+                Ok(value)
+            }
             AssignTarget::DynamicProperty {
                 object,
                 property,
@@ -2381,6 +2416,112 @@ impl Interpreter {
                 Self::write_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
                 Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_object_property_nested_array_assignment(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let mut slot = object
+            .read_property_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                Self::write_nested_array_value(array, keys, value, span)?;
+                object
+                    .write_property_from_context(
+                        property,
+                        slot,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_object_property_nested_array_append(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let mut slot = object
+            .read_property_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                Self::append_nested_array_value(array, keys, value, span)?;
+                object
+                    .write_property_from_context(
+                        property,
+                        slot,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
             }
             other => Err(runtime_error(
                 span,
@@ -2614,7 +2755,8 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "compound assignment",
@@ -2850,7 +2992,8 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "increment/decrement",
@@ -3035,7 +3178,8 @@ impl Interpreter {
             )),
             AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::NestedArrayAppend { span, .. }
-            | AssignTarget::ObjectPropertyArrayIndex { span, .. } => Err(runtime_error(
+            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call("??=", "nested array targets are not implemented"),
             )),

@@ -60,14 +60,20 @@
   path index expressions left to right before the right-hand expression,
   materialize undefined, missing, or `null` array containers under the current
   no-reference/no-copy-on-write model, append to the final nested array, and
-  return the appended value. Direct object-property assignment expressions evaluate the
-  right-hand expression, then write existing declared public property slots on
-  direct object variables. Dynamic property-name reads and direct assignment
+  return the appended value. Direct object-property assignment expressions
+  evaluate the right-hand expression, then write existing declared public
+  property slots on direct object variables. Nested object-property array
+  assignment expressions such as `$object->items[$outer][$inner] = expr` and
+  object-property append-at-depth expressions such as
+  `$object->items[$outer][] = expr` evaluate all property path keys left to
+  right, materialize `null` property values and missing/`null` intermediate
+  containers as arrays, then write the property back through the existing
+  visibility-aware object-property path. Dynamic property-name reads and direct assignment
   expressions such as `$object->$name` and `$object->$name = expr` are
   supported for direct object variables when the property-name expression
   evaluates to a string or integer name and resolves to an existing public
   slot; writes can also materialize public dynamic slots on `stdClass`
-  objects. Append-at-depth, nested compound assignment, nested `??=`, nested
+  objects. Nested compound assignment, nested `??=`, nested
   increment/decrement, mixed object/property/ArrayAccess
   targets, non-`stdClass` missing property materialization,
   references/copy-on-write, and native lowering remain unsupported. Simple

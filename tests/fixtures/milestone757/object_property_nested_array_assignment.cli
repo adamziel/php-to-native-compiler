@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+loaded
+charge
+fallback
+root-append
+--- stdout end ---
+stderr:
+--- stderr end ---

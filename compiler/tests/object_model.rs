@@ -195,6 +195,56 @@ print_r($profile);
 }
 
 #[test]
+fn object_property_nested_array_assignments_materialize_current_subset() {
+    let source = r#"<?php
+class Bag {
+    public $items;
+}
+
+$bag = new Bag();
+$outer = "translation.mo";
+$locale = "en_US";
+$domain = "default";
+$bag->items[$outer][$locale][$domain] = "loaded";
+$bag->items[$outer]["fr_FR"]["default"] = "charge";
+$bag->items[$outer][$locale][] = "fallback";
+$bag->items[] = "root-append";
+echo $bag->items[$outer][$locale][$domain], "\n";
+echo $bag->items[$outer]["fr_FR"]["default"], "\n";
+echo $bag->items[$outer][$locale][0], "\n";
+echo $bag->items[0], "\n";
+print_r($bag->items);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "loaded\ncharge\nfallback\nroot-append\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [default] => loaded\n            [0] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n    [0] => root-append\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn object_property_nested_array_assignments_reject_non_array_roots() {
+    let error = runtime_error(
+        r#"<?php
+class Bag {
+    public $items;
+}
+
+$bag = new Bag();
+$bag->items = "not-array";
+$bag->items["key"]["child"] = "value";
+"#,
+    );
+
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on string"
+    );
+}
+
+#[test]
 fn dynamic_public_property_names_read_write_existing_slots_and_stdclass_slots() {
     let source = r#"<?php
 class Account {

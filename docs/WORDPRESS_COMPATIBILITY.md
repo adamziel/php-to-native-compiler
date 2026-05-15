@@ -516,6 +516,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
   This is not full dynamic class-name instantiation, anonymous classes, exact
   PHP `Error` objects, or WordPress bootstrap support.
+  Milestone 757 implements direct-object-property nested array assignment and
+  append-at-depth assignment for direct object variables and named properties.
+  After that slice, the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:165:19: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`,
+  corresponding to
+  `unset( $this->loaded_translations[ $locale ][ $textdomain ][ $i ] );` in
+  `wp-includes/l10n/class-wp-translation-controller.php`. This is not generic
+  object/ArrayAccess target support, references, copy-on-write, exact PHP
+  diagnostics, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

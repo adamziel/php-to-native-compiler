@@ -59,12 +59,14 @@ This is not yet "a PHP compiler that runs WordPress." It is the foundation that
 lets the project move toward that goal while preserving correctness.
 
 Recent WordPress-directed milestones have been walking the real WordPress
-6.9.4 bootstrap-shim forward through concrete blockers: namespace-scoped
-functions, qualified constants, `assert()`, interpolated constant names,
-class-constant string lookup, error-control syntax, `(float)` casts, and now a
-bounded `(array)` cast slice. Each step is intentionally small because it only
-counts after parser/runtime code, tests, CLI fixtures, docs, and named
-unsupported edges are in place.
+6.9.4 bootstrap-shim forward through concrete blockers: references as explicit
+runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
+instantiation, and now direct-object-property nested array assignment and
+append-at-depth assignment. The current shim frontier is nested object-property
+array-offset `unset(...)` in
+`wp-includes/l10n/class-wp-translation-controller.php`. Each step is
+intentionally small because it only counts after parser/runtime code, tests,
+CLI fixtures, docs, and named unsupported edges are in place.
 
 ## Compatibility North Star
 

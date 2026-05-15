@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T01:10:00Z
+
+- Checkpoint before this task:
+  `c106c12 parser: add magic new class names`, pushed to `origin/master`.
+- Task attempted: Milestone 757, direct-object-property nested array assignment
+  and append-at-depth assignment for the WordPress translation-controller
+  blocker.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone757/*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_property_nested_array_assignments -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone757`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: direct-object-property nested array assignment and
+  append are limited to direct object variables and named properties. Dynamic
+  property roots, mixed object/property/ArrayAccess paths, object-property
+  compound assignment, object-property `??=`, references, copy-on-write, exact
+  PHP diagnostics, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `parse error at <bootstrap-shim>:165:19: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+- Next concrete task: implement or explicitly bound nested object-property
+  array-offset `unset(...)` for the reached
+  `unset( $this->loaded_translations[ $locale ][ $textdomain ][ $i ] );`
+  shape.
+
 ## Loop Event 2026-05-16T00:35:00Z
 
 - Checkpoint before this task:

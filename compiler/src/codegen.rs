@@ -916,6 +916,7 @@ impl LlvmGenerator {
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
@@ -3706,6 +3707,7 @@ impl CGenerator {
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
