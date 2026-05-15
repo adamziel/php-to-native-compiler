@@ -7568,16 +7568,25 @@ handled.
   preservation, integer-key reindexing, return count, and string-valued direct
   dynamic calls, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
-- [ ] Runtime/array lane: implement the reached bounded `current()` behavior
+- [x] Runtime/array lane: implement the reached bounded `current()` behavior
   for current ordered arrays in the WordPress bootstrap path. Keep internal
   array pointer semantics beyond the reached shape, references/copy-on-write,
   non-array diagnostics, exact warnings, interaction with `next()`/`reset()`,
   and native lowering named unless implemented.
+  Milestone 826 covers the first-value ordered-array slice and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:341:15: undefined function call_user_func_array()`.
+- [ ] Runtime/callable lane: implement the reached bounded
+  `call_user_func_array()` behavior for string callables with ordered-array
+  argument lists. Keep array/object callable forms, by-reference argument
+  propagation, named-argument/spread edge cases, exceptions/warnings, autoload,
+  namespace nuances beyond the current lookup table, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 825 checkpoint, the latest committed checkpoint
-  is `a6fc7b3 runtime: add bounded ascii preg_match`, covering Milestone 824.
+- Before the current Milestone 826 checkpoint, the latest committed checkpoint
+  is `88a88bd runtime: add bounded array_unshift`, covering Milestone 825.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

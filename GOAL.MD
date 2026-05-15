@@ -418,9 +418,10 @@ classifier in that same WordPress path. Milestone 824 covers the adjacent
 `wpdb::check_ascii()` regex byte-range pattern. Milestone 825 covers the
 reached direct-variable `array_unshift()` bootstrap call, including integer-key
 reindexing, string-key preservation, caller-variable mutation, and return
-count. The current frontier is now a reached `current()` call in the WordPress
-bootstrap path, reported by the bootstrap shim as
-`runtime error at <bootstrap-shim>:328:48: undefined function current()`.
+count. Milestone 826 covers the reached ordered-array `current()` first-value
+path. The current frontier is now a reached `call_user_func_array()` call in
+the WordPress bootstrap path, reported by the bootstrap shim as
+`runtime error at <bootstrap-shim>:341:15: undefined function call_user_func_array()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -604,8 +605,9 @@ The repository already has a working Rust workspace with:
   empty-array/list-shape comparisons. Bounded `ltrim()` and two exact
   WordPress `preg_match()` slices cover the reached safe-collation classifier
   and ASCII check. Bounded direct-variable `array_unshift()` covers the reached
-  bootstrap array prepend path. The next bottleneck is missing `current()`
-  support for the reached ordered-array access shape.
+  bootstrap array prepend path. Bounded `current()` covers the reached
+  ordered-array first-value shape. The next bottleneck is missing
+  `call_user_func_array()` support for the reached callable dispatch shape.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

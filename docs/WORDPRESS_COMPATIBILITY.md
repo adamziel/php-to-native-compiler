@@ -1100,6 +1100,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   invocation, references/copy-on-write, exact warning behavior, or native
   lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
+  Milestone 826 implements bounded `current()` over current ordered arrays:
+  it returns the first inserted value and returns `false` for empty arrays.
+  This is not PHP's mutable internal array-pointer model,
+  `next()`/`reset()` interaction, object support, references/copy-on-write,
+  exact warning behavior, or native lowering. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:341:15: undefined function call_user_func_array()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -483,8 +483,8 @@
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
-  `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
+  `array_is_list`, `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
@@ -874,7 +874,8 @@
   array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
-  non-array `array_is_list` operands, non-array `array_reverse` operands,
+  non-array `current` operands, non-array `array_is_list` operands,
+  non-array `array_reverse` operands,
   non-bool `array_reverse` preserve-key
   flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
@@ -1410,7 +1411,11 @@
   first inserted integer or string key as an `int` or `string`, and
   `array_key_last($array)` returns the last
   inserted integer or string key. Both return `null` for an empty array and are
-  available through string-valued dynamic function calls. `array_is_list($array)`
+  available through string-valued dynamic function calls. `current($array)`
+  returns the first inserted value for the current ordered array model and
+  returns `false` for empty arrays. This is a bounded first-value slice, not
+  PHP's mutable internal array-pointer model or `next()`/`reset()` interaction.
+  It is available through string-valued dynamic function calls. `array_is_list($array)`
   returns true for empty arrays and arrays whose entries are ordered with exact
   integer keys `0..n-1`; numeric string keys such as `"0"` participate through
   the current array-key normalization, while string keys such as `"01"`, gaps,
@@ -1597,7 +1602,7 @@
   aliases, mutate array slots by reference, or model copy-on-write. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`,
@@ -2463,7 +2468,7 @@
   `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
+  `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
   `constant`, `defined`,
@@ -2602,7 +2607,7 @@
   `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
-  `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
+  `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
@@ -2734,6 +2739,10 @@
   subset as the builtin section above; direct native `array_unshift(...)`
   calls still reject under the function-call boundary, while native
   function-table introspection recognizes the name.
+  `current` accepts the same current ordered-array first-value subset as the
+  builtin section above; direct native `current(...)` calls still reject under
+  the function-call boundary, while native function-table introspection
+  recognizes the name.
   `str_contains` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
   `str_contains(...)` calls still reject under the function-call boundary,
@@ -3296,7 +3305,7 @@
   outside the current private/protected method context, append offset operands, complex lvalues,
   general expression operands, magic methods, and unsupported array-key
   coercions remain unsupported.
-  `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
@@ -4086,8 +4095,9 @@
   warning/deprecation behavior, array/object/resource/reference keys, exact
   native `TypeError` objects, reference/copy-on-write behavior, and native
   lowering
-- `array_key_first`/`array_key_last`/`array_is_list` exact native `TypeError`
-  objects, reference/copy-on-write container behavior, and native lowering
+- `array_key_first`/`array_key_last`/`current`/`array_is_list` exact native
+  `TypeError` objects, reference/copy-on-write container behavior, and native
+  lowering
 - `array_keys` filtering over array, object, resource, or reference search
   values or array values, plus non-bool strict-flag coercion
 - `in_array` and `array_search` strict-mode searches involving
@@ -4340,6 +4350,10 @@
   subset: non-variable first arguments, value-only dynamic calls such as
   `call_user_func("array_unshift", ...)`, broad by-reference argument
   handling, references/copy-on-write, exact warnings/errors, and native
+  lowering beyond function-table introspection
+- `current()` outside the current ordered-array first-value subset: PHP's
+  mutable internal array-pointer model, interaction with `next()`/`reset()`,
+  object operands, references/copy-on-write, exact warnings/errors, and native
   lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8

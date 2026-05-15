@@ -7245,6 +7245,19 @@ impl Interpreter {
                     )),
                 }
             }
+            "current" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array.current_value()),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "current()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "array_is_list" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -10820,6 +10833,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_values"
             | "array_key_first"
             | "array_key_last"
+            | "current"
             | "array_is_list"
             | "array_keys"
             | "array_change_key_case"

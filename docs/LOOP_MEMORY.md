@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T15:05:00Z
+
+- Checkpoint before this task:
+  `88a88bd runtime: add bounded array_unshift`, pushed to `origin/master`.
+- Task attempted: Milestone 826, bounded `current()` support for the reached
+  WordPress bootstrap ordered-array access path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/current_builtin.rs`,
+  `tests/fixtures/milestone826/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime current_value -- --nocapture`,
+  `cargo test -p phpc --test current_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone826`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:341:15: undefined function call_user_func_array()`.
+- Remaining semantic gaps: PHP's mutable internal array-pointer model,
+  `next()`/`reset()` interaction, object operands, references/copy-on-write,
+  exact warning behavior, native lowering, and real WordPress bootstrap support
+  remain unsupported.
+- Next concrete task: implement the reached bounded `call_user_func_array()`
+  behavior for string callables with ordered-array argument lists while keeping
+  array/object callable forms, by-reference argument propagation,
+  named-argument/spread edge cases, exceptions/warnings, autoload, namespace
+  nuances beyond the current lookup table, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T14:35:00Z
 
 - Checkpoint before this task:

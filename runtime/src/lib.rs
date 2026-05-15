@@ -709,6 +709,13 @@ impl PhpArray {
             .unwrap_or(Value::Null)
     }
 
+    pub fn current_value(&self) -> Value {
+        self.entries
+            .first()
+            .map(|entry| entry.value.clone())
+            .unwrap_or(Value::Bool(false))
+    }
+
     pub fn is_list(&self) -> bool {
         self.entries
             .iter()
@@ -4282,6 +4289,22 @@ mod tests {
         int_last.insert("02", Value::String("zero two".to_string()));
         int_last.insert("2", Value::String("two".to_string()));
         assert_eq!(int_last.last_key_value(), Value::Int(2));
+    }
+
+    #[test]
+    fn array_current_value_returns_first_value_or_false_for_empty_arrays() {
+        let empty = PhpArray::new();
+        assert_eq!(empty.current_value(), Value::Bool(false));
+
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("name", Value::String("Grace".to_string()));
+        assert_eq!(
+            array.current_value(),
+            Value::String("Grace".to_string()),
+            "updating the first key keeps its insertion position"
+        );
     }
 
     #[test]
