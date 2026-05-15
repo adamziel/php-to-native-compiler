@@ -1398,7 +1398,9 @@ historical blockers and remaining full-support gaps include:
   `mysqli_thread_id()` placeholder metadata without real server-thread
   inspection, connection identity, reconnect behavior, `mysqli_kill()`
   integration, host database integration, warning/error fidelity, or native
-  database lowering.
+  database lowering. Milestone 898 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` thread-id bookkeeping smoke without claiming real
+  WordPress database connection identity or server-thread fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 898, a synthetic WordPress-shaped `wpdb` connection-metadata
+  bookkeeping smoke that calls the bounded `mysqli_thread_id($this->dbh)`
+  placeholder path, records deterministic local thread-id metadata, and
+  verifies that the metadata boundary ran. This is a harness smoke only; it
+  does not add real WordPress database connection identity, server-thread
+  fidelity, reconnect behavior, `mysqli_kill()` integration, host database
+  integration, PHP warning/error fidelity, or native database lowering.
+  Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone898`.
+
 - Added Milestone 897, bounded `mysqli_thread_id()` support for deterministic
   placeholder MySQLi thread-id metadata. The runtime accepts
   `mysqli_thread_id($handle)` for current placeholder `mysqli` objects,

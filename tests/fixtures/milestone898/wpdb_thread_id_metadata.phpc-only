@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_thread_id()`
+metadata through a WordPress-shaped `wpdb` connection-metadata bookkeeping
+path. System PHP needs a real mysqli connection and reports the actual server
+thread identifier for that connection.

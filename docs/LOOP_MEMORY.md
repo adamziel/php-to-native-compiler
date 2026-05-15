@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `261c02b runtime: add mysqli thread id metadata`, pushed to `origin/master`.
+- Task attempted: Milestone 898, a synthetic WordPress-shaped `wpdb`
+  connection-metadata bookkeeping smoke over deterministic
+  `mysqli_thread_id()` placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone898/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone898`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- tests/fixtures/milestone898 docs/PROGRESS.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: a WordPress-shaped connection-metadata
+  bookkeeping path can record deterministic placeholder thread-id metadata.
+- Remaining semantic gaps: real WordPress database connection identity,
+  server-thread fidelity, reconnect behavior, `mysqli_kill()` integration,
+  host database integration, warning/error fidelity, database state mutation,
+  and native database lowering remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi metadata or diagnostic boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `986e5f2 tests: add wordpress wpdb connection stats smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 897, bounded deterministic `mysqli_thread_id()`

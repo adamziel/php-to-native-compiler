@@ -8306,16 +8306,26 @@ handled.
   is not real server-thread inspection, server-side thread allocation,
   connection identity, reconnect behavior, `mysqli_kill()` integration, host
   database integration, warnings/errors, or native database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_thread_id()` placeholder through WordPress-shaped connection
   metadata bookkeeping without claiming real server-thread or connection-id
   fidelity.
+  Milestone 898 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic placeholder thread-id metadata on local object state and
+  verifies that the metadata check ran. It is not real WordPress database
+  connection identity, server-thread fidelity, reconnect behavior,
+  `mysqli_kill()` integration, host database integration, warnings/errors, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after thread-id
+  placeholders and choose a small tested slice, such as deterministic
+  `mysqli_get_charset()` metadata or a sharper named diagnostic, before
+  broader SQL execution or real host state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `986e5f2 tests: add wordpress wpdb connection stats smoke`, covering
-  Milestone 896 before the current Milestone 897 candidate.
+  `261c02b runtime: add mysqli thread id metadata`, covering
+  Milestone 897 before the current Milestone 898 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
