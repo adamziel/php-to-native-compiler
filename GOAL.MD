@@ -783,10 +783,11 @@ Reconciliation into concrete workstreams:
   ordering tests. Current artifact: direct variable-to-variable alias cells,
   direct-variable by-reference parameter alias cells during function, method,
   and constructor calls, a bounded direct-variable reference-return assignment
-  path for direct free-function calls, documented runtime boundaries, and
-  focused reference fixtures. Missing artifact: full runtime reference
-  containers, array/object offset aliases, method and broader by-reference
-  returns, by-reference `foreach`, and COW tests that compare against PHP.
+  path for direct free-function and direct object method calls, documented
+  runtime boundaries, and focused reference fixtures. Missing artifact: full
+  runtime reference containers, array/object offset aliases,
+  magic/static/parent/self and broader by-reference returns, by-reference
+  `foreach`, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
@@ -1247,7 +1248,8 @@ The repository already has a working Rust workspace with:
   object-property array-offset targets as the same runtime boundary, and
   by-reference function/method return declarations as runtime boundaries, plus
   a bounded direct free-function reference-return assignment path for direct
-  variable returns, plus
+  variable returns, plus a bounded direct object method reference-return
+  assignment path for direct variable returns, plus
   `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
   modifiers as metadata, and `new self`/`new parent`/`new static` magic
   class-name instantiation in active class/method contexts, and bounded

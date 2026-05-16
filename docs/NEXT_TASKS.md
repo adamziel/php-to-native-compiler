@@ -10097,12 +10097,25 @@ handled.
   expressions, nested-control-flow returns, array/object offset aliases,
   by-reference `foreach`, full PHP reference containers, copy-on-write, or
   native lowering.
+
+## Milestone 1048: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: extend the bounded direct-variable
+  reference-return assignment path to direct object method calls. In the
+  current subset, `$alias =& $object->identity($value);` can bind the alias
+  name to the direct variable cell returned by a visible non-static
+  `public function &identity(&$value) { return $value; }`, and `unset($alias)`
+  detaches only the alias name. This is not normal reference-return
+  invocation, magic/static/parent/self reference-return method sources,
+  non-direct return expressions, nested-control-flow returns, array/object
+  offset aliases, by-reference `foreach`, full PHP reference containers,
+  copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
-  method reference-return values, by-reference `foreach`, object-property
-  references, source/target rebinding, or array copy-on-write, and add the
-  next bounded behavior or explicit runtime boundary with PHP comparison
-  fixtures.
+  magic/static/parent/self reference-return method sources, by-reference
+  `foreach`, object-property references, source/target rebinding, or array
+  copy-on-write, and add the next bounded behavior or explicit runtime
+  boundary with PHP comparison fixtures.
 
 ## Latest Completed Checkpoint
 

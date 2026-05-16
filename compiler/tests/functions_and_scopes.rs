@@ -932,6 +932,31 @@ echo "alias=", $alias, "|value=", $value;
 }
 
 #[test]
+fn method_reference_return_assignment_binds_returned_cell() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public function &identity(&$value) {
+        return $value;
+    }
+}
+
+$box = new Box();
+$value = 1;
+$alias =& $box->identity($value);
+$alias = 2;
+echo "value=", $value, "|";
+$value = 3;
+echo "alias=", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "value=2|alias=3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_return_invocation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -1180,10 +1205,10 @@ $parser->run();
     );
 
     assert_eq!(error.line, 8);
-    assert_eq!(error.column, 9);
+    assert_eq!(error.column, 19);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: only direct function-call reference-return sources are implemented in the current subset"
+        "unsupported call make(): function does not return by reference"
     );
 }
 

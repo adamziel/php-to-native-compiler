@@ -2754,11 +2754,17 @@ impl Interpreter {
                 args,
                 span: call_span,
             } => self.call_reference_return_function(name, args, *call_span, scope),
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span: call_span,
+            } => self.call_reference_return_instance_method(target, method, args, *call_span, scope),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call reference-return sources are implemented in the current subset",
+                    "only direct function-call and object method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -11037,6 +11043,90 @@ impl Interpreter {
         self.call_reference_return_function_with_checked_values(
             function,
             values,
+            None,
+            None,
+            None,
+            reference_bindings,
+        )
+    }
+
+    fn call_reference_return_instance_method(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let target_value = self.evaluate(target, caller_scope)?;
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{method_name}()"),
+                        format!("receiver must be object, got {}", other.type_name()),
+                    ),
+                ));
+            }
+        };
+
+        let (class_id, class_name, resolved_method_name, visibility, is_static) = {
+            let receiver_class_name = self
+                .classes
+                .get(object.class_id())
+                .expect("object class id should resolve to class metadata")
+                .name()
+                .to_string();
+            let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{receiver_class_name}::{method_name}()"
+                    )),
+                ));
+            };
+            method
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static method dispatch through object receivers is not implemented",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+
+        let called_class_id = object.class_id();
+        self.call_reference_return_function_with_checked_values(
+            function,
+            values,
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
             reference_bindings,
         )
     }
@@ -11045,10 +11135,22 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
     ) -> CompileResult<VariableCell> {
         self.function_context.push(function.name.clone());
+        if let Some(class_context) = class_context {
+            self.class_context.push(class_context);
+        }
+        if let Some(called_class_context) = called_class_context {
+            self.called_class_context.push(called_class_context);
+        }
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        if let Some(this_object) = this_object {
+            local_scope.write_static("this", Value::Object(this_object));
+        }
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
@@ -11080,6 +11182,12 @@ impl Interpreter {
                     Ok(value) => value,
                     Err(error) => {
                         self.function_context.pop();
+                        if class_context.is_some() {
+                            self.class_context.pop();
+                        }
+                        if called_class_context.is_some() {
+                            self.called_class_context.pop();
+                        }
                         return Err(error);
                     }
                 }
@@ -11100,6 +11208,12 @@ impl Interpreter {
         }
         self.call_depth -= 1;
         self.function_context.pop();
+        if class_context.is_some() {
+            self.class_context.pop();
+        }
+        if called_class_context.is_some() {
+            self.called_class_context.pop();
+        }
 
         result
     }

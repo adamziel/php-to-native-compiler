@@ -184,15 +184,16 @@ offsets under the existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function
 declares `&`, returns a direct variable, and is used as a statement-form
 reference-assignment source; the target name is bound to the returned variable
-cell. Array-offset and method-call sources, direct array-offset targets for
-array values, object-property array targets, source/target rebinding beyond
+cell. Direct object method-call sources have the same narrow path for visible
+non-static methods on object receivers. Array-offset sources, direct
+array-offset targets for array values, object-property array targets,
+magic/static/parent/self method reference sources, source/target rebinding beyond
 direct names, full PHP reference containers, by-reference `foreach`,
 mutation-ordering guarantees, and copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
-of reference-return functions and all method reference-return sources still
-report stable runtime boundaries before any return value or alias binding is
-produced.
+of reference-return functions and methods still reports stable runtime
+boundaries before any by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name

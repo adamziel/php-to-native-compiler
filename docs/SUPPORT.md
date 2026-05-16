@@ -27,14 +27,17 @@
   multiple supported operands and executes them left to right
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
-  declaration-contained declarations can be loaded. The executing subset is
-  limited to statement-form reference assignment from a direct free-function
-  call whose function returns a direct variable by reference, for example
+  declaration-contained declarations can be loaded. The executing subset
+  includes statement-form reference assignment from a direct free-function call
+  whose function returns a direct variable by reference, for example
   `$alias =& identity($value);` with
-  `function &identity(&$value) { return $value; }`. In that shape, the
-  assigned alias binds to the returned variable cell and `unset($alias)`
-  detaches only the alias name. Normal invocation such as `identity($value)`,
-  method-call reference-return sources, non-direct return expressions,
+  `function &identity(&$value) { return $value; }`, and from direct object
+  method calls whose visible non-static method returns a direct variable by
+  reference, for example `$alias =& $object->identity($value);`. In those
+  shapes, the assigned alias binds to the returned variable cell and
+  `unset($alias)` detaches only the alias name. Normal invocation such as
+  `identity($value)` or `$object->identity($value)`, magic/static/parent/self
+  reference-return method sources, non-direct return expressions,
   nested-control-flow returns, full PHP reference containers, copy-on-write,
   and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
@@ -61,15 +64,15 @@
   `unset($value)` detaches only that name without deleting the shared cell
   while another alias still points at it. Direct variable sources holding
   current object values may also be assigned into direct array offsets under
-  the existing object-handle value model. Direct free-function call sources are
-  executable only for the bounded direct-variable reference-return shape
-  documented above. Array-offset and method-call sources, direct array-offset
-  targets for array values, object-property array targets, by-reference
-  `foreach`, broader reference returns, reference-parameter forms beyond
-  direct variable arguments, source/target rebinding beyond direct names, PHP
-  reference-container edge cases, copy-on-write, and native lowering remain
-  unsupported and report stable reference-assignment runtime diagnostics when
-  reached.
+  the existing object-handle value model. Direct free-function and direct
+  object method-call sources are executable only for the bounded
+  direct-variable reference-return shapes documented above. Array-offset
+  sources, direct array-offset targets for array values, object-property array
+  targets, by-reference `foreach`, broader reference returns,
+  reference-parameter forms beyond direct variable arguments, source/target
+  rebinding beyond direct names, PHP reference-container edge cases,
+  copy-on-write, and native lowering remain unsupported and report stable
+  reference-assignment runtime diagnostics when reached.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

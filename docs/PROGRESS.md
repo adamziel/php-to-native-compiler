@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1048, bounded direct-variable reference-return cells for
+  statement-form reference assignment from direct object method calls. In the
+  current subset, `$alias =& $object->identity($value);` can bind `$alias` to
+  the same caller cell returned by
+  `public function &identity(&$value) { return $value; }` when the receiver is
+  a direct object value, the method is visible and non-static, the return
+  expression is a direct variable, and the argument is a direct variable
+  already covered by the by-reference parameter path. Writes through either
+  name are visible through the other, and `unset($alias)` detaches only the
+  local alias name. Normal reference-return invocation still reports the
+  existing runtime boundary, and magic/static/parent/self reference-return
+  method sources, non-direct return expressions, nested-control-flow returns,
+  array/object offset aliases, by-reference `foreach`, full PHP reference
+  containers, copy-on-write, and native lowering remain unsupported.
+  Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_method_call_source_executes_as_stable_runtime_boundary -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1048`.
+
 - Added Milestone 1047, bounded direct-variable reference-return cells for
   statement-form reference assignment from direct free-function calls. In the
   current subset, `$alias =& identity($value);` can bind `$alias` to the same

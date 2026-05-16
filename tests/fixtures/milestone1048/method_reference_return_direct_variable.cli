@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1048/method_reference_return_direct_variable.php
+exit: 0
+stdout:
+value=2|alias=3
+detached=9|value=3
+--- stdout end ---
+stderr:
+--- stderr end ---

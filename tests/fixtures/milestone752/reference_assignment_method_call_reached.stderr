@@ -1,2 +1,2 @@
-runtime error at 8:9: unsupported call reference assignment: only direct function-call reference-return sources are implemented in the current subset
+runtime error at 8:19: unsupported call make(): function does not return by reference
 

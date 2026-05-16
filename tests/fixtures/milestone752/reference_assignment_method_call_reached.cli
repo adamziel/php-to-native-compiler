@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone752/reference_assignment_method_call_reached.php:8:9: unsupported call reference assignment: only direct function-call reference-return sources are implemented in the current subset
+runtime error at tests/fixtures/milestone752/reference_assignment_method_call_reached.php:8:19: unsupported call make(): function does not return by reference
 --- stderr end ---

@@ -29,6 +29,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b9f57627 docs: record direct reference return gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1048, bounded direct-variable reference-return
+  assignment cells for direct object method calls.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone752/reference_assignment_method_call_reached.*`,
+  `tests/fixtures/milestone1048/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed.
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  passed.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_method_call_source_executes_as_stable_runtime_boundary -- --test-threads=1`
+  passed.
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1048`
+  passed with 1 fixture and 1 system PHP comparison.
+- Current WordPress frontier: direct object method reference-return sources now
+  have one executable alias-cell path when the visible non-static method
+  returns a direct variable.
+- Remaining semantic gaps: normal reference-return invocation,
+  magic/static/parent/self reference-return method sources, non-direct return
+  expressions, nested-control-flow returns, array/object offset references,
+  by-reference `foreach`, full PHP reference containers, copy-on-write, and
+  native lowering remain missing.
+- Next concrete task: run `git diff --check` and the serialized checkpoint
+  gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add method reference return cells"` if the
+  full gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `9d535aa4 runtime: bind constructor reference parameters`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1047, bounded direct-variable reference-return
