@@ -133,10 +133,14 @@
   the source variable and direct object-property array offset observe the same
   selected value, and `unset($value)` detaches only the source name. Existing
   direct alias groups, source names already routed through array-offset
-  aliases, `$GLOBALS`, dynamic/magic/non-public properties, `ArrayAccess`
-  reference targets, non-direct sources, full PHP reference containers,
-  copy-on-write, exact alias rebinding/mutation ordering, and native lowering
-  remain unsupported.
+  aliases, `$GLOBALS`, dynamic/magic/non-public properties, non-direct sources,
+  full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, and native lowering remain unsupported.
+  ArrayAccess object reference targets such as `$bag[$key] =& $value;` and
+  property-held `$holder->bag[$key] =& $value;` report a stable runtime
+  boundary because PHP fatals when assigning by reference to an object array
+  dimension. Broader by-reference `ArrayAccess::offsetGet()`
+  indirect-modification fidelity remains unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

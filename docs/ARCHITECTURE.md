@@ -250,11 +250,15 @@ direct array/object-property offset observe the same selected value, and
 start as `null` before binding. Existing direct alias groups, source names
 already routed through array-offset aliases, `$GLOBALS`, PHP's deprecated
 false-root conversion, other non-array roots, dynamic/magic/non-public
-property targets, `ArrayAccess` reference targets, non-direct sources,
-non-static `self::`/`parent::`/`static::`/dynamic-static sources, magic method
-reference sources, full PHP reference containers, broader by-reference
+property targets, non-direct sources, non-static
+`self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
+sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native
-lowering, and copy-on-write remain future runtime work.
+lowering, and copy-on-write remain future runtime work. ArrayAccess object
+offset targets such as `$bag[$key] =& $value;` and property-held
+`$holder->bag[$key] =& $value;` are an explicit runtime boundary with a stable
+diagnostic, reflecting PHP's fatal behavior for assigning by reference to an
+object array dimension while avoiding engine-specific notice/fatal text.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

@@ -10436,19 +10436,35 @@ handled.
   dynamic/magic/non-public properties, `ArrayAccess` reference targets,
   non-direct sources, full PHP reference containers, copy-on-write, exact alias
   rebinding/mutation ordering, or native lowering.
+
+## Milestone 1073: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add stable direct and property-held
+  `ArrayAccess` reference-target boundaries for unaliased direct variable
+  sources. In the current subset, `$bag[$key] =& $value;` and
+  `$holder->bag[$key] =& $value;` detect object roots implementing
+  `ArrayAccess` and report a specific structured runtime diagnostic. This
+  keeps the project aligned with PHP's fatal behavior for assigning by
+  reference to an object array dimension without trying to byte-match
+  engine-specific fatal text. The CLI fixtures are intentionally `phpc-only`.
+  This is not dynamic/magic/non-public property support, `$GLOBALS` reference
+  target semantics, non-direct sources, full PHP reference containers,
+  copy-on-write, exact alias rebinding/mutation ordering, by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity, or native
+  lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  `ArrayAccess` reference targets, nested/object offset aliases, remaining
-  by-reference `foreach` fidelity, array/object copy-on-write split behavior,
-  dynamic/magic/non-public property reference targets, `$GLOBALS` reference
-  target semantics, or native lowering boundaries, and add the next bounded
-  behavior or explicit diagnostic with PHP comparison coverage where
-  applicable.
+  nested/object offset aliases, remaining by-reference `foreach` fidelity,
+  array/object copy-on-write split behavior, dynamic/magic/non-public property
+  reference targets, `$GLOBALS` reference target semantics, by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity, or native lowering
+  boundaries, and add the next bounded behavior or explicit diagnostic with PHP
+  comparison coverage where applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `09d75d5f runtime: add object property append reference targets`, covering
-  Milestone 1072.
+  `07bddde3 runtime: add ArrayAccess reference target boundaries`, covering
+  Milestone 1073.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

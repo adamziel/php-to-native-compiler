@@ -26,6 +26,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T17:45:00Z
+
+- Checkpoint before this task:
+  `f0d90f66 docs: record object property append reference target gate`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 1073, stable direct and property-held ArrayAccess
+  reference-target boundaries for unaliased direct variable sources.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.*`,
+  `tests/fixtures/milestone1073/reference_assignment_object_property_array_access_target_boundary.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  local PHP 8.2.29 probes confirmed that direct ArrayAccess offset reference
+  targets fatal even when `offsetGet()` returns by reference.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
+  passed with 38 filtered reference-assignment tests.
+  `cargo run -p phpc -- test tests/fixtures/milestone1073 --compare-php`
+  passed with 2 fixtures, 0 PHP comparisons, and 2 skipped `phpc-only`
+  comparisons. `cargo run -p phpc -- test tests/fixtures/milestone1072
+  --compare-php` passed with the adjacent reference fixture.
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 164
+  fixtures. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1278
+  fixture tests, 723 system PHP comparisons, and 555 skipped comparisons, then
+  committed `07bddde3 runtime: add ArrayAccess reference target boundaries`.
+- Current WordPress frontier: `$bag[$key] =& $value;` and
+  `$holder->bag[$key] =& $value;` now fail through a named structured
+  ArrayAccess reference-target boundary instead of a generic object offset
+  failure. Direct arrays and declared public object-property array targets
+  retain the existing bounded alias routes.
+- Remaining semantic gaps: existing direct alias groups, source names already
+  routed through array-offset aliases, `$GLOBALS`, dynamic/magic/non-public
+  properties, nested/object offset aliases, mutation-during-iteration fidelity,
+  non-direct iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, full PHP reference
+  containers, copy-on-write, native lowering, exact mutation ordering, alias
+  rebinding, and by-reference `ArrayAccess::offsetGet()` indirect-modification
+  fidelity remain missing.
+- Next concrete task: choose the next reference/COW gap, likely nested/object
+  offset aliases, remaining by-reference `foreach` mutation fidelity,
+  array/object COW split behavior, dynamic/magic/non-public property reference
+  targets, `$GLOBALS` reference target semantics, or native lowering
+  boundaries, and add a bounded behavior or explicit diagnostic with PHP
+  comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T17:05:00Z
 
 - Checkpoint before this task:

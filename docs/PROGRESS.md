@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 1073, a stable ArrayAccess reference-target boundary for
+  direct variable sources. Statement-form `$bag[$key] =& $value;` and
+  property-held `$holder->bag[$key] =& $value;` now detect when the selected
+  target root is an object implementing `ArrayAccess` and report a specific
+  structured runtime diagnostic instead of falling through to a generic object
+  offset error. This matches the current PHP semantic direction: assigning by
+  reference to an object array dimension is a fatal engine boundary even when
+  `offsetGet()` is declared by reference, while this project keeps the message
+  stable and project-shaped. The new CLI fixtures are marked `phpc-only`
+  because system PHP's notice/fatal wording is engine-specific and not
+  byte-for-byte comparable to the structured diagnostic. Direct arrays and
+  direct public object-property array targets keep their existing reference
+  routes. Dynamic/magic/non-public property targets, `$GLOBALS` reference
+  target semantics, non-direct sources, full PHP reference containers,
+  copy-on-write, exact mutation ordering/alias rebinding, by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity, and native
+  lowering remain unsupported. Verification so far: local PHP 8.2.29 probes
+  for direct and by-reference `offsetGet()` ArrayAccess targets,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1073 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1072 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1278 fixture
+  tests, 723 system PHP comparisons, and 555 skipped comparisons, then
+  committed `07bddde3 runtime: add ArrayAccess reference target boundaries`.
+
 - Added Milestone 1072, a bounded direct public object-property array-append
   reference-target slice for direct variable sources. Statement-form
   `$object->items[] =& $value;` now works when the object expression is a

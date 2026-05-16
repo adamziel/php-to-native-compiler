@@ -1777,6 +1777,11 @@ unchecked work. Current state:
   `$object->groups[$outer][$inner] =& $value;` now work for declared public
   properties and unaliased direct variable sources, with PHP comparison
   coverage.
+- Milestone 1073 is committed: direct and property-held `ArrayAccess`
+  reference targets such as `$bag[$key] =& $value;` and
+  `$holder->bag[$key] =& $value;` now report a specific structured fatal
+  boundary matching PHP's prohibition on assigning by reference to object array
+  dimensions.
 - Milestone 1040 is the active checkpoint candidate: bounded `Countable` object
   protocol support now lets `is_countable($object)` recognize object values
   whose class metadata records `implements Countable`, and lets
