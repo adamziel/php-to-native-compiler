@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 1074, a bounded direct-array by-reference `foreach`
+  mutation-fidelity slice. The interpreter no longer snapshots the initial key
+  list for the supported direct-array-variable form. Each iteration binds the
+  loop value variable to the active direct array slot, so direct writes to the
+  current slot are visible through the loop variable and assignments through
+  the loop variable update that slot. The loop advances against the current
+  ordered array entries, so appended elements and newly inserted tail entries
+  are visited by the same loop. The existing post-loop lingering-reference
+  behavior remains for the last successfully iterated existing slot, and
+  `unset($value)` still detaches the loop variable. This remains limited to
+  direct array variables and direct value variables. It does not implement
+  full PHP reference containers, copy-on-write, non-direct iterables,
+  object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, exact removed-and-reinserted
+  current-slot reference identity, broad array reordering/replacement during
+  iteration, or native lowering. Verification so far:
+  `cargo test -p phpc --test foreach -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1066 --compare-php`,
+  and `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`.
+
 - Added Milestone 1073, a stable ArrayAccess reference-target boundary for
   direct variable sources. Statement-form `$bag[$key] =& $value;` and
   property-held `$holder->bag[$key] =& $value;` now detect when the selected

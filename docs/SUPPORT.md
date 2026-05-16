@@ -340,17 +340,21 @@
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays. By-reference value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
-  `foreach ($array as $key => &$value)`, execute as a bounded copy-back and
-  lingering-reference slice: the current keys are snapshotted, the key variable
-  is written by value, the loop variable receives the current element value,
-  the loop variable is copied back into the same array slot after each
-  iteration, and after loop completion the loop variable remains routed to the
-  last successfully iterated slot until `unset($value)` detaches it. Empty
-  array iteration creates no lingering reference. This is still not full PHP
-  by-reference iteration: mutation-during-iteration fidelity, full reference
-  containers, copy-on-write, object/Traversable iteration, non-direct
-  iterables, foreach destructuring, array/object/ArrayAccess offset loop
-  variables, and native lowering remain unsupported.
+  `foreach ($array as $key => &$value)`, execute as a bounded direct-slot and
+  lingering-reference slice: each iteration reads the active entry from the
+  current ordered array, writes the key variable by value, routes the loop
+  value variable to the active direct array slot for the body, and advances
+  against the current array order. Appended elements and newly inserted tail
+  entries are visited by the same loop, and direct writes to the current slot
+  are visible through the loop variable. After loop completion the loop
+  variable remains routed to the last successfully iterated existing slot until
+  `unset($value)` detaches it. Empty array iteration creates no lingering
+  reference. This is still not full PHP by-reference iteration: exact
+  removed-and-reinserted current-slot reference identity, broad array
+  reordering/replacement semantics, full reference containers, copy-on-write,
+  object/Traversable iteration, non-direct iterables, foreach destructuring,
+  array/object/ArrayAccess offset loop variables, and native lowering remain
+  unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

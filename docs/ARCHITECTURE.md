@@ -273,15 +273,20 @@ local name from the shared cell. This deliberately does not model full PHP
 reference containers, by-reference array/object offsets, broader reference
 returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
-interpreter path: it snapshots the initial keys, writes the key variable by
-value, writes the current element value into the loop variable, executes the
-body, copies the loop variable value back into that array slot, and after loop
-completion leaves the value variable routed to the last successfully iterated
-slot until `unset($value)` detaches it. Empty array iteration creates no
-lingering route. This intentionally avoids claiming mutation-during-iteration
-fidelity, non-direct iterable support, object/`Traversable` iteration,
-destructuring targets, array/object/`ArrayAccess` offset loop variables, full
-reference containers, or PHP copy-on-write.
+interpreter path. Each iteration reads the active entry from the current
+ordered array, writes the key variable by value, routes the value variable to
+the active direct array slot for the body, and advances using the current array
+order instead of an initial key snapshot. Appended elements and newly inserted
+tail entries are visited by the same loop, and direct writes to the current
+slot are visible through the loop variable. After loop completion, the value
+variable remains routed to the last successfully iterated existing slot until
+`unset($value)` detaches it. Empty array iteration creates no lingering route.
+This intentionally avoids claiming full mutation-during-iteration fidelity,
+exact removed-and-reinserted current-slot reference identity, broad array
+reordering/replacement semantics, non-direct iterable support,
+object/`Traversable` iteration, destructuring targets,
+array/object/`ArrayAccess` offset loop variables, full reference containers,
+or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property

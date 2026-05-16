@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone1074/by_reference_foreach_dynamic_direct_array_slots.php
+exit: 0
+stdout:
+0:1|1:2|2:3|
+0:1|1:2|2:3|
+before=1|after-direct=10|before=2|before=3|
+a:10|b:2|c:3|
+--- stdout end ---
+stderr:
+--- stderr end ---

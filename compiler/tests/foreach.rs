@@ -122,6 +122,56 @@ echo $items[0], "|", $items[1]["nested"], "|", $items[1]["seen"];
 }
 
 #[test]
+fn foreach_by_reference_visits_appended_direct_array_elements() {
+    let source = r#"<?php
+$items = [1, 2];
+
+foreach ($items as $key => &$item) {
+    echo $key, ":", $item, "|";
+    if ($item === 1) {
+        $items[] = 3;
+    }
+}
+unset($item);
+echo "\n";
+foreach ($items as $key => $item) {
+    echo $key, ":", $item, "|";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "0:1|1:2|2:3|\n0:1|1:2|2:3|");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_loop_variable_tracks_current_direct_array_slot() {
+    let source = r#"<?php
+$items = ["a" => 1, "b" => 2];
+
+foreach ($items as $key => &$item) {
+    echo "before=", $item, "|";
+    if ($key === "a") {
+        $items["a"] = 10;
+        echo "after-direct=", $item, "|";
+    }
+}
+unset($item);
+echo "\n";
+foreach ($items as $key => $item) {
+    echo $key, ":", $item, "|";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "before=1|after-direct=10|before=2|\na:10|b:2|"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_lingers_as_last_direct_array_slot_after_loop() {
     let source = r#"<?php
 $items = ["a", "b", "c"];

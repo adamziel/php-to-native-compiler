@@ -10452,6 +10452,20 @@ handled.
   copy-on-write, exact alias rebinding/mutation ordering, by-reference
   `ArrayAccess::offsetGet()` indirect-modification fidelity, or native
   lowering.
+
+## Milestone 1074: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct-array by-reference
+  `foreach` mutation-fidelity slice. In the current subset,
+  `foreach ($items as $key => &$item)` over a direct array variable routes the
+  loop value variable to the active direct array slot for the body and advances
+  against the current ordered array, so appended elements/new tail entries are
+  visited and direct writes to the current slot are visible through the loop
+  variable. This is not full PHP reference containers, copy-on-write,
+  non-direct iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, exact
+  removed-and-reinserted current-slot reference identity, broad array
+  reordering/replacement semantics, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
@@ -10464,7 +10478,7 @@ handled.
 
 - The latest committed checkpoint is
   `07bddde3 runtime: add ArrayAccess reference target boundaries`, covering
-  Milestone 1073.
+  Milestone 1073. Milestone 1074 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

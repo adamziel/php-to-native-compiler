@@ -364,11 +364,6 @@ impl SymbolTable {
         self.write_named(name, value);
     }
 
-    fn write_static_detached(&mut self, name: &str, value: Value) {
-        self.array_offset_aliases.remove(name);
-        self.write_storage_named(name, value);
-    }
-
     fn is_set_static(&self, name: &str) -> bool {
         matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
     }
@@ -1756,8 +1751,8 @@ impl Interpreter {
                             ));
                         }
                     };
-                    let array = match scope.read_static(&array_name, *span)? {
-                        Value::Array(array) => array,
+                    match scope.read_static(&array_name, *span)? {
+                        Value::Array(_) => {}
                         other => {
                             return Err(runtime_error(
                                 *span,
@@ -1768,17 +1763,17 @@ impl Interpreter {
                             ));
                         }
                     };
-                    let keys: Vec<ArrayKey> = array
-                        .entries()
-                        .iter()
-                        .map(|entry| entry.key.clone())
-                        .collect();
+                    let mut position = 0usize;
                     let mut lingering_reference_key = None;
 
-                    for entry_key in keys {
-                        self.tick(*span)?;
-                        let current_value = match scope.read_static(&array_name, *span)? {
-                            Value::Array(array) => array.get(entry_key.clone()).cloned(),
+                    loop {
+                        let entry_key = match scope.read_static(&array_name, *span)? {
+                            Value::Array(array) => {
+                                let Some(entry) = array.entries().get(position) else {
+                                    break;
+                                };
+                                entry.key.clone()
+                            }
                             other => {
                                 return Err(runtime_error(
                                     *span,
@@ -1789,39 +1784,54 @@ impl Interpreter {
                                 ));
                             }
                         };
-                        let Some(current_value) = current_value else {
-                            continue;
-                        };
+                        self.tick(*span)?;
 
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
-                        scope.write_static_detached(value, current_value);
+                        scope.bind_static_to_existing_array_offset(
+                            value,
+                            &array_name,
+                            entry_key.clone(),
+                            *span,
+                        )?;
                         let flow = self.execute_statements(body, scope)?;
 
-                        let mut copied_back = false;
-                        if let Some(updated_value) = scope.read_named(value) {
-                            let mut array_value = scope.read_static(&array_name, *span)?;
-                            match &mut array_value {
-                                Value::Array(array) => {
-                                    if array.contains_key(entry_key.clone()) {
-                                        array.insert(entry_key.clone(), updated_value);
-                                        copied_back = true;
+                        let value_still_bound = scope.read_named(value).is_some();
+                        let next_position = match scope.read_static(&array_name, *span)? {
+                            Value::Array(array) => {
+                                let current_position = array
+                                    .entries()
+                                    .iter()
+                                    .position(|entry| entry.key == entry_key);
+                                lingering_reference_key =
+                                    if value_still_bound && current_position.is_some() {
+                                        Some(entry_key.clone())
+                                    } else {
+                                        None
+                                    };
+                                match current_position {
+                                    Some(current_position) if current_position > position => {
+                                        position
+                                    }
+                                    Some(current_position) => current_position + 1,
+                                    None => {
+                                        lingering_reference_key = None;
+                                        position
                                     }
                                 }
-                                other => {
-                                    return Err(runtime_error(
-                                        *span,
-                                        RuntimeError::invalid_foreach(format!(
-                                            "can only iterate arrays in the current subset, got {}",
-                                            other.type_name()
-                                        )),
-                                    ));
-                                }
                             }
-                            scope.write_static(&array_name, array_value);
-                        }
-                        lingering_reference_key = copied_back.then(|| entry_key.clone());
+                            other => {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::invalid_foreach(format!(
+                                        "can only iterate arrays in the current subset, got {}",
+                                        other.type_name()
+                                    )),
+                                ));
+                            }
+                        };
+                        position = next_position;
 
                         match flow {
                             Flow::Normal => {}

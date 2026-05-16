@@ -789,8 +789,10 @@ Reconciliation into concrete workstreams:
   context, plus `static::` late-static method calls in active class/method
   context and dynamic static receiver method calls for object/class-string
   receivers, an explicit magic `__callStatic` reference-return runtime
-  boundary, a bounded direct-array-variable by-reference `foreach` copy-back
-  path with lingering post-loop reference behavior for the last iterated slot,
+  boundary, a bounded direct-array-variable by-reference `foreach` path that
+  routes the loop value variable to the active direct array slot, visits
+  appended/new tail entries, observes direct writes to the current slot, and
+  preserves lingering post-loop reference behavior for the last iterated slot,
   private `ArrayEntry` value accessors backed by an explicit
   clone-by-value `ArraySlot` wrapper with an internal `ArraySlotCell` that
   has stable internal identity and shared-handle groundwork while preserving
@@ -808,11 +810,12 @@ Reconciliation into concrete workstreams:
   unaliased direct variable source shape, and a bounded nested direct
   array-append reference-target slice for `$array[$outer][] =& $value;`,
   documented runtime boundaries, and focused reference fixtures. Missing
-  artifact: object-property and `ArrayAccess` reference targets, existing
-  alias-group and source-rebinding cases, nested and object-property offset
-  aliases, full runtime reference containers, magic reference-return dispatch
-  and broader by-reference returns, remaining exact by-reference `foreach`
-  mutation and target fidelity, and COW tests that compare against PHP.
+  artifact: existing alias-group and source-rebinding cases, nested and
+  object-property offset aliases beyond the documented target slices, full
+  runtime reference containers, magic reference-return dispatch and broader
+  by-reference returns, remaining exact by-reference `foreach` mutation and
+  target fidelity, ArrayAccess indirect-modification fidelity, and COW tests
+  that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
