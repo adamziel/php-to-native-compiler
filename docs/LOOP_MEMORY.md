@@ -26,6 +26,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T15:15:00Z
+
+- Checkpoint before this task:
+  `b76fcd7a docs: record array append reference target gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1069, bounded nested direct array-offset reference
+  targets for unaliased direct variable sources.
+- Files changed: `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1069/reference_assignment_nested_array_offset_target_direct_variable.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  local PHP 8.2.29 probe confirmed nested reference-target behavior for
+  materialized roots, direct slot/source writes, and `unset($value)`.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
+  passed with 27 filtered reference-assignment tests.
+  `cargo run -p phpc -- test tests/fixtures/milestone1069 --compare-php`
+  passed with 1 fixture, 1 PHP comparison, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/milestone1068 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1067 --compare-php`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`
+  passed with adjacent reference fixtures. `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 164 fixtures.
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1273
+  fixture tests, 719 system PHP comparisons, and 554 skipped comparisons, then
+  committed `d6221b4a runtime: add nested array reference targets`.
+- Current WordPress frontier: statement-form
+  `$array[$outer][$inner] =& $value;` now aliases an unaliased direct source
+  variable name through a selected normalized key path under a direct array
+  root. Missing intermediate containers and undefined or `null` target roots
+  materialize, undefined sources begin as `null`, writes through either route
+  observe the same selected value, and `unset($value)` detaches only the source
+  name.
+- Remaining semantic gaps: existing direct alias groups, source names already
+  routed through array-offset aliases, `$GLOBALS`, nested append reference
+  targets, object-property/`ArrayAccess` reference targets, non-direct sources,
+  nested/object/`ArrayAccess` offset aliases, mutation-during-iteration
+  fidelity, non-direct iterables, object/`Traversable` iteration, foreach
+  destructuring, array/object/`ArrayAccess` offset loop variables, full PHP
+  reference containers, copy-on-write, native lowering, exact mutation
+  ordering, and alias rebinding remain missing.
+- Next concrete task: choose the next reference/COW gap, likely nested append
+  reference targets, object-property/`ArrayAccess` reference targets,
+  nested/object offset aliases, remaining by-reference `foreach` mutation
+  fidelity, COW split behavior, or native lowering boundaries, and add a
+  bounded behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
+
 ## Loop Event 2026-05-16T14:42:00Z
 
 - Checkpoint before this task:
