@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 933, bounded `mysqli_dump_debug_info()` support for
+  deterministic placeholder MySQLi host-diagnostics metadata. The runtime
+  accepts current placeholder `mysqli` handles, returns deterministic `true`,
+  rejects non-`mysqli` handles with a stable diagnostic, and exposes the name
+  through runtime and native metadata lookup. This is not MySQL DBUG trace
+  output, host client-library debug state, socket inspection, host database
+  state, PHP warning/error fidelity, or native database lowering. Verification
+  so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_dump_debug_info -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone933`.
+
 - Added Milestone 932, a synthetic WordPress-shaped `wpdb` host-link
   bookkeeping smoke that calls bounded `mysqli_get_links_stats()`, records the
   deterministic zeroed `total`, `active_plinks`, and `cached_plinks` metadata,

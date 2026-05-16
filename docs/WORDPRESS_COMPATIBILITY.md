@@ -1518,7 +1518,10 @@ historical blockers and remaining full-support gaps include:
   that metadata through a synthetic WordPress-shaped `wpdb` host-link
   bookkeeping smoke without claiming real persistent-link tracking, sockets,
   host client-library state, connection reuse state, warning/error fidelity, or
-  native database lowering.
+  native database lowering. Milestone 933 adds deterministic
+  `mysqli_dump_debug_info()` placeholder host-diagnostics metadata without
+  MySQL DBUG trace output, host client-library debug state, socket inspection,
+  host database state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

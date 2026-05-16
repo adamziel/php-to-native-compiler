@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone933/mysqli_dump_debug_info_placeholder.php
+yes
+callable
+dumped
+dynamic
+still-open

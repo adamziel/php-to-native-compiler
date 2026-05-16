@@ -359,6 +359,28 @@ echo $dynamic["total"];
 }
 
 #[test]
+fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_dump_debug_info";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_dump_debug_info($handle) ? "dumped" : "failed";
+echo "|";
+echo $call($handle) ? "dynamic" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|dumped|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_field_count_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -2185,6 +2207,24 @@ mysqli_reap_async_query("not-a-handle");
 }
 
 #[test]
+fn mysqli_dump_debug_info_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_dump_debug_info("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_dump_debug_info(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
 fn mysqli_select_db_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -2453,6 +2493,8 @@ echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_get_links_stats") ? "1" : "0";
 echo is_callable("mysqli_get_links_stats") ? "1" : "0";
+echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
+echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
 echo is_callable("mysqli_stat") ? "1" : "0";
 echo function_exists("mysqli_autocommit") ? "1" : "0";
@@ -2547,7 +2589,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 132, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 134, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2771,6 +2813,18 @@ mysqli_refresh(mysqli_init(), MYSQLI_REFRESH_LOG);
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_links_stats();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_dump_debug_info(mysqli_init());
 "#,
     )
     .unwrap_err();

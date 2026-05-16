@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `2073f6c tests: add wordpress wpdb links stats smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 933, bounded deterministic
+  `mysqli_dump_debug_info()` placeholder host-diagnostics metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone933/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_dump_debug_info -- --test-threads=1`
+  passed with 2 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone933`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi host diagnostics now include
+  deterministic `mysqli_dump_debug_info()` success for current placeholder
+  handles.
+- Remaining semantic gaps: MySQL DBUG trace output, host client-library debug
+  state, socket inspection, host database state, warnings/errors, and native
+  database lowering remain missing.
+- Next concrete task: run the full MySQLi extension test, then the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, add a synthetic
+  WordPress-shaped `wpdb` diagnostics smoke for `mysqli_dump_debug_info()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `be0cb84 runtime: add mysqli links stats placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 932, a synthetic WordPress-shaped `wpdb`

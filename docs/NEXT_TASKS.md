@@ -8676,16 +8676,27 @@ handled.
   WordPress-shaped bookkeeping method. It is not real persistent-link
   tracking, sockets, host client-library state, connection reuse state,
   warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi host diagnostics boundary
+- [x] Runtime/mysqli lane: inspect the next MySQLi host diagnostics boundary
   after host-link stats, such as `mysqli_dump_debug_info()` or a sharper
   unsupported diagnostic, before claiming broader mysqli debug or host-state
   fidelity.
+  Milestone 933 implements bounded deterministic `mysqli_dump_debug_info()`
+  support for current placeholder handles. It returns deterministic `true`,
+  rejects non-`mysqli` handles with a stable diagnostic, and is visible through
+  runtime and native metadata lookup. This is not MySQL DBUG trace output,
+  host client-library debug state, socket inspection, host database state,
+  warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_dump_debug_info()` host-diagnostics placeholder through a
+  WordPress-shaped connection diagnostics method without claiming MySQL DBUG
+  trace output, host client-library debug state, sockets, host database state,
+  warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `be0cb84 runtime: add mysqli links stats placeholder`, covering
-  Milestone 931 before the current Milestone 932 candidate.
+  `2073f6c tests: add wordpress wpdb links stats smoke`, covering
+  Milestone 932 before the current Milestone 933 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

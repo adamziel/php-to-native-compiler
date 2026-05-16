@@ -520,7 +520,8 @@
   `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`,
   `mysqli_options`, `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
-  `mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_stat`, `mysqli_autocommit`,
+  `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
+  `mysqli_dump_debug_info`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_errno`, `mysqli_error`,
@@ -908,6 +909,10 @@
   `active_plinks`, and `cached_plinks` metadata without inspecting real
   persistent links, sockets, host client-library state, or connection reuse
   state.
+  `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
+  deterministic `true` without emitting MySQL DBUG trace output, inspecting
+  host client-library debug state, inspecting sockets, or reading host
+  database state.
   `mysqli_stat($handle)` accepts the placeholder object and returns
   deterministic zeroed server-status metadata without querying real server
   counters, thread/table state, or live connection status.
@@ -2481,7 +2486,8 @@
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
-  `mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_stat`, `mysqli_autocommit`,
+  `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
+  `mysqli_dump_debug_info`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
   `mysqli_real_query`, `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
@@ -2810,7 +2816,8 @@
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`,
   `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`,
-  `mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_autocommit`,
+  `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
+  `mysqli_dump_debug_info`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
   `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
@@ -2960,7 +2967,8 @@
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
   `mysqli_thread_id`, `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`,
-  `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_autocommit`,
+  `mysqli_field_count`, `mysqli_get_connection_stats`,
+  `mysqli_get_links_stats`, `mysqli_dump_debug_info`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`,
   `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
@@ -3035,7 +3043,8 @@
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
-  `mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_stat`, `mysqli_autocommit`,
+  `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
+  `mysqli_dump_debug_info`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
   `mysqli_real_query`, `mysqli_multi_query`,
@@ -3072,7 +3081,10 @@
   metadata,
   `mysqli_get_connection_stats(...)` returns only deterministic placeholder
   connection-statistics metadata, `mysqli_get_links_stats(...)` returns only
-  deterministic zeroed host-link metadata, `mysqli_stat(...)` returns only
+  deterministic zeroed host-link metadata,
+  `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success
+  without MySQL DBUG trace output, host client-library debug state, socket
+  inspection, or host database state, `mysqli_stat(...)` returns only
   deterministic zeroed server-status metadata, `mysqli_autocommit(...)` returns only
   deterministic success for boolean placeholder autocommit modes without real
   transaction state, `mysqli_begin_transaction(...)` returns only
@@ -3112,7 +3124,8 @@
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
   `mysqli_field_count(...)`/
-  `mysqli_get_connection_stats(...)`/`mysqli_get_links_stats(...)`/`mysqli_stat(...)`/
+  `mysqli_get_connection_stats(...)`/`mysqli_get_links_stats(...)`/
+  `mysqli_dump_debug_info(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_real_query(...)`/`mysqli_multi_query(...)`/
@@ -4774,7 +4787,7 @@
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
-  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
+  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_dump_debug_info()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
