@@ -20,7 +20,9 @@ Implemented:
   `cargo test -p php_runtime -- --test-threads=1`,
   `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `4851b8ed runtime: add array slot shared cell primitive`.
 
 - Added Milestone 1061, stable internal identity for array slot cells without
   changing value equality or clone-by-value behavior. Each `ArraySlotCell` now

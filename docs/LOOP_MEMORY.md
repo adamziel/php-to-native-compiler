@@ -33,16 +33,19 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1062, internal shared-cell primitive behind
   `ArraySlot` while preserving current public by-value writes.
-- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+- Files changed: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
   `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `GOAL.MD`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime array_slot -- --test-threads=1` passed with 4
   tests. `cargo test -p php_runtime -- --test-threads=1` passed with 112
   tests.
   `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`
   passed with 2 tests. `cargo check -p php_runtime -p phpc`,
-  `cargo fmt --check`, and `git diff --check` passed.
+  `cargo fmt --check`, and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1269 fixture tests, 714 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `4851b8ed runtime: add array slot shared cell primitive`.
 - Current WordPress frontier: `ArraySlot` can now hold its private cell behind
   a shared handle for future reference work, while normal slot cloning remains
   clone-by-value and public writes detach before mutation.
