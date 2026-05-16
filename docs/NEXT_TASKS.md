@@ -10060,8 +10060,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a744a875 parser: add short array destructuring assignment`, covering
-  Milestone 1042.
+  `6582b4e1 runtime: add iterable object metadata`, covering
+  Milestone 1043.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
