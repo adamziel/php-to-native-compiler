@@ -1,0 +1,4 @@
+This fixture exercises phpc's explicit MySQLi statement errno boundary. System
+PHP would require a real mysqli statement object and statement error state;
+phpc only exposes `mysqli_stmt_errno()` through callable metadata and reports
+a stable unsupported diagnostic when statement errno metadata is reached.

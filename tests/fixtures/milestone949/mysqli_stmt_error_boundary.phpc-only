@@ -1,0 +1,5 @@
+This fixture exercises phpc's explicit MySQLi statement error-message
+boundary. System PHP would require a real mysqli statement object and
+statement error message state; phpc only exposes `mysqli_stmt_error()` through
+callable metadata and reports a stable unsupported diagnostic when statement
+error metadata is reached.

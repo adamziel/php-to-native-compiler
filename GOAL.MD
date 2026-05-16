@@ -311,6 +311,12 @@ warning/error fidelity, or native lowering, now wired through synthetic
 WordPress-shaped `wpdb` result/cleanup smokes without claiming statement
 objects, result transfer, result metadata, cleanup state, host database state,
 warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_errno()`/`mysqli_stmt_error()`/
+`mysqli_stmt_affected_rows()` statement metadata/error boundaries that expose
+callable metadata and stable unsupported diagnostics without statement object
+allocation, statement error-state tracking, statement error-message tracking,
+statement execution state, affected-row metadata, host database execution,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

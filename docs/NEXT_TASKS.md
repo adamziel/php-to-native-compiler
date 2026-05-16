@@ -8848,17 +8848,28 @@ handled.
   allocation, mysqlnd result transfer, result metadata, resource cleanup,
   lifecycle state, host database state, warning/error fidelity, or native
   lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement metadata/error
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement metadata/error
   API boundary after result/cleanup visibility, such as
   `mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`
   callable metadata and explicit unsupported or clean-placeholder diagnostics,
   before claiming broader prepared statement fidelity.
+  Milestone 949 exposes `mysqli_stmt_errno()`, `mysqli_stmt_error()`, and
+  `mysqli_stmt_affected_rows()` through callable metadata and turns reached
+  statement metadata calls into stable unsupported diagnostics. This is not
+  statement object allocation, statement error-state tracking, statement
+  error-message tracking, statement execution state, affected-row metadata,
+  host database execution, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement
+  metadata/error smoke that reaches the explicit statement errno/error or
+  affected-row boundary through a WordPress-shaped method without claiming
+  statement objects, statement error state, affected-row metadata, host
+  database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `bfacff5 runtime: add mysqli stmt result close boundaries`, covering
-  Milestone 947 before the current Milestone 948 candidate.
+  `5716ef8 tests: add wordpress wpdb stmt result close smokes`, covering
+  Milestone 948 before the current Milestone 949 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

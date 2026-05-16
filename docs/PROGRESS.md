@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 949, explicit MySQLi statement metadata/error boundaries
+  for `mysqli_stmt_errno()`, `mysqli_stmt_error()`, and
+  `mysqli_stmt_affected_rows()`. The runtime exposes the names through
+  function/callability metadata, validates the one-argument arity, and reports
+  stable unsupported diagnostics when statement metadata is reached. Native
+  metadata lookup knows the names while direct native lowering remains
+  rejected. This is not statement object allocation, statement error-state
+  tracking, statement error-message tracking, statement execution state,
+  affected-row metadata, host database execution, PHP warning/error fidelity,
+  or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_error_metadata -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone949`.
+
 - Added Milestone 948, synthetic WordPress-shaped `wpdb` prepared-statement
   result/cleanup smokes that reach the explicit `mysqli_stmt_get_result()`
   and `mysqli_stmt_close()` boundaries through `wpdb`-style methods. These

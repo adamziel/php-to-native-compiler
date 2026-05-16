@@ -1,0 +1,5 @@
+This fixture exercises phpc's explicit MySQLi statement affected-row metadata
+boundary. System PHP would require a real mysqli statement object and
+statement execution state; phpc only exposes `mysqli_stmt_affected_rows()`
+through callable metadata and reports a stable unsupported diagnostic when
+statement affected-row metadata is reached.

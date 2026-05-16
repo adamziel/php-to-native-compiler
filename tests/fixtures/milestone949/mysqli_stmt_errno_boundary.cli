@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone949/mysqli_stmt_errno_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone949/mysqli_stmt_errno_boundary.php:3:1: unsupported call mysqli_stmt_errno(): mysqli statement objects and statement error-state metadata are not implemented in the current subset
+--- stderr end ---

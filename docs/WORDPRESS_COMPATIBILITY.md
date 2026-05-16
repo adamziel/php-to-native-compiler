@@ -1585,7 +1585,13 @@ historical blockers and remaining full-support gaps include:
   those boundaries through synthetic WordPress-shaped `wpdb` result/cleanup
   methods without claiming statement objects, result transfer, result
   metadata, cleanup state, host database state, warning/error fidelity, or
-  native database lowering.
+  native database lowering. Milestone 949 adds explicit
+  `mysqli_stmt_errno()`/`mysqli_stmt_error()`/
+  `mysqli_stmt_affected_rows()` statement metadata/error boundaries with
+  callable metadata and stable unsupported diagnostics, without statement
+  object allocation, statement error-state tracking, statement error-message
+  tracking, statement execution state, affected-row metadata, host database
+  execution, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

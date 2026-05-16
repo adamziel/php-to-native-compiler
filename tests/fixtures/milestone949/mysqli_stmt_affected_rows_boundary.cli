@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone949/mysqli_stmt_affected_rows_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone949/mysqli_stmt_affected_rows_boundary.php:3:1: unsupported call mysqli_stmt_affected_rows(): mysqli statement objects, statement execution state, and affected-row metadata are not implemented in the current subset
+--- stderr end ---
