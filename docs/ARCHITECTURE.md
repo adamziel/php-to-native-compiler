@@ -1132,6 +1132,12 @@ deterministic compatibility registry rather than host php.ini. It is intended
 to make bootstrap decisions reproducible while leaving mutable INI state,
 `ini_get_all()`, SAPI policy, extension-owned option catalogs, and native
 runtime integration explicit future work.
+`ignore_user_abort()` is an interpreter-only SAPI/connection-state placeholder
+for entry flows such as WordPress `wp-cron.php`. It stores one deterministic
+boolean in the interpreter, returns the previous setting as PHP's `0`/`1`
+integer shape, and deliberately does not observe host client disconnects,
+web-server/FastCGI/LiteSpeed behavior, request finishing, cron spawning, or
+native runtime state.
 `mysqli_connect()` is a placeholder-handle boundary, not database support. The
 runtime and native function tables expose the name so early application
 extension guards can move to the next compatibility blocker, and direct or

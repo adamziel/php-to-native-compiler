@@ -156,7 +156,11 @@ current placeholder database and CLI assumptions. Milestone 851 committed a
 synthetic normalized front-controller smoke for that path. Milestone 852 added
 the first placeholder empty `mysqli_result` lifecycle boundary, and Milestone
 853 added a synthetic `wpdb::query()` smoke that stores, fetches, frees, and
-drains that empty result through WordPress-shaped object state. Milestones 854
+drains that empty result through WordPress-shaped object state. Later entry-flow
+work added a bounded `ignore_user_abort()` placeholder for the reached
+`wp-cron.php` blocker, and the local real WordPress 6.9.4 `wp-cron.php` probe
+now exits `0` with no stdout/stderr under the current deterministic
+placeholder assumptions, without claiming real WP-Cron behavior. Milestones 854
 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
@@ -1205,7 +1209,8 @@ destructors/reuse, and exact PHP diagnostics.
   environment APIs.
 - WordPress compatibility needs a pinned harness, bootstrap fixtures, database
   and filesystem integration strategy, hook/filter execution confidence,
-  extension coverage, request/server state, and plugin/theme smoke targets.
+  extension coverage, real request/server/SAPI state, cron/admin/XML-RPC/REST
+  entry-flow coverage, and plugin/theme smoke targets.
 - The support matrix must keep distinguishing four things: parsed syntax,
   `phpc run` interpreter support, native IR/assembly support, and future
   native executable support.

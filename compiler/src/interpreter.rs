@@ -98,6 +98,7 @@ struct Interpreter {
     active_static_locals: Vec<Vec<String>>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
+    ignore_user_abort: bool,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
     mysqli_report_mode: i64,
@@ -1318,6 +1319,7 @@ impl Interpreter {
             active_static_locals: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
+            ignore_user_abort: false,
             error_handler: None,
             error_handler_mask: None,
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
@@ -13424,6 +13426,7 @@ impl Interpreter {
                 ),
             )),
             "error_reporting" => self.call_error_reporting(args, span),
+            "ignore_user_abort" => self.call_ignore_user_abort(args, span),
             "sprintf" => call_sprintf(&args, span),
             "vsprintf" => call_vsprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -16046,6 +16049,43 @@ impl Interpreter {
         Ok(Value::Int(previous))
     }
 
+    fn call_ignore_user_abort(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ignore_user_abort()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = if self.ignore_user_abort { 1 } else { 0 };
+        if let Some(value) = args.first() {
+            match value {
+                Value::Null => {}
+                Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                    self.ignore_user_abort = value.is_truthy();
+                }
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ignore_user_abort()",
+                            format!(
+                                "setting argument must be null or scalar in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Value::Int(previous))
+    }
+
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array), callback] => {
@@ -17912,6 +17952,7 @@ fn is_builtin(name: &str) -> bool {
             | "preg_replace_callback"
             | "compact"
             | "error_reporting"
+            | "ignore_user_abort"
             | "sprintf"
             | "vsprintf"
             | "call_user_func"

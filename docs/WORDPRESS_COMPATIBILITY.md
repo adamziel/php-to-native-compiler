@@ -76,6 +76,13 @@ tool. It reports:
 The syntax counts are intentionally coarse inventory data, not parser support
 claims.
 
+Current external entry-flow note: after Milestone 1079, a local WordPress 6.9.4
+`wp-cron.php` run gets past the reached `ignore_user_abort(true)` blocker and
+exits `0` with no stdout/stderr under the same deterministic placeholder
+database/request/SAPI assumptions used by the bootstrap and front-controller
+probes. This is an operator-supplied measurement, not a committed WordPress
+source fixture and not a claim of real WP-Cron behavior.
+
 The committed synthetic harness is exercised by:
 
 ```sh

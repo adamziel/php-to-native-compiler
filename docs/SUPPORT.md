@@ -661,7 +661,7 @@
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
-  `error_reporting`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
+  `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
@@ -781,6 +781,12 @@
   `ini_set()`/`ini_restore()`, `ini_get_all()`, SAPI differences, extension
   ownership/access metadata, exact option catalogs, coercions, exact
   diagnostics, and native lowering remain unsupported.
+  `ignore_user_abort($enable = null)` returns the previous deterministic
+  placeholder setting as `0` or `1`. With no argument or `null`, it reads the
+  current setting without changing it. Current scalar arguments update the
+  placeholder state using PHP truthiness. Real client disconnect state,
+  web-server/SAPI connection-abort behavior, warning/`TypeError` fidelity, and
+  native lowering remain unsupported.
   `sprintf($format, ...$values)` and `vsprintf($format, $values)` support
   string format values with literal text, escaped percent signs `%%`,
   sequential and positional `%s`, `%d`, `%f`, and `%F` placeholders, plus the
@@ -3889,6 +3895,10 @@
   builtin section above; direct native `ini_get(...)` calls still reject under
   the function-call boundary, while native function-table introspection
   recognizes the name.
+  `ignore_user_abort` accepts the same current deterministic placeholder
+  state subset as the builtin section above; direct native
+  `ignore_user_abort(...)` calls still reject under the function-call
+  boundary, while native function-table introspection recognizes the name.
   `strtolower` accepts the same current scalar/null string-convertible subset
   as the builtin section above; direct native `strtolower(...)` calls still
   reject under the function-call boundary, while native function-table
@@ -5736,6 +5746,10 @@
   SAPI differences, extension ownership/access metadata, exact option catalogs,
   coercions, exact diagnostics, and native lowering beyond function-table
   introspection
+- `ignore_user_abort()` behavior beyond the current deterministic placeholder:
+  real client disconnect state, SAPI/web-server connection-abort behavior,
+  request finishing, exact warning/`TypeError` behavior, and native lowering
+  beyond function-table introspection
 - `$_SERVER` behavior beyond the current deterministic CLI seed and direct
   root-symbol routing: real SAPI request population, environment imports,
   complete server key catalogs, `$GLOBALS` aliasing, references/copy-on-write,

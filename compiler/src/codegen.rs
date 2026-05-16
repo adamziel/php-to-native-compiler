@@ -6343,6 +6343,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "preg_replace_callback"
             | "compact"
             | "error_reporting"
+            | "ignore_user_abort"
             | "sprintf"
             | "vsprintf"
             | "call_user_func"

@@ -10521,6 +10521,17 @@ handled.
   iteration, foreach destructuring, array/object/`ArrayAccess` offset loop
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
+
+## Milestone 1079: WordPress Entry-Flow Continuation
+
+- [x] Runtime/builtin lane: add a bounded `ignore_user_abort()` placeholder for
+  the reached WordPress `wp-cron.php` entry flow. In the current subset, the
+  builtin returns the previous deterministic setting as `0` or `1`, treats no
+  argument and `null` as a read/no-op, and accepts current scalar setting
+  values using PHP truthiness. This is not real client disconnect state,
+  web-server/SAPI connection-abort behavior, FastCGI/LiteSpeed request
+  finishing, cron locking/spawning, exact `TypeError` behavior, or native
+  lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
@@ -10533,7 +10544,7 @@ handled.
 
 - The latest committed checkpoint is
   `c987abea runtime: add foreach temporary reference arrays`, covering
-  Milestone 1078.
+  Milestone 1078. Milestone 1079 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
