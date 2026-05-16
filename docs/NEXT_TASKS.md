@@ -10988,13 +10988,58 @@ handled.
 
 ## Milestone 1121: Next Parser Boundary
 
+- [x] Parser lane: add stable parse diagnostics for unsupported
+  `abstract`/`final` non-method class members. Properties now report an
+  abstract/final property boundary, while class constants report an
+  abstract/final class-constant boundary. Supported abstract/final methods,
+  duplicate modifier diagnostics, abstract-final method combination
+  diagnostics, readonly boundaries, and typed-property diagnostics remain
+  preserved.
+
+## Milestone 1122: Next Runtime Value/Object Slice
+
+- [x] Runtime lane: add bounded final method override enforcement. Inherited
+  final methods still execute, while a child method declaration with the same
+  case-insensitive name reports a stable runtime boundary during class
+  registration. This preserves final class inheritance enforcement,
+  abstract-class instantiation rejection, inherited property behavior, and
+  nested class registration timing. Abstract method implementation
+  enforcement, trait composition, interface enforcement, method visibility
+  compatibility, exact PHP `Error` objects/diagnostics, and native lowering
+  remain unsupported.
+
+## Milestone 1123: Next Native Boundary
+
+- [x] IR/lowering lane: add a dedicated native rejection for function and
+  method `static` local declarations. `phpc compile --emit-ir` and
+  `--emit-asm` now reject static locals with a diagnostic naming persistent
+  per-function storage, initialization ordering, local scope interaction,
+  references/copy-on-write, recursion, and exact native diagnostics instead of
+  the broader function-declaration boundary.
+
+## Milestone 1124: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: refine `phpc test --list-fixtures` with
+  deterministic recognized orphan sidecar reporting. The manifest now reports
+  sidecars with `.stdout`, `.stderr`, `.exit`, or `.phpc-only` extensions that
+  do not have a matching `.php` fixture without changing normal `phpc test`
+  execution or `--compare-php` behavior.
+
+## Milestone 1125: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1121-1124 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1126: Next Parser Boundary
+
 - [ ] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed gap map, with preference for a
   PHP/WordPress surface that still falls through to a broad or misleading
   diagnostic. Add stable focused coverage, CLI fixture evidence where
   applicable, and keep runtime/native support claims unchanged.
 
-## Milestone 1122: Next Runtime Value/Object Slice
+## Milestone 1127: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
@@ -11002,22 +11047,22 @@ handled.
   or external probes. Prove it with focused tests, CLI coverage, system PHP
   comparison where applicable, and named unsupported edges.
 
-## Milestone 1123: Next Native Boundary
+## Milestone 1128: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1124: Next Compiler-Output Contract
+## Milestone 1129: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1125: Next Tests/Docs Queue Refresh
+## Milestone 1130: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1121-1124 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1126-1129 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

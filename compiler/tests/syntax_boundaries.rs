@@ -726,6 +726,150 @@ fn emit_ir_rejects_readonly_non_property_class_members_at_parse_boundary() {
 }
 
 #[test]
+fn abstract_and_final_methods_remain_supported_member_metadata() {
+    let execution = run_source(
+        "<?php\nabstract class Base {\n    abstract protected function compute();\n}\nfinal class Leaf {\n    public final function compute() {}\n}\necho 'ok';\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn abstract_final_method_combinations_keep_stable_parse_error() {
+    let error = parse_error("<?php\nclass Base {\n    abstract final function compute();\n}\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 14);
+    assert_eq!(
+        error.message,
+        "unsupported class member modifier combination: abstract final methods are not implemented"
+    );
+}
+
+#[test]
+fn unsupported_abstract_final_property_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass Value {\n    abstract $id;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    final $id;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    public final $id;\n}\n",
+            3,
+            12,
+            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    abstract final $id;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn unsupported_abstract_final_class_constant_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass Value {\n    abstract const ID = 1;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    final const ID = 1;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    public final const ID = 1;\n}\n",
+            3,
+            12,
+            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    abstract final const ID = 1;\n}\n",
+            3,
+            5,
+            "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass Value {\n    public string $id;\n}\n",
+            3,
+            12,
+            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+        ),
+        (
+            "<?php\nclass Value {\n    public static int $id;\n}\n",
+            3,
+            19,
+            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_abstract_final_non_method_members_at_parse_boundary() {
+    let property_error =
+        php_compiler::emit_ir_source("<?php\nclass Value {\n    abstract $id;\n}\n").unwrap_err();
+
+    assert_eq!(property_error.phase, Phase::Parse);
+    assert_eq!(
+        property_error.message,
+        "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
+    );
+
+    let const_error =
+        php_compiler::emit_ir_source("<?php\nclass Value {\n    final const ID = 1;\n}\n")
+            .unwrap_err();
+
+    assert_eq!(const_error.phase, Phase::Parse);
+    assert_eq!(
+        const_error.message,
+        "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented"
+    );
+}
+
+#[test]
 fn malformed_clone_expression_has_stable_parse_errors() {
     let cases = [
         (

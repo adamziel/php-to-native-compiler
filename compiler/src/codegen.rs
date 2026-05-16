@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt, UnaryOp, UnsetTarget};
+use crate::ast::{
+    AssignTarget, BinaryOp, ClassMember, Expr, Program, Span, Stmt, UnaryOp, UnsetTarget,
+};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -16,6 +18,8 @@ const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
+const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
@@ -140,6 +144,77 @@ fn is_object_offset_expr(expr: &Expr) -> bool {
             | Expr::ParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
     )
+}
+
+fn find_static_local_span(statements: &[Stmt]) -> Option<Span> {
+    for statement in statements {
+        match statement {
+            Stmt::StaticLocal { span, .. } => return Some(*span),
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if let Some(span) = find_static_local_span(then_branch) {
+                    return Some(span);
+                }
+                if let Some(span) = find_static_local_span(else_branch) {
+                    return Some(span);
+                }
+            }
+            Stmt::While { body, .. }
+            | Stmt::DoWhile { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Foreach { body, .. } => {
+                if let Some(span) = find_static_local_span(body) {
+                    return Some(span);
+                }
+            }
+            Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    if let Some(span) = find_static_local_span(&case.body) {
+                        return Some(span);
+                    }
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                if let Some(span) = find_static_local_span(body) {
+                    return Some(span);
+                }
+                for catch in catches {
+                    if let Some(span) = find_static_local_span(&catch.body) {
+                        return Some(span);
+                    }
+                }
+                if let Some(finally_body) = finally_body {
+                    if let Some(span) = find_static_local_span(finally_body) {
+                        return Some(span);
+                    }
+                }
+            }
+            Stmt::Function(function) => {
+                if let Some(span) = find_static_local_span(&function.body) {
+                    return Some(span);
+                }
+            }
+            Stmt::Class(class) => {
+                for member in &class.members {
+                    if let ClassMember::Method(method) = member {
+                        if let Some(span) = find_static_local_span(&method.function.body) {
+                            return Some(span);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -445,6 +520,9 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Function(function) => {
+                if let Some(span) = find_static_local_span(&function.body) {
+                    return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
+                }
                 Err(self.unsupported(function.span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
             Stmt::Interface(interface) => {
@@ -452,7 +530,12 @@ impl LlvmGenerator {
             }
             Stmt::Trait(trait_decl) => Err(self.unsupported(trait_decl.span, LLVM_TRAIT_REJECTION)),
             Stmt::Enum(enum_decl) => Err(self.unsupported(enum_decl.span, LLVM_ENUM_REJECTION)),
-            Stmt::Class(class) => Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION)),
+            Stmt::Class(class) => {
+                if let Some(span) = find_static_local_span(std::slice::from_ref(stmt)) {
+                    return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
+                }
+                Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Stmt::If { span, .. }
             | Stmt::While { span, .. }
             | Stmt::DoWhile { span, .. }
@@ -506,7 +589,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_GLOBAL_DECLARATION_REJECTION))
             }
             Stmt::StaticLocal { span, .. } => {
-                Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
+                Err(self.unsupported(*span, LLVM_STATIC_LOCAL_REJECTION))
             }
         }
     }
@@ -3270,6 +3353,9 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Function(function) => {
+                if let Some(span) = find_static_local_span(&function.body) {
+                    return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
+                }
                 Err(self.unsupported(function.span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }
             Stmt::Interface(interface) => {
@@ -3280,6 +3366,9 @@ impl CGenerator {
             }
             Stmt::Enum(enum_decl) => Err(self.unsupported(enum_decl.span, ASSEMBLY_ENUM_REJECTION)),
             Stmt::Class(class) => {
+                if let Some(span) = find_static_local_span(std::slice::from_ref(stmt)) {
+                    return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
+                }
                 Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Stmt::If { span, .. }
@@ -3335,7 +3424,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
             }
             Stmt::StaticLocal { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_LOCAL_REJECTION))
             }
         }
     }

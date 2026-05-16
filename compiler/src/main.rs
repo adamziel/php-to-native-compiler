@@ -8,8 +8,8 @@ use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
-    fixture_manifest, run_fixture_dir_with_options, FixtureManifestEntry, FixtureManifestSummary,
-    FixtureRunOptions,
+    fixture_manifest, run_fixture_dir_with_options, FixtureManifestEntry,
+    FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
 };
 
 fn main() -> ExitCode {
@@ -150,6 +150,9 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         for entry in &manifest.entries {
             println!("{}", render_fixture_manifest_entry(entry));
         }
+        for orphan in &manifest.orphan_sidecars {
+            println!("{}", render_fixture_manifest_orphan_sidecar(orphan));
+        }
         return Ok(0);
     }
 
@@ -176,13 +179,14 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
         summary.stderr_expectations,
         summary.exit_expectations,
-        summary.phpc_only_markers
+        summary.phpc_only_markers,
+        summary.orphan_sidecars
     )
 }
 
@@ -212,6 +216,13 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
     format!(
         "{} expectations={} php-comparison={}",
         entry.path, expectations, comparison
+    )
+}
+
+fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar) -> String {
+    format!(
+        "orphan sidecar: {} kind={} expected-fixture={}",
+        orphan.path, orphan.kind, orphan.expected_fixture
     )
 }
 

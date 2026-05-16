@@ -1,0 +1,2 @@
+runtime error at 9:12: unsupported class inheritance for Child: cannot override final method Base::seal()
+

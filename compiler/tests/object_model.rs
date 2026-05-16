@@ -5858,6 +5858,106 @@ echo get_class($base), ":", $base->label;
 }
 
 #[test]
+fn inherited_final_methods_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    final public function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {}
+
+$child = new Child();
+echo $child->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "base");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn final_method_overrides_report_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Base {
+    final public function seal() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function SEAL() {
+        return "child";
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: cannot override final method Base::seal()"
+    );
+}
+
+#[test]
+fn nested_final_method_override_boundary_preserves_registration_timing() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    final public function seal() {
+        return "base";
+    }
+}
+
+if (false) {
+    class Child extends Base {
+        public function seal() {
+            return "child";
+        }
+    }
+}
+
+echo class_exists("Child") ? "registered" : "not-registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "not-registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Base {
+    final public function seal() {
+        return "base";
+    }
+}
+
+if (true) {
+    class Child extends Base {
+        public function seal() {
+            return "child";
+        }
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: cannot override final method Base::seal()"
+    );
+}
+
+#[test]
 fn final_class_inheritance_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php

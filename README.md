@@ -165,8 +165,9 @@ incorrect native code.
   the `class` statement,
   parsed `abstract`/`final` class modifiers and `abstract`/`final` method
   modifiers as metadata, with abstract class instantiation rejected as a
-  runtime boundary, final class inheritance rejected as a runtime boundary,
-  and readonly class declarations kept at a parse boundary,
+  runtime boundary, final class inheritance and final method overrides
+  rejected as runtime boundaries, and readonly class declarations kept at a
+  parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,

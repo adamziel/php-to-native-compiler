@@ -36,12 +36,91 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
         stdout,
         concat!(
             "fixture manifest: 3 fixtures\n",
-            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1\n",
+            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 orphan sidecars=0\n",
             "alpha.php expectations=stdout php-comparison=eligible\n",
             "nested/beta.php expectations=stderr,exit php-comparison=phpc-only\n",
             "zeta.php expectations=none php-comparison=eligible\n",
         )
     );
+}
+
+#[test]
+fn cli_list_fixtures_reports_orphan_sidecars_deterministically() {
+    let temp = TempFixtureDir::new("phpc-fixture-manifest-orphans");
+    let fixture_dir = temp.path().join("fixtures");
+    let nested_dir = fixture_dir.join("nested");
+    fs::create_dir_all(&nested_dir).unwrap();
+
+    fs::write(fixture_dir.join("live.php"), "<?php echo 'live';\n").unwrap();
+    fs::write(fixture_dir.join("live.stdout"), "live\n").unwrap();
+    fs::write(fixture_dir.join("live.phpc-only"), "").unwrap();
+    fs::write(fixture_dir.join("alpha.stdout"), "stale\n").unwrap();
+    fs::write(fixture_dir.join("zeta.stderr"), "stale\n").unwrap();
+    fs::write(
+        fixture_dir.join("ignored.out"),
+        "not a recognized sidecar\n",
+    )
+    .unwrap();
+    fs::write(nested_dir.join("beta.exit"), "1\n").unwrap();
+    fs::write(nested_dir.join("beta.phpc-only"), "").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--list-fixtures"])
+        .arg(&fixture_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "fixture manifest: 1 fixtures\n",
+            "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=4\n",
+            "live.php expectations=stdout php-comparison=phpc-only\n",
+            "orphan sidecar: alpha.stdout kind=stdout expected-fixture=alpha.php\n",
+            "orphan sidecar: nested/beta.exit kind=exit expected-fixture=nested/beta.php\n",
+            "orphan sidecar: nested/beta.phpc-only kind=phpc-only expected-fixture=nested/beta.php\n",
+            "orphan sidecar: zeta.stderr kind=stderr expected-fixture=zeta.php\n",
+        )
+    );
+}
+
+#[test]
+fn cli_test_execution_ignores_orphan_sidecars() {
+    let temp = TempFixtureDir::new("phpc-fixture-manifest-orphans-run");
+    let fixture_dir = temp.path().join("fixtures");
+    fs::create_dir_all(&fixture_dir).unwrap();
+
+    fs::write(fixture_dir.join("runs.php"), "<?php echo 'ok';\n").unwrap();
+    fs::write(fixture_dir.join("runs.stdout"), "ok\n").unwrap();
+    fs::write(fixture_dir.join("dangling.exit"), "99\n").unwrap();
+    fs::write(
+        fixture_dir.join("dangling.stderr"),
+        "should not affect execution\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test"])
+        .arg(&fixture_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(stdout, "fixture tests: 1 passed, 0 failed\n");
+    assert!(stderr.is_empty(), "{stderr}");
 }
 
 struct TempFixtureDir {

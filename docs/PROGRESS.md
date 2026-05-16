@@ -4,6 +4,77 @@
 
 Implemented:
 
+- Added Milestone 1125, a tests/docs lane queue refresh after the 1121-1124
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1121-1125
+  complete and opens Milestones 1126-1130, `docs/LANE_WORKERS.md` points the
+  next parser/runtime/IR/compiler-output/tests-docs lanes at that queue, and
+  support/architecture/operations docs now describe abstract/final non-method
+  member parse boundaries, final method override runtime boundaries, native
+  static-local rejection, and orphan sidecar manifest reporting. This does not
+  change runtime behavior, native lowering, fixture execution, or PHP/WordPress
+  compatibility claims beyond the implemented 1121-1124 slices. Full gate
+  pending at the 1121-1125 checkpoint.
+
+- Added Milestone 1124, a deterministic compiler-output fixture-manifest
+  orphan-sidecar audit. `phpc test --list-fixtures [fixture-dir]` now reports
+  recognized `.stdout`, `.stderr`, `.exit`, and `.phpc-only` sidecars that do
+  not have a matching `.php` fixture. This improves fixture auditability
+  without parsing or executing fixtures and without changing normal
+  `phpc test` execution or `--compare-php` behavior. Verification so far:
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, `cargo
+  test -p phpc --test php_comparison -- --test-threads=1`, direct `cargo run
+  -q -p phpc -- test --list-fixtures <temp-fixture-dir>`, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the compiler-output lane.
+  Full gate deferred until integration.
+
+- Added Milestone 1123, a dedicated native static-local rejection. `phpc
+  compile --emit-ir` and `--emit-asm` now reject function and method
+  `static` local declarations with a diagnostic naming persistent
+  per-function storage, initialization ordering, local scope interaction,
+  references/copy-on-write, recursion, and exact native diagnostics instead
+  of the broader function-declaration boundary. This does not implement
+  native persistent static storage, initialization ordering, local scope
+  interaction, references/copy-on-write, recursion semantics, or exact native
+  diagnostics. Verification so far: `cargo test -p phpc --test
+  native_static_local_boundary -- --test-threads=1`, `cargo test -p phpc
+  --test native_function_declaration_boundary -- --test-threads=1`, `cargo
+  fmt --check`, and scoped `git diff --check` passed in the IR lane. Full
+  gate deferred until integration.
+
+- Added Milestone 1122, bounded runtime enforcement for final method
+  overrides. Inherited final methods still execute, while a child method
+  declaration with the same case-insensitive name reports the stable runtime
+  boundary `unsupported class inheritance for Child: cannot override final
+  method Base::seal()` during class registration. Final class inheritance
+  enforcement, abstract-class instantiation rejection, inherited property
+  behavior, and nested class registration timing remain covered. This does not
+  implement abstract method implementation enforcement, trait composition,
+  interface enforcement, method visibility compatibility enforcement, exact
+  PHP `Error` objects/diagnostics/exit parity, or native lowering for
+  object/class semantics. Verification so far: `cargo test -p phpc --test
+  object_model final_method -- --test-threads=1`, `cargo test -p phpc --test
+  object_model -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1122`, `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1122`, direct system PHP probes, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the runtime lane. Full
+  gate deferred until integration.
+
+- Added Milestone 1121, parser/syntax-boundary diagnostics for unsupported
+  `abstract`/`final` non-method class members. Abstract/final properties now
+  report a property-specific boundary, while abstract/final class constants
+  report a class-constant-specific boundary. Supported abstract/final methods,
+  duplicate modifier diagnostics, abstract-final method combination
+  diagnostics, readonly boundaries, and typed-property diagnostics are
+  preserved. This does not implement abstract/final property semantics,
+  abstract/final class constant semantics, final method override enforcement,
+  abstract method implementation enforcement, or native object/class lowering.
+  Verification so far: `cargo test -p phpc --test syntax_boundaries --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_object_features_cli -- --test-threads=1`, direct `phpc compile
+  --emit-ir` on an abstract/final const source returning exit `1`, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the parser lane. Full
+  gate deferred until integration.
+
 - Added Milestone 1120, a tests/docs lane queue refresh after the 1116-1119
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1116-1120
   complete and opens Milestones 1121-1125, `docs/LANE_WORKERS.md` points the
@@ -13,7 +84,9 @@ Implemented:
   boundary, native global-declaration rejection, and fixture-manifest summary
   totals. This does not change runtime behavior, native lowering, fixture
   execution, or PHP/WordPress compatibility claims beyond the implemented
-  1116-1119 slices. Full gate pending at the 1116-1120 checkpoint.
+  1116-1119 slices. Verification: focused integration checks, `cargo fmt
+  --check`, `git diff --check`, and the serialized full gate passed before
+  commit `8b9ff8c7 runtime: enforce final inheritance boundary`.
 
 - Added Milestone 1119, a deterministic compiler-output fixture-manifest
   summary refinement. `phpc test --list-fixtures [fixture-dir]` now prints

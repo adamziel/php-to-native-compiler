@@ -1347,9 +1347,9 @@ The repository already has a working Rust workspace with:
   plus a bounded `self::` static method reference-return assignment path for
   direct variable returns, plus
   `abstract`/`final` class modifiers and `abstract`/`final` method modifiers
-  as metadata, final-parent inheritance as a runtime boundary, readonly class
-  declarations as a parse boundary, and `new self`/`new parent`/`new static`
-  magic
+  as metadata, final-parent inheritance and final method overrides as runtime
+  boundaries, readonly class declarations as a parse boundary, and `new
+  self`/`new parent`/`new static` magic
   class-name instantiation in active class/method contexts, and bounded
   `strcasecmp()`, bounded no-argument `headers_sent()`, bounded `abs()`,
   bounded `header_remove()`, a `mysqli_connect` boundary, top-level `global`

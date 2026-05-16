@@ -37,6 +37,18 @@ struct ClassMemberModifiers {
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
+    abstract_span: Option<Span>,
+    final_span: Option<Span>,
+}
+
+impl ClassMemberModifiers {
+    fn abstract_or_final_span(&self) -> Option<Span> {
+        self.abstract_span.or(self.final_span)
+    }
+
+    fn abstract_final_conflict_span(&self) -> Option<Span> {
+        self.final_span.or(self.abstract_span)
+    }
 }
 
 impl Parser {
@@ -596,15 +608,18 @@ impl Parser {
         let modifiers = self.parse_class_member_modifiers()?;
 
         if self.match_identifier("const") {
-            let span = self.previous().span;
+            let const_span = self.previous().span;
             if modifiers.is_static {
                 return Err(self.error_at(
-                    span,
+                    const_span,
                     "unsupported class constant declaration: static class constants are not implemented",
                 ));
             }
             if modifiers.is_abstract || modifiers.is_final {
-                return Err(self.error_at(span, unsupported_class_member_modifier_message()));
+                return Err(self.error_at(
+                    modifiers.abstract_or_final_span().unwrap_or(const_span),
+                    unsupported_abstract_final_class_constant_message(),
+                ));
             }
             if matches!(self.peek().kind, TokenKind::Identifier(_))
                 && matches!(self.peek_next().kind, TokenKind::Identifier(_))
@@ -639,6 +654,12 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
+            if modifiers.is_abstract && modifiers.is_final {
+                return Err(self.error_at(
+                    modifiers.abstract_final_conflict_span().unwrap_or(span),
+                    "unsupported class member modifier combination: abstract final methods are not implemented",
+                ));
+            }
             let function = if modifiers.is_abstract {
                 let function = self.parse_function_signature_after_keyword(span)?;
                 self.consume_keyword(
@@ -662,8 +683,10 @@ impl Parser {
         if self.check_unsupported_property_type_declaration() {
             if modifiers.is_abstract || modifiers.is_final {
                 return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_class_member_modifier_message(),
+                    modifiers
+                        .abstract_or_final_span()
+                        .unwrap_or_else(|| self.peek().span),
+                    unsupported_abstract_final_property_message(),
                 ));
             }
             if matches!(self.peek().kind, TokenKind::LParen)
@@ -683,8 +706,10 @@ impl Parser {
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             if modifiers.is_abstract || modifiers.is_final {
                 return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_class_member_modifier_message(),
+                    modifiers
+                        .abstract_or_final_span()
+                        .unwrap_or_else(|| self.peek().span),
+                    unsupported_abstract_final_property_message(),
                 ));
             }
             let (name, span) = self.consume_variable_with_span("expected property name")?;
@@ -727,6 +752,8 @@ impl Parser {
         let mut is_static = false;
         let mut is_abstract = false;
         let mut is_final = false;
+        let mut abstract_span = None;
+        let mut final_span = None;
 
         loop {
             let modifier = match &self.peek().kind {
@@ -752,6 +779,7 @@ impl Parser {
                         ));
                     }
                     is_abstract = true;
+                    abstract_span = Some(self.peek().span);
                     self.advance();
                     continue;
                 }
@@ -763,6 +791,7 @@ impl Parser {
                         ));
                     }
                     is_final = true;
+                    final_span = Some(self.peek().span);
                     self.advance();
                     continue;
                 }
@@ -793,18 +822,13 @@ impl Parser {
             break;
         }
 
-        if is_abstract && is_final {
-            return Err(self.error_at(
-                self.previous().span,
-                "unsupported class member modifier combination: abstract final methods are not implemented",
-            ));
-        }
-
         Ok(ClassMemberModifiers {
             visibility: visibility.unwrap_or(ClassVisibility::Public),
             is_static,
             is_abstract,
             is_final,
+            abstract_span,
+            final_span,
         })
     }
 
@@ -6074,6 +6098,14 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
 
 fn unsupported_class_member_modifier_message() -> &'static str {
     "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented"
+}
+
+fn unsupported_abstract_final_property_message() -> &'static str {
+    "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
+}
+
+fn unsupported_abstract_final_class_constant_message() -> &'static str {
+    "unsupported abstract/final class constant declaration: abstract and final class constant modifiers are not implemented"
 }
 
 fn unsupported_readonly_class_member_modifier_message() -> &'static str {

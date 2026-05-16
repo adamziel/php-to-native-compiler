@@ -28,7 +28,7 @@ how many skips came from a missing `php` binary and how many came from
 For fixture audits that should not execute code, use
 `cargo run -p phpc -- test --list-fixtures [fixture-dir]`; it prints a sorted
 manifest of fixtures, recognized expectation files, aggregate sidecar counts,
-and PHP-comparison eligibility.
+recognized orphan sidecars, and PHP-comparison eligibility.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

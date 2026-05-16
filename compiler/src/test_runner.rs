@@ -21,6 +21,7 @@ pub struct TestSummary {
 pub struct FixtureManifest {
     pub entries: Vec<FixtureManifestEntry>,
     pub summary: FixtureManifestSummary,
+    pub orphan_sidecars: Vec<FixtureManifestOrphanSidecar>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -32,6 +33,7 @@ pub struct FixtureManifestSummary {
     pub stderr_expectations: usize,
     pub exit_expectations: usize,
     pub phpc_only_markers: usize,
+    pub orphan_sidecars: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +43,13 @@ pub struct FixtureManifestEntry {
     pub has_stderr: bool,
     pub has_exit: bool,
     pub phpc_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestOrphanSidecar {
+    pub path: String,
+    pub kind: String,
+    pub expected_fixture: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -63,15 +72,24 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
             phpc_only: path.with_extension("phpc-only").exists(),
         })
         .collect::<Vec<_>>();
-    let summary = FixtureManifestSummary::from_entries(&entries);
+    let orphan_sidecars = collect_orphan_sidecars(root)?;
+    let summary = FixtureManifestSummary::from_entries(&entries, &orphan_sidecars);
 
-    Ok(FixtureManifest { entries, summary })
+    Ok(FixtureManifest {
+        entries,
+        summary,
+        orphan_sidecars,
+    })
 }
 
 impl FixtureManifestSummary {
-    fn from_entries(entries: &[FixtureManifestEntry]) -> Self {
+    fn from_entries(
+        entries: &[FixtureManifestEntry],
+        orphan_sidecars: &[FixtureManifestOrphanSidecar],
+    ) -> Self {
         let mut summary = Self {
             total: entries.len(),
+            orphan_sidecars: orphan_sidecars.len(),
             ..Self::default()
         };
 
@@ -362,6 +380,76 @@ fn collect_php_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {
     }
 
     Ok(())
+}
+
+fn collect_orphan_sidecars(root: &Path) -> CompileResult<Vec<FixtureManifestOrphanSidecar>> {
+    let mut sidecars = Vec::new();
+    collect_sidecar_files(root, &mut sidecars)?;
+
+    let mut orphans = sidecars
+        .into_iter()
+        .filter_map(|path| {
+            let kind = recognized_sidecar_kind(&path)?;
+            let expected_fixture = path.with_extension("php");
+            if expected_fixture.exists() {
+                return None;
+            }
+
+            Some(FixtureManifestOrphanSidecar {
+                path: fixture_manifest_path(root, &path),
+                kind: kind.to_string(),
+                expected_fixture: fixture_manifest_path(root, &expected_fixture),
+            })
+        })
+        .collect::<Vec<_>>();
+    orphans.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.expected_fixture.cmp(&right.expected_fixture))
+    });
+
+    Ok(orphans)
+}
+
+fn collect_sidecar_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!("failed to read test directory {}: {error}", root.display()),
+        )
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!("failed to read test entry: {error}"),
+            )
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sidecar_files(&path, out)?;
+        } else if recognized_sidecar_kind(&path).is_some() {
+            out.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+fn recognized_sidecar_kind(path: &Path) -> Option<&'static str> {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("stdout") => Some("stdout"),
+        Some("stderr") => Some("stderr"),
+        Some("exit") => Some("exit"),
+        Some("phpc-only") => Some("phpc-only"),
+        _ => None,
+    }
 }
 
 fn read_optional(path: PathBuf) -> Result<String, String> {

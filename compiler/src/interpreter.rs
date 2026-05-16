@@ -17,11 +17,11 @@ use sha2::Sha256;
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
-    ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp,
-    UnsetTarget,
+    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
+    EnumDecl, Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition,
+    InterfaceDecl, InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart,
+    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -83,6 +83,7 @@ struct Interpreter {
     abstract_classes: HashSet<ClassId>,
     final_classes: HashSet<ClassId>,
     abstract_methods: HashSet<(ClassId, String)>,
+    final_methods: HashMap<(ClassId, String), String>,
     interfaces: Vec<Rc<InterfaceDecl>>,
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
     traits: Vec<Rc<TraitDecl>>,
@@ -1814,6 +1815,7 @@ impl Interpreter {
         let mut abstract_classes = HashSet::new();
         let mut final_classes = HashSet::new();
         let mut abstract_methods = HashSet::new();
+        let mut final_methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
         let instance_property_defaults = HashMap::new();
@@ -1846,6 +1848,7 @@ impl Interpreter {
                     if class.is_final {
                         final_classes.insert(class_id);
                     }
+                    register_final_method_markers(&mut final_methods, class_id, class);
                 }
                 Stmt::Interface(interface) => {
                     register_interface_name(
@@ -1886,7 +1889,8 @@ impl Interpreter {
                 if class.is_nested {
                     continue;
                 }
-                let class_id = register_class_members(&mut classes, &final_classes, class)?;
+                let class_id =
+                    register_class_members(&mut classes, &final_classes, &final_methods, class)?;
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
@@ -1907,6 +1911,7 @@ impl Interpreter {
             abstract_classes,
             final_classes,
             abstract_methods,
+            final_methods,
             interfaces,
             interface_lookup,
             traits,
@@ -2079,6 +2084,7 @@ impl Interpreter {
                     if class.is_final {
                         self.final_classes.insert(class_id);
                     }
+                    register_final_method_markers(&mut self.final_methods, class_id, class);
                 }
                 Stmt::Interface(interface) => {
                     register_interface_name(
@@ -2121,7 +2127,12 @@ impl Interpreter {
             if class.is_nested {
                 continue;
             }
-            let class_id = register_class_members(&mut self.classes, &self.final_classes, class)?;
+            let class_id = register_class_members(
+                &mut self.classes,
+                &self.final_classes,
+                &self.final_methods,
+                class,
+            )?;
             register_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
@@ -2154,12 +2165,18 @@ impl Interpreter {
         if class.is_final {
             self.final_classes.insert(class_id);
         }
-        if let Err(error) = register_class_members(&mut self.classes, &self.final_classes, class) {
+        if let Err(error) = register_class_members(
+            &mut self.classes,
+            &self.final_classes,
+            &self.final_methods,
+            class,
+        ) {
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
+        register_final_method_markers(&mut self.final_methods, class_id, class);
         register_class_member_runtime_tables(
             &mut self.class_constants,
             &mut self.static_properties,
@@ -2178,6 +2195,8 @@ impl Interpreter {
             );
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.final_methods
+                .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -2193,6 +2212,8 @@ impl Interpreter {
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.final_methods
+                .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -18866,9 +18887,28 @@ fn remove_class_member_runtime_tables(
     abstract_methods.retain(|(declaring_class_id, _)| *declaring_class_id != class_id);
 }
 
+fn register_final_method_markers(
+    final_methods: &mut HashMap<(ClassId, String), String>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) {
+    for member in &class.members {
+        let ClassMember::Method(method) = member else {
+            continue;
+        };
+        if method.is_final {
+            final_methods.insert(
+                (class_id, method.function.name.to_ascii_lowercase()),
+                method.function.name.clone(),
+            );
+        }
+    }
+}
+
 fn register_class_members(
     classes: &mut PhpClassTable,
     final_classes: &HashSet<ClassId>,
+    final_methods: &HashMap<(ClassId, String), String>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -18928,6 +18968,8 @@ fn register_class_members(
             }
             ClassMember::Method(method) => {
                 let visibility = runtime_visibility(method.visibility);
+                validate_final_method_override(classes, id, &class.name, method, final_methods)
+                    .map_err(|error| runtime_error(method.span, error))?;
                 let metadata_method = if method.is_static {
                     PhpMethodMetadata::static_method(&method.function.name, visibility)
                 } else {
@@ -18943,6 +18985,43 @@ fn register_class_members(
     }
 
     Ok(id)
+}
+
+fn validate_final_method_override(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    class_name: &str,
+    method: &ClassMethodDecl,
+    final_methods: &HashMap<(ClassId, String), String>,
+) -> RuntimeResult<()> {
+    let method_lookup_name = method.function.name.to_ascii_lowercase();
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        if let Some(parent_method_name) =
+            final_methods.get(&(parent_id, method_lookup_name.clone()))
+        {
+            return Err(RuntimeError::unsupported_class_inheritance(
+                class_name,
+                format!(
+                    "cannot override final method {}::{}()",
+                    parent.name(),
+                    parent_method_name
+                ),
+            ));
+        }
+
+        current = parent.parent_id();
+    }
+
+    Ok(())
 }
 
 fn validate_inherited_property_compatibility(
