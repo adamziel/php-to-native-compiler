@@ -8623,16 +8623,27 @@ handled.
   runtime and native metadata lookup. This is not `MYSQLI_ASYNC`,
   `mysqli_poll()`, async socket readiness, pending async result queues, result
   object creation, host database state, warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_reap_async_query()` clean no-async-result placeholder through
   a WordPress-shaped connection method without claiming real async query,
   `mysqli_poll()`, socket-readiness, or host database execution fidelity.
+  Milestone 928 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_reap_async_query()` clean no-async-result metadata
+  through local async-result bookkeeping and verifies that the placeholder
+  connection remains open. It is not real async query execution,
+  `MYSQLI_ASYNC`, `mysqli_poll()`, socket readiness, pending async result
+  queues, warnings/errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi async readiness boundary
+  after clean `mysqli_reap_async_query()` bookkeeping, such as
+  `mysqli_poll()`/`MYSQLI_ASYNC`, or add a sharper unsupported diagnostic
+  before claiming broader async socket-readiness or host query execution
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `993dba7 tests: add wordpress wpdb multi query smoke`, covering
-  Milestone 926 before the current Milestone 927 candidate.
+  `ccc6888 runtime: add mysqli reap async query placeholder`, covering
+  Milestone 927 before the current Milestone 928 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

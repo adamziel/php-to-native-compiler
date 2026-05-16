@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 928, a synthetic WordPress-shaped `wpdb` connection async
+  bookkeeping smoke that calls bounded
+  `mysqli_reap_async_query($this->dbh)`, records deterministic clean
+  no-async-result metadata, and verifies that the placeholder connection
+  remains open. This is a harness smoke only; it does not add real WordPress
+  async query execution, `MYSQLI_ASYNC`, `mysqli_poll()`, socket readiness,
+  pending async result queues, host database state, PHP warning/error fidelity,
+  or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone928`.
+
 - Added Milestone 927, bounded `mysqli_reap_async_query()` support for
   deterministic clean placeholder MySQLi async-result metadata. The runtime
   accepts current placeholder `mysqli` handles, returns deterministic `false`

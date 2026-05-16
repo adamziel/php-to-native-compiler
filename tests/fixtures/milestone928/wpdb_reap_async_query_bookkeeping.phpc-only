@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic clean placeholder
+`mysqli_reap_async_query()` boundary through a WordPress-shaped `wpdb`
+connection method. System PHP needs a real mysqli connection and async query
+state; phpc only records local no-async-result bookkeeping and does not model
+`MYSQLI_ASYNC`, `mysqli_poll()`, socket readiness, pending async result queues,
+host database state, or real query execution.

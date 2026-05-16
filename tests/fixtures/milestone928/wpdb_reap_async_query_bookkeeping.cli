@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone928/wpdb_reap_async_query_bookkeeping.php
+0
+no-async
+still-open
+checked
