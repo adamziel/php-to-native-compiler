@@ -2776,6 +2776,133 @@ echo $lengths[1];
 }
 
 #[test]
+fn mysqli_fetch_all_returns_current_seed_post_rows_for_supported_modes() {
+    let execution = run_source(
+        r#"<?php
+$fetch_all = "mysqli_fetch_all";
+echo function_exists($fetch_all) ? "yes" : "no";
+echo "|";
+echo is_callable($fetch_all) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$rows = mysqli_fetch_all($result);
+echo "|";
+echo $rows[0][0];
+echo ",";
+echo $rows[0][1];
+echo ",";
+echo isset($rows[0]["ID"]) ? "assoc" : "no-assoc";
+echo ",";
+echo mysqli_fetch_assoc($result) === false ? "drained" : "row";
+$lengths = mysqli_fetch_lengths($result);
+echo ",";
+echo $lengths[0];
+echo ",";
+echo $lengths[1];
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$rows = mysqli_fetch_all($result, MYSQLI_ASSOC);
+echo "|";
+echo $rows[0]["ID"];
+echo ",";
+echo $rows[0]["post_title"];
+echo ",";
+echo isset($rows[0][0]) ? "num" : "no-num";
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$rows = $fetch_all($result, MYSQLI_BOTH);
+echo "|";
+echo $rows[0][0];
+echo ",";
+echo $rows[0]["ID"];
+echo ",";
+echo $rows[0][1];
+echo ",";
+echo $rows[0]["post_title"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|1,Hello world placeholder,no-assoc,drained,1,23|1,Hello world placeholder,no-num|1,1,Hello world placeholder,Hello world placeholder"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_fetch_all($result, 99);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_fetch_all(): mode must be MYSQLI_ASSOC, MYSQLI_NUM, or MYSQLI_BOTH in the current subset, got int"
+    );
+}
+
+#[test]
+fn mysqli_fetch_column_returns_current_seed_post_columns() {
+    let execution = run_source(
+        r#"<?php
+$fetch_column = "mysqli_fetch_column";
+echo function_exists($fetch_column) ? "yes" : "no";
+echo "|";
+echo is_callable($fetch_column) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_fetch_column($result);
+echo ",";
+echo mysqli_fetch_column($result) === false ? "no-row" : "row";
+$lengths = mysqli_fetch_lengths($result);
+echo ",";
+echo $lengths[0];
+echo ",";
+echo $lengths[1];
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo $fetch_column($result, 1);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_fetch_column($result, 99) === null ? "null" : "value";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|1,no-row,1,23|Hello world placeholder|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_fetch_column($result, "1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_fetch_column(): column must be int in the current subset, got string"
+    );
+}
+
+#[test]
 fn mysqli_data_seek_resets_current_seed_post_row_cursor() {
     let execution = run_source(
         r#"<?php
@@ -3685,6 +3812,10 @@ echo function_exists("mysqli_fetch_row") ? "1" : "0";
 echo is_callable("mysqli_fetch_row") ? "1" : "0";
 echo function_exists("mysqli_fetch_array") ? "1" : "0";
 echo is_callable("mysqli_fetch_array") ? "1" : "0";
+echo function_exists("mysqli_fetch_all") ? "1" : "0";
+echo is_callable("mysqli_fetch_all") ? "1" : "0";
+echo function_exists("mysqli_fetch_column") ? "1" : "0";
+echo is_callable("mysqli_fetch_column") ? "1" : "0";
 echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_fetch_fields") ? "1" : "0";
@@ -3741,7 +3872,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 212, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 216, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4421,6 +4552,30 @@ mysqli_field_tell(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_fetch_lengths(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_fetch_all(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_fetch_column(mysqli_init());
 "#,
     )
     .unwrap_err();

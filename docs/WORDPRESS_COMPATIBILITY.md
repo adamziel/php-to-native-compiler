@@ -1674,7 +1674,12 @@ historical blockers and remaining full-support gaps include:
   last-row length metadata for the seed-post `mysqli_result` placeholder after
   current row-fetch helpers without claiming real host result metadata,
   binary/protocol length accounting, full result resources, warning/error
-  fidelity, or native database lowering. Milestone 965 adds explicit
+  fidelity, or native database lowering. Milestone 969 adds deterministic
+  `mysqli_fetch_all()` and `mysqli_fetch_column()` consumption helpers for the
+  seed-post `mysqli_result` placeholder without claiming real SQL execution,
+  host result storage, broad result resources, duplicate-column fidelity,
+  warning/error fidelity, unbuffered result behavior, or native database
+  lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

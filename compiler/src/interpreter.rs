@@ -5491,6 +5491,98 @@ impl Interpreter {
         self.fetch_mysqli_array_row("mysqli_fetch_array()", result_id, mode, span)
     }
 
+    fn call_mysqli_fetch_all(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_fetch_all()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_all()", &args[0], span)?;
+        let mode = match args.get(1) {
+            Some(Value::Int(mode @ (PHP_MYSQLI_ASSOC | PHP_MYSQLI_NUM | PHP_MYSQLI_BOTH))) => *mode,
+            Some(mode) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_fetch_all()",
+                        format!(
+                            "mode must be MYSQLI_ASSOC, MYSQLI_NUM, or MYSQLI_BOTH in the current subset, got {}",
+                            mode.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => PHP_MYSQLI_NUM,
+        };
+        let rows = {
+            let state = self.mysqli_result_state_mut("mysqli_fetch_all()", result_id, span)?;
+            let rows = state.rows[state.row_cursor..].to_vec();
+            state.row_cursor = state.rows.len();
+            if let Some(row) = rows.last() {
+                state.last_lengths = Some(mysqli_row_value_lengths(row, span)?);
+            }
+            rows
+        };
+
+        let mut outer = PhpArray::new();
+        for (index, row) in rows.into_iter().enumerate() {
+            outer.insert(index as i64, Self::mysqli_array_from_row(row, mode));
+        }
+        Ok(Value::Array(outer))
+    }
+
+    fn call_mysqli_fetch_column(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_fetch_column()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_column()", &args[0], span)?;
+        let column = match args.get(1) {
+            Some(Value::Int(column)) => *column,
+            Some(column) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_fetch_column()",
+                        format!(
+                            "column must be int in the current subset, got {}",
+                            column.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => 0,
+        };
+        let row = {
+            let state = self.mysqli_result_state_mut("mysqli_fetch_column()", result_id, span)?;
+            if state.row_cursor >= state.rows.len() {
+                return Ok(Value::Bool(false));
+            }
+            let row = state.rows[state.row_cursor].clone();
+            state.row_cursor += 1;
+            state.last_lengths = Some(mysqli_row_value_lengths(&row, span)?);
+            row
+        };
+        let Ok(column) = usize::try_from(column) else {
+            return Ok(Value::Null);
+        };
+        Ok(row
+            .get(column)
+            .map(|(_, value)| value.clone())
+            .unwrap_or(Value::Null))
+    }
+
     fn fetch_mysqli_assoc_row(
         &mut self,
         function: &str,
@@ -5543,6 +5635,19 @@ impl Interpreter {
             }
         }
         Ok(Value::Array(array))
+    }
+
+    fn mysqli_array_from_row(row: Vec<(String, Value)>, mode: i64) -> Value {
+        let mut array = PhpArray::new();
+        for (index, (name, value)) in row.into_iter().enumerate() {
+            if mode == PHP_MYSQLI_NUM || mode == PHP_MYSQLI_BOTH {
+                array.insert(index as i64, value.clone());
+            }
+            if mode == PHP_MYSQLI_ASSOC || mode == PHP_MYSQLI_BOTH {
+                array.insert(name, value);
+            }
+        }
+        Value::Array(array)
     }
 
     fn call_mysqli_fetch_field(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -10218,6 +10323,8 @@ impl Interpreter {
             "mysqli_fetch_assoc" => self.call_mysqli_fetch_assoc(&args, span),
             "mysqli_fetch_row" => self.call_mysqli_fetch_row(&args, span),
             "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
+            "mysqli_fetch_all" => self.call_mysqli_fetch_all(&args, span),
+            "mysqli_fetch_column" => self.call_mysqli_fetch_column(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_fetch_fields" => self.call_mysqli_fetch_fields(&args, span),
             "mysqli_fetch_field_direct" => self.call_mysqli_fetch_field_direct(&args, span),
@@ -13223,6 +13330,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_fetch_assoc"
             | "mysqli_fetch_row"
             | "mysqli_fetch_array"
+            | "mysqli_fetch_all"
+            | "mysqli_fetch_column"
             | "mysqli_fetch_field"
             | "mysqli_fetch_fields"
             | "mysqli_fetch_field_direct"

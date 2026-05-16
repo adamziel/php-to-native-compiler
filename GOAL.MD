@@ -405,6 +405,11 @@ plus deterministic `mysqli_fetch_lengths()` last-row length metadata for the
 seed-post `mysqli_result` placeholder after current row-fetch helpers without
 claiming real host result metadata, binary/protocol length accounting, full
 result resources, warning/error fidelity, or native lowering,
+plus deterministic `mysqli_fetch_all()` and `mysqli_fetch_column()` row
+consumption helpers for the seed-post `mysqli_result` placeholder without
+claiming real SQL execution, host result storage, broad result resources,
+duplicate-column fidelity, warning/error fidelity, unbuffered result behavior,
+or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

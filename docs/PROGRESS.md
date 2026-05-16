@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 969, `mysqli_fetch_all()` and `mysqli_fetch_column()` over
+  the current deterministic MySQLi seed-post result. `mysqli_fetch_all()`
+  drains remaining placeholder rows into a zero-indexed outer array, defaults
+  to `MYSQLI_NUM`, accepts `MYSQLI_ASSOC`, `MYSQLI_NUM`, and `MYSQLI_BOTH`,
+  and updates the last-row length state when it fetches rows.
+  `mysqli_fetch_column()` fetches one row from the shared cursor, defaults to
+  column `0`, accepts integer column arguments, returns `null` for missing
+  columns, and returns `false` when no row remains. Native metadata lookup
+  knows both names while direct native lowering remains rejected. This is not
+  real SQL execution, host database result storage, broad result resources,
+  duplicate-column fidelity, warning/error fidelity, unbuffered result
+  behavior, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_all -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_column -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone969`.
+
 - Added Milestone 968, `mysqli_fetch_lengths()` over the current
   deterministic MySQLi seed-post result. Result state now records the string
   lengths of the last fetched row for `mysqli_fetch_object()`,

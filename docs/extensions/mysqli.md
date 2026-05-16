@@ -35,6 +35,7 @@ Status: boundary only.
 `mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
+`mysqli_fetch_all`, `mysqli_fetch_column`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
@@ -360,24 +361,30 @@ index or `false`, and `mysqli_field_seek()`/`mysqli_field_tell()` mutate and
 report the current field cursor. `mysqli_fetch_lengths()` returns `false`
 before any row fetch and a zero-indexed integer array for the most recently
 fetched row lengths after `mysqli_fetch_object()`, `mysqli_fetch_assoc()`,
-`mysqli_fetch_row()`, or `mysqli_fetch_array()`. `mysqli_fetch_object()` returns one
-`stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
-row cursor and returns one associative PHP array with keys `ID` and
-`post_title` and then `false`. `mysqli_fetch_row()` uses the same row cursor and
-returns one numeric PHP array with keys `0` and `1` and then `false`.
+`mysqli_fetch_row()`, `mysqli_fetch_array()`, `mysqli_fetch_all()`, or
+`mysqli_fetch_column()`. `mysqli_fetch_object()` returns one `stdClass` row
+object and then `false`. `mysqli_fetch_assoc()` uses the same row cursor and
+returns one associative PHP array with keys `ID` and `post_title` and then
+`false`. `mysqli_fetch_row()` uses the same row cursor and returns one numeric
+PHP array with keys `0` and `1` and then `false`.
 `mysqli_fetch_array($result, MYSQLI_ASSOC)`
 returns the same associative row shape and then `false`;
 `mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys `0` and `1`;
 `mysqli_fetch_array($result, MYSQLI_BOTH)` and omitted mode/default
-`MYSQLI_BOTH` return both numeric and associative keys. The `MYSQLI_ASSOC`,
-`MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed. Unsupported mode values
-remain explicit boundaries. `mysqli_data_seek($result, $offset)` accepts an
-integer offset for placeholder results, resets the row cursor when the offset is
-in range, and returns `false` for negative or out-of-range offsets. This is a
-fixed row-shape and cursor boundary, not SQL execution, database storage,
-WordPress content fidelity, broad query/result support, duplicate-column
-fidelity, warning/error fidelity, unbuffered result behavior, or real mysqli
-metadata.
+`MYSQLI_BOTH` return both numeric and associative keys. `mysqli_fetch_all()`
+drains all remaining placeholder rows into a zero-indexed outer array; its
+default mode is `MYSQLI_NUM`, and the current subset accepts `MYSQLI_ASSOC`,
+`MYSQLI_NUM`, and `MYSQLI_BOTH`. `mysqli_fetch_column()` fetches one row from
+the shared cursor and returns column `0` by default, a specified integer column
+when present, `null` for a missing column, or `false` when no row remains. The
+`MYSQLI_ASSOC`, `MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed.
+Unsupported mode values and non-integer column arguments remain explicit
+boundaries. `mysqli_data_seek($result, $offset)` accepts an integer offset for
+placeholder results, resets the row cursor when the offset is in range, and
+returns `false` for negative or out-of-range offsets. This is a fixed row-shape
+and cursor boundary, not SQL execution, database storage, WordPress content
+fidelity, broad query/result support, duplicate-column fidelity, warning/error
+fidelity, unbuffered result behavior, or real mysqli metadata.
 
 Other `SELECT` statements are rejected with a specific non-empty-result-set
 diagnostic. For example, `SELECT 1` reports that

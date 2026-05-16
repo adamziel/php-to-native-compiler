@@ -9088,18 +9088,33 @@ handled.
   `mysqli_fetch_array()`. This is not real host result metadata,
   binary/protocol length accounting, full result resources, warning/error
   fidelity, or native lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi result/connection
+- [x] Runtime/database lane: inspect the next real MySQLi result/connection
   helper gap from the audited PHP surface, such as `mysqli_fetch_all()`,
   `mysqli_fetch_column()`, savepoint/SSL/alias helpers, or broader result
   metadata fields, and add the next bounded behavior or explicit runtime
   boundary with tests, CLI fixtures, docs, and native rejection coverage where
   lowering remains unsupported.
+  Milestone 969 implements `mysqli_fetch_all()` and `mysqli_fetch_column()`
+  for the current deterministic seed-post result. `mysqli_fetch_all()` drains
+  remaining placeholder rows with the supported `MYSQLI_NUM`, `MYSQLI_ASSOC`,
+  and `MYSQLI_BOTH` shapes, while `mysqli_fetch_column()` consumes one row and
+  returns a selected integer column, `null` for a missing column, or `false`
+  when no row remains. This is not real SQL execution, host result storage,
+  broad result resources, duplicate-column fidelity, warning/error fidelity,
+  unbuffered result behavior, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as `mysqli_savepoint()`,
+  `mysqli_release_savepoint()`, `mysqli_ssl_set()`, `mysqli_set_opt()`/
+  `mysqli_options()` alias behavior, or broader result metadata fields, and
+  add the next bounded behavior or explicit runtime boundary with tests, CLI
+  fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9223da69 runtime: correct mysqli result field metadata surface`, covering
-  Milestone 967 before the current Milestone 968 candidate.
+  `9b92c61b runtime: add mysqli fetch lengths placeholder`, covering
+  Milestone 968 before the current Milestone 969 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

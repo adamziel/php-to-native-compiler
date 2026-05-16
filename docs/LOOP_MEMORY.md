@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `9b92c61b runtime: add mysqli fetch lengths placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 969, `mysqli_fetch_all()` and
+  `mysqli_fetch_column()` over the current deterministic MySQLi seed-post
+  result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone969/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_all -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_column -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone969`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder seed-post result consumption now
+  includes full remaining-row fetches and single-column fetches, sharing the
+  existing deterministic result cursor and last-row length state.
+- Remaining semantic gaps: real SQL execution, host result storage, broad
+  result resources, duplicate-column fidelity, warning/error fidelity,
+  unbuffered result behavior, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next audited MySQLi
+  connection/helper gap such as savepoint, SSL, alias, or broader result
+  metadata behavior.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `9223da69 runtime: correct mysqli result field metadata surface`, pushed to
   `origin/master`.
 - Task attempted: Milestone 968, `mysqli_fetch_lengths()` over the current
@@ -52,9 +84,10 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: real host result metadata, binary/protocol length
   accounting, full result resources, warnings/errors, and native database
   lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next real MySQLi result or
-  connection helper gap from the audited PHP surface.
+- Checkpoint result: committed and pushed
+  `9b92c61b runtime: add mysqli fetch lengths placeholder`.
+- Next concrete task: inspect the next real MySQLi result or connection helper
+  gap from the audited PHP surface.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

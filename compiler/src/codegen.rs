@@ -6433,6 +6433,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_fetch_assoc"
             | "mysqli_fetch_row"
             | "mysqli_fetch_array"
+            | "mysqli_fetch_all"
+            | "mysqli_fetch_column"
             | "mysqli_fetch_field"
             | "mysqli_fetch_fields"
             | "mysqli_fetch_field_direct"
