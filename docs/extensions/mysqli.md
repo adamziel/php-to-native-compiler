@@ -25,7 +25,6 @@ Status: boundary only.
 `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
 `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
 `mysqli_stmt_insert_id`,
-`mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
 `mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
@@ -36,8 +35,8 @@ Status: boundary only.
 `mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
-`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
-`mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
+`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_num_fields`,
+`mysqli_num_rows`, `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
 `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`,
 `mysqli_report`, and `mysqli_init` are currently visible
@@ -252,12 +251,8 @@ diagnostics because statement objects, statement SQLSTATE tracking, statement
 warning tracking, statement diagnostic state, statement execution state, and
 statement insert-id metadata are not implemented.
 
-`mysqli_stmt_fetch_fields($statement)` and
-`mysqli_stmt_fetch_field($statement)` are visible through callable metadata but
-are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, result metadata objects, field metadata
-arrays, field metadata objects, and statement field cursor state are not
-implemented.
+`mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` are not PHP
+mysqli functions and are not exposed by the current function table.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host
@@ -358,7 +353,11 @@ state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
 `post_title` is `Hello world placeholder`. `mysqli_num_fields()` returns `2`,
 `mysqli_num_rows()` returns `1` without advancing the shared row cursor,
 `mysqli_fetch_field()` returns `stdClass` objects with a `name` property for
-those two fields and then `false`, and `mysqli_fetch_object()` returns one
+those two fields and then `false`, `mysqli_fetch_fields()` returns a
+zero-indexed array of the current field metadata objects,
+`mysqli_fetch_field_direct()` returns one field metadata object by integer
+index or `false`, and `mysqli_field_seek()`/`mysqli_field_tell()` mutate and
+report the current field cursor. `mysqli_fetch_object()` returns one
 `stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
 row cursor and returns one associative PHP array with keys `ID` and
 `post_title` and then `false`. `mysqli_fetch_row()` uses the same row cursor and

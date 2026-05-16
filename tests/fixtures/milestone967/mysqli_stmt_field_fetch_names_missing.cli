@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone967/mysqli_stmt_field_fetch_names_missing.php

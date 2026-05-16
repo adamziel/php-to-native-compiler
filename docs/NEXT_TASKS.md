@@ -9029,28 +9029,13 @@ handled.
   tracking, statement warning tracking, statement diagnostic state, statement
   execution state, statement insert-id metadata, host database state,
   warning/error fidelity, or native lowering.
-- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
-  result field-fetch boundary, such as `mysqli_stmt_fetch_fields()` or
-  `mysqli_stmt_fetch_field()` callable metadata and explicit unsupported
-  diagnostics, before claiming broader prepared statement metadata fidelity.
-  Milestone 963 exposes `mysqli_stmt_fetch_fields()` and
-  `mysqli_stmt_fetch_field()` through callable metadata and turns reached
-  statement field metadata fetch calls into stable unsupported diagnostics.
-  This is not statement object allocation, result metadata objects, field
-  metadata arrays/objects, statement field cursor state, host database
-  execution, warning/error fidelity, or native lowering.
-- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement field
-  metadata fetch smokes that reach the explicit
-  `mysqli_stmt_fetch_fields()` or `mysqli_stmt_fetch_field()` boundary through
-  WordPress-shaped methods without claiming statement objects, result metadata
-  objects, field metadata arrays/objects, statement field cursor state, host
-  database state, warning/error fidelity, or native lowering.
-  Milestone 964 adds `phpc-only` synthetic `wpdb` fixtures that reach the
-  explicit `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()`
-  unsupported diagnostics through WordPress-shaped methods. These are not
-  statement object allocation, result metadata objects, field metadata
-  arrays/objects, statement field cursor state, host database state,
-  warning/error fidelity, or native lowering.
+- [x] Runtime/mysqli lane: correct the misidentified statement field metadata
+  helper surface after auditing local PHP. Milestone 967 removes the non-PHP
+  `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` names from callable
+  metadata and implements the real placeholder-result helpers
+  `mysqli_fetch_fields()`, `mysqli_fetch_field_direct()`,
+  `mysqli_field_seek()`, and `mysqli_field_tell()` for the current seed-post
+  result subset.
 - [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   lifecycle/diagnostic metadata boundary, such as `mysqli_stmt_prepare()`,
   `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, or
@@ -9078,17 +9063,30 @@ handled.
   allocation, prepared SQL parsing, parameter metadata, warning-chain objects,
   error-list arrays, host database state, warning/error fidelity, or native
   lowering.
-- [ ] Runtime/database lane: audit the remaining database API surface against
+- [x] Runtime/database lane: audit the remaining database API surface against
   current WordPress blockers after the MySQLi prepared-statement procedural
   boundaries, then add the next explicit runtime boundary or small deterministic
   behavior slice with parser/runtime tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
+  Milestone 967 corrects the misidentified statement field metadata surface:
+  local PHP does not expose `mysqli_stmt_fetch_fields()` or
+  `mysqli_stmt_fetch_field()`, so those names are no longer advertised, and
+  the real placeholder-result helpers `mysqli_fetch_fields()`,
+  `mysqli_fetch_field_direct()`, `mysqli_field_seek()`, and
+  `mysqli_field_tell()` now execute for the current seed-post result subset.
+- [ ] Runtime/database lane: inspect the next real MySQLi result/connection
+  helper gap from the audited PHP surface, such as `mysqli_fetch_lengths()`,
+  `mysqli_fetch_all()`, `mysqli_fetch_column()`,
+  `mysqli_fetch_field_direct()` metadata breadth, or savepoint/SSL/alias
+  helpers, and add the next bounded behavior or explicit runtime boundary with
+  tests, CLI fixtures, docs, and native rejection coverage where lowering
+  remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `402cff23 runtime: add mysqli stmt prepare diagnostics boundaries`, covering
-  Milestone 965 before the current Milestone 966 candidate.
+  `83ae82f8 tests: add wordpress wpdb stmt prepare diagnostics smokes`,
+  covering Milestone 966 before the current Milestone 967 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 967, a MySQLi result-field metadata surface correction and
+  helper slice. The audit confirmed local PHP exposes result helpers such as
+  `mysqli_fetch_fields()`, `mysqli_fetch_field_direct()`,
+  `mysqli_field_seek()`, and `mysqli_field_tell()`, but does not expose
+  `mysqli_stmt_fetch_fields()` or `mysqli_stmt_fetch_field()`. The runtime and
+  native metadata tables now stop advertising those non-PHP statement names,
+  while the current deterministic `mysqli_result` placeholder supports the
+  real field-list, direct-field, field-seek, and field-tell helpers for the
+  seed-post result. This is not real host database metadata, full `mysqli`
+  result resources, `mysqli_fetch_lengths()`, complete field metadata objects,
+  PHP warning/error fidelity, or native result-helper lowering. Verification
+  so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_result_field_metadata_helpers -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone967`.
+
 - Added Milestone 966, synthetic WordPress-shaped `wpdb`
   prepared-statement prepare/parameter-count and diagnostic-list smokes that
   reach the explicit `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
@@ -30,29 +46,11 @@ Implemented:
   `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone965`.
 
-- Added Milestone 964, synthetic WordPress-shaped `wpdb`
-  prepared-statement field metadata fetch smokes that reach the explicit
-  `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` boundaries
-  through `wpdb`-style methods. These are harness smokes only; they do not add
-  statement object allocation, result metadata objects, field metadata
-  arrays/objects, statement field cursor state, host database execution, PHP
-  warning/error fidelity, or native database lowering. Focused verification so
-  far:
-  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone964`.
-
-- Added Milestone 963, explicit MySQLi statement result field-fetch
-  boundaries for `mysqli_stmt_fetch_fields()` and
-  `mysqli_stmt_fetch_field()`. The runtime exposes the names through
-  function/callability metadata, validates the one-argument arity, and reports
-  stable unsupported diagnostics when statement result field metadata array or
-  single-field metadata fetch is reached. Native metadata lookup knows the
-  names while direct native lowering remains rejected. This is not statement
-  object allocation, result metadata objects, field metadata arrays, field
-  metadata objects, statement field cursor state, host database execution, PHP
-  warning/error fidelity, or native database lowering. Verification so far:
-  `cargo test -p phpc --test mysqli_extension mysqli_statement_field_fetch_metadata -- --test-threads=1`
-  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`
-  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone963`.
+- Milestones 963 and 964 were superseded by the Milestone 967 audit: the
+  originally targeted `mysqli_stmt_fetch_fields()` and
+  `mysqli_stmt_fetch_field()` names are not PHP MySQLi functions, so the
+  current tree no longer exposes them and no longer keeps their direct or
+  WordPress-shaped fixtures.
 
 - Added Milestone 962, synthetic WordPress-shaped `wpdb`
   prepared-statement diagnostics/insert metadata smokes that reach the

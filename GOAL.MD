@@ -393,15 +393,14 @@ diagnostics/insert metadata smokes without claiming statement objects,
 statement SQLSTATE tracking, statement warning tracking, statement diagnostic
 state, statement execution state, statement insert-id metadata, host database
 state, warning/error fidelity, or native lowering,
-plus explicit `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()`
-statement field metadata fetch boundaries that expose callable metadata and
-stable unsupported diagnostics without statement object allocation, result
-metadata objects, field metadata arrays/objects, statement field cursor state,
-host database execution, warning/error fidelity, or native lowering, now wired
-through synthetic WordPress-shaped `wpdb` field metadata fetch smokes without
-claiming statement objects, result metadata objects, field metadata
-arrays/objects, statement field cursor state, host database state,
-warning/error fidelity, or native lowering,
+plus a corrected MySQLi result-field metadata helper surface: the current
+function table does not expose the non-PHP
+`mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` names, while
+`mysqli_fetch_fields()`/`mysqli_fetch_field_direct()`/
+`mysqli_field_seek()`/`mysqli_field_tell()` now execute over the deterministic
+seed-post `mysqli_result` placeholder without claiming real host database
+metadata, full result resources, complete field metadata objects, warning/error
+fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

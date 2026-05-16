@@ -4844,28 +4844,6 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_stmt_fetch_fields(&self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("mysqli_stmt_fetch_fields", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_fetch_fields()",
-                "mysqli statement objects, result metadata objects, field metadata arrays, and statement field cursor state are not implemented in the current subset",
-            ),
-        ))
-    }
-
-    fn call_mysqli_stmt_fetch_field(&self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("mysqli_stmt_fetch_field", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_fetch_field()",
-                "mysqli statement objects, result metadata objects, field metadata objects, and statement field cursor state are not implemented in the current subset",
-            ),
-        ))
-    }
-
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -5577,6 +5555,63 @@ impl Interpreter {
         self.create_stdclass_with_properties(vec![("name".to_string(), Value::String(field))], span)
     }
 
+    fn call_mysqli_fetch_fields(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_fields", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_fields()", &args[0], span)?;
+        let fields = self
+            .mysqli_result_state("mysqli_fetch_fields()", result_id, span)?
+            .fields
+            .clone();
+        let mut array = PhpArray::new();
+        for (index, field) in fields.into_iter().enumerate() {
+            let field = self.create_stdclass_with_properties(
+                vec![("name".to_string(), Value::String(field))],
+                span,
+            )?;
+            array.insert(index as i64, field);
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn call_mysqli_fetch_field_direct(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_field_direct", args, 2, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_field_direct()", &args[0], span)?;
+        let index = match &args[1] {
+            Value::Int(index) => *index,
+            value => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_fetch_field_direct()",
+                        format!(
+                            "field index must be int in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let Ok(index) = usize::try_from(index) else {
+            return Ok(Value::Bool(false));
+        };
+        let field = self
+            .mysqli_result_state("mysqli_fetch_field_direct()", result_id, span)?
+            .fields
+            .get(index)
+            .cloned();
+        match field {
+            Some(field) => self.create_stdclass_with_properties(
+                vec![("name".to_string(), Value::String(field))],
+                span,
+            ),
+            None => Ok(Value::Bool(false)),
+        }
+    }
+
     fn call_mysqli_num_fields(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_num_fields", args, 1, span)?;
         let result_id = expect_mysqli_result_handle("mysqli_num_fields()", &args[0], span)?;
@@ -5618,6 +5653,42 @@ impl Interpreter {
         }
         state.row_cursor = offset;
         Ok(Value::Bool(true))
+    }
+
+    fn call_mysqli_field_seek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_field_seek", args, 2, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_field_seek()", &args[0], span)?;
+        let offset = match &args[1] {
+            Value::Int(offset) => *offset,
+            value => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_field_seek()",
+                        format!(
+                            "field offset must be int in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let state = self.mysqli_result_state_mut("mysqli_field_seek()", result_id, span)?;
+        let Ok(offset) = usize::try_from(offset) else {
+            return Ok(Value::Bool(false));
+        };
+        if offset >= state.fields.len() {
+            return Ok(Value::Bool(false));
+        }
+        state.field_cursor = offset;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_mysqli_field_tell(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_field_tell", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_field_tell()", &args[0], span)?;
+        let state = self.mysqli_result_state("mysqli_field_tell()", result_id, span)?;
+        Ok(Value::Int(state.field_cursor as i64))
     }
 
     fn call_mysqli_free_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -10102,8 +10173,6 @@ impl Interpreter {
             "mysqli_stmt_sqlstate" => self.call_mysqli_stmt_sqlstate(&args, span),
             "mysqli_stmt_warning_count" => self.call_mysqli_stmt_warning_count(&args, span),
             "mysqli_stmt_insert_id" => self.call_mysqli_stmt_insert_id(&args, span),
-            "mysqli_stmt_fetch_fields" => self.call_mysqli_stmt_fetch_fields(&args, span),
-            "mysqli_stmt_fetch_field" => self.call_mysqli_stmt_fetch_field(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -10131,9 +10200,13 @@ impl Interpreter {
             "mysqli_fetch_row" => self.call_mysqli_fetch_row(&args, span),
             "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
+            "mysqli_fetch_fields" => self.call_mysqli_fetch_fields(&args, span),
+            "mysqli_fetch_field_direct" => self.call_mysqli_fetch_field_direct(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
             "mysqli_num_rows" => self.call_mysqli_num_rows(&args, span),
             "mysqli_data_seek" => self.call_mysqli_data_seek(&args, span),
+            "mysqli_field_seek" => self.call_mysqli_field_seek(&args, span),
+            "mysqli_field_tell" => self.call_mysqli_field_tell(&args, span),
             "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
             "mysqli_more_results" => self.call_mysqli_more_results(&args, span),
             "mysqli_next_result" => self.call_mysqli_next_result(&args, span),
@@ -13104,8 +13177,6 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_sqlstate"
             | "mysqli_stmt_warning_count"
             | "mysqli_stmt_insert_id"
-            | "mysqli_stmt_fetch_fields"
-            | "mysqli_stmt_fetch_field"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"
@@ -13133,9 +13204,13 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_fetch_row"
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
+            | "mysqli_fetch_fields"
+            | "mysqli_fetch_field_direct"
             | "mysqli_num_fields"
             | "mysqli_num_rows"
             | "mysqli_data_seek"
+            | "mysqli_field_seek"
+            | "mysqli_field_tell"
             | "mysqli_free_result"
             | "mysqli_more_results"
             | "mysqli_next_result"

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone967/mysqli_result_field_metadata_helpers.php

@@ -1205,58 +1205,102 @@ mysqli_stmt_insert_id($stmt);
 }
 
 #[test]
-fn mysqli_statement_field_fetch_metadata_is_visible_but_explicit_boundary() {
+fn mysqli_result_field_metadata_helpers_execute_current_placeholder_subset() {
     let execution = run_source(
         r#"<?php
-$fetch_fields = "mysqli_stmt_fetch_fields";
-$fetch_field = "mysqli_stmt_fetch_field";
+$fetch_fields = "mysqli_fetch_fields";
+$fetch_direct = "mysqli_fetch_field_direct";
+$field_seek = "mysqli_field_seek";
+$field_tell = "mysqli_field_tell";
 echo function_exists($fetch_fields) ? "yes" : "no";
 echo "|";
 echo is_callable($fetch_fields) ? "fetch-fields-callable" : "fetch-fields-missing";
 echo "|";
-echo function_exists($fetch_field) ? "fetch-field-exists" : "fetch-field-missing";
+echo function_exists($fetch_direct) ? "fetch-direct-exists" : "fetch-direct-missing";
 echo "|";
-echo is_callable($fetch_field) ? "fetch-field-callable" : "fetch-field-missing";
+echo is_callable($fetch_direct) ? "fetch-direct-callable" : "fetch-direct-missing";
+echo "|";
+echo function_exists($field_seek) ? "field-seek-exists" : "field-seek-missing";
+echo "|";
+echo is_callable($field_seek) ? "field-seek-callable" : "field-seek-missing";
+echo "|";
+echo function_exists($field_tell) ? "field-tell-exists" : "field-tell-missing";
+echo "|";
+echo is_callable($field_tell) ? "field-tell-callable" : "field-tell-missing";
+echo "|";
+echo function_exists("mysqli_stmt_fetch_fields") ? "stmt-fields-exists" : "stmt-fields-missing";
+echo "|";
+echo function_exists("mysqli_stmt_fetch_field") ? "stmt-field-exists" : "stmt-field-missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$fields = mysqli_fetch_fields($result);
+echo "|";
+echo $fields[0]->name;
+echo ",";
+echo $fields[1]->name;
+echo "|";
+$direct = mysqli_fetch_field_direct($result, 1);
+echo $direct->name;
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+echo mysqli_field_seek($result, 1) ? "seek" : "no-seek";
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+$field = mysqli_fetch_field($result);
+echo $field->name;
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+echo mysqli_fetch_field_direct($result, 99) === false ? "no-direct" : "direct";
+echo "|";
+echo mysqli_field_seek($result, 99) ? "seek" : "no-seek";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|fetch-fields-callable|fetch-field-exists|fetch-field-callable"
+        "yes|fetch-fields-callable|fetch-direct-exists|fetch-direct-callable|field-seek-exists|field-seek-callable|field-tell-exists|field-tell-callable|stmt-fields-missing|stmt-field-missing|ID,post_title|post_title|0|seek|1|post_title|2|no-direct|no-seek"
     );
     assert_eq!(execution.exit_code, 0);
 
-    let fetch_fields_error = run_source(
+    let fetch_direct_error = run_source(
         r#"<?php
-$stmt = mysqli_init();
-mysqli_stmt_fetch_fields($stmt);
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_fetch_field_direct($result, "1");
 "#,
     )
     .unwrap_err();
 
-    assert_eq!(fetch_fields_error.phase, Phase::Runtime);
-    assert_eq!(fetch_fields_error.line, 3);
-    assert_eq!(fetch_fields_error.column, 1);
+    assert_eq!(fetch_direct_error.phase, Phase::Runtime);
+    assert_eq!(fetch_direct_error.line, 5);
+    assert_eq!(fetch_direct_error.column, 1);
     assert_eq!(
-        fetch_fields_error.message,
-        "unsupported call mysqli_stmt_fetch_fields(): mysqli statement objects, result metadata objects, field metadata arrays, and statement field cursor state are not implemented in the current subset"
+        fetch_direct_error.message,
+        "unsupported call mysqli_fetch_field_direct(): field index must be int in the current subset, got string"
     );
 
-    let fetch_field_error = run_source(
+    let field_seek_error = run_source(
         r#"<?php
-$stmt = mysqli_init();
-mysqli_stmt_fetch_field($stmt);
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_field_seek($result, "1");
 "#,
     )
     .unwrap_err();
 
-    assert_eq!(fetch_field_error.phase, Phase::Runtime);
-    assert_eq!(fetch_field_error.line, 3);
-    assert_eq!(fetch_field_error.column, 1);
+    assert_eq!(field_seek_error.phase, Phase::Runtime);
+    assert_eq!(field_seek_error.line, 5);
+    assert_eq!(field_seek_error.column, 1);
     assert_eq!(
-        fetch_field_error.message,
-        "unsupported call mysqli_stmt_fetch_field(): mysqli statement objects, result metadata objects, field metadata objects, and statement field cursor state are not implemented in the current subset"
+        field_seek_error.message,
+        "unsupported call mysqli_field_seek(): field offset must be int in the current subset, got string"
     );
 }
 
@@ -3557,10 +3601,6 @@ echo function_exists("mysqli_stmt_warning_count") ? "1" : "0";
 echo is_callable("mysqli_stmt_warning_count") ? "1" : "0";
 echo function_exists("mysqli_stmt_insert_id") ? "1" : "0";
 echo is_callable("mysqli_stmt_insert_id") ? "1" : "0";
-echo function_exists("mysqli_stmt_fetch_fields") ? "1" : "0";
-echo is_callable("mysqli_stmt_fetch_fields") ? "1" : "0";
-echo function_exists("mysqli_stmt_fetch_field") ? "1" : "0";
-echo is_callable("mysqli_stmt_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3615,12 +3655,20 @@ echo function_exists("mysqli_fetch_array") ? "1" : "0";
 echo is_callable("mysqli_fetch_array") ? "1" : "0";
 echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
+echo function_exists("mysqli_fetch_fields") ? "1" : "0";
+echo is_callable("mysqli_fetch_fields") ? "1" : "0";
+echo function_exists("mysqli_fetch_field_direct") ? "1" : "0";
+echo is_callable("mysqli_fetch_field_direct") ? "1" : "0";
 echo function_exists("mysqli_num_fields") ? "1" : "0";
 echo is_callable("mysqli_num_fields") ? "1" : "0";
 echo function_exists("mysqli_num_rows") ? "1" : "0";
 echo is_callable("mysqli_num_rows") ? "1" : "0";
 echo function_exists("mysqli_data_seek") ? "1" : "0";
 echo is_callable("mysqli_data_seek") ? "1" : "0";
+echo function_exists("mysqli_field_seek") ? "1" : "0";
+echo is_callable("mysqli_field_seek") ? "1" : "0";
+echo function_exists("mysqli_field_tell") ? "1" : "0";
+echo is_callable("mysqli_field_tell") ? "1" : "0";
 echo function_exists("mysqli_free_result") ? "1" : "0";
 echo is_callable("mysqli_free_result") ? "1" : "0";
 echo function_exists("mysqli_more_results") ? "1" : "0";
@@ -3659,7 +3707,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 206, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 210, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4290,7 +4338,7 @@ mysqli_stmt_insert_id(mysqli_init());
 
     let error = emit_ir_source(
         r#"<?php
-mysqli_stmt_fetch_fields(mysqli_init());
+mysqli_fetch_fields(mysqli_init());
 "#,
     )
     .unwrap_err();
@@ -4302,7 +4350,31 @@ mysqli_stmt_fetch_fields(mysqli_init());
 
     let error = emit_ir_source(
         r#"<?php
-mysqli_stmt_fetch_field(mysqli_init());
+mysqli_fetch_field_direct(mysqli_init(), 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_field_seek(mysqli_init(), 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_field_tell(mysqli_init());
 "#,
     )
     .unwrap_err();

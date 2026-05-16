@@ -1662,17 +1662,15 @@ historical blockers and remaining full-support gaps include:
   statement objects, statement SQLSTATE tracking, statement warning tracking,
   statement diagnostic state, statement execution state, statement insert-id
   metadata, host database state, warning/error fidelity, or native database
-  lowering. Milestone 963 adds explicit
-  `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` statement field
-  metadata fetch boundaries with callable metadata and stable unsupported
-  diagnostics, without statement object allocation, result metadata objects,
-  field metadata arrays/objects, statement field cursor state, host database
-  execution, warning/error fidelity, or native database lowering. Milestone
-  964 wires those boundaries through synthetic WordPress-shaped `wpdb` field
-  metadata fetch methods without claiming statement objects, result metadata
-  objects, field metadata arrays/objects, statement field cursor state, host
-  database state, warning/error fidelity, or native database lowering.
-  Milestone 965 adds explicit `mysqli_stmt_prepare()`/
+  lowering. Milestone 967 corrects the field-metadata surface after auditing
+  local PHP: the current function table no longer exposes the non-PHP
+  `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` names, while real
+  placeholder-result helpers `mysqli_fetch_fields()`,
+  `mysqli_fetch_field_direct()`, `mysqli_field_seek()`, and
+  `mysqli_field_tell()` now execute for the deterministic seed-post result
+  without claiming real host database metadata, full result resources,
+  complete field metadata objects, warning/error fidelity, or native database
+  lowering. Milestone 965 adds explicit `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and
   diagnostic-list boundaries with callable metadata and stable unsupported

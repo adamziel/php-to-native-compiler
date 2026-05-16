@@ -1,0 +1,26 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$fields = mysqli_fetch_fields($result);
+echo $fields[0]->name;
+echo ",";
+echo $fields[1]->name;
+echo "|";
+$direct = mysqli_fetch_field_direct($result, 1);
+echo $direct->name;
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+echo mysqli_field_seek($result, 1) ? "seek" : "no-seek";
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+$field = mysqli_fetch_field($result);
+echo $field->name;
+echo "|";
+echo mysqli_field_tell($result);
+echo "|";
+echo mysqli_fetch_field_direct($result, 99) === false ? "no-direct" : "direct";
+echo "|";
+echo mysqli_field_seek($result, 99) ? "seek" : "no-seek";

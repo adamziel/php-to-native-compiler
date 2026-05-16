@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `83ae82f8 tests: add wordpress wpdb stmt prepare diagnostics smokes`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 967, MySQLi result-field metadata surface
+  correction and helper slice.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone967/*`, removed superseded
+  `tests/fixtures/milestone963/*` and `tests/fixtures/milestone964/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_result_field_metadata_helpers -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone967`.
+  All passed; one fixture compares against system PHP and one is `phpc-only`.
+- Current WordPress frontier: the function table no longer advertises non-PHP
+  `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` names, while the
+  real `mysqli_fetch_fields()`, `mysqli_fetch_field_direct()`,
+  `mysqli_field_seek()`, and `mysqli_field_tell()` helpers execute over the
+  deterministic seed-post result metadata.
+- Remaining semantic gaps: real host database metadata, complete field
+  metadata objects, `mysqli_fetch_lengths()`, broad result helpers, real result
+  resources, warnings/errors, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next real MySQLi result or
+  connection helper gap from the audited PHP surface.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `402cff23 runtime: add mysqli stmt prepare diagnostics boundaries`, pushed
   to `origin/master`.
 - Task attempted: Milestone 966, synthetic WordPress-shaped `wpdb`
@@ -49,10 +80,11 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: statement object allocation, prepared SQL parsing,
   parameter metadata, warning-chain objects, error-list arrays, host database
   state, warnings/errors, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, audit the remaining database API surface
-  against current WordPress blockers and choose the next explicit runtime
-  boundary or deterministic behavior slice.
+- Checkpoint result: committed and pushed
+  `83ae82f8 tests: add wordpress wpdb stmt prepare diagnostics smokes`.
+- Next concrete task: audit the remaining database API surface against current
+  WordPress blockers and choose the next explicit runtime boundary or
+  deterministic behavior slice.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
