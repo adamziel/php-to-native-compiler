@@ -415,6 +415,12 @@ historical blockers and remaining full-support gaps include:
   array offset source with `$input_array = &$input_array[ $path_element ];`.
   This is not executable by-reference foreach support, general reference
   assignment support, aliasing, copy-on-write, or WordPress bootstrap support.
+  Milestone 1055 adds a bounded direct-array-variable by-reference `foreach`
+  copy-back execution slice for common array-walk code that calls
+  `unset($value)` after the loop. This is still not exact PHP by-reference
+  foreach support: array slot/reference cells, lingering post-loop references,
+  mutation-during-iteration fidelity, non-direct iterables, object/Traversable
+  iteration, copy-on-write, and WordPress bootstrap support remain missing.
   Milestone 748 widens statement-form by-reference assignment syntax to accept
   direct array-offset sources such as `$alias =& $array[$key];` as the same
   runtime boundary. After that slice, the direct `wp-settings.php` probe still

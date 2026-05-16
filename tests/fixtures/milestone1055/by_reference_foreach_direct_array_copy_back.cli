@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1055/by_reference_foreach_direct_array_copy_back.php
+exit: 0
+stdout:
+a!|b|1
+--- stdout end ---
+stderr:
+--- stderr end ---

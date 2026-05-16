@@ -1,5 +1,4 @@
 <?php
-$items = [1];
-foreach ($items as &$item) {
+foreach ([1] as &$item) {
     echo $item;
 }

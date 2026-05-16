@@ -100,21 +100,42 @@ echo "registered";
 }
 
 #[test]
-fn foreach_by_reference_reports_stable_runtime_boundary_when_reached() {
+fn foreach_by_reference_copy_back_updates_direct_array_variable_elements() {
+    let source = r#"<?php
+$items = ["a", ["nested" => "b"]];
+
+foreach ($items as $key => &$item) {
+    if (is_array($item)) {
+        $item["seen"] = $key;
+    } else {
+        $item = $item . "!";
+    }
+}
+unset($item);
+
+echo $items[0], "|", $items[1]["nested"], "|", $items[1]["seen"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "a!|b|1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_rejects_non_direct_iterables_as_stable_boundary() {
     let error = runtime_error(
         r#"<?php
-$items = [1];
-foreach ($items as &$item) {
+foreach ([1] as &$item) {
     echo $item;
 }
 "#,
     );
 
-    assert_eq!(error.line, 3);
+    assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration is not implemented; only by-value iteration is supported"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable"
     );
 }
 

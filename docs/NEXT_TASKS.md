@@ -10198,12 +10198,24 @@ handled.
   static method error. This is not magic reference-return dispatch, PHP
   reference containers, argument array aliasing, array/object offset aliases,
   by-reference `foreach`, copy-on-write, or native lowering.
+
+## Milestone 1055: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct-array-variable
+  by-reference `foreach` copy-back execution slice. In the current subset,
+  `foreach ($items as $key => &$item) { ... }` snapshots the direct array
+  variable's keys, writes the key by value, executes the body with the current
+  element value in the loop variable, and copies that loop variable back into
+  the same array slot after each iteration. This is not true array slot cells,
+  lingering post-loop references, mutation-during-iteration fidelity,
+  non-direct by-reference iterables, object/Traversable iteration,
+  copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
-  by-reference `foreach`, object-property references, source/target rebinding,
-  magic reference-return dispatch internals, or array copy-on-write, and add
-  the next bounded behavior or explicit runtime boundary with PHP comparison
-  fixtures.
+  object-property references, source/target rebinding, exact by-reference
+  `foreach`, magic reference-return dispatch internals, or array copy-on-write,
+  and add the next bounded behavior or explicit runtime boundary with PHP
+  comparison fixtures.
 
 ## Latest Completed Checkpoint
 

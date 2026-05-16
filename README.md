@@ -254,9 +254,11 @@ unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded copy-in/copy-back
 path for output-parameter style calls. Broader aliasing remains unsupported.
-By-reference `foreach` value syntax is also a runtime boundary: containing code
-can parse, but reached loops fail with a stable unsupported diagnostic until
-aliasing, mutation ordering, and copy-on-write are implemented.
+By-reference `foreach` over a direct array variable has a bounded copy-back
+interpreter path for common array-walk code that unsets the loop variable after
+the loop. It is not exact PHP aliasing: lingering loop references, mutation
+ordering, non-direct iterables, array slot cells, and copy-on-write remain
+unsupported.
 
 ### Native Path
 

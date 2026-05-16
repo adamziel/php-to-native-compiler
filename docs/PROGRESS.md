@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1055, a bounded direct-array-variable by-reference
+  `foreach` copy-back execution slice. In the current subset,
+  `foreach ($items as $key => &$item) { ... }` executes when `$items` is a
+  direct variable containing a PHP array; the interpreter snapshots the
+  original keys, assigns the key variable by value, runs the body with the
+  current element value in the loop variable, and copies the loop variable
+  back into the same array slot after each iteration. The focused fixture
+  compares against system PHP for the common guarded recursive-array-walk
+  shape that calls `unset($item)` after the loop. Non-direct by-reference
+  iterables remain an explicit runtime boundary. This deliberately does not
+  implement true array slot/reference cells, lingering post-loop references,
+  mutation-during-iteration fidelity, array/object offset aliases,
+  copy-on-write, object/Traversable iteration, or native lowering.
+  Verification so far:
+  `cargo test -p phpc --test foreach -- --test-threads=1` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1055`.
+
 - Added Milestone 1054, an explicit runtime boundary for magic
   `__callStatic` reference-return method sources in statement-form reference
   assignments. Missing static methods such as

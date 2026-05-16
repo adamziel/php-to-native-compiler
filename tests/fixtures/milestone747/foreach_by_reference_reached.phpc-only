@@ -1,1 +1,1 @@
-phpc parses by-reference foreach as a runtime boundary; it does not implement PHP reference aliases, by-reference iteration, or copy-on-write.
+phpc supports a bounded direct-array-variable by-reference foreach copy-back slice; non-direct by-reference iterables remain an explicit runtime boundary and do not implement PHP reference aliases or copy-on-write.

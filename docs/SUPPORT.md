@@ -90,7 +90,7 @@
   reference-return shapes documented above. Magic `__callStatic`
   reference-return method sources report the explicit runtime boundary
   documented above. Array-offset sources, direct array-offset targets for array
-  values, object-property array targets, by-reference `foreach`, broader
+  values, object-property array targets, exact by-reference `foreach`, broader
   reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names, PHP reference-container edge cases,
@@ -293,11 +293,17 @@
   current scalar loose-comparison subset, including `case`, `default`, `:` or
   `;` case/default separators, fallthrough, and `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
-  ordered arrays. By-reference value forms such as
-  `foreach ($array as &$value)` and `foreach ($array as $key => &$value)` parse
-  as runtime boundaries so guarded or declaration-contained code can be loaded,
-  but reached loops report `unsupported call foreach: by-reference iteration is
-  not implemented; only by-value iteration is supported`.
+  ordered arrays. By-reference value forms over a direct array variable, such
+  as `foreach ($array as &$value)` and
+  `foreach ($array as $key => &$value)`, execute as a bounded copy-back slice:
+  the current keys are snapshotted, the key variable is written by value, the
+  loop variable receives the current element value, and the loop variable is
+  copied back into the same array slot after each iteration. This supports the
+  common `unset($value)`-after-loop shape, but it is not true PHP
+  by-reference iteration: lingering post-loop references,
+  mutation-during-iteration fidelity, array slot/reference cells,
+  copy-on-write, object/Traversable iteration, non-direct iterables, and
+  native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

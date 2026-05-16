@@ -215,10 +215,13 @@ instance-method, and constructor calls. Writes through the parameter are
 visible before the call returns, and `unset($param)` detaches only the callee's
 local name from the shared cell. This deliberately does not model full PHP
 reference containers, by-reference array/object offsets, broader reference
-returns, by-reference `foreach`, or copy-on-write.
-By-reference `foreach` value syntax is likewise represented only far enough to
-preserve a stable runtime boundary when reached; it does not mutate array slots
-through aliases, preserve lingering loop-variable references, or implement PHP
+returns, exact by-reference `foreach`, or copy-on-write.
+By-reference `foreach` value syntax over a direct array variable has a bounded
+copy-back interpreter path: it snapshots the initial keys, writes the current
+element value into the loop variable, executes the body, and copies the loop
+variable value back into that array slot. This intentionally avoids claiming
+actual array slot cells, lingering post-loop references,
+mutation-during-iteration fidelity, non-direct iterable support, or PHP
 copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member

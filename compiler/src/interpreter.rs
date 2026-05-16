@@ -1188,13 +1188,104 @@ impl Interpreter {
                 span,
             } => {
                 if *by_reference {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            "foreach",
-                            "by-reference iteration is not implemented; only by-value iteration is supported",
-                        ),
-                    ));
+                    let array_name = match iterable {
+                        Expr::Variable(name, _) => name.clone(),
+                        _ => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::unsupported_call(
+                                    "foreach",
+                                    "by-reference iteration currently requires a direct array variable",
+                                ),
+                            ));
+                        }
+                    };
+                    let array = match scope.read_static(&array_name, *span)? {
+                        Value::Array(array) => array,
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_foreach(format!(
+                                    "can only iterate arrays in the current subset, got {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    };
+                    let keys: Vec<ArrayKey> = array
+                        .entries()
+                        .iter()
+                        .map(|entry| entry.key.clone())
+                        .collect();
+
+                    for entry_key in keys {
+                        self.tick(*span)?;
+                        let current_value = match scope.read_static(&array_name, *span)? {
+                            Value::Array(array) => array.get(entry_key.clone()).cloned(),
+                            other => {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::invalid_foreach(format!(
+                                        "can only iterate arrays in the current subset, got {}",
+                                        other.type_name()
+                                    )),
+                                ));
+                            }
+                        };
+                        let Some(current_value) = current_value else {
+                            continue;
+                        };
+
+                        if let Some(key) = key {
+                            scope.write_static(key, value_from_array_key(&entry_key));
+                        }
+                        scope.write_static(value, current_value);
+                        let flow = self.execute_statements(body, scope)?;
+
+                        if let Some(updated_value) = scope.read_named(value) {
+                            let mut array_value = scope.read_static(&array_name, *span)?;
+                            match &mut array_value {
+                                Value::Array(array) => {
+                                    if array.contains_key(entry_key.clone()) {
+                                        array.insert(entry_key.clone(), updated_value);
+                                    }
+                                }
+                                other => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                    ));
+                                }
+                            }
+                            scope.write_static(&array_name, array_value);
+                        }
+
+                        match flow {
+                            Flow::Normal => {}
+                            Flow::Continue { depth, .. } if depth <= 1 => {}
+                            Flow::Continue { depth, span } => {
+                                return Ok(Flow::Continue {
+                                    depth: depth - 1,
+                                    span,
+                                });
+                            }
+                            Flow::Break { depth, .. } if depth <= 1 => break,
+                            Flow::Break { depth, span } => {
+                                return Ok(Flow::Break {
+                                    depth: depth - 1,
+                                    span,
+                                });
+                            }
+                            flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                                return Ok(flow);
+                            }
+                        }
+                    }
+
+                    return Ok(Flow::Normal);
                 }
                 let iterable = self.evaluate(iterable, scope)?;
                 let array = match iterable {

@@ -789,10 +789,11 @@ Reconciliation into concrete workstreams:
   context, plus `static::` late-static method calls in active class/method
   context and dynamic static receiver method calls for object/class-string
   receivers, an explicit magic `__callStatic` reference-return runtime
-  boundary, documented runtime boundaries, and focused reference fixtures.
+  boundary, a bounded direct-array-variable by-reference `foreach` copy-back
+  path, documented runtime boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
   aliases, magic reference-return dispatch and broader by-reference returns,
-  by-reference `foreach`, and COW tests that compare against PHP.
+  exact by-reference `foreach`, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
