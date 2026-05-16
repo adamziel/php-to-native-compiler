@@ -2195,29 +2195,45 @@ impl Parser {
         let span = expr.span();
         match expr {
             Expr::Variable(name, span) => Ok(ReferenceSource::Variable { name, span }),
-            Expr::Index { target, index, .. } => match *target {
-                Expr::Variable(name, span) => Ok(ReferenceSource::ArrayIndex {
-                    name,
-                    index: *index,
-                    span,
-                }),
-                Expr::Property {
-                    target,
-                    property,
-                    span,
-                } => match *target {
-                    Expr::Variable(object, _) => Ok(ReferenceSource::ObjectPropertyArrayIndex {
+            Expr::Index { .. } => {
+                if let Some((object, property, mut indices, span)) =
+                    Self::object_property_array_index_path_from_expr(&expr)
+                {
+                    if indices.len() == 1 {
+                        return Ok(ReferenceSource::ObjectPropertyArrayIndex {
+                            object,
+                            property,
+                            index: indices.remove(0),
+                            span,
+                        });
+                    }
+                    return Ok(ReferenceSource::ObjectPropertyNestedArrayIndex {
                         object,
                         property,
-                        index: *index,
+                        indices,
                         span,
-                    }),
-                    _ => {
-                        Err(self.error_at(span, unsupported_reference_assignment_source_message()))
+                    });
+                }
+
+                if let Some((name, mut indices, span)) =
+                    Self::array_index_path_from_expr(expr.clone())
+                {
+                    if indices.len() == 1 {
+                        return Ok(ReferenceSource::ArrayIndex {
+                            name,
+                            index: indices.remove(0),
+                            span,
+                        });
                     }
-                },
-                _ => Err(self.error_at(span, unsupported_reference_assignment_source_message())),
-            },
+                    return Ok(ReferenceSource::NestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    });
+                }
+
+                Err(self.error_at(span, unsupported_reference_assignment_source_message()))
+            }
             Expr::Property { .. } | Expr::DynamicProperty { .. } => {
                 Ok(ReferenceSource::Property { expr, span })
             }
@@ -5795,7 +5811,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct array-offset, direct object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct/nested array-offset, direct/nested object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

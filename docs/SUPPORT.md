@@ -100,8 +100,12 @@
   existing array root before binding. Undefined or `null` direct source roots
   are materialized as arrays containing the selected `null` slot before
   binding. Writes through the alias and direct array offset observe the same
-  selected slot, and `unset($alias)` detaches only the alias name. Non-array
-  roots, nested offsets, object-property offsets, `ArrayAccess` offsets, exact
+  selected slot, and `unset($alias)` detaches only the alias name. Nested
+  direct array-offset reference sources such as
+  `$alias =& $array[$outer][$inner];` also execute for explicit key paths,
+  materializing missing intermediate containers and selected slots. Non-array
+  roots, append-at-depth reference sources, object-property offsets outside
+  the documented public-property source subset, `ArrayAccess` offsets, exact
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
   native lowering remain unsupported. Direct object-property array-offset
   reference sources such as `$alias =& $object->items[$key];` execute when the
@@ -110,11 +114,14 @@
   The selected public-property array slot is materialized as `null` when
   missing, a `null` property materializes as an array, and writes through the
   alias or the object-property array offset observe the same selected value.
-  Nested object-property offset sources, dynamic/magic/non-public property
-  sources, non-direct object expressions, non-variable reference targets,
-  ArrayAccess offset reference sources, full PHP reference containers,
-  copy-on-write containers, exact alias destruction ordering, and native
-  lowering remain unsupported for this source form. When a direct static array
+  Nested object-property source paths such as
+  `$alias =& $object->items[$outer][$inner];` execute for explicit key paths
+  with the same public-property root materialization. Append-at-depth reference
+  sources, dynamic/magic/non-public property sources, non-direct object
+  expressions, non-variable reference targets, ArrayAccess offset reference
+  sources, full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, and native lowering remain unsupported for this source
+  form. When a direct static array
   variable with a covered direct array-offset reference alias is copied into
   another direct static variable, the copied slot remains tied to the same
   bounded alias group: writes through the source alias, the original array

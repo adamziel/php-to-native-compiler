@@ -526,6 +526,24 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_existing_nested_array_offset(
+        &mut self,
+        target: &str,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
+            },
+            keys,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_existing_object_property_array_offset(
         &mut self,
         target: &str,
@@ -540,6 +558,26 @@ impl SymbolTable {
                 property: property.to_string(),
             },
             keys: vec![key],
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_existing_object_property_nested_array_offset(
+        &mut self,
+        target: &str,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            keys,
         };
         self.materialize_array_offset_alias(&alias, span)?;
         self.bind_static_to_array_offset_alias(target, alias);
@@ -3945,6 +3983,19 @@ impl Interpreter {
                 {
                     let key = self.evaluate_array_key(index, scope)?;
                     scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
+                } else if let ReferenceSource::NestedArrayIndex {
+                    name: array_name,
+                    indices,
+                    ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_static_to_existing_nested_array_offset(
+                        name, array_name, keys, span,
+                    )?;
                 } else if let ReferenceSource::ObjectPropertyArrayIndex {
                     object,
                     property,
@@ -3955,6 +4006,20 @@ impl Interpreter {
                     let key = self.evaluate_array_key(index, scope)?;
                     scope.bind_static_to_existing_object_property_array_offset(
                         name, object, property, key, span,
+                    )?;
+                } else if let ReferenceSource::ObjectPropertyNestedArrayIndex {
+                    object,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_static_to_existing_object_property_nested_array_offset(
+                        name, object, property, keys, span,
                     )?;
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
@@ -4295,12 +4360,14 @@ impl Interpreter {
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
-            ReferenceSource::ObjectPropertyArrayIndex { .. } => {
+            ReferenceSource::NestedArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "reference assignment",
-                        "object-property array-offset reference sources require a direct variable target in the current subset",
+                        "nested array-offset reference sources require a direct variable target in the current subset",
                     ),
                 ));
             }
@@ -4339,12 +4406,14 @@ impl Interpreter {
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
-            ReferenceSource::ObjectPropertyArrayIndex { .. } => {
+            ReferenceSource::NestedArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "reference assignment",
-                        "object-property array-offset reference sources require a direct variable target in the current subset",
+                        "nested array-offset reference sources require a direct variable target in the current subset",
                     ),
                 ));
             }

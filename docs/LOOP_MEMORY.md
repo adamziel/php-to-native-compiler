@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T01:25:00Z
+
+- Checkpoint before this task:
+  `17073ce4 docs: record object property reference source gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1086, bounded nested direct-array and direct public
+  object-property array-offset reference sources. `$alias =&
+  $array[$outer][$inner];` and `$alias =&
+  $object->items[$outer][$inner];` now parse and execute for direct variable
+  alias targets with explicit key paths.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1086/nested_array_offset_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: local PHP 8.2.29 probes for nested direct and
+  object-property array-offset reference sources, `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_nested_array_offset_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_nested_array_offset_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1086 --compare-php` passed.
+- Remaining semantic gaps: append-at-depth reference sources,
+  dynamic/magic/non-public property reference sources, non-direct object
+  expressions, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, and native lowering remain missing.
+- Next concrete task: run full functions/scopes regression, object-model and
+  array-reference regressions, `cargo check -p php_runtime -p phpc`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: add nested reference sources"` if focused
+  checks pass.
+
 ## Loop Event 2026-05-17T00:55:00Z
 
 - Checkpoint before this task:

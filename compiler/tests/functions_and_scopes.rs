@@ -1680,6 +1680,44 @@ echo $alias;
 }
 
 #[test]
+fn reference_assignment_nested_array_offset_source_aliases_direct_slot() {
+    let execution = run_source(
+        r#"<?php
+$items = ["outer" => ["inner" => "x"]];
+$alias =& $items["outer"]["inner"];
+$alias = "from-alias";
+echo $items["outer"]["inner"];
+echo "|";
+$items["outer"]["inner"] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_offset_source_materializes_path() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+$alias =& $items["outer"]["inner"];
+$alias = "created";
+echo $items["outer"]["inner"];
+echo "|";
+$items["outer"]["inner"] = "updated";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "created|updated");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_undefined_and_null_array_offset_sources_materialize_array_roots() {
     let execution = run_source(
         r#"<?php
@@ -2157,6 +2195,50 @@ $alias =& $box->items["slot"];
 }
 
 #[test]
+fn reference_assignment_object_property_nested_array_offset_source_aliases_direct_slot() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items = ["outer" => ["inner" => "x"]];
+}
+$box = new Box();
+$alias =& $box->items["outer"]["inner"];
+$alias = "from-alias";
+echo $box->items["outer"]["inner"];
+echo "|";
+$box->items["outer"]["inner"] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_nested_array_offset_source_materializes_path() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items;
+}
+$box = new Box();
+$alias =& $box->items["outer"]["inner"];
+$alias = "created";
+echo $box->items["outer"]["inner"];
+echo "|";
+$box->items["outer"]["inner"] = "updated";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "created|updated");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_complex_object_property_array_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php
@@ -2168,7 +2250,7 @@ $alias =& make_box()->items[0];
     assert_eq!(error.column, 11);
     assert_eq!(
         error.message,
-        "unsupported reference assignment: only direct variable, direct array-offset, direct object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+        "unsupported reference assignment: only direct variable, direct/nested array-offset, direct/nested object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
     );
 }
 

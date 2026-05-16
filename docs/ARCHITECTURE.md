@@ -209,22 +209,24 @@ mutable cells, so `$alias =& $value;` can bind both direct names to the same
 cell in the current scope/global-routing model. Assignment through either name
 updates the other, and `unset($alias)` or `unset($value)` removes only that
 name binding while the cell remains alive through any remaining alias. Direct
-array-offset reference sources now have a narrow execution path:
-`$alias =& $array[$key];` over a direct array variable binds the target direct
-variable name to the selected normalized-key array slot route. Missing keys on
-an existing array root are materialized as `null` before binding, and undefined
-or `null` direct source roots are materialized as arrays containing that `null`
-slot before binding. Direct object-property array-offset reference sources have
-a similarly narrow direct-variable target path:
-`$alias =& $object->items[$key];` can bind the alias variable to an explicit
-offset inside a declared public property on a direct object variable,
-materializing a `null` property as an array and missing selected slots as
-`null`. Writes through the alias and through the direct array or supported
-object-property offset observe the same value, and `unset($alias)` removes
-only the alias binding. Non-array roots, nested object-property offset sources,
-dynamic/magic/non-public property sources, `ArrayAccess` offsets, exact
-by-reference `foreach`, full reference containers, copy-on-write, and native
-lowering remain future work. Direct variable sources
+array-offset reference sources now have narrow execution paths:
+`$alias =& $array[$key];` and `$alias =& $array[$outer][$inner];` over a
+direct array variable bind the target direct variable name to the selected
+normalized-key array slot route. Missing keys and missing intermediate
+containers on an existing array root are materialized before binding, and
+undefined or `null` direct source roots are materialized as arrays containing
+the selected `null` slot. Direct object-property array-offset reference sources
+have a similarly narrow direct-variable target path:
+`$alias =& $object->items[$key];` and
+`$alias =& $object->items[$outer][$inner];` can bind the alias variable to an
+explicit offset path inside a declared public property on a direct object
+variable, materializing a `null` property as an array and missing selected
+slots as `null`. Writes through the alias and through the direct array or
+supported object-property offset observe the same value, and `unset($alias)`
+removes only the alias binding. Non-array roots, append-at-depth reference
+sources, dynamic/magic/non-public property sources, `ArrayAccess` offsets,
+exact by-reference `foreach`, full reference containers, copy-on-write, and
+native lowering remain future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function

@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 1086, a bounded nested array-offset reference-source slice
+  for direct arrays and direct public object-property arrays. Statement-form
+  `$alias =& $array[$outer][$inner];` and
+  `$alias =& $object->items[$outer][$inner];` now parse and execute when the
+  target is a direct variable, the root is a direct variable or named declared
+  public property on a direct object variable, and every offset is explicit.
+  Missing intermediate containers and selected slots are materialized through
+  the existing alias-root metadata, so writes through the alias or the nested
+  source path observe the same value for the covered key path. This does not
+  implement append-at-depth reference sources, dynamic/magic/non-public
+  property sources, non-direct object expressions, non-variable reference
+  targets, ArrayAccess reference sources, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, or native
+  lowering. Verification so far: local PHP 8.2.29 probes for nested direct and
+  object-property array-offset reference sources,
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_nested_array_offset_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_nested_array_offset_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1086 --compare-php`.
+
 - Added Milestone 1085, a bounded direct object-property array-offset
   reference-source slice. Statement-form `$alias =& $object->items[$key];`
   now parses and executes when the target is a direct variable, the source
