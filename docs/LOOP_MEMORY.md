@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `76e18c58 runtime: add mysqli multi query pending results`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 993, bounded deterministic multi-result queue
+  state for `mysqli_multi_query()` when every semicolon-separated statement is
+  an exact known result placeholder, with direct MySQLi and WordPress-shaped
+  `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone993/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_tracks_current_deterministic_multi_result_queue -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone993`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder `mysqli_multi_query()` can now queue
+  and advance deterministic future result placeholders for exact known
+  result-only multi-statement input.
+- Remaining semantic gaps: true SQL execution, mixed no-result/result
+  statement handling, broad multi-statement parsing, mutation SQL, host
+  database state, PHP warning/error fidelity, mysqlnd behavior, and native
+  database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect mixed
+  no-result/result multi-statement handling, true reference aliasing, named
+  params-array behavior, mutation SQL, or the next real database integration
+  gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `85d06127 runtime: wire mysqli stmt blob long data`, pushed to
   `origin/master`.
 - Task attempted: Milestone 992, deterministic single-statement

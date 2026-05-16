@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -103,6 +103,7 @@ struct Interpreter {
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
+    mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliPendingResultState>>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -535,6 +536,7 @@ impl Interpreter {
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
+            mysqli_pending_result_queues: HashMap::new(),
             mysqli_statements: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -4458,6 +4460,26 @@ impl Interpreter {
         ))
     }
 
+    fn set_mysqli_pending_result_queue(
+        &mut self,
+        handle_id: i64,
+        results: Vec<MysqliPendingResultState>,
+    ) {
+        let mut results: VecDeque<_> = results.into();
+        let Some(first) = results.pop_front() else {
+            self.mysqli_pending_results.remove(&handle_id);
+            self.mysqli_pending_result_queues.remove(&handle_id);
+            return;
+        };
+
+        self.mysqli_pending_results.insert(handle_id, first);
+        if results.is_empty() {
+            self.mysqli_pending_result_queues.remove(&handle_id);
+        } else {
+            self.mysqli_pending_result_queues.insert(handle_id, results);
+        }
+    }
+
     fn call_mysqli_close(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_close", args, 1, span)?;
         expect_mysqli_handle("mysqli_close()", &args[0], span)?;
@@ -5488,7 +5510,7 @@ impl Interpreter {
         }
 
         if let Some(result) = mysqli_pending_result_for_query(query) {
-            self.mysqli_pending_results.insert(handle_id, result);
+            self.set_mysqli_pending_result_queue(handle_id, vec![result]);
             return Ok(Value::Bool(true));
         }
 
@@ -5544,12 +5566,17 @@ impl Interpreter {
         };
 
         if query.contains(';') {
+            if let Some(results) = mysqli_pending_results_for_multi_statement_query(query) {
+                self.set_mysqli_pending_result_queue(handle_id, results);
+                return Ok(Value::Bool(true));
+            }
+
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "mysqli_multi_query()",
                     format!(
-                        "multi-statement mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_more_results()/mysqli_next_result() state are not modeled; got {query}"
+                        "multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known result-statement queues are supported in the current subset; got {query}"
                     ),
                 ),
             ));
@@ -5560,7 +5587,7 @@ impl Interpreter {
         }
 
         if let Some(result) = mysqli_pending_result_for_query(query) {
-            self.mysqli_pending_results.insert(handle_id, result);
+            self.set_mysqli_pending_result_queue(handle_id, vec![result]);
             return Ok(Value::Bool(true));
         }
 
@@ -6142,14 +6169,34 @@ impl Interpreter {
 
     fn call_mysqli_more_results(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_more_results", args, 1, span)?;
-        expect_mysqli_handle("mysqli_more_results()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let handle_id = expect_mysqli_handle_id("mysqli_more_results()", &args[0], span)?;
+        Ok(Value::Bool(
+            self.mysqli_pending_result_queues
+                .get(&handle_id)
+                .is_some_and(|results| !results.is_empty()),
+        ))
     }
 
-    fn call_mysqli_next_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_next_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_next_result", args, 1, span)?;
-        expect_mysqli_handle("mysqli_next_result()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let handle_id = expect_mysqli_handle_id("mysqli_next_result()", &args[0], span)?;
+        if self.mysqli_pending_results.contains_key(&handle_id) {
+            return Ok(Value::Bool(false));
+        }
+
+        let Some(results) = self.mysqli_pending_result_queues.get_mut(&handle_id) else {
+            return Ok(Value::Bool(false));
+        };
+        let Some(result) = results.pop_front() else {
+            self.mysqli_pending_result_queues.remove(&handle_id);
+            return Ok(Value::Bool(false));
+        };
+        let queue_is_empty = results.is_empty();
+        if queue_is_empty {
+            self.mysqli_pending_result_queues.remove(&handle_id);
+        }
+        self.mysqli_pending_results.insert(handle_id, result);
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_store_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -14574,6 +14621,24 @@ fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultSta
     }
 
     None
+}
+
+fn mysqli_pending_results_for_multi_statement_query(
+    query: &str,
+) -> Option<Vec<MysqliPendingResultState>> {
+    let statements: Vec<_> = query
+        .split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .collect();
+    if statements.len() < 2 {
+        return None;
+    }
+
+    statements
+        .into_iter()
+        .map(mysqli_pending_result_for_query)
+        .collect()
 }
 
 fn mysqli_statement_result_for_query(

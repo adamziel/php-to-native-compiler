@@ -3332,6 +3332,47 @@ echo get_class($empty), ":", mysqli_num_rows($empty), ":", mysqli_num_fields($em
 }
 
 #[test]
+fn mysqli_multi_query_tracks_current_deterministic_multi_result_queue() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_multi_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1; SELECT * FROM wp_posts WHERE 1 = 0") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "blocked";
+$result = mysqli_store_result($handle);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "blocked";
+echo "|";
+echo mysqli_field_count($handle);
+$empty = mysqli_store_result($handle);
+echo "|";
+echo get_class($empty), ":", mysqli_num_rows($empty), ":", mysqli_num_fields($empty);
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "done";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "queued|2|more|blocked|1:Hello world placeholder|more|next|0|mysqli_result:0:0|done|done"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_reap_async_query_returns_current_clean_placeholder_state() {
     let execution = run_source(
         r#"<?php
@@ -4047,7 +4088,7 @@ mysqli_multi_query(mysqli_init(), "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_
     assert_eq!(unsupported_multi_statement.column, 1);
     assert_eq!(
         unsupported_multi_statement.message,
-        "unsupported call mysqli_multi_query(): multi-statement mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_more_results()/mysqli_next_result() state are not modeled; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1"
+        "unsupported call mysqli_multi_query(): multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known result-statement queues are supported in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1"
     );
 
     let unsupported_select = run_source(

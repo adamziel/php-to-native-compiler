@@ -1808,7 +1808,14 @@ historical blockers and remaining full-support gaps include:
   execution, connection result queues,
   `mysqli_more_results()`/`mysqli_next_result()` advancement, mutation SQL,
   broad SQL execution, host database state, PHP warning/error fidelity,
-  mysqlnd behavior, or native database lowering. Milestone 965 adds explicit
+  mysqlnd behavior, or native database lowering. Milestone 993 adds bounded
+  deterministic multi-result queue state for `mysqli_multi_query()` when every
+  semicolon-separated statement is one of those exact known result
+  placeholders, including a WordPress-shaped `wpdb` smoke, without claiming
+  true SQL execution, mixed no-result/result statement handling, broad
+  multi-statement parsing, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, or native database lowering.
+  Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

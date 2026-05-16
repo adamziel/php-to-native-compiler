@@ -409,10 +409,14 @@ WordPress charset setup statement, returning deterministic `true` without
 pending result state. It also accepts the exact deterministic seed-post and
 empty-result SQL shapes already supported by `mysqli_real_query()`, queues one
 pending placeholder result, and lets `mysqli_store_result()` or
-`mysqli_use_result()` consume that result. Real multi-statement execution,
-connection result queues, `mysqli_more_results()`/`mysqli_next_result()`
-advancement, mutation state, warning/error behavior, host database state, and
-native lowering are not implemented.
+`mysqli_use_result()` consume that result. For semicolon-separated
+`mysqli_multi_query()` input, the runtime also accepts a bounded deterministic
+multi-result queue when every statement is one of those exact known result
+placeholders; `mysqli_more_results()` reports queued future placeholders, and
+`mysqli_next_result()` advances after the current pending result is consumed.
+Real SQL execution, mixed no-result/result multi-statements, broad
+multi-statement parsing, mutation state, warning/error behavior, host database
+state, mysqlnd fidelity, and native lowering are not implemented.
 
 `mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
 placeholder `mysqli_result` object for the first deterministic empty result
