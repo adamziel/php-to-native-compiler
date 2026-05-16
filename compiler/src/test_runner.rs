@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::run_source_with_source_file;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestSummary {
@@ -48,6 +49,7 @@ pub struct FixtureManifestSummary {
 pub struct FixtureManifestEntry {
     pub path: String,
     pub source_bytes: u64,
+    pub source_sha256: String,
     pub has_stdout: bool,
     pub has_stderr: bool,
     pub has_exit: bool,
@@ -56,6 +58,10 @@ pub struct FixtureManifestEntry {
     pub stderr_bytes: Option<u64>,
     pub exit_bytes: Option<u64>,
     pub phpc_only_bytes: Option<u64>,
+    pub stdout_sha256: Option<String>,
+    pub stderr_sha256: Option<String>,
+    pub exit_sha256: Option<String>,
+    pub phpc_only_sha256: Option<String>,
     pub phpc_only_reason: Option<String>,
 }
 
@@ -65,6 +71,7 @@ pub struct FixtureManifestOrphanSidecar {
     pub kind: String,
     pub expected_fixture: String,
     pub bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +125,7 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
         entries.push(FixtureManifestEntry {
             path: fixture_manifest_path(root, &path),
             source_bytes: file_size(&path)?,
+            source_sha256: file_sha256(&path)?,
             has_stdout: stdout_bytes.is_some(),
             has_stderr: stderr_bytes.is_some(),
             has_exit: exit_bytes.is_some(),
@@ -126,6 +134,10 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
             stderr_bytes,
             exit_bytes,
             phpc_only_bytes,
+            stdout_sha256: optional_file_sha256(&path.with_extension("stdout"))?,
+            stderr_sha256: optional_file_sha256(&path.with_extension("stderr"))?,
+            exit_sha256: optional_file_sha256(&path.with_extension("exit"))?,
+            phpc_only_sha256: optional_file_sha256(&path.with_extension("phpc-only"))?,
             phpc_only_reason,
         });
     }
@@ -579,6 +591,7 @@ fn collect_orphan_sidecars(root: &Path) -> CompileResult<Vec<FixtureManifestOrph
             kind: kind.to_string(),
             expected_fixture: fixture_manifest_path(root, &expected_fixture),
             bytes: file_size(&path)?,
+            sha256: file_sha256(&path)?,
         });
     }
     orphans.sort_by(|left, right| {
@@ -747,6 +760,41 @@ fn file_size(path: &Path) -> CompileResult<u64> {
                 format!("failed to stat fixture file {}: {error}", path.display()),
             )
         })
+}
+
+fn optional_file_sha256(path: &Path) -> CompileResult<Option<String>> {
+    match fs::read(path) {
+        Ok(contents) => Ok(Some(sha256_hex(&contents))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!("failed to read fixture sidecar {}: {error}", path.display()),
+        )),
+    }
+}
+
+fn file_sha256(path: &Path) -> CompileResult<String> {
+    fs::read(path)
+        .map(|contents| sha256_hex(&contents))
+        .map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!("failed to read fixture file {}: {error}", path.display()),
+            )
+        })
+}
+
+fn sha256_hex(contents: &[u8]) -> String {
+    let digest = Sha256::digest(contents);
+    let mut output = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        output.push_str(&format!("{byte:02x}"));
+    }
+    output
 }
 
 fn read_phpc_only_reason(path: &Path) -> CompileResult<Option<String>> {

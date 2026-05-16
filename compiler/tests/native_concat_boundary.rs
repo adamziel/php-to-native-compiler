@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_CONCAT_REJECTION: &str = "LLVM concatenation lowering rejects unsupported concatenation operands until native PHP scalar-to-string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
+const LLVM_INTERPOLATED_STRING_REJECTION: &str = "LLVM interpolated-string lowering rejects double-quoted string interpolation until native interpolation part evaluation, PHP-shaped string conversion, array/object lookup, __toString dispatch, runtime string allocation, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded interpolation behavior";
 
 #[test]
 fn phpc_run_still_handles_current_concatenation_subset() {
@@ -47,23 +48,28 @@ fn emit_asm_rejects_concatenation_before_backend_execution() {
 }
 
 #[test]
-fn emit_ir_rejects_braced_interpolated_strings_until_native_string_runtime_exists() {
-    let error = emit_ir_source(
+fn emit_ir_rejects_interpolated_strings_with_specific_boundary() {
+    for source in [
+        r#"<?php
+$constant = "RUNTIME";
+echo "APP_$constant";
+"#,
         r#"<?php
 $constant = "RUNTIME";
 echo "APP_{$constant}";
 "#,
-    )
-    .unwrap_err();
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_CONCAT_REJECTION);
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, 3);
+        assert_eq!(error.column, 6);
+        assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
+    }
 }
 
 #[test]
-fn emit_asm_rejects_braced_interpolated_strings_before_backend_execution() {
+fn emit_asm_rejects_interpolated_strings_before_backend_execution() {
     let error = emit_asm_source(
         r#"<?php
 $constant = "RUNTIME";
@@ -75,7 +81,7 @@ echo "APP_{$constant}";
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_CONCAT_REJECTION);
+    assert_eq!(error.message, LLVM_INTERPOLATED_STRING_REJECTION);
 }
 
 #[test]
@@ -205,6 +211,68 @@ fn native_concat_emit_ir_cli_snapshot_matches_committed_output() {
         workspace_root.join("tests/fixtures/milestone179/native_concat_boundary_emit_ir.cli"),
     )
     .expect("native concat CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_interpolated_string_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1168/native_interpolated_string_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1168/native_interpolated_string_boundary_emit_ir.cli"),
+    )
+    .expect("native interpolated-string IR CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_interpolated_string_emit_asm_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1168/native_interpolated_string_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1168/native_interpolated_string_boundary_emit_asm.cli"),
+    )
+    .expect("native interpolated-string assembly CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

@@ -124,10 +124,14 @@ the current simple `$name`, `{$name}`, array-offset, object-property, and
 chained access slices instead of being rewritten to ordinary string
 concatenation. The runtime evaluates those parts left to right through the
 active symbol table and PHP-shaped echo-string conversion. Native lowering
-rejects the interpolated form, including `defined("SODIUM_$constant")`, until
-native constant tables and runtime string lookup semantics exist. `${...}`,
-dynamic properties, static properties, and arbitrary complex expressions remain
-lexer boundaries.
+rejects ordinary interpolated strings with a dedicated codegen diagnostic until
+native interpolation part evaluation, PHP-shaped string conversion,
+array/object lookup, `__toString` dispatch, runtime string allocation,
+references/copy-on-write, and exact native diagnostics exist. Interpolated
+`defined("SODIUM_$constant")` names continue to use the global-constant native
+boundary until native constant tables and runtime string lookup semantics
+exist. `${...}`, dynamic properties, static properties, and arbitrary complex
+expressions remain lexer boundaries.
 
 PHP error-control syntax is represented as an explicit AST wrapper for
 `@expr`. The interpreter currently evaluates the wrapped expression normally
@@ -1014,7 +1018,8 @@ expressions: `$text . ""` and `"" . $text` reuse `$text` without runtime
 string allocation. It rejects PHP scalar-to-string conversion, non-empty
 ambiguous string expressions, arrays, objects, resources, runtime string
 allocation, references/copy-on-write side-effect behavior, and exact native
-error behavior.
+error behavior. Double-quoted interpolation remains a separate native codegen
+boundary rather than being lowered as string concatenation.
 Native lowering accepts `&&`, `||`, `and`, `or`, and `xor` only when operands
 are already lowerable booleans or native boolean expression results, or when
 already-lowerable scalar operands have one statically known PHP truthiness
@@ -1533,7 +1538,10 @@ declarations, dynamic `const` values, class constants through
 `constant(...)`/unsupported `defined(...)` forms, typed and multi-declarator
 class constants, `static::CONST`, references/copy-on-write for constant values,
 and broader constant lowering are still outside the implemented constant
-subset. Direct `ClassName::CONST`, `self::CONST`, and `parent::CONST`
+subset. Namespace-qualified and leading-backslash fully-qualified constant
+reads stop at dedicated parse diagnostics until namespace-aware constant-table
+lookup, fallback behavior, imports, and native lowering exist. Direct
+`ClassName::CONST`, `self::CONST`, and `parent::CONST`
 execution use class metadata instead of the global constant table. Native
 lowering currently folds only direct
 supported-string-name `defined($name)` checks and otherwise rejects the
@@ -1558,12 +1566,13 @@ autoload callbacks.
 Unsupported namespace/import behavior remains: bracketed namespace blocks,
 global namespace blocks, multiple namespaces in one file, namespace-scoped
 functions/constants, namespace-qualified function calls, leading-backslash
-fully-qualified function calls, grouped imports, function imports, constant
-imports, string-name import expansion, trait `use` execution, `__NAMESPACE__`,
-autoload interaction, exact PHP diagnostics, partial-output behavior, and
-namespace-aware native lowering. The native path rejects namespace
-declarations/imports before scalar folding or backend execution until native
-symbol tables and namespace context exist.
+fully-qualified function calls, namespace-qualified constant reads,
+leading-backslash fully-qualified constant reads, grouped imports, function
+imports, constant imports, string-name import expansion, trait `use`
+execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+partial-output behavior, and namespace-aware native lowering. The native path
+rejects namespace declarations/imports before scalar folding or backend
+execution until native symbol tables and namespace context exist.
 
 ## Object/Class Boundary
 
@@ -1646,13 +1655,15 @@ for public methods with the required interface method names and the current
 supported non-static method shape. Implementations may omit an interface
 parameter type or repeat the same type text case-insensitively, but may not add
 a parameter type to an untyped interface parameter or substitute a different
-type for a typed interface parameter. Public static methods do not satisfy
-non-static interface method requirements. This is a bounded compatibility
-check only; full parameter variance, return type compatibility, type
-subtyping, alias/import resolution, union/intersection canonicalization,
-interface inheritance, built-in/internal interface method enforcement, exact
-PHP error objects, autoload behavior, and native lowering remain separate
-work. A bounded
+type for a typed interface parameter. Implementations may add a return type to
+an untyped interface method, but a typed interface method requires the
+implementation to declare the same return type text case-insensitively. Public
+static methods do not satisfy non-static interface method requirements. This is
+a bounded compatibility check only; full parameter variance, broader return
+type covariance/contravariance, type subtyping, alias/import resolution,
+union/intersection canonicalization, interface inheritance, built-in/internal
+interface method enforcement, exact PHP error objects, autoload behavior, and
+native lowering remain separate work. A bounded
 core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at

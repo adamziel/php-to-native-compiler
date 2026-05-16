@@ -4,6 +4,98 @@
 
 Implemented:
 
+- Added Milestone 1170, a tests/docs queue refresh after the 1166-1169
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1166-1170
+  complete and opens Milestones 1171-1175, public docs describe the
+  namespace-qualified/fully-qualified constant parse boundaries,
+  declared-interface return-type metadata enforcement, dedicated native
+  interpolated-string rejection, and JSON fixture-manifest SHA-256 digests.
+  This does not change runtime behavior, native lowering, fixture execution,
+  or PHP/WordPress compatibility claims beyond the implemented 1166-1169
+  slices. Full gate passed at checkpoint: `1340` fixture tests, `760` system
+  PHP comparisons, and `580` skipped `phpc-only` fixtures.
+
+- Added Milestone 1169, a deterministic compiler-output/audit JSON fixture
+  manifest refinement. `phpc test --list-fixtures-json [fixture-dir]` now
+  emits `contract_version: 5` with SHA-256 digests for fixture sources,
+  recognized sidecars, and recognized orphan sidecars, in addition to the
+  existing source/sidecar byte counts and `.phpc-only` reason fields. This
+  does not change fixture execution, system PHP comparison behavior, text
+  manifests, supported PHP syntax/runtime behavior, native lowering, or
+  PHP/WordPress compatibility claims. Unsupported/unchanged audit gaps: the
+  manifest does not parse or execute fixtures, compare system PHP, validate
+  non-empty `.phpc-only` reasons, inspect unrecognized sidecars, or prove
+  branch-specific compatibility. Verification so far: `cargo test -p phpc
+  --test fixture_manifest -- --test-threads=1`, direct
+  `cargo run -q -p phpc -- test --list-fixtures-json tests/fixtures/milestone2`
+  showing `contract_version: 5` and `file_sha256`, `cargo fmt --check`, and
+  `git diff --check` passed in the compiler-output lane. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1168, a dedicated native interpolated-string rejection for
+  documented double-quoted interpolation. `phpc compile --emit-ir` and
+  `--emit-asm` now reject ordinary interpolated strings with a diagnostic
+  naming missing native interpolation part evaluation, PHP-shaped string
+  conversion, array/object lookup, `__toString` dispatch, runtime string
+  allocation, references/copy-on-write, and exact native diagnostics instead
+  of reporting the broader concatenation boundary. Interpolated
+  `defined("SODIUM_$constant")` operands continue to use the existing
+  global-constant native boundary. This does not implement native
+  interpolation lowering, runtime string allocation, native array/object part
+  lookup, `__toString` dispatch, references, copy-on-write, or exact native
+  interpolation diagnostics. Verification so far: `cargo test -p phpc --test
+  native_concat_boundary emit_ir_rejects_interpolated_strings_with_specific_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test native_concat_boundary
+  emit_asm_rejects_interpolated_strings_before_backend_execution --
+  --test-threads=1`, CLI snapshot tests for `--emit-ir` and `--emit-asm`,
+  `cargo test -p phpc --test native_concat_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary interpolated --
+  --test-threads=1`, direct compile fixture checks returning exit `1`,
+  `cargo fmt --check`, and `git diff --check` passed in the IR lane. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1167, a bounded runtime interface method return-type
+  compatibility check. Concrete classes that implement declared user
+  interfaces, including concrete children inheriting `implements` metadata,
+  now reject implementations that omit a required typed interface return or
+  substitute a different return type text for a typed interface method.
+  Implementations may add a return type when the interface method is untyped,
+  and matching typed returns compare case-insensitively. This does not
+  implement full PHP signature variance, class/interface return covariance,
+  type aliases/imports, union/intersection canonicalization,
+  built-in/internal interface method enforcement, call-time type enforcement,
+  exact PHP `Error` objects, or native object/interface lowering.
+  Verification so far: `cargo test -p phpc --test object_model
+  interface_required_method_return_type_compatibility_is_enforced_for_concrete_classes
+  -- --test-threads=1`, `cargo test -p phpc --test object_model --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1167`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1167`, direct compatible/boundary
+  fixture checks, `cargo fmt --check`, and `git diff --check` passed in the
+  runtime lane. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1166, a parser diagnostic refinement for
+  namespace-qualified and leading-backslash fully-qualified constant reads.
+  Constant reads such as `App\VERSION`, `namespace\VERSION`, and
+  `\PHP_VERSION` now fail with dedicated parse diagnostics naming missing
+  namespace-aware constant lookup, fallback behavior, imports, exact
+  constant-table lookup, and native lowering instead of falling through to a
+  misleading namespace-qualified-function diagnostic. This does not implement
+  namespace-aware constant reads, namespace fallback behavior, constant
+  imports, exact PHP diagnostics, or native lowering. Verification so far:
+  `cargo test -p phpc --test syntax_boundaries
+  unsupported_namespace_qualified_constant_reads_have_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_fully_qualified_constant_reads_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test dynamic_features
+  namespace_qualified_function_names_are_rejected_with_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --test-threads=1`, fixture-runner
+  checks for `tests/fixtures/unsupported_syntax_features`, direct `phpc run`
+  and `compile --emit-ir` fixture checks returning exit `1`, `cargo
+  fmt --check`, and `git diff --check` passed in the parser lane. Full
+  gate/checkpoint deferred until integration.
+
 - Added Milestone 1165, a tests/docs queue refresh after the 1161-1164
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1161-1165
   complete and opens Milestones 1166-1170, public docs describe the short echo

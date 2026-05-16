@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:24:31Z
+
+- Checkpoint before this task:
+  `eeb236f0 runtime: enforce interface parameter types`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1166-1170, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI manifest code, focused tests and
+  fixtures for namespace-qualified and fully-qualified constant parse
+  boundaries, declared-interface return-type metadata compatibility
+  enforcement, dedicated native interpolated-string rejection, JSON fixture
+  manifest SHA-256 digests, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`, and
+  this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, first checkpoint run exposed one stale syntax-boundary assertion for
+  the new interpolated-string native diagnostic, that assertion was corrected,
+  then `tools/checkpoint.sh "runtime: enforce interface return types"` passed
+  with `1340` fixture tests, `760` system PHP comparisons, and `580` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: namespace-aware constant reads and constant imports,
+  exact PHP namespace fallback behavior, full PHP method signature variance,
+  class/interface return covariance and subtyping, type alias/import
+  resolution, union/intersection canonicalization, built-in/internal interface
+  method enforcement, native interpolated-string lowering, branch-specific PHP
+  comparison matrices, real reference/COW containers, real database and
+  filesystem services, and full WordPress request/plugin/theme flows remain
+  implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1171-1174 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T20:55:00Z
 
 - Checkpoint before this task:

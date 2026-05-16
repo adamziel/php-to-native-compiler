@@ -128,7 +128,7 @@ fn emit_ir_rejects_interpolated_heredoc_until_native_string_runtime_exists() {
             .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert!(error.message.contains("LLVM concatenation lowering"));
+    assert!(error.message.contains("LLVM interpolated-string lowering"));
 }
 
 #[test]
@@ -694,6 +694,48 @@ fn emit_ir_rejects_fully_qualified_function_calls_at_parse_boundary() {
     assert_eq!(
         error.message,
         "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
+    );
+}
+
+#[test]
+fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$value = App\\VERSION;\n",
+            2,
+            10,
+            "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
+        ),
+        (
+            "<?php\n$value = namespace\\VERSION;\n",
+            2,
+            10,
+            "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
+        ),
+        (
+            "<?php\necho \\PHP_VERSION;\n",
+            2,
+            6,
+            "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_fully_qualified_constant_reads_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\necho \\PHP_VERSION;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
     );
 }
 

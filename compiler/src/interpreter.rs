@@ -135,6 +135,7 @@ struct Interpreter {
 struct MethodSignature {
     required_params: usize,
     params: Vec<ParameterSignature>,
+    return_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -19140,6 +19141,14 @@ fn validate_interface_method_implementation(
                 class_method.name(),
                 class_signature.as_ref(),
             )?;
+            validate_interface_return_type_compatibility(
+                &class.name,
+                interface,
+                method,
+                declaring_class_name,
+                class_method.name(),
+                class_signature.as_ref(),
+            )?;
         }
     }
 
@@ -19224,6 +19233,57 @@ fn validate_interface_parameter_type_compatibility(
     Ok(())
 }
 
+fn validate_interface_return_type_compatibility(
+    class_name: &str,
+    interface: &InterfaceDecl,
+    interface_method: &InterfaceMethodDecl,
+    declaring_class_name: &str,
+    class_method_name: &str,
+    class_signature: Option<&MethodSignature>,
+) -> RuntimeResult<()> {
+    let Some(class_signature) = class_signature else {
+        return Ok(());
+    };
+
+    match (
+        interface_method
+            .function
+            .return_type
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+        class_signature.return_type.as_deref(),
+    ) {
+        (Some(interface_type), None) => Err(RuntimeError::unsupported_class_inheritance(
+            class_name,
+            format!(
+                "method {}::{}() must declare return type {} to match interface method {}::{}()",
+                declaring_class_name,
+                class_method_name,
+                interface_type,
+                interface.name,
+                interface_method.function.name
+            ),
+        )),
+        (Some(interface_type), Some(class_type))
+            if !class_type.eq_ignore_ascii_case(interface_type) =>
+        {
+            Err(RuntimeError::unsupported_class_inheritance(
+                class_name,
+                format!(
+                    "method {}::{}() return type {} is incompatible with interface method {}::{}() return type {}",
+                    declaring_class_name,
+                    class_method_name,
+                    class_type,
+                    interface.name,
+                    interface_method.function.name,
+                    interface_type
+                ),
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn public_method_required_param_count(
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class: &ClassDecl,
@@ -19281,6 +19341,7 @@ fn public_method_signature(
 fn method_signature(function: &FunctionDecl) -> MethodSignature {
     MethodSignature {
         required_params: required_param_count(function),
+        return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         params: function
             .params
             .iter()

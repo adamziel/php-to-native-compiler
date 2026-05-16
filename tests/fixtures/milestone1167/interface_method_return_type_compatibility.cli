@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1167/interface_method_return_type_compatibility.php
+exit: 0
+stdout:
+registered
+--- stdout end ---
+stderr:
+--- stderr end ---

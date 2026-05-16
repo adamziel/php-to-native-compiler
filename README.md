@@ -155,7 +155,8 @@ incorrect native code.
   classes that implement declared interfaces, including through inherited
   `implements` metadata, to expose public methods with the required names at
   class registration time, to avoid requiring more parameters than those
-  interface methods, and to pass the current bounded interface parameter-type
+  interface methods, to pass the current bounded interface parameter-type
+  metadata check, and to pass the current bounded interface return-type
   metadata check; class `implements` clauses record comma-separated
   interface names as relationship metadata for `is_a`, `is_subclass_of`, and
   `instanceof`, including unresolved built-in/internal interface names without
@@ -223,6 +224,7 @@ references beyond the current direct variable-to-variable assignment cell
 slice, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
 including leading-backslash fully-qualified function calls such as `\strlen()`,
+leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path statement
 and expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
@@ -244,7 +246,8 @@ static-property slices,
 exact PHP nested class declaration timing and fatal behavior, real
 `Exception` constructor state/methods, `Throwable`, stack traces, exception
 throw/catch execution,
-bare namespace constant fallback reads, class-constant lookup through
+bare namespace constant fallback reads, namespace-qualified constant reads,
+class-constant lookup through
 `defined()`/`constant()` beyond the current declared-class/public-visibility
 string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
@@ -311,8 +314,9 @@ Native lowering rejects arrays, array destructuring, objects, static class
 members, ArrayAccess object-offset dispatch, clone expressions,
 `exit()`/`die()` termination, user functions, closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
-mutation forms that require symbol-table effects, dynamic calls, `assert()`,
-runtime constant tables, PHP-wide coercions,
+mutation forms that require symbol-table effects, double-quoted string
+interpolation, dynamic calls, `assert()`, runtime constant tables,
+PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
 rejection boundary for direct variable, array-offset, object-property,
@@ -345,12 +349,13 @@ also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts for
 fixtures, summaries, orphan sidecars, and compatibility targets.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 4. The JSON records
-sibling `.phpc-only` marker text as `phpc_only_reason` and source/recognized
-sidecar byte counts so comparison opt-outs and committed expectation payloads
-are visible without executing fixtures. When the fixture root contains
-`compat/<target>` directories, the JSON also includes per-target compatibility
-counts, including targets with no executable `.php` fixtures yet.
+manifest as deterministic JSON with `contract_version` 5. The JSON records
+sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
+sidecar byte counts, and SHA-256 digests for fixture sources, recognized
+sidecars, and recognized orphan sidecars so comparison opt-outs and committed
+expectation payloads are visible without executing fixtures. When the fixture
+root contains `compat/<target>` directories, the JSON also includes per-target
+compatibility counts, including targets with no executable `.php` fixtures yet.
 
 Use these commands while developing:
 

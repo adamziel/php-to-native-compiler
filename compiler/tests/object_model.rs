@@ -2221,6 +2221,95 @@ class Child extends Base {}
 }
 
 #[test]
+fn interface_required_method_return_type_compatibility_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Provider {
+    public function label(): string;
+}
+
+interface UntypedProvider {
+    public function id();
+}
+
+class ExactProvider implements Provider {
+    public function label(): string {
+        return "label";
+    }
+}
+
+class AddingProvider implements UntypedProvider {
+    public function id(): string {
+        return "id";
+    }
+}
+
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let omitted_return_type_error = runtime_error(
+        r#"<?php
+interface Provider {
+    public function label(): string;
+}
+
+class Service implements Provider {
+    public function label() {}
+}
+"#,
+    );
+    assert_eq!(omitted_return_type_error.line, 6);
+    assert_eq!(omitted_return_type_error.column, 1);
+    assert_eq!(
+        omitted_return_type_error.message,
+        "unsupported class inheritance for Service: method Service::label() must declare return type string to match interface method Provider::label()"
+    );
+
+    let changed_return_type_error = runtime_error(
+        r#"<?php
+interface Provider {
+    public function label(): string;
+}
+
+class Service implements Provider {
+    public function label(): int {}
+}
+"#,
+    );
+    assert_eq!(changed_return_type_error.line, 6);
+    assert_eq!(changed_return_type_error.column, 1);
+    assert_eq!(
+        changed_return_type_error.message,
+        "unsupported class inheritance for Service: method Service::label() return type int is incompatible with interface method Provider::label() return type string"
+    );
+
+    let inherited_changed_return_type_error = runtime_error(
+        r#"<?php
+interface Provider {
+    public function label(): string;
+}
+
+abstract class Base implements Provider {
+    public function label(): int {}
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(inherited_changed_return_type_error.line, 10);
+    assert_eq!(inherited_changed_return_type_error.column, 1);
+    assert_eq!(
+        inherited_changed_return_type_error.message,
+        "unsupported class inheritance for Child: method Base::label() return type int is incompatible with interface method Provider::label() return type string"
+    );
+}
+
+#[test]
 fn inherited_interface_required_method_presence_is_enforced_for_concrete_classes() {
     let execution = run_source(
         r#"<?php

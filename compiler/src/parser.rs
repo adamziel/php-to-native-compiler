@@ -4072,6 +4072,12 @@ impl Parser {
                         let resolved = self.resolve_class_like_name(&qualified);
                         return self.reject_unsupported_static_member_access(Some(&resolved));
                     }
+                    if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                        return Err(self.error_at(
+                            token.span,
+                            unsupported_namespace_qualified_constant_name_message(),
+                        ));
+                    }
                     return Err(self.error_at(
                         token.span,
                         unsupported_namespace_qualified_function_name_message(),
@@ -4117,7 +4123,7 @@ impl Parser {
                 }
                 Err(self.error_at(
                     token.span,
-                    unsupported_namespace_qualified_function_name_message(),
+                    unsupported_fully_qualified_constant_name_message(),
                 ))
             }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
@@ -4126,6 +4132,12 @@ impl Parser {
                 let resolved = self.resolve_relative_namespace_class_name(&suffix);
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     return self.reject_unsupported_static_member_access(Some(&resolved));
+                }
+                if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Err(self.error_at(
+                        token.span,
+                        unsupported_namespace_qualified_constant_name_message(),
+                    ));
                 }
                 Err(self.error_at(
                     token.span,
@@ -6024,6 +6036,14 @@ fn unsupported_namespace_qualified_function_name_message() -> &'static str {
 
 fn unsupported_fully_qualified_function_call_message() -> &'static str {
     "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
+}
+
+fn unsupported_namespace_qualified_constant_name_message() -> &'static str {
+    "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented"
+}
+
+fn unsupported_fully_qualified_constant_name_message() -> &'static str {
+    "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
 }
 
 fn unsupported_array_spread_message() -> &'static str {

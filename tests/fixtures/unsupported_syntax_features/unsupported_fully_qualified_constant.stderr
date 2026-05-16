@@ -1,0 +1,2 @@
+parse error at 2:6: unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering
+

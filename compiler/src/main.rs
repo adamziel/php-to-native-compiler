@@ -381,7 +381,7 @@ fn render_fixture_manifest_compatibility_target(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 4,\n");
+    output.push_str("  \"contract_version\": 5,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -474,6 +474,28 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         output.push_str(&format!(
             "        \"phpc_only\": {}\n",
             json_optional_u64(entry.phpc_only_bytes)
+        ));
+        output.push_str("      },\n");
+        output.push_str("      \"file_sha256\": {\n");
+        output.push_str(&format!(
+            "        \"source\": {},\n",
+            json_string_literal(&entry.source_sha256)
+        ));
+        output.push_str(&format!(
+            "        \"stdout\": {},\n",
+            json_optional_string_literal(entry.stdout_sha256.as_deref())
+        ));
+        output.push_str(&format!(
+            "        \"stderr\": {},\n",
+            json_optional_string_literal(entry.stderr_sha256.as_deref())
+        ));
+        output.push_str(&format!(
+            "        \"exit\": {},\n",
+            json_optional_string_literal(entry.exit_sha256.as_deref())
+        ));
+        output.push_str(&format!(
+            "        \"phpc_only\": {}\n",
+            json_optional_string_literal(entry.phpc_only_sha256.as_deref())
         ));
         output.push_str("      },\n");
         let comparison = if entry.phpc_only {
@@ -586,7 +608,11 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             "      \"expected_fixture\": {},\n",
             json_string_literal(&orphan.expected_fixture)
         ));
-        output.push_str(&format!("      \"bytes\": {}\n", orphan.bytes));
+        output.push_str(&format!("      \"bytes\": {},\n", orphan.bytes));
+        output.push_str(&format!(
+            "      \"sha256\": {}\n",
+            json_string_literal(&orphan.sha256)
+        ));
         output.push_str("    }");
         if index + 1 < manifest.orphan_sidecars.len() {
             output.push(',');

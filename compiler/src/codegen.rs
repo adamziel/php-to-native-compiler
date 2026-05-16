@@ -94,6 +94,8 @@ const LLVM_MODULO_RUNTIME_CHECK_REJECTION: &str = "LLVM modulo lowering rejects 
 const ASSEMBLY_MODULO_RUNTIME_CHECK_REJECTION: &str = "assembly modulo lowering rejects dynamic, zero, or non-positive integer divisors until native modulo runtime checks, PHP modulo diagnostics, negative-divisor/min-int edge behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current modulo behavior";
 const LLVM_CONCAT_REJECTION: &str = "LLVM concatenation lowering rejects unsupported concatenation operands until native PHP scalar-to-string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
 const ASSEMBLY_CONCAT_REJECTION: &str = "assembly concatenation lowering rejects unsupported concatenation operands until native PHP scalar-to-string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
+const LLVM_INTERPOLATED_STRING_REJECTION: &str = "LLVM interpolated-string lowering rejects double-quoted string interpolation until native interpolation part evaluation, PHP-shaped string conversion, array/object lookup, __toString dispatch, runtime string allocation, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded interpolation behavior";
+const ASSEMBLY_INTERPOLATED_STRING_REJECTION: &str = "assembly interpolated-string lowering rejects double-quoted string interpolation until native interpolation part evaluation, PHP-shaped string conversion, array/object lookup, __toString dispatch, runtime string allocation, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded interpolation behavior";
 const LLVM_BITWISE_REJECTION: &str = "LLVM bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior";
 const ASSEMBLY_BITWISE_REJECTION: &str = "assembly bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior";
 const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
@@ -629,7 +631,7 @@ impl LlvmGenerator {
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
             Expr::InterpolatedString { span, .. } => {
-                Err(self.unsupported(*span, LLVM_CONCAT_REJECTION))
+                Err(self.unsupported(*span, LLVM_INTERPOLATED_STRING_REJECTION))
             }
             Expr::MagicLine { span }
             | Expr::MagicFile { span }
@@ -3467,7 +3469,7 @@ impl CGenerator {
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
             Expr::InterpolatedString { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_CONCAT_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_INTERPOLATED_STRING_REJECTION))
             }
             Expr::MagicLine { span }
             | Expr::MagicFile { span }

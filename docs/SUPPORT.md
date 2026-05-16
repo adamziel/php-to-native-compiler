@@ -604,9 +604,12 @@
   type metadata, implementations may omit an interface parameter type or use
   the same type text case-insensitively, but may not add a type where the
   interface parameter is untyped or change a typed interface parameter to a
-  different type. Full PHP method signature variance, class/interface type
-  subtyping, type aliases, union/intersection canonicalization, return type
-  compatibility, interface inheritance,
+  different type. For interface method return type metadata, implementations
+  may add a return type when the interface method is untyped, but a typed
+  interface method requires the implementation to declare the same return type
+  text case-insensitively. Full PHP method signature variance,
+  class/interface return covariance and type subtyping, type aliases,
+  union/intersection canonicalization, interface inheritance,
   built-in/internal interface method enforcement, named arguments,
   trait composition, exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -734,6 +737,11 @@
   declared constant through the existing class-constant visibility checks.
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
+- namespace-qualified constant reads such as `App\VERSION` and
+  `namespace\VERSION`, and leading-backslash fully-qualified constant reads
+  such as `\PHP_VERSION`, stop at dedicated parse diagnostics until
+  namespace-aware constant lookup, fallback behavior, constant imports, exact
+  PHP diagnostics, and native lowering exist
 - top-level single and grouped `const NAME = value;` declarations for
   unqualified names at global scope and names resolved under the active
   unbracketed namespace. Values use the current constant-expression subset:
@@ -2295,14 +2303,18 @@
   bounded parameter-type metadata check: an implementation may omit an
   interface parameter type or repeat the same type text case-insensitively, but
   may not add a type to an untyped interface parameter or substitute a
-  different type for a typed interface parameter;
+  different type for a typed interface parameter. They must also pass the
+  current bounded return-type metadata check: an implementation may add a
+  return type to an untyped interface method, but a typed interface method
+  requires the same return type text case-insensitively;
   abstract classes may defer that requirement until a concrete child is
   registered, and inherited public methods count. Public static methods do not
   satisfy non-static interface method requirements. This is a bounded
   public-method compatibility check only, not full parameter type
-  compatibility, return type compatibility, full signature variance, class or
-  interface type subtyping, type-alias/import resolution, union/intersection
-  canonicalization, or exact PHP error-object behavior. Unresolved interface names
+  compatibility, broader return type covariance/contravariance, full signature
+  variance, class or interface type subtyping, type-alias/import resolution,
+  union/intersection canonicalization, or exact PHP error-object behavior.
+  Unresolved interface names
   and built-in/internal interface names remain relationship metadata only. The
   bounded core interface catalog currently includes `Traversable`,
   `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
@@ -5041,16 +5053,16 @@
   non-empty, inspect non-fixture compatibility metadata, or report
   unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 4, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 5, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
-  source/recognized sidecar byte counts, PHP-comparison eligibility, sibling
-  `.phpc-only` marker text as `phpc_only_reason`, recognized orphan sidecars
-  with byte counts, and per-target compatibility counts for `compat/<target>`
-  directories under the fixture root, including targets with no executable
-  `.php` fixtures yet. It does not parse, execute, compare fixtures, hash
-  payloads, report fixture execution results, validate that `.phpc-only`
-  reason text is non-empty, inspect non-fixture compatibility metadata, or
-  report unrecognized sidecars.
+  source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
+  recognized sidecars, and recognized orphan sidecars, PHP-comparison
+  eligibility, sibling `.phpc-only` marker text as `phpc_only_reason`, and
+  per-target compatibility counts for `compat/<target>` directories under the
+  fixture root, including targets with no executable `.php` fixtures yet. It
+  does not parse, execute, compare fixtures, report fixture execution results,
+  validate that `.phpc-only` reason text is non-empty, inspect non-fixture
+  compatibility metadata, or report unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -5837,7 +5849,8 @@
   version coupling, SAPI/build metadata beyond the deterministic `cli` string,
   full extension constant catalogs, unsupported `define(...)` names
   or values, case-insensitive legacy constants, bare namespace constant
-  fallback reads, nested `const` declarations, dynamic declaration values,
+  fallback reads, namespace-qualified constant reads, fully-qualified constant
+  reads, nested `const` declarations, dynamic declaration values,
   broader `constant()`/`defined()` lookup for class constants, names lexed as
   language keywords or literals for bare reads, magic constants other than
   `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and `__METHOD__`,
@@ -5847,7 +5860,8 @@
   function declaration/call slice, including namespace-scoped constants,
   qualified function calls, fully-qualified function calls with a dedicated
   parse diagnostic for leading-backslash call syntax, grouped imports with a
-  dedicated parse diagnostic, function/constant imports, string-name import
+  dedicated parse diagnostic, namespace-qualified constant reads,
+  fully-qualified constant reads, function/constant imports, string-name import
   expansion, `__NAMESPACE__`, autoload-aware
   lookup, and native lowering
 - closure invocation, explicit and implicit capture binding/execution, and

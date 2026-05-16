@@ -1,0 +1,2 @@
+runtime error at 6:1: unsupported class inheritance for Service: method Service::label() must declare return type string to match interface method Provider::label()
+

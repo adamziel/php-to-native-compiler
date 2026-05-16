@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1167/interface_method_return_type_compatibility_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1167/interface_method_return_type_compatibility_boundary.php:6:1: unsupported class inheritance for Service: method Service::label() must declare return type string to match interface method Provider::label()
+--- stderr end ---
