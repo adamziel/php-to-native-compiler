@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:3:5: unsupported trait use: trait composition inside classes is not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:3:15: unsupported trait use: multiple traits in one class-body use declaration are not implemented
 --- stderr end ---

@@ -64,11 +64,13 @@ parent class name when one is recorded, otherwise false.
 public declared and inherited properties with supported constant-expression
 default values or `null` for properties without defaults.
 `interface_exists()`, `trait_exists()`, and `enum_exists()` check declared
-user interface, empty top-level trait, and top-level unit-enum metadata
+user interface, top-level trait, and top-level unit-enum metadata
 without triggering autoloading. `class_exists()` reports true for declared
 enums in the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
-interfaces and empty top-level traits in declaration order.
+interfaces and top-level traits in declaration order. Simple public instance
+methods from one already-declared trait may be composed into a class with
+`use TraitName;` and called through ordinary object method dispatch.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -380,8 +382,10 @@ object handle hash behavior has native support.
 
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
-trait members, trait use inside classes, backed enum declarations, enum case
-objects, enum methods/constants/properties, enum interface implementation,
+trait properties/constants, static/abstract/final or non-public trait methods,
+multiple/adapted trait use inside classes, trait aliases, visibility changes,
+`insteadof`, `__TRAIT__`, nested/conditional trait registration, backed enum
+declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,
 readonly class and property semantics, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed

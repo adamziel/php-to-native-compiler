@@ -6650,6 +6650,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "ignore_user_abort"
+            | "php_sapi_name"
             | "sprintf"
             | "vsprintf"
             | "call_user_func"

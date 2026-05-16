@@ -1,2 +1,2 @@
-parse error at 3:5: unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented
+parse error at 3:22: unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported
 

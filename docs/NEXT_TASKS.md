@@ -12011,7 +12011,7 @@ handled.
 
 ## Milestone 1221: WordPress Trait Composition Slice
 
-- [ ] Parser/runtime lane: implement the next bounded trait-support slice
+- [x] Parser/runtime lane: implement the next bounded trait-support slice
   that moves toward WordPress execution instead of only improving diagnostics.
   Preferred target: parse class `use TraitName;` for one already-declared
   trait with simple public methods and no adaptations/conflicts, register the
@@ -12023,7 +12023,7 @@ handled.
 
 ## Milestone 1222: WordPress Reference/COW Runtime Slice
 
-- [ ] Runtime lane: choose one concrete reference/copy-on-write blocker from
+- [x] Runtime lane: choose one concrete reference/copy-on-write blocker from
   the WordPress compatibility gap map and implement a small executable slice.
   Prefer behavior reached by object-property arrays, globals, callback
   arguments, or `wpdb`-style mutable arrays. Prove it with focused Rust tests,
@@ -12032,28 +12032,79 @@ handled.
 
 ## Milestone 1223: WordPress Request/Filesystem/SAPI Slice
 
-- [ ] Runtime or IR/lowering lane: choose one request-state, include-path,
+- [x] Runtime or IR/lowering lane: choose one request-state, include-path,
   filesystem, output-buffering, header, or SAPI behavior that blocks a real
   WordPress bootstrap/request path. Implement the interpreter slice if it is
   semantically useful for `phpc run`; otherwise add a precise native rejection
   only when it prevents misleading generated output for already-supported
-  interpreter behavior.
+  interpreter behavior. Selected target: bounded `php_sapi_name()` support for
+  the deterministic CLI SAPI identity already exposed by `PHP_SAPI`.
 
 ## Milestone 1224: WordPress Database/Bootstrap Probe Slice
 
-- [ ] Compatibility/compiler-output lane: advance the WordPress bootstrap
+- [x] Compatibility/compiler-output lane: advance the WordPress bootstrap
   harness or `wpdb` compatibility by one real blocker. Prefer a deterministic
   external-inventory or synthetic WordPress-shaped probe that reaches a later
   bootstrap point, or a small `mysqli`/`wpdb` behavior needed by an existing
   probe. This lane should improve executable WordPress evidence, not just
-  manifest readability.
+  manifest readability. Milestone 1224 adds a deterministic synthetic
+  WordPress inventory fixture whose bootstrap shim and `wp-blog-header.php`
+  front-controller path instantiate a minimal `wpdb`, insert a `siteurl` row
+  through the current `mysqli_query()` `wp_options` state island, read it back
+  with a matching SELECT, and emit the returned value. The direct
+  `wp-settings.php` probe remains visible and still fails without `ABSPATH`;
+  broad SQL execution, real database connections, credentials, plugin/theme
+  loading, request/SAPI behavior, references/COW, and native lowering remain
+  unsupported.
 
 ## Milestone 1225: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1221-1224 land, refresh the lane
+- [x] Tests/docs lane: after Milestones 1221-1224 land, refresh the lane
   queue around the largest remaining WordPress blockers, update support and
   compatibility docs without overstating support, run the serialized full gate,
-  and checkpoint the batch.
+  and checkpoint the batch. Full gate passed with `1363` fixture tests, `775`
+  system PHP comparisons, and `588` skipped `phpc-only` fixtures.
+
+## Milestone 1226: Next Trait/Interface WordPress Slice
+
+- [ ] Parser/runtime lane: advance one remaining WordPress class/trait
+  blocker beyond the simple public trait-method composition slice. Prefer one
+  executable trait feature that appears in WordPress or bundled libraries, such
+  as multiple simple trait uses in separate declarations, a guarded diagnostic
+  for adaptation blocks that preserves parsed class metadata, or one
+  interface/trait interaction needed by a current probe. Prove it with focused
+  object-model tests, a CLI fixture, and PHP comparison when deterministic.
+
+## Milestone 1227: Next Reference/COW WordPress Slice
+
+- [ ] Runtime lane: advance one concrete reference or copy-on-write behavior
+  reached by WordPress-style globals, callback arguments, object-property
+  arrays, or `wpdb` mutable state. Prefer a behavior that removes a runtime
+  boundary rather than only improving diagnostics. Keep full PHP reference
+  containers and native lowering unsupported unless implemented and tested.
+
+## Milestone 1228: Next Request/SAPI/Filesystem WordPress Slice
+
+- [ ] Runtime or IR/lowering lane: implement one bounded request-state,
+  include-path, stream/filesystem, output-buffering, header, cookie, or SAPI
+  behavior that advances an executable WordPress bootstrap/request path. Add
+  native rejection coverage only if the interpreter behavior already exists
+  and native lowering would otherwise be misleading.
+
+## Milestone 1229: Next WordPress Database/Bootstrap Evidence Slice
+
+- [ ] Compatibility/runtime lane: advance executable WordPress evidence again.
+  Prefer a deterministic synthetic or operator-supplied inventory/probe that
+  reaches a later bootstrap/request point, or one small `mysqli`/`wpdb`
+  behavior needed by such a probe. Avoid manifest-only polish unless it is
+  required to prove the WordPress blocker.
+
+## Milestone 1230: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1226-1229 land, refresh the queue
+  around the next largest WordPress blockers, update support/compatibility docs
+  with exact unsupported edges, run the serialized full gate, and checkpoint
+  the batch.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

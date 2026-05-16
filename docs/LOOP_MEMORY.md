@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:02:02Z
+
+- Checkpoint before this task:
+  `a8f7dee4 runtime: add is_link`, pushed to `origin/master`.
+- Task attempted: Milestones 1221-1225, four WordPress-focused implementation
+  lanes plus queue refresh.
+- Files changed: parser/AST/runtime/class metadata for simple public trait
+  method composition, runtime reference alias-group rebinding into array-offset
+  reference targets, deterministic `php_sapi_name()` support, a synthetic
+  WordPress `wpdb` option bootstrap probe, focused tests and fixtures, stale
+  trait diagnostic fixtures, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed; integration checks passed
+  for trait/object-model, reference/COW, request/SAPI, WordPress inventory, and
+  fixture regressions; the first checkpoint gate exposed fixture newline
+  expectation mismatches, which were fixed; then `tools/checkpoint.sh
+  "runtime: add trait composition"` passed with `1363` fixture tests, `775`
+  system PHP comparisons, and `588` skipped `phpc-only` fixtures before the
+  scoped checkpoint commit `26970c7d runtime: add trait composition`.
+- Remaining semantic gaps: trait properties/constants, multiple/adapted trait
+  use, conflict resolution, aliases, visibility adaptations, `insteadof`,
+  `__TRAIT__`, nested/conditional trait registration, full reference/COW
+  containers, host/web SAPI state, include-path/open_basedir/stat-cache/stream
+  fidelity, real database connections, broad SQL/`wpdb`, plugins/themes, real
+  request state, and native trait/object/filesystem/database lowering remain
+  implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, close completed lane
+  agents, then start Milestones 1226-1229 in separate worktrees focused on the
+  next largest WordPress blockers.
+
 ## Loop Event 2026-05-16T22:45:36Z
 
 - Checkpoint before this task:

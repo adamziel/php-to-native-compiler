@@ -2441,6 +2441,60 @@ if ($call("APP\\LOGGER", true)) {
 }
 
 #[test]
+fn class_trait_use_composes_public_instance_methods() {
+    let source = r#"<?php
+trait Logger {
+    public function label($value = "default") {
+        return "trait:" . $value;
+    }
+
+    function implicitPublic() {
+        return get_class($this);
+    }
+}
+
+class Widget {
+    use Logger;
+}
+
+$widget = new Widget();
+echo $widget->label("ok"), "\n";
+echo $widget->label(), "\n";
+echo $widget->implicitPublic(), "\n";
+
+$methods = get_class_methods($widget);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "trait:ok\ntrait:default\nWidget\nArray\n(\n    [0] => label\n    [1] => implicitPublic\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Widget").unwrap();
+    assert!(class.method("label").is_some());
+    assert!(class.method("implicitpublic").is_some());
+}
+
+#[test]
+fn class_trait_use_requires_already_declared_trait() {
+    let error = runtime_error(
+        r#"<?php
+class Widget {
+    use MissingTrait;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 5);
+    assert_eq!(error.message, "undefined class MissingTrait");
+}
+
+#[test]
 fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
     let name_error = runtime_error("<?php\nvar_dump(trait_exists(42));\n");
 
@@ -6894,12 +6948,12 @@ $box = new class {};
         (
             r#"<?php
 trait Logs {
-    public function write($message) {}
+    protected static function write($message) {}
 }
 "#,
             3,
-            5,
-            "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented",
+            22,
+            "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             r#"<?php
@@ -7034,12 +7088,12 @@ class Box {
         (
             r#"<?php
 class Box {
-    use Labels;
+    use Labels, Hooks;
 }
 "#,
             3,
-            5,
-            "unsupported trait use: trait composition inside classes is not implemented",
+            15,
+            "unsupported trait use: multiple traits in one class-body use declaration are not implemented",
         ),
         (
             r#"<?php

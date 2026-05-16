@@ -36,12 +36,16 @@ symbol-table alias metadata, not general runtime reference containers. A direct
 variable may route to one or more direct array-offset aliases; this lets the
 current runtime mirror the bounded PHP behavior where copying a direct array
 or declared public object-property array that contains a referenced direct slot
-preserves that slot's reference identity across a copied direct array. Direct
-object-variable clone assignments also mirror public object-property alias
-metadata and context-aware non-public object-property alias metadata from the
-cloned source variable to the target variable, so the current bounded
-reference-slot model can keep covered property slots shared across a fresh
-object handle for the covered `clone $object` assignment shape.
+preserves that slot's reference identity across a copied direct array. When an
+array-offset or public object-property array-offset reference target is bound
+from a direct variable that already shares a direct variable-to-variable cell,
+the interpreter rewires every direct name in that small source cell group to
+the selected slot alias. Direct object-variable clone assignments also mirror
+public object-property alias metadata and context-aware non-public
+object-property alias metadata from the cloned source variable to the target
+variable, so the current bounded reference-slot model can keep covered property
+slots shared across a fresh object handle for the covered `clone $object`
+assignment shape.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -130,12 +134,16 @@ Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
 a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
 enforcement.
-Top-level empty trait declarations are parsed as metadata, but trait methods
-remain a parser boundary. Method-bearing traits stop with a dedicated
-diagnostic until trait method metadata, class trait-use composition, conflict
-resolution, alias and visibility adaptations, `__TRAIT__` context,
-references/copy-on-write, and native lowering exist. Other trait members stay
-under the broader trait-member boundary.
+Top-level trait declarations are parsed as metadata for empty traits and
+simple public instance methods. A class body may use one already-declared trait
+with `use TraitName;`; the interpreter composes that trait's public instance
+methods onto the consuming class metadata and stores the executable method body
+under the consuming class id, so ordinary instance method dispatch works
+through `phpc run`. Trait properties/constants, static/abstract/final or
+non-public trait methods, multiple trait names in one `use`, adaptation blocks,
+aliases, visibility changes, `insteadof`, `__TRAIT__` context,
+references/copy-on-write, nested or conditional trait declarations, and native
+trait lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1330,6 +1338,10 @@ model SAPI behavior.
 current no-argument slice returns `false` so reached WordPress guard branches
 can continue, but filename/line output arguments, output-started tracking,
 output buffers, SAPI differences, and native lowering are not modeled.
+`php_sapi_name()` is an interpreter-only request/SAPI identity boundary that
+returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
+does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
+runtime state.
 `abs()` is an interpreter-only bounded numeric builtin for current integer and
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
@@ -1839,8 +1851,9 @@ recorded, otherwise false.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed
-program; `get_declared_traits()` lists empty top-level traits declared in the
-current parsed program.
+program; `get_declared_traits()` lists top-level traits declared in the current
+parsed program, including traits that contain currently supported public
+instance methods.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call

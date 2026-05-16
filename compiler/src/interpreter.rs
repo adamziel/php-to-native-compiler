@@ -1103,7 +1103,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.bind_static_to_array_offset_alias(source_name, alias);
+        self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -1130,7 +1130,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.bind_static_to_array_offset_alias(source_name, alias);
+        self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -1155,7 +1155,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.bind_static_to_array_offset_alias(source_name, alias);
+        self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -1185,7 +1185,7 @@ impl SymbolTable {
             .append(source_value)
             .map_err(|error| runtime_error(span, error))?;
         self.write_storage_named(array_name, Value::Array(array));
-        self.bind_static_to_array_offset_alias(
+        self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
                 root: ArrayOffsetAliasRoot::StaticArray {
@@ -1222,7 +1222,7 @@ impl SymbolTable {
                 RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
             ));
         }
-        self.bind_static_to_array_offset_alias(source_name, alias);
+        self.bind_direct_alias_group_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -1261,7 +1261,7 @@ impl SymbolTable {
         let alias_keys =
             Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
         self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
-        self.bind_static_to_array_offset_alias(
+        self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
                 root,
@@ -1297,7 +1297,7 @@ impl SymbolTable {
         let alias_keys =
             Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
         self.write_storage_named(array_name, Value::Array(array));
-        self.bind_static_to_array_offset_alias(
+        self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
                 root: ArrayOffsetAliasRoot::StaticArray {
@@ -1340,7 +1340,7 @@ impl SymbolTable {
         let alias_keys =
             Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
         self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
-        self.bind_static_to_array_offset_alias(
+        self.bind_direct_alias_group_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
                 root,
@@ -1401,27 +1401,44 @@ impl SymbolTable {
             ));
         }
 
-        if self.source_cell_has_other_direct_names(source_name) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "array-offset reference targets cannot rebind an existing direct variable alias group",
-                ),
-            ));
-        }
-
         Ok(())
     }
 
-    fn source_cell_has_other_direct_names(&self, name: &str) -> bool {
-        let Some(source_cell) = self.read_cell(name) else {
-            return false;
+    fn bind_direct_alias_group_to_array_offset_alias(
+        &mut self,
+        source_name: &str,
+        alias: ArrayOffsetAlias,
+    ) {
+        let names = self.direct_names_sharing_cell(source_name);
+        let names = if names.is_empty() {
+            vec![source_name.to_string()]
+        } else {
+            names
         };
-        self.routed_storage(name)
+
+        for name in names {
+            self.bind_static_to_array_offset_alias(&name, alias.clone());
+        }
+    }
+
+    fn direct_names_sharing_cell(&self, name: &str) -> Vec<String> {
+        let Some(source_cell) = self.read_cell(name) else {
+            return Vec::new();
+        };
+        let mut names: Vec<_> = self
+            .routed_storage(name)
             .borrow()
             .iter()
-            .any(|(candidate, cell)| candidate != name && Rc::ptr_eq(cell, &source_cell))
+            .filter_map(|(candidate, cell)| {
+                if Rc::ptr_eq(cell, &source_cell) {
+                    Some(candidate.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        names.sort();
+        names
     }
 
     fn materialize_array_offset_alias(
@@ -1911,6 +1928,7 @@ impl Interpreter {
                     &final_methods,
                     &method_signatures,
                     &interface_lookup,
+                    &trait_lookup,
                     class,
                 )?;
                 register_class_member_runtime_tables(
@@ -1919,9 +1937,10 @@ impl Interpreter {
                     &mut methods,
                     &mut method_signatures,
                     &mut abstract_methods,
+                    &trait_lookup,
                     class_id,
                     class,
-                );
+                )?;
                 if class.is_abstract {
                     abstract_classes.insert(class_id);
                 }
@@ -2158,6 +2177,7 @@ impl Interpreter {
                 &self.final_methods,
                 &self.method_signatures,
                 &self.interface_lookup,
+                &self.trait_lookup,
                 class,
             )?;
             register_class_member_runtime_tables(
@@ -2166,9 +2186,10 @@ impl Interpreter {
                 &mut self.methods,
                 &mut self.method_signatures,
                 &mut self.abstract_methods,
+                &self.trait_lookup,
                 class_id,
                 class,
-            );
+            )?;
         }
 
         self.initialize_static_property_defaults(program)
@@ -2200,6 +2221,7 @@ impl Interpreter {
             &self.final_methods,
             &self.method_signatures,
             &self.interface_lookup,
+            &self.trait_lookup,
             class,
         ) {
             self.abstract_classes.remove(&class_id);
@@ -2214,9 +2236,10 @@ impl Interpreter {
             &mut self.methods,
             &mut self.method_signatures,
             &mut self.abstract_methods,
+            &self.trait_lookup,
             class_id,
             class,
-        );
+        )?;
         if let Err(error) = self.initialize_static_property_defaults_for_class(class_id, class) {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
@@ -14634,6 +14657,7 @@ impl Interpreter {
             )),
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
+            "php_sapi_name" => call_php_sapi_name(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "vsprintf" => call_vsprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -19066,9 +19090,16 @@ fn register_class_member_runtime_tables(
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     class_id: ClassId,
     class: &ClassDecl,
-) {
+) -> CompileResult<()> {
+    for method in composed_trait_methods(class, trait_lookup)? {
+        let key = (class_id, method.function.name.to_ascii_lowercase());
+        method_signatures.insert(key.clone(), method_signature(&method.function));
+        methods.insert(key, Rc::new(method.function.clone()));
+    }
+
     for member in &class.members {
         match member {
             ClassMember::Constant(constant) => {
@@ -19089,6 +19120,7 @@ fn register_class_member_runtime_tables(
             ClassMember::Property(_) => {}
         }
     }
+    Ok(())
 }
 
 fn seed_core_class_constant_runtime_tables(
@@ -19162,6 +19194,7 @@ fn register_class_members(
     final_methods: &HashMap<(ClassId, String), String>,
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -19191,6 +19224,30 @@ fn register_class_members(
     classes
         .set_interfaces(id, class.interfaces.clone())
         .map_err(|error| runtime_error(class.span, error))?;
+
+    for method in composed_trait_methods(class, trait_lookup)? {
+        let visibility = runtime_visibility(method.visibility);
+        validate_final_method_override(classes, id, &class.name, method, final_methods)
+            .map_err(|error| runtime_error(method.span, error))?;
+        validate_inherited_method_static_compatibility(classes, id, &class.name, method)
+            .map_err(|error| runtime_error(method.span, error))?;
+        validate_inherited_method_visibility_compatibility(classes, id, &class.name, method)
+            .map_err(|error| runtime_error(method.span, error))?;
+        validate_inherited_method_signature_compatibility(
+            classes,
+            method_signatures,
+            id,
+            &class.name,
+            method,
+        )
+        .map_err(|error| runtime_error(method.span, error))?;
+        let metadata_method = PhpMethodMetadata::instance(&method.function.name, visibility);
+        classes
+            .get_mut(id)
+            .expect("declared class id should resolve to class metadata")
+            .add_method(metadata_method)
+            .map_err(|error| runtime_error(method.span, error))?;
+    }
 
     for member in &class.members {
         match member {
@@ -19254,22 +19311,56 @@ fn register_class_members(
         }
     }
 
+    let mut effective_method_signatures = method_signatures.clone();
+    for method in composed_trait_methods(class, trait_lookup)? {
+        effective_method_signatures.insert(
+            (id, method.function.name.to_ascii_lowercase()),
+            method_signature(&method.function),
+        );
+    }
+    for member in &class.members {
+        if let ClassMember::Method(method) = member {
+            effective_method_signatures.insert(
+                (id, method.function.name.to_ascii_lowercase()),
+                method_signature(&method.function),
+            );
+        }
+    }
+
     validate_abstract_method_implementation(classes, abstract_methods, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
     validate_interface_method_implementation(
         classes,
         interface_lookup,
-        method_signatures,
+        &effective_method_signatures,
         id,
         class,
     )
     .map_err(|error| runtime_error(class.span, error))?;
-    validate_core_countable_method_implementation(classes, method_signatures, id, class)
+    validate_core_countable_method_implementation(classes, &effective_method_signatures, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
-    validate_core_iterable_method_implementation(classes, method_signatures, id, class)
+    validate_core_iterable_method_implementation(classes, &effective_method_signatures, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn composed_trait_methods<'a>(
+    class: &'a ClassDecl,
+    trait_lookup: &'a HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<Vec<&'a ClassMethodDecl>> {
+    let mut methods = Vec::new();
+    for trait_use in &class.trait_uses {
+        let key = trait_use.name.to_ascii_lowercase();
+        let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
+            runtime_error(
+                trait_use.span,
+                RuntimeError::undefined_class(&trait_use.name),
+            )
+        })?;
+        methods.extend(trait_decl.methods.iter());
+    }
+    Ok(methods)
 }
 
 fn validate_interface_method_implementation(
@@ -19690,6 +19781,12 @@ fn public_method_required_param_count(
     declaring_class_id: ClassId,
     method_lookup_name: &str,
 ) -> usize {
+    if let Some(signature) =
+        method_signatures.get(&(declaring_class_id, method_lookup_name.to_string()))
+    {
+        return signature.required_params;
+    }
+
     if declaring_class_id == class_id {
         return class
             .members
@@ -19719,6 +19816,12 @@ fn public_method_signature(
     declaring_class_id: ClassId,
     method_lookup_name: &str,
 ) -> Option<MethodSignature> {
+    if let Some(signature) =
+        method_signatures.get(&(declaring_class_id, method_lookup_name.to_string()))
+    {
+        return Some(signature.clone());
+    }
+
     if declaring_class_id == class_id {
         return class.members.iter().find_map(|member| {
             let ClassMember::Method(method) = member else {
@@ -20314,6 +20417,7 @@ fn is_builtin(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "ignore_user_abort"
+            | "php_sapi_name"
             | "sprintf"
             | "vsprintf"
             | "call_user_func"
@@ -23807,6 +23911,11 @@ fn call_headers_sent(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Bool(false))
+}
+
+fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("php_sapi_name", args, 0, span)?;
+    Ok(Value::String("cli".to_string()))
 }
 
 fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {

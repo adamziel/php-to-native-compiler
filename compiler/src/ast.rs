@@ -514,6 +514,7 @@ pub struct ClassDecl {
     pub name: String,
     pub parent: Option<String>,
     pub interfaces: Vec<String>,
+    pub trait_uses: Vec<TraitUseDecl>,
     pub members: Vec<ClassMember>,
     pub is_abstract: bool,
     pub is_final: bool,
@@ -537,6 +538,13 @@ pub struct InterfaceMethodDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDecl {
+    pub name: String,
+    pub methods: Vec<ClassMethodDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitUseDecl {
     pub name: String,
     pub span: Span,
 }

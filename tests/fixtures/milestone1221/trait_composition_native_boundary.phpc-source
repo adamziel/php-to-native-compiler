@@ -1,0 +1,12 @@
+<?php
+trait Labels {
+    public function label() {
+        return "label";
+    }
+}
+
+class Widget {
+    use Labels;
+}
+
+echo "native boundary";

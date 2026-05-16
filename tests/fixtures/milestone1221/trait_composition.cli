@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+label:ok|label:default|Widget|trait
+--- stdout end ---
+stderr:
+--- stderr end ---

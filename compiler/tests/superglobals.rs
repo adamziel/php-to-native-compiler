@@ -1,5 +1,8 @@
+use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
+
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -43,6 +46,63 @@ echo constant("PHP_SAPI");
 
     assert_eq!(execution.stdout, "cli|defined|cli");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn php_sapi_name_returns_current_cli_runtime_sapi() {
+    let execution = run_source(
+        r#"<?php
+echo php_sapi_name();
+echo "|";
+$call = "php_sapi_name";
+echo function_exists($call) ? "exists" : "missing";
+echo "|";
+echo is_callable($call) ? "callable" : "not-callable";
+echo "|";
+echo $call();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "cli|exists|callable|cli");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn php_sapi_name_rejects_arguments() {
+    let error = runtime_error(
+        r#"<?php
+echo php_sapi_name("cgi-fcgi");
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "arity mismatch for php_sapi_name(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
+fn emit_ir_folds_php_sapi_name_metadata_but_rejects_direct_calls() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo function_exists("php_sapi_name") ? "1" : "0";
+echo is_callable("php_sapi_name") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("is_callable"), "{ir}");
+
+    let error = emit_ir_source("<?php\necho php_sapi_name();\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]

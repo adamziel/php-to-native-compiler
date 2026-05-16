@@ -1,1 +1,1 @@
-phpc intentionally rejects trait members before trait method/property/constant metadata and trait use execution exist.
+phpc intentionally rejects trait properties/constants before trait storage and composition semantics exist.

@@ -4,7 +4,7 @@ use crate::ast::{
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -419,9 +419,14 @@ impl Parser {
 
         self.consume_keyword(TokenKind::LBrace, "expected class body")?;
         let mut members = Vec::new();
+        let mut trait_uses = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("class member");
-            members.push(self.parse_class_member()?);
+            if self.check(|kind| matches!(kind, TokenKind::Use)) {
+                trait_uses.push(self.parse_class_trait_use()?);
+            } else {
+                members.push(self.parse_class_member()?);
+            }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
 
@@ -429,6 +434,7 @@ impl Parser {
             name,
             parent,
             interfaces,
+            trait_uses,
             members,
             is_abstract,
             is_final,
@@ -466,17 +472,64 @@ impl Parser {
         let name = self.consume_identifier("expected trait name")?;
         let name = self.resolve_declared_class_name(&name);
         self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
-        if !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-            if self.check_trait_method_declaration() {
-                return Err(self.error_at(self.peek().span, unsupported_trait_method_message()));
-            }
+        let mut methods = Vec::new();
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            self.trace_parse("trait member");
+            methods.push(self.parse_trait_method()?);
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after trait body")?;
+        Ok(Stmt::Trait(TraitDecl {
+            name,
+            methods,
+            span,
+        }))
+    }
+
+    fn parse_trait_method(&mut self) -> CompileResult<ClassMethodDecl> {
+        if !self.check_trait_method_declaration() {
             return Err(self.error_at(
                 self.peek().span,
                 unsupported_trait_member_declaration_message(),
             ));
         }
-        self.consume_keyword(TokenKind::RBrace, "expected '}' after trait body")?;
-        Ok(Stmt::Trait(TraitDecl { name, span }))
+
+        let modifiers = self.parse_class_member_modifiers()?;
+        let span = self
+            .consume_keyword(TokenKind::Function, "expected trait method declaration")?
+            .span;
+        if modifiers.is_static
+            || modifiers.is_abstract
+            || modifiers.is_final
+            || !matches!(modifiers.visibility, ClassVisibility::Public)
+        {
+            return Err(self.error_at(span, unsupported_trait_method_message()));
+        }
+
+        let function = self.parse_function_after_keyword(span, false)?;
+        Ok(ClassMethodDecl {
+            function,
+            visibility: ClassVisibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_final: false,
+            span,
+        })
+    }
+
+    fn parse_class_trait_use(&mut self) -> CompileResult<TraitUseDecl> {
+        let span = self.consume_keyword(TokenKind::Use, "expected 'use'")?.span;
+        let name = self.consume_class_like_name("expected trait name after 'use'")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_multiple_trait_use_message(),
+            ));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after trait use")?;
+        Ok(TraitUseDecl { name, span })
     }
 
     fn parse_interface(&mut self) -> CompileResult<Stmt> {
@@ -6165,11 +6218,11 @@ fn unsupported_nested_trait_declaration_message() -> &'static str {
 }
 
 fn unsupported_trait_member_declaration_message() -> &'static str {
-    "unsupported trait member declaration: trait members and trait use execution are not implemented"
+    "unsupported trait member declaration: trait properties, constants, and nested trait use are not implemented"
 }
 
 fn unsupported_trait_method_message() -> &'static str {
-    "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented"
+    "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported"
 }
 
 fn unsupported_interface_declaration_message() -> &'static str {
@@ -6286,7 +6339,15 @@ fn unsupported_asymmetric_property_visibility_message() -> &'static str {
 }
 
 fn unsupported_trait_use_message() -> &'static str {
-    "unsupported trait use: trait composition inside classes is not implemented"
+    "unsupported trait use: only a single simple class-body trait use without adaptations is implemented"
+}
+
+fn unsupported_multiple_trait_use_message() -> &'static str {
+    "unsupported trait use: multiple traits in one class-body use declaration are not implemented"
+}
+
+fn unsupported_trait_adaptation_message() -> &'static str {
+    "unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented"
 }
 
 impl Parser {

@@ -112,12 +112,25 @@ The committed synthetic harness is exercised by:
 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
 ```
 
+After Milestone 1224, that harness also includes a synthetic
+WordPress-shaped `wpdb` option bootstrap smoke. The generated bootstrap shim
+and `wp-blog-header.php` front-controller path instantiate a minimal `wpdb`,
+insert a `siteurl` row through the current placeholder `mysqli_query()`
+`wp_options` state island, read it back with the exact supported
+`SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1`
+shape, and emit `db-ok` (`stdout_bytes: 5` in normalized output). This is
+executable evidence for the current bounded database/bootstrap path only; it
+does not claim real MySQL connectivity, WordPress credentials, broad SQL,
+full `wpdb`, plugin/theme loading, request/SAPI fidelity, or native support.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
 WordPress entrypoint without `ABSPATH`. The bootstrap-shim probe and the
-`wp-blog-header.php` front-controller probe now exit `0` with no stdout under
-the current deterministic placeholder database and CLI assumptions. Known
+`wp-blog-header.php` front-controller probe now exit `0` under the current
+deterministic placeholder database and CLI assumptions. The baseline synthetic
+smokes keep no-stdout coverage, and the Milestone 1224 `wpdb` option smoke
+records the database-backed `db-ok` output byte count separately. Known
 historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local

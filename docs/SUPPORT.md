@@ -208,35 +208,38 @@
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
   execute when the target root is a direct array variable and the source is a
-  direct unaliased variable name. Explicit-offset targets normalize evaluated
+  direct variable name that is either unaliased or already part of a direct
+  variable-to-variable alias group. Explicit-offset targets normalize evaluated
   keys with the current array key rules; existing and missing keys work. Append
-  targets use the runtime array append cursor and bind the source name to the
-  selected auto key. Nested explicit and nested append targets materialize
-  missing intermediate containers and bind the source name to the selected
-  normalized key path. Undefined or `null` target roots materialize as arrays,
-  and undefined source variables begin as `null` before binding. Writes through
-  the source variable and direct array offset observe the same selected value,
-  and `unset($value)` detaches only the source name. Existing direct alias
-  groups, source names already routed through array-offset aliases, `$GLOBALS`,
-  PHP's deprecated false-root conversion, other non-array roots,
-  object-property/`ArrayAccess` targets, non-direct sources, full PHP
-  reference containers, copy-on-write, exact alias rebinding/mutation ordering,
-  and native lowering remain unsupported. Direct public object-property
+  targets use the runtime array append cursor and bind the source name, plus
+  any direct names sharing that source cell, to the selected auto key. Nested
+  explicit and nested append targets materialize missing intermediate
+  containers and bind the source direct-name group to the selected normalized
+  key path. Undefined or `null` target roots materialize as arrays, and
+  undefined source variables begin as `null` before binding. Writes through any
+  direct source-group name and the direct array offset observe the same selected
+  value, and `unset($value)` detaches only that source name. Source names
+  already routed through array-offset aliases, `$GLOBALS`, PHP's deprecated
+  false-root conversion, other non-array roots, object-property/`ArrayAccess`
+  targets, non-direct sources, full PHP reference containers, copy-on-write,
+  exact alias rebinding/mutation ordering, and native lowering remain
+  unsupported. Direct public object-property
   array-offset and array-append reference targets such as
   `$object->items[$key] =& $value;`, `$object->items[] =& $value;`,
   `$object->groups[$outer][$inner] =& $value;`, and
   `$object->groups[$outer][] =& $value;` execute when the target object is a
   direct object variable, the property is a declared public property reachable
   through the current public property access path, every parent offset is
-  explicit for append-at-depth, and the source is a direct unaliased variable
-  name. A `null` public property and missing parent containers materialize as
+  explicit for append-at-depth, and the source is a direct variable name that
+  is either unaliased or already part of a direct variable-to-variable alias
+  group. A `null` public property and missing parent containers materialize as
   arrays, append targets use the runtime array append cursor, writes through
-  the source variable and direct object-property array offset observe the same
-  selected value, and `unset($value)` detaches only the source name. Existing
-  direct alias groups, source names already routed through array-offset
-  aliases, `$GLOBALS`, dynamic/magic/non-public properties, non-direct sources,
-  full PHP reference containers, copy-on-write, exact alias
-  rebinding/mutation ordering, and native lowering remain unsupported.
+  any direct source-group name and the direct object-property array offset
+  observe the same selected value, and `unset($value)` detaches only that source
+  name. Source names already routed through array-offset aliases, `$GLOBALS`,
+  dynamic/magic/non-public properties, non-direct sources, full PHP reference
+  containers, copy-on-write, exact alias rebinding/mutation ordering, and
+  native lowering remain unsupported.
   ArrayAccess object reference targets such as `$bag[$key] =& $value;` and
   property-held `$holder->bag[$key] =& $value;` report a stable runtime
   boundary because PHP fatals when assigning by reference to an object array
@@ -718,6 +721,9 @@
   compatibility string `8.3.0`, `PHP_INT_MAX` evaluates to the
   host-independent 64-bit integer maximum, and `PHP_SAPI` evaluates to the
   current deterministic `cli` SAPI string.
+- `php_sapi_name()` with no arguments, returning the same current
+  deterministic `cli` SAPI string as `PHP_SAPI`. String-valued dynamic calls,
+  `function_exists()`, and `is_callable()` recognize the builtin.
 - exact uppercase PHP error mask constants `E_ERROR`, `E_WARNING`, `E_PARSE`,
   `E_NOTICE`, `E_CORE_ERROR`, `E_CORE_WARNING`, `E_COMPILE_ERROR`,
   `E_COMPILE_WARNING`, `E_USER_ERROR`, `E_USER_WARNING`, `E_USER_NOTICE`,
@@ -2113,11 +2119,11 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
-  static interface methods, trait methods before trait method metadata,
-  class trait-use composition, conflict resolution, alias/visibility
-  adaptations, `__TRAIT__` context, references/copy-on-write, and native
-  lowering exist, other trait members,
-  trait use inside classes, backed enum declarations and enum members beyond
+  static interface methods, trait properties/constants, static/abstract/final
+  or non-public trait methods, multiple traits in one class-body use,
+  adaptation blocks, conflict resolution, aliases, visibility adaptations,
+  `insteadof`, `__TRAIT__` context, references/copy-on-write, and native
+  trait lowering, backed enum declarations and enum members beyond
   bare cases,
   unsupported class modifier combinations, readonly class declarations before
   readonly class metadata, typed-property enforcement, initialization/write
@@ -2345,8 +2351,9 @@
   autoload flag accepts current bool-like scalar values and does not trigger
   autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
-  trait names, perform case-insensitive lookup against empty top-level traits
-  declared in the current parsed program, and are available through
+  trait names, perform case-insensitive lookup against top-level traits
+  declared in the current parsed program, including traits with currently
+  supported public instance methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
@@ -2462,10 +2469,11 @@
   declared in the current parsed program in declaration order and is available
   through string-valued dynamic calls. Built-in/internal interface entries are
   not represented yet.
-  `get_declared_traits()` returns a zero-indexed array of empty top-level
-  traits declared in the current parsed program in declaration order and is
-  available through string-valued dynamic calls. Built-in/internal trait
-  entries are not represented yet.
+  `get_declared_traits()` returns a zero-indexed array of top-level traits
+  declared in the current parsed program in declaration order, including
+  traits with currently supported public instance methods, and is available
+  through string-valued dynamic calls. Built-in/internal trait entries are not
+  represented yet.
   Named static method expressions such as `ClassName::method(...)` execute for
   declared or inherited visible static methods under the current positional
   argument/default-parameter subset, `$object::method(...)` and
@@ -4334,6 +4342,10 @@
   builtin section above; direct native `headers_sent(...)` calls still reject
   under the function-call boundary, while native function-table introspection
   recognizes the name.
+  `php_sapi_name` accepts the same current no-argument deterministic `cli`
+  subset as the builtin section above; direct native `php_sapi_name(...)`
+  calls still reject under the function-call boundary, while native
+  function-table introspection recognizes the name.
   `abs` accepts the same current integer and finite-float subset as the builtin
   section above; direct native `abs(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -5064,9 +5076,10 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
-  trait methods, other trait members, trait use inside classes,
-  trait methods/properties/constants, trait conflict resolution, aliases,
-  visibility changes, namespace-aware traits,
+  trait properties/constants, static/abstract/final and non-public trait
+  methods, multiple trait composition, trait conflict resolution, aliases,
+  visibility changes, adaptation blocks, `insteadof`, `__TRAIT__`,
+  conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
@@ -6353,6 +6366,10 @@
   shim: filename/line output arguments, output-started tracking, header
   storage, output buffers, SAPI differences, exact warnings, and native
   lowering beyond function-table introspection
+- `php_sapi_name()` behavior beyond the current no-argument deterministic
+  `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
+  request-specific SAPI switching, exact diagnostics, and native lowering
+  beyond function-table introspection
 - `abs()` behavior beyond the current integer and finite-float subset:
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and

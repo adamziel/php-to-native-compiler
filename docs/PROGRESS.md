@@ -4,6 +4,112 @@
 
 Implemented:
 
+- Added Milestone 1225, a WordPress-focused tests/docs queue refresh after the
+  1221-1224 implementation batch. `docs/NEXT_TASKS.md` now marks Milestones
+  1221-1225 complete and opens Milestones 1226-1230 around the next large
+  WordPress blockers: trait/interface behavior beyond simple composition,
+  reference/copy-on-write semantics, request/SAPI/filesystem state, and
+  `wpdb`/bootstrap evidence. `docs/LANE_WORKERS.md` records that next split.
+  Public docs now describe simple trait-method composition, direct alias-group
+  rebinding into array-offset reference targets, deterministic
+  `php_sapi_name()` CLI SAPI identity, and the synthetic `wpdb` option
+  bootstrap probe without claiming full PHP or WordPress support. Full gate
+  passed at checkpoint: `1363` fixture tests, `775` system PHP comparisons,
+  and `588` skipped `phpc-only` fixtures.
+
+- Added Milestone 1224, a deterministic WordPress database/bootstrap probe
+  slice. The WordPress inventory CLI test suite now includes a synthetic
+  WordPress-shaped `wpdb` option bootstrap smoke: `wp-settings.php` loads a
+  minimal `class-wpdb.php`, instantiates `wpdb`, writes a `siteurl` row through
+  the existing `mysqli_query()` `wp_options` state island, reads it back with
+  `SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1`,
+  and echoes the value. Both the generated bootstrap-shim probe and the
+  `wp-blog-header.php` front-controller probe exit `0` and report
+  `stdout_bytes: 5` in normalized inventory output, while the direct
+  `wp-settings.php` probe stays visible as the expected invalid-entrypoint
+  `ABSPATH` failure. This improves executable WordPress evidence without
+  claiming real database connectivity or full bootstrap support. Unsupported
+  edges remain: real MySQL connections, credentials, arbitrary SQL execution,
+  broad `wpdb` semantics, object-cache persistence, plugins/themes, real
+  request/SAPI state, references/copy-on-write, and native lowering. Focused
+  compatibility verification passed:
+  `CARGO_TARGET_DIR=target/focused-1224-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  with `4` tests. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1223, a bounded WordPress request/SAPI identity slice.
+  `phpc run` now supports `php_sapi_name()` with no arguments, returning the
+  deterministic `cli` string already exposed through `PHP_SAPI`. The builtin
+  is available through string-valued dynamic calls plus
+  `function_exists()`/`is_callable()` metadata, and direct native calls still
+  reject under the generic function-call lowering boundary while native
+  function-table introspection recognizes the name. This does not implement
+  host PHP SAPI discovery, web-server/CGI/FPM SAPI states, request-specific
+  SAPI switching, exact PHP diagnostics beyond the current arity check, or
+  native SAPI state lowering. Focused request/SAPI lane verification passed
+  with `CARGO_TARGET_DIR=target/focused-1223-request CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  superglobals -- --test-threads=1` passed with `16` tests; direct `phpc run
+  tests/fixtures/milestone1223/php_sapi_name.php` returned
+  `cli|cli|exists|callable|cli` with exit `0`; `phpc test
+  tests/fixtures/milestone1223` passed with `1` fixture; `phpc test
+  --compare-php tests/fixtures/milestone1223` passed with `1` system PHP
+  comparison and `0` skips; `cargo fmt --check` and `git diff --check`
+  passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1222, a bounded WordPress reference/COW runtime slice for
+  direct alias groups rebound into array-offset reference targets. Direct
+  array-offset and public object-property array-offset reference targets now
+  accept a source variable that already shares a direct variable-to-variable
+  cell, and all direct names in that small source group route to the selected
+  array slot. The focused CLI fixture covers the WordPress-shaped object
+  property array case `$catalog->entries["slot"] =& $entry` after
+  `$other =& $entry`, with writes through `$entry`, `$other`, and the property
+  slot observing the same value. This remains symbol-table alias metadata, not
+  full PHP reference containers or copy-on-write. Unsupported edges: source
+  names already routed through array-offset aliases, `$GLOBALS` reference
+  targets in this source-group shape, dynamic/magic/non-public object-property
+  targets, ArrayAccess reference targets, non-direct sources, exact alias
+  destruction/rebinding ordering, full reference containers, copy-on-write
+  containers, and native lowering. Focused runtime verification passed:
+  `CARGO_TARGET_DIR=target/focused-1222-refcow CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_array -- --test-threads=1`
+  with `13` tests; direct
+  `CARGO_TARGET_DIR=target/focused-1222-refcow CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- run tests/fixtures/milestone1222/object_property_array_alias_group.php`
+  matched direct system PHP output; and
+  `CARGO_TARGET_DIR=target/focused-1222-refcow CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/milestone1222`
+  passed with `1` fixture test. The broader focused
+  `CARGO_TARGET_DIR=target/focused-1222-refcow CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test functions_and_scopes -- --test-threads=1`
+  passed with `143` tests, and
+  `CARGO_TARGET_DIR=target/focused-1222-refcow CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1222`
+  passed with `1` system PHP comparison and `0` skips. Full gate/checkpoint
+  deferred until integration.
+
+- Added Milestone 1221, a bounded WordPress trait composition slice.
+  Top-level traits may now contain simple public instance methods, and class
+  bodies may use one already-declared trait through `use TraitName;` with no
+  adaptations. The interpreter composes those trait methods onto the consuming
+  class metadata, stores executable bodies under the consuming class id, and
+  ordinary instance calls through `phpc run` dispatch with `$this` bound to the
+  receiver. `trait_exists()`, `get_declared_traits()`, `get_class_methods()`,
+  and class metadata now observe method-bearing traits in the current bounded
+  shape. This does not implement trait properties/constants,
+  static/abstract/final or non-public trait methods, multiple traits in one
+  use declaration, conflict resolution, aliases, visibility adaptations,
+  `insteadof`, adaptation blocks, `__TRAIT__`, nested/conditional trait
+  registration, references/COW, exact PHP diagnostics, or native trait
+  lowering. Focused trait lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1221-traits CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test object_model trait -- --test-threads=1`
+  with `8` tests;
+  `CARGO_TARGET_DIR=target/focused-1221-traits CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test syntax_boundaries trait -- --test-threads=1`
+  with `4` tests; unsupported object and syntax CLI snapshot tests passed;
+  direct `phpc run tests/fixtures/milestone1221/trait_composition.php`
+  printed `label:ok|label:default|Widget|trait`; `phpc test
+  tests/fixtures/milestone1221` passed with `1` fixture; `phpc test
+  --compare-php tests/fixtures/milestone1221` passed with `1` system PHP
+  comparison; direct `phpc compile
+  tests/fixtures/milestone1221/trait_composition_native_boundary.phpc-source
+  --emit-ir` returned exit `1` at the existing LLVM trait lowering boundary.
+  Full gate/checkpoint deferred until integration.
+
 - Added Milestone 1220, a tests/docs queue refresh after the 1216-1219
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1216-1220
   complete and opens Milestones 1221-1225 with all lanes aimed at the larger

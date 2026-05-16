@@ -224,7 +224,9 @@ incorrect native code.
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata with concrete-class public method
-  presence checks, declared empty-trait metadata,
+  presence checks, declared trait metadata for empty traits and simple public
+  instance trait methods, simple class-body `use TraitName;` composition for
+  one already-declared trait without adaptations or conflicts,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -249,8 +251,11 @@ type declaration enforcement, cast behavior outside the current `(string)`,
 actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
 interface method enforcement/catalogs beyond the current `Countable`,
-`Iterator`, and `IteratorAggregate` shape checks, trait methods, other trait
-members and trait composition, enum case objects/backed values/methods/interfaces,
+`Iterator`, and `IteratorAggregate` shape checks, trait properties/constants,
+static/abstract/final or non-public trait methods, multiple/adapted trait
+composition, aliases, visibility changes, `insteadof`, `__TRAIT__`,
+conditional/nested trait registration, enum case objects/backed
+values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
@@ -340,6 +345,7 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
+direct `php_sapi_name()` SAPI identity calls,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

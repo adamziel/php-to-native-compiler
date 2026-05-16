@@ -1,1 +1,1 @@
-phpc intentionally rejects trait use inside classes before trait composition exists.
+phpc intentionally rejects multiple/adapted trait use before conflict-resolution and adaptation semantics exist.

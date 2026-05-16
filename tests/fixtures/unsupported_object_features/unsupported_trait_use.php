@@ -1,4 +1,4 @@
 <?php
 class Box {
-    use Labels;
+    use Labels, Hooks;
 }

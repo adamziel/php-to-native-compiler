@@ -1321,21 +1321,27 @@ echo $null_value;
 }
 
 #[test]
-fn reference_assignment_array_offset_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_array_offset_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 $value = "source";
 $other =& $value;
 $items["slot"] =& $value;
+$value = "from-value";
+echo $items["slot"], "|", $other, "|";
+$other = "from-other";
+echo $items["slot"], "|", $value, "|";
+$items["slot"] = "from-slot";
+echo $value, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-value|from-value|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1399,21 +1405,27 @@ echo $targets[0];
 }
 
 #[test]
-fn reference_assignment_array_append_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_array_append_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 $value = "source";
 $other =& $value;
 $items[] =& $value;
+$value = "from-value";
+echo $items[0], "|", $other, "|";
+$other = "from-other";
+echo $items[0], "|", $value, "|";
+$items[0] = "from-slot";
+echo $value, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-value|from-value|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1471,21 +1483,27 @@ echo $targets["outer"]["slot"];
 }
 
 #[test]
-fn reference_assignment_nested_array_offset_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_nested_array_offset_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 $value = "source";
 $other =& $value;
 $items["outer"]["slot"] =& $value;
+$value = "from-value";
+echo $items["outer"]["slot"], "|", $other, "|";
+$other = "from-other";
+echo $items["outer"]["slot"], "|", $value, "|";
+$items["outer"]["slot"] = "from-slot";
+echo $value, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-value|from-value|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1543,21 +1561,27 @@ echo $targets["outer"][0];
 }
 
 #[test]
-fn reference_assignment_nested_array_append_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_nested_array_append_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 $value = "source";
 $other =& $value;
 $items["outer"][] =& $value;
+$value = "from-value";
+echo $items["outer"][0], "|", $other, "|";
+$other = "from-other";
+echo $items["outer"][0], "|", $value, "|";
+$items["outer"][0] = "from-slot";
+echo $value, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-value|from-value|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1970,8 +1994,8 @@ echo $entry;
 }
 
 #[test]
-fn reference_assignment_object_property_array_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_object_property_array_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 class Catalog {
     public $entries;
@@ -1980,20 +2004,26 @@ $catalog = new Catalog();
 $entry = "source";
 $other =& $entry;
 $catalog->entries["slot"] =& $entry;
+$entry = "from-entry";
+echo $catalog->entries["slot"], "|", $other, "|";
+$other = "from-other";
+echo $catalog->entries["slot"], "|", $entry, "|";
+$catalog->entries["slot"] = "from-slot";
+echo $entry, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 8);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-entry|from-entry|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn reference_assignment_object_property_array_append_target_aliased_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_object_property_array_append_target_rebinds_direct_alias_group() {
+    let execution = run_source(
         r#"<?php
 class Catalog {
     public $entries;
@@ -2002,15 +2032,21 @@ $catalog = new Catalog();
 $entry = "source";
 $other =& $entry;
 $catalog->entries[] =& $entry;
+$entry = "from-entry";
+echo $catalog->entries[0], "|", $other, "|";
+$other = "from-other";
+echo $catalog->entries[0], "|", $entry, "|";
+$catalog->entries[0] = "from-slot";
+echo $entry, "|", $other;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 8);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+        execution.stdout,
+        "from-entry|from-entry|from-other|from-other|from-slot|from-slot"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

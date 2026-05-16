@@ -1,4 +1,4 @@
 <?php
 trait Logs {
-    public function write($message) {}
+    protected static function write($message) {}
 }
