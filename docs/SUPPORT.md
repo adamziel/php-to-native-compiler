@@ -948,9 +948,11 @@
   state.
   `mysqli_store_result($handle)` and `mysqli_use_result($handle)` accept the
   placeholder connection and return deterministic `false` for clean
-  no-pending-result state without transferring buffered or unbuffered results
-  from the connection, tracking pending result state, or exposing real result
-  resources.
+  no-pending-result state, or transfer the current deterministic
+  `mysqli_real_query()` pending result into a placeholder `mysqli_result`.
+  They do not transfer real buffered or unbuffered results from a host
+  connection, model result resource modes, support multi-result queues, or
+  expose real result resources.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
   counters plus deterministic placeholder connection counters, without real
@@ -1033,9 +1035,15 @@
   as a deterministic successful no-result boundary without changing real
   connection charset state. `mysqli_real_query($handle, ...)` accepts that
   same exact charset setup statement and returns deterministic `true` without
-  creating pending result state for `mysqli_store_result()` or
-  `mysqli_use_result()`; result-producing SQL and mutation SQL remain explicit
-  unsupported boundaries for `mysqli_real_query()`.
+  creating pending result state. It also accepts the exact deterministic
+  seed-post and empty-result SQL shapes already supported by `mysqli_query()`,
+  queues one pending placeholder result on the connection, and lets
+  `mysqli_field_count($handle)` report the pending field count until
+  `mysqli_store_result($handle)` or `mysqli_use_result($handle)` consumes the
+  result. General result-producing SQL, real buffered/unbuffered result
+  transfer, host connection pending-result queues, multi-result state,
+  mutation state, warning/error fidelity, and native database lowering remain
+  unsupported.
   `mysqli_multi_query($handle, ...)` accepts the same exact charset setup
   statement and returns deterministic `true` without real multi-statement
   execution, pending result queues, `mysqli_more_results()`/

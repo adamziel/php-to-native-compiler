@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 976, deterministic pending-result state for
+  `mysqli_real_query()` plus `mysqli_store_result()`/`mysqli_use_result()`.
+  The runtime now queues a placeholder pending result on the connection for
+  the exact seed-post and empty-result SQL shapes already supported by
+  `mysqli_query()`, exposes the pending field count through
+  `mysqli_field_count($handle)`, and transfers the pending rows into a
+  placeholder `mysqli_result` through `mysqli_store_result()` or
+  `mysqli_use_result()`. This is not general SQL execution, real buffered or
+  unbuffered result transfer, host connection pending-result queues,
+  multi-result state, mutation state, warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_real_query -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_field_count -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone976`.
+
 - Added Milestone 975, broader deterministic `mysqli_result` field metadata
   objects for the current seed-post placeholder result. `mysqli_fetch_field()`,
   `mysqli_fetch_fields()`, and `mysqli_fetch_field_direct()` now return

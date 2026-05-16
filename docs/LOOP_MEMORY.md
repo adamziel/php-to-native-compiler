@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `cef610f0 runtime: broaden mysqli field metadata placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 976, deterministic `mysqli_real_query()` pending
+  result state consumable through `mysqli_store_result()`/
+  `mysqli_use_result()` for the current seed-post and empty-result SQL
+  placeholders.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone976/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_real_query -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_field_count -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone976`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: deterministic `mysqli_real_query()` can now
+  queue the same seed-post and empty-result placeholders used by
+  `mysqli_query()`, and `mysqli_store_result()`/`mysqli_use_result()` can
+  consume that pending state into a placeholder `mysqli_result`.
+- Remaining semantic gaps: general SQL execution, real buffered/unbuffered
+  result transfer, host connection pending-result queues, multi-result state,
+  mutation state, warning/error fidelity, and native database lowering remain
+  missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
+  local-infile option effects, prepared-statement object lifecycle, or
+  multi-result pending queues.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `5c16d1a6 runtime: add mysqli client flag placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 975, broader deterministic `mysqli_result` field
@@ -51,10 +84,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   database metadata, protocol flag/type fidelity, collation negotiation,
   duplicate-column behavior, warning/error fidelity, and native database
   lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
-  local-infile option effects, prepared-statement execution boundaries, or
-  pending result state.
+- Checkpoint result: committed and pushed
+  `cef610f0 runtime: broaden mysqli field metadata placeholders`.
+- Next concrete task: inspect broader escaping charset fidelity, local-infile
+  option effects, prepared-statement execution boundaries, or pending result
+  state.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

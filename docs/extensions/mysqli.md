@@ -347,11 +347,17 @@ without executing SQL or producing a result resource.
 
 `mysqli_real_query($handle, 'SET NAMES \'utf8mb4\' COLLATE
 \'utf8mb4_unicode_520_ci\'')` accepts the placeholder object and that exact
-WordPress charset setup statement, returning deterministic `true`. Unlike
-`mysqli_query()`, it does not return result objects and it does not create
-pending result state for `mysqli_store_result()` or `mysqli_use_result()`.
-Result-producing SQL and mutation SQL remain explicit unsupported boundaries
-for `mysqli_real_query()`.
+WordPress charset setup statement, returning deterministic `true` without
+creating pending result state. `mysqli_real_query()` also accepts the exact
+deterministic seed-post and empty-result SQL shapes already supported by
+`mysqli_query()`, queues one pending placeholder result on the connection, and
+returns `true`. `mysqli_field_count($handle)` reports the pending result field
+count until the result is transferred. `mysqli_store_result($handle)` or
+`mysqli_use_result($handle)` then consumes that pending state and returns a
+placeholder `mysqli_result`; later calls return `false` again. General
+result-producing SQL, real buffered/unbuffered transfer, host connection
+pending-result queues, multi-result state, mutation state, warning/error
+fidelity, and native lowering remain unsupported.
 
 `mysqli_multi_query($handle, 'SET NAMES \'utf8mb4\' COLLATE
 \'utf8mb4_unicode_520_ci\'')` accepts the placeholder object and that exact
@@ -372,9 +378,11 @@ metadata, or model real result resources.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean
-no-pending-result state. They do not transfer buffered or unbuffered result
-sets from the connection, track pending result state, or expose real result
-resources.
+no-pending-result state, or transfer the current deterministic
+`mysqli_real_query()` pending result into a placeholder `mysqli_result`. They
+do not transfer real buffered or unbuffered result sets from a host
+connection, model result resource modes, support multi-result queues, or expose
+real result resources.
 
 `mysqli_reap_async_query($handle)` returns deterministic `false` for the clean
 placeholder connection, meaning no async result is pending. `MYSQLI_ASYNC`,

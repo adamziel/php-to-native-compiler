@@ -102,6 +102,7 @@ struct Interpreter {
     error_handler_mask: Option<i64>,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
+    mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -123,6 +124,12 @@ struct MysqliResultState {
     row_cursor: usize,
     field_cursor: usize,
     last_lengths: Option<Vec<usize>>,
+}
+
+#[derive(Debug, Clone)]
+struct MysqliPendingResultState {
+    fields: Vec<String>,
+    rows: Vec<Vec<(String, Value)>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -511,6 +518,7 @@ impl Interpreter {
             error_handler_mask: None,
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
+            mysqli_pending_results: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -4384,8 +4392,13 @@ impl Interpreter {
 
     fn call_mysqli_field_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_field_count", args, 1, span)?;
-        expect_mysqli_handle("mysqli_field_count()", &args[0], span)?;
-        Ok(Value::Int(0))
+        let handle_id = expect_mysqli_handle_id("mysqli_field_count()", &args[0], span)?;
+        Ok(Value::Int(
+            self.mysqli_pending_results
+                .get(&handle_id)
+                .map(|result| result.fields.len() as i64)
+                .unwrap_or(0),
+        ))
     }
 
     fn call_mysqli_close(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5292,9 +5305,9 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_real_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_real_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_real_query", args, 2, span)?;
-        expect_mysqli_handle("mysqli_real_query()", &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_real_query()", &args[0], span)?;
         let Value::String(query) = &args[1] else {
             return Err(runtime_error(
                 span,
@@ -5312,13 +5325,18 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
-        if is_mysqli_select_query(query) || is_wordpress_empty_options_query(query) {
+        if let Some(result) = mysqli_pending_result_for_query(query) {
+            self.mysqli_pending_results.insert(handle_id, result);
+            return Ok(Value::Bool(true));
+        }
+
+        if is_mysqli_select_query(query) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "mysqli_real_query()",
                     format!(
-                        "result-producing mysqli_real_query() SQL is not implemented because pending result state for mysqli_store_result()/mysqli_use_result() is not modeled; got {query}"
+                        "general result-producing mysqli_real_query() SQL is not implemented; only deterministic pending result placeholders are supported in the current subset; got {query}"
                     ),
                 ),
             ));
@@ -5341,7 +5359,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_real_query()",
                 format!(
-                    "only the WordPress charset setup query is implemented for mysqli_real_query() in the current subset; got {query}"
+                    "only the WordPress charset setup query and deterministic pending result placeholders are implemented for mysqli_real_query() in the current subset; got {query}"
                 ),
             ),
         ))
@@ -5967,16 +5985,22 @@ impl Interpreter {
         Ok(Value::Bool(false))
     }
 
-    fn call_mysqli_store_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_store_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_store_result", args, 1, span)?;
-        expect_mysqli_handle("mysqli_store_result()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let handle_id = expect_mysqli_handle_id("mysqli_store_result()", &args[0], span)?;
+        let Some(result) = self.mysqli_pending_results.remove(&handle_id) else {
+            return Ok(Value::Bool(false));
+        };
+        self.create_mysqli_result_placeholder(span, result.fields, result.rows)
     }
 
-    fn call_mysqli_use_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_use_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_use_result", args, 1, span)?;
-        expect_mysqli_handle("mysqli_use_result()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let handle_id = expect_mysqli_handle_id("mysqli_use_result()", &args[0], span)?;
+        let Some(result) = self.mysqli_pending_results.remove(&handle_id) else {
+            return Ok(Value::Bool(false));
+        };
+        self.create_mysqli_result_placeholder(span, result.fields, result.rows)
     }
 
     fn call_mysqli_reap_async_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -13833,6 +13857,30 @@ fn mysqli_field_metadata_properties(name: &str) -> Vec<(String, Value)> {
     ]
 }
 
+fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultState> {
+    if is_wordpress_empty_result_query(query) || is_wordpress_empty_options_query(query) {
+        return Some(MysqliPendingResultState {
+            fields: Vec::new(),
+            rows: Vec::new(),
+        });
+    }
+
+    if is_wordpress_seed_post_query(query) {
+        return Some(MysqliPendingResultState {
+            fields: vec!["ID".to_string(), "post_title".to_string()],
+            rows: vec![vec![
+                ("ID".to_string(), Value::Int(1)),
+                (
+                    "post_title".to_string(),
+                    Value::String("Hello world placeholder".to_string()),
+                ),
+            ]],
+        });
+    }
+
+    None
+}
+
 fn is_wordpress_empty_options_query(query: &str) -> bool {
     let query = query.trim();
     if query.starts_with("SHOW FULL COLUMNS FROM ") || query.starts_with("DESCRIBE ") {
@@ -13904,6 +13952,10 @@ fn is_mysqli_mutation_query(query: &str) -> bool {
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
+    expect_mysqli_handle_id(function, value, span).map(|_| ())
+}
+
+fn expect_mysqli_handle_id(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
     let Value::Object(handle) = value else {
         return Err(runtime_error(
             span,
@@ -13928,7 +13980,7 @@ fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileRes
             ),
         ));
     }
-    Ok(())
+    Ok(handle.id())
 }
 
 fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> CompileResult<i64> {

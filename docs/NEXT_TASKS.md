@@ -9175,19 +9175,31 @@ handled.
   not real host field metadata, SQL-derived table or database metadata,
   protocol flag/type fidelity, collation negotiation, duplicate-column
   behavior, warning/error fidelity, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as broader escaping charset fidelity,
   local-infile option effects, prepared-statement execution boundaries, or
   pending result state for `mysqli_store_result()`/`mysqli_use_result()`, and
   add the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 976 adds deterministic `mysqli_real_query()` pending-result state
+  for the current seed-post and empty-result SQL placeholders, consumable
+  through `mysqli_store_result()`/`mysqli_use_result()`. This is not general
+  SQL execution, real buffered or unbuffered result transfer, host connection
+  pending-result queues, multi-result state, mutation state,
+  warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as broader escaping charset fidelity,
+  local-infile option effects, prepared-statement object lifecycle, or
+  multi-result pending queues, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5c16d1a6 runtime: add mysqli client flag placeholders`, covering
-  Milestone 974 before the current Milestone 975 candidate.
+  `cef610f0 runtime: broaden mysqli field metadata placeholders`, covering
+  Milestone 975 before the current Milestone 976 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

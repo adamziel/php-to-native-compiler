@@ -2812,6 +2812,43 @@ echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
 }
 
 #[test]
+fn mysqli_real_query_stores_current_pending_result_placeholders() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_real_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+$result = mysqli_store_result($handle);
+echo get_class($result);
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["ID"], ":", $row["post_title"];
+echo "|";
+echo mysqli_store_result($handle) === false ? "drained" : "pending";
+
+$handle2 = mysqli_init();
+mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_real_query($handle2, "SELECT * FROM wp_posts WHERE 1 = 0");
+$empty = mysqli_use_result($handle2);
+echo "|";
+echo get_class($empty), ":", mysqli_num_rows($empty), ":", mysqli_num_fields($empty);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "queued|2|mysqli_result|0|1:Hello world placeholder|drained|mysqli_result:0:0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_multi_query_accepts_current_wordpress_charset_setup_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -3495,7 +3532,7 @@ mysqli_real_query(mysqli_init(), "SELECT 1");
     assert_eq!(unsupported_select.column, 1);
     assert_eq!(
         unsupported_select.message,
-        "unsupported call mysqli_real_query(): result-producing mysqli_real_query() SQL is not implemented because pending result state for mysqli_store_result()/mysqli_use_result() is not modeled; got SELECT 1"
+        "unsupported call mysqli_real_query(): general result-producing mysqli_real_query() SQL is not implemented; only deterministic pending result placeholders are supported in the current subset; got SELECT 1"
     );
 
     let unsupported_mutation = run_source(

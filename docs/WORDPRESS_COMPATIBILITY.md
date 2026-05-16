@@ -1708,7 +1708,13 @@ historical blockers and remaining full-support gaps include:
   seed-post `ID` and `post_title` placeholder fields without claiming real
   host field metadata, SQL-derived table or database metadata, protocol
   flag/type fidelity, collation negotiation, duplicate-column behavior,
-  warning/error fidelity, or native database lowering. Milestone 965 adds explicit
+  warning/error fidelity, or native database lowering. Milestone 976 adds
+  deterministic `mysqli_real_query()` pending-result state for the current
+  seed-post and empty-result SQL placeholders, consumable through
+  `mysqli_store_result()`/`mysqli_use_result()` without claiming general SQL
+  execution, real buffered or unbuffered result transfer, host connection
+  pending-result queues, multi-result state, mutation state, warning/error
+  fidelity, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and
