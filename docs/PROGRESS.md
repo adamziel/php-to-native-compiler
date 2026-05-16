@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 1044, target-pointer-width-aware native runtime helper
+  signature rendering for the scalar echo ABI probe. The compiler-side probe
+  now renders helper return and capacity types from an explicit native runtime
+  IR target, with committed 32-bit `usize` snapshot coverage while preserving
+  the current host-width default snapshot. This is still a dependency sketch:
+  normal `phpc compile --emit-ir` output does not call runtime helpers, linked
+  native execution is not implemented, and boxed strings, arrays, objects,
+  resources, references/copy-on-write, stack frames, diagnostics, and
+  WordPress host/runtime state remain unsupported in native lowering.
+  Verification so far:
+  `cargo test -p phpc --test native_runtime_abi -- --test-threads=1`.
+
 - Added Milestone 1043, bounded `is_iterable($object)` metadata support for
   objects whose class metadata records `implements Traversable`,
   `implements Iterator`, or `implements IteratorAggregate`. Arrays keep the

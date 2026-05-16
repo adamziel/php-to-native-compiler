@@ -5698,11 +5698,17 @@ handled.
 
 ## Milestone 637: Native Runtime Helper Lowering Follow-up
 
-- [ ] IR/lowering/compiler-output lane: choose the next honest native runtime
+- [x] IR/lowering/compiler-output lane: choose the next honest native runtime
   integration slice: target-data-layout-aware helper signatures, boxed scalar
   construction in generated LLVM, a linker command prototype that still rejects
   executable mode clearly, or a documented blocker if the current LLVM text
-  backend cannot model C ABI helper calls safely.
+  backend cannot model C ABI helper calls safely. Selected candidate:
+  Milestone 1044 adds explicit target-pointer-width rendering for the scalar
+  echo native runtime helper probe, with committed 32-bit `usize` snapshot
+  coverage while preserving the current host-width default. This does not emit
+  helper calls from normal `phpc compile --emit-ir`, link native executables, or
+  claim boxed strings, arrays, objects, references/copy-on-write, diagnostics,
+  or WordPress host/runtime state in native lowering.
 
 ## Milestone 638: WordPress Inventory Snapshot Harness
 
@@ -10061,7 +10067,8 @@ handled.
 
 - The latest committed checkpoint is
   `6582b4e1 runtime: add iterable object metadata`, covering
-  Milestone 1043.
+  Milestone 1043. A Milestone 1044 native runtime helper signature slice is
+  implemented in the working tree and awaiting checkpoint.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

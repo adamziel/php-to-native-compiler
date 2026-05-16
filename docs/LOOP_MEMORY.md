@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1764bfbc docs: record iterable object metadata gate`, pushed to
+  `origin/master`.
+- Task attempted: reconcile the full PHP/WordPress compatibility target in
+  `GOAL.MD` and advance Milestone 1044, target-pointer-width-aware native
+  runtime scalar echo helper signature rendering.
+- Files changed: `compiler/src/codegen.rs`, `compiler/src/lib.rs`,
+  `compiler/tests/native_runtime_abi.rs`,
+  `tests/fixtures/milestone637/native_runtime_scalar_echo_probe_i32.ir`,
+  `docs/PROGRESS.md`, `docs/NATIVE_RUNTIME_ABI.md`, `docs/NEXT_TASKS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed.
+  `cargo test -p phpc --test native_runtime_abi -- --test-threads=1` first
+  found a one-newline snapshot mismatch, then passed after fixing the fixture.
+- Current WordPress frontier: this is a native-runtime integration prerequisite,
+  not a WordPress runtime behavior slice.
+- Remaining semantic gaps: normal generated LLVM still does not emit runtime
+  helper calls; linked native execution, boxed strings, arrays, objects,
+  resources, references/copy-on-write, stack frames, diagnostics, and
+  WordPress host/runtime state remain missing in native lowering.
+- Next concrete task: run `git diff --check`, then checkpoint the Milestone
+  1044 batch through `tools/checkpoint.sh` if the serialized gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `89cc1bf5 docs: record short array destructuring gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1043, bounded `is_iterable($object)` metadata

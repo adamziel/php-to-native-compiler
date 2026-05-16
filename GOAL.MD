@@ -733,6 +733,26 @@ External target references checked on 2026-05-14:
 
 The major missing areas are not side quests. They are the compatibility roadmap.
 
+The audit standard for this goal is concrete: a feature does not count toward
+full PHP or WordPress compatibility until the repository has executable
+implementation code, tests, a CLI or harness path, documentation, and named
+unsupported edges. A passing narrow bootstrap or placeholder database smoke is
+evidence that one blocker moved; it is not evidence that WordPress, PHP's
+runtime model, or native execution is complete.
+
+The current project state therefore reconciles into two facts:
+
+- Ready today: an expanding interpreter/runtime compatibility subset, a narrow
+  native scalar lowering subset, stable rejection boundaries, system-PHP
+  comparison fixtures, WordPress inventory/smoke harnesses, and many
+  WordPress-shaped bootstrap/database placeholder slices.
+- Missing before the goal is complete: real PHP reference/copy-on-write
+  semantics, full object and error behavior, real multi-file/autoload/source
+  mapping behavior, broad standard-library and extension services,
+  host-backed database/filesystem/web runtime state, committed WordPress core
+  application-flow coverage, and native runtime integration beyond scalar
+  snapshots.
+
 For full PHP and WordPress compatibility, the highest-risk missing systems are:
 
 1. Multi-file program structure: include/require, namespaces, aliases,

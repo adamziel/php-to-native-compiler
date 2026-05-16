@@ -68,11 +68,22 @@ declares the exported scalar echo helper symbols and includes one probe call to
 `phpc_native_scalar_echo_len` so the compiler crate has a stable native-runtime
 dependency artifact.
 
+Milestone 1044 makes that helper signature renderer target-pointer-width aware.
+The default probe still renders the current host-width snapshot, while
+`native_runtime_scalar_echo_probe_ir_for_target(...)` can render explicit
+32-bit or 64-bit `usize` helper signatures. The committed 32-bit snapshot lives
+at `tests/fixtures/milestone637/native_runtime_scalar_echo_probe_i32.ir` and
+pins `phpc_native_scalar_echo_len(...) -> i32` plus the `i32` capacity argument
+for `phpc_native_scalar_echo_write(...)`. This is a prerequisite for truthful
+helper-call lowering across targets; it is not a linker, runtime call emission,
+or native execution path.
+
 This is not production lowering. Normal `phpc compile --emit-ir` output remains
 unchanged and still does not link or execute runtime helper calls. The snapshot
-uses the current 64-bit test target's `usize`/pointer-width shape; a real linked
-native backend still needs explicit target data layout handling before helper
-calls can be emitted truthfully for all supported targets.
+uses the selected target's `usize`/pointer-width shape; a real linked native
+backend still needs full target data layout, calling-convention validation, and
+runtime helper emission before helper calls can be emitted truthfully for all
+supported targets.
 
 ## Verification
 
@@ -92,6 +103,8 @@ The tests pin:
 - scalar echo byte sizing, partial buffer writes, and null-buffer sizing.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
+- explicit 32-bit and 64-bit `usize` IR rendering for scalar echo helper
+  declarations and the probe call.
 
 ## Explicit Non-Support
 

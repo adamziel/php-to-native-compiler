@@ -2546,6 +2546,13 @@
   Native echo conversion is limited to this static scalar path: `null` and
   `false` emit nothing, `true` emits `1`, integers use `%lld`, floats use
   `%g`, and strings are emitted through generated static string constants.
+  The compiler-side native runtime scalar echo helper probe now renders
+  `usize`-shaped helper signatures from an explicit pointer-width target, with
+  committed 32-bit and current host-width coverage. This is still a dependency
+  sketch: normal `phpc compile --emit-ir` output does not call those helpers,
+  and linked native execution, heap-owned strings, arrays, objects, resources,
+  references/copy-on-write, stack frames, diagnostics, and WordPress host state
+  remain unsupported in native lowering.
   Native binary arithmetic currently lowers `+`, `-`, and `*` when both
   operands are already same-type lowerable floats, or when both operands are
   lowerable integers and the integer result is statically proven not to

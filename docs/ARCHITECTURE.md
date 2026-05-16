@@ -214,7 +214,10 @@ The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
 `null`, booleans, integers, and floats, plus exported constructor symbols in
 `php_runtime`. This is intentionally only an ABI seed for future generated-code
-runtime helper calls; linked native execution, strings, arrays, objects,
+runtime helper calls. The compiler-side scalar echo helper probe renders
+`usize`-shaped helper signatures from an explicit pointer-width target so the
+ABI sketch can distinguish 32-bit and 64-bit targets. Linked native execution,
+runtime helper calls from normal generated IR, strings, arrays, objects,
 references, copy-on-write, stack frames, and diagnostics are still not
 implemented.
 

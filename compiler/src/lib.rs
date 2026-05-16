@@ -11,7 +11,10 @@ use error::CompileResult;
 use interpreter::{Execution, RunOptions};
 use php_runtime::PhpClassTable;
 
-pub use codegen::native_runtime_scalar_echo_probe_ir;
+pub use codegen::{
+    native_runtime_scalar_echo_probe_ir, native_runtime_scalar_echo_probe_ir_for_target,
+    NativeRuntimeIrTarget,
+};
 
 pub fn parse(source: &str) -> CompileResult<Program> {
     parser::parse_source(source)
