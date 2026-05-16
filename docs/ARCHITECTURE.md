@@ -1661,19 +1661,22 @@ implementation to declare the same return type text case-insensitively. Public
 static methods do not satisfy non-static interface method requirements. This is
 a bounded compatibility check only; full parameter variance, broader return
 type covariance/contravariance, type subtyping, alias/import resolution,
-union/intersection canonicalization, interface inheritance, built-in/internal
-interface method enforcement, exact PHP error objects, autoload behavior, and
-native lowering remain separate work. A bounded
+union/intersection canonicalization, interface inheritance, broad
+built-in/internal interface method enforcement beyond the current
+`Countable::count()` shape check, exact PHP error objects, autoload behavior,
+and native lowering remain separate work. A bounded
 core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at
 a time: current `ArrayAccess` paths dispatch selected offset methods, current
 `Stringable`/`__toString` paths cover string conversion, and current
-`Countable` paths let `is_countable($object)` recognize recorded
-`implements Countable` metadata and `count($object)` dispatch a visible
-non-static `count()` method with an integer result. Full interface signature
-enforcement, broad protocol composition, references/copy-on-write, exact
-diagnostics, and native lowering remain separate runtime work.
+`Countable` paths require concrete implementors to expose a public non-static
+`count()` method with no required parameters, let `is_countable($object)`
+recognize recorded `implements Countable` metadata, and let `count($object)`
+dispatch that method with an integer result. Full internal interface signature
+enforcement, tentative return-type notices, broad protocol composition,
+references/copy-on-write, exact diagnostics, and native lowering remain
+separate runtime work.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.
@@ -1860,10 +1863,14 @@ bodies after normal try completion. Reached throws and other runtime errors do
 not unwind into catch/finally handling in this slice.
 
 Throw expressions, malformed try blocks, and standalone `catch`/`finally`
-remain parse boundaries. Native lowering rejects exception statements before
+remain parse boundaries. Native lowering rejects `throw` statements before
 emitting LLVM IR or assembly until `Throwable`/`Exception` objects, stack
-unwinding, catch matching, finally execution during exception unwinding, stack
-traces, and exact native error behavior have explicit runtime and IR semantics.
+unwinding, catch/finally dispatch, stack traces, and exact native error behavior
+have explicit runtime and IR semantics. Native lowering rejects
+`try`/`catch`/`finally` blocks through a dedicated boundary until catch type
+matching, catch variable binding, finally execution during normal and
+exceptional control flow, references/copy-on-write, stack traces, and exact
+native try-block diagnostics exist.
 
 ## Match Expression Boundary
 

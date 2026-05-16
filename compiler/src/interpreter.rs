@@ -19052,6 +19052,8 @@ fn register_class_members(
         class,
     )
     .map_err(|error| runtime_error(class.span, error))?;
+    validate_core_countable_method_implementation(classes, method_signatures, id, class)
+        .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
 }
@@ -19169,6 +19171,65 @@ fn validate_interface_method_implementation(
             class.name
         ),
     ))
+}
+
+fn validate_core_countable_method_implementation(
+    classes: &PhpClassTable,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract
+        || !implemented_interface_names(classes, class_id)
+            .iter()
+            .any(|interface| interface.eq_ignore_ascii_case("Countable"))
+    {
+        return Ok(());
+    }
+
+    let Some((declaring_class_id, declaring_class_name, class_method)) =
+        find_public_method(classes, class_id, "count")
+    else {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            &class.name,
+            format!(
+                "concrete class {} must implement internal interface method Countable::count()",
+                class.name
+            ),
+        ));
+    };
+
+    if class_method.is_static() {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            &class.name,
+            format!(
+                "concrete class {} must implement internal interface method Countable::count() as non static method; found static {}::{}()",
+                class.name,
+                declaring_class_name,
+                class_method.name()
+            ),
+        ));
+    }
+
+    let class_required = public_method_required_param_count(
+        method_signatures,
+        class,
+        class_id,
+        declaring_class_id,
+        "count",
+    );
+    if class_required > 0 {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            &class.name,
+            format!(
+                "method {}::{}() cannot require parameters for internal interface method Countable::count()",
+                declaring_class_name,
+                class_method.name()
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 fn validate_interface_parameter_type_compatibility(

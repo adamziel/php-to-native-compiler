@@ -11426,13 +11426,74 @@ handled.
 
 ## Milestone 1171: Next Parser Boundary
 
+- [x] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed full-compatibility gap map.
+  Prefer a PHP/WordPress surface that still falls through to a broad or
+  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
+  where applicable, and keep runtime/native support claims unchanged.
+  Milestone 1171 refines unsupported `yield from` syntax from the broad
+  generator/yield diagnostic into a dedicated parse boundary that names missing
+  generator delegation pieces: `Traversable` iteration, yielded key/value
+  forwarding, send/throw propagation, generator return values,
+  references/copy-on-write, and native lowering. This does not implement
+  generator functions, generator objects, ordinary `yield`, `yield from`
+  delegation, key/value yields, by-reference yields, or native lowering.
+
+## Milestone 1172: Next Runtime Value/Object Slice
+
+- [x] Runtime lane: choose one bounded runtime slice from the refreshed gap
+  map, preferably a remaining reference/COW, object-semantics, request-state,
+  filesystem, database, or WordPress-probe blocker already reached by fixtures
+  or external probes. Prove it with focused tests, CLI coverage, system PHP
+  comparison where applicable, and named unsupported edges.
+  Milestone 1172 adds a bounded internal `Countable` method-shape registration
+  check. Concrete classes that record `implements Countable`, including
+  concrete children inheriting that metadata from abstract parents, now must
+  expose a public non-static `count()` method with no required parameters
+  before `is_countable()` or `count()` can observe the object protocol. This
+  does not implement broad built-in/internal interface method enforcement,
+  tentative return-type notices, return-declaration compatibility, exact PHP
+  `Error` objects, magic `__call` fallback, references/copy-on-write, or
+  native object/interface lowering.
+
+## Milestone 1173: Next Native Boundary
+
+- [x] IR/lowering lane: choose one precise native rejection or tiny lowering
+  refinement from interpreter behavior that is already documented. `phpc
+  compile --emit-ir` and `--emit-asm` must either lower the exact supported
+  slice or reject it before misleading backend output.
+  Milestone 1173 adds a dedicated native `try`/`catch`/`finally` rejection for
+  `phpc compile --emit-ir` and `--emit-asm`, keeping it separate from the
+  existing `throw` rejection while native catch matching, catch variable
+  binding, finally execution, unwinding, stack traces, references/copy-on-write,
+  and exact native diagnostics remain unsupported.
+
+## Milestone 1174: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: choose one deterministic CLI, fixture-runner,
+  compatibility-manifest, or backend artifact contract that improves
+  auditability without broadening PHP support claims. Milestone 1174 bumps
+  the JSON fixture manifest to `contract_version` 6 and records deterministic
+  `compat/<target>/source-pin.md` path, byte count, and SHA-256 metadata in
+  compatibility-target manifests, including the text manifest, while leaving
+  fixture execution, PHP comparison, parser/runtime behavior, native lowering,
+  and PHP/WordPress support claims unchanged.
+
+## Milestone 1175: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1171-1174 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1176: Next Parser Boundary
+
 - [ ] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
   misleading diagnostic. Add stable focused coverage, CLI fixture evidence
   where applicable, and keep runtime/native support claims unchanged.
 
-## Milestone 1172: Next Runtime Value/Object Slice
+## Milestone 1177: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
@@ -11440,22 +11501,22 @@ handled.
   or external probes. Prove it with focused tests, CLI coverage, system PHP
   comparison where applicable, and named unsupported edges.
 
-## Milestone 1173: Next Native Boundary
+## Milestone 1178: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1174: Next Compiler-Output Contract
+## Milestone 1179: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1175: Next Tests/Docs Queue Refresh
+## Milestone 1180: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1171-1174 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1176-1179 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

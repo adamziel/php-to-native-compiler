@@ -321,7 +321,7 @@ fn unsupported_yield_syntax_has_stable_parse_errors() {
             "<?php\nYIELD from [1, 2];\n",
             2,
             1,
-            "unsupported yield expression: generators and generator object execution are not implemented",
+            "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering",
         ),
         (
             "<?php\necho yield 1;\n",
@@ -346,7 +346,7 @@ fn emit_ir_rejects_yield_syntax_at_parse_boundary() {
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(
         error.message,
-        "unsupported yield expression: generators and generator object execution are not implemented"
+        "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering"
     );
 }
 

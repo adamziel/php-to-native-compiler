@@ -66,6 +66,8 @@ const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
+const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
+const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
@@ -608,9 +610,8 @@ impl LlvmGenerator {
             Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
                 Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
             }
-            Stmt::Throw { span, .. } | Stmt::Try { span, .. } => {
-                Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION))
-            }
+            Stmt::Throw { span, .. } => Err(self.unsupported(*span, LLVM_EXCEPTION_REJECTION)),
+            Stmt::Try { span, .. } => Err(self.unsupported(*span, LLVM_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
@@ -3446,9 +3447,8 @@ impl CGenerator {
             Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
             }
-            Stmt::Throw { span, .. } | Stmt::Try { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION))
-            }
+            Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
+            Stmt::Try { span, .. } => Err(self.unsupported(*span, ASSEMBLY_TRY_BLOCK_REJECTION)),
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }

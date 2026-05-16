@@ -1,0 +1,1 @@
+phpc reports a stable runtime boundary for the bounded internal Countable method-shape check; exact PHP Error objects, tentative return-type notices, broad internal interface enforcement, and exit status are not implemented.

@@ -136,7 +136,15 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("try") => self.parse_try(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("yield") => {
-                Err(self.error_at(self.peek().span, unsupported_yield_message()))
+                let message = if matches!(
+                    &self.peek_next().kind,
+                    TokenKind::Identifier(next) if next.eq_ignore_ascii_case("from")
+                ) {
+                    unsupported_yield_from_message()
+                } else {
+                    unsupported_yield_message()
+                };
+                Err(self.error_at(self.peek().span, message))
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("goto") => self.parse_goto(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
@@ -4036,7 +4044,14 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_try_catch_finally_message()));
                 }
                 if name.eq_ignore_ascii_case("yield") {
-                    return Err(self.error_at(token.span, unsupported_yield_message()));
+                    let message = if self.check(|kind| {
+                        matches!(kind, TokenKind::Identifier(next) if next.eq_ignore_ascii_case("from"))
+                    }) {
+                        unsupported_yield_from_message()
+                    } else {
+                        unsupported_yield_message()
+                    };
+                    return Err(self.error_at(token.span, message));
                 }
                 if name.eq_ignore_ascii_case("goto") {
                     return Err(self.error_at(token.span, unsupported_goto_message()));
@@ -5936,6 +5951,10 @@ fn unsupported_try_catch_finally_message() -> &'static str {
 
 fn unsupported_yield_message() -> &'static str {
     "unsupported yield expression: generators and generator object execution are not implemented"
+}
+
+fn unsupported_yield_from_message() -> &'static str {
+    "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering"
 }
 
 fn unsupported_match_expression_message() -> &'static str {

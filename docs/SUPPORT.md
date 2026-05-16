@@ -889,8 +889,10 @@
   the current boxed value variant without coercion. `is_numeric` returns true
   for integers, floats, and well-formed numeric strings using the same current
   numeric-string subset as scalar arithmetic. `is_countable` returns true for
-  arrays and objects whose class metadata records `implements Countable`, and
-  false for the current scalar/null/non-`Countable` object values.
+  arrays and objects whose class metadata records `implements Countable`, after
+  the current concrete-class registration check verifies a public non-static
+  `count()` method with no required parameters, and false for the current
+  scalar/null/non-`Countable` object values.
   `is_iterable` returns true for arrays and objects whose class metadata
   records `implements Traversable`, `implements Iterator`, or
   `implements IteratorAggregate`, and false for the current
@@ -1131,12 +1133,14 @@
   float/string/bool/null/object/resource operands, exact PHP diagnostics, and
   native lowering remain unsupported.
   `count($value)` supports current arrays and objects whose class metadata
-  records `implements Countable`. For `Countable` objects, the interpreter
-  dispatches a visible non-static `count()` method and accepts an integer
-  result. Missing `count()` methods, inaccessible/static methods, non-integer
-  count results, full interface signature enforcement, magic `__call`
-  fallback, resources/extensions, references/copy-on-write, exact diagnostics,
-  and native lowering remain unsupported.
+  records `implements Countable`. Concrete `Countable` implementors must
+  register with a public non-static `count()` method that has no required
+  parameters. For `Countable` objects, the interpreter dispatches that method
+  and accepts an integer result. Tentative return-type notices and
+  return-declaration compatibility, non-integer count results, broad internal
+  interface enforcement, magic `__call` fallback, resources/extensions,
+  references/copy-on-write, exact diagnostics, and native lowering remain
+  unsupported.
   `rand()` supports the reached no-argument form only and returns a
   deterministic integer for WordPress placeholder-salt exploration. Min/max
   arguments, random-state compatibility with PHP, seeding, `mt_rand()`/`srand()`
@@ -1984,8 +1988,11 @@
   `break`/`continue` loop-depth arguments
 - explicit parse diagnostics for unsupported exception-control syntax:
   throw expressions plus malformed or standalone `catch` and `finally`
-- explicit parse diagnostics for unsupported generator `yield` and
-  `yield from` expressions
+- explicit parse diagnostics for unsupported generator `yield` expressions,
+  plus a dedicated `yield from` delegation diagnostic naming missing
+  `Traversable` iteration, yielded key/value forwarding, send/throw
+  propagation, generator return values, references/copy-on-write, and native
+  lowering
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - bounded `goto target;` statements and `target:` labels in the current
   statement runtime; labels in the active statement list can be reached from
@@ -2125,6 +2132,11 @@
   diagnostic until generated code has termination control flow, exit
   status/stdout handoff, shutdown functions, destructors/finally ordering,
   output buffers, SAPI interaction, and exact native diagnostics.
+- Native lowering rejects `try`/`catch`/`finally` blocks through a dedicated
+  try-block diagnostic until generated code has `Throwable` objects, stack
+  unwinding, catch type matching, catch variable binding, finally execution
+  during normal and exceptional control flow, stack traces,
+  references/copy-on-write, and exact native try-block diagnostics.
 - Native lowering rejects `global` declarations through a dedicated
   global-declaration diagnostic until generated code has root symbol-table
   imports, local/global aliasing, `$GLOBALS` interactions,
@@ -3914,8 +3926,10 @@
   current value category without coercion. `is_numeric` returns true for
   integers, floats, and well-formed numeric strings using the same current
   numeric-string subset as scalar arithmetic. `is_countable` returns true for
-  arrays and objects whose class metadata records `implements Countable`, and
-  false for the current scalar/null/non-`Countable` object values.
+  arrays and objects whose class metadata records `implements Countable`, after
+  the current concrete-class registration check verifies a public non-static
+  `count()` method with no required parameters, and false for the current
+  scalar/null/non-`Countable` object values.
   `is_iterable` returns true for arrays and objects whose class metadata
   records `implements Traversable`, `implements Iterator`, or
   `implements IteratorAggregate`, and false for the current
@@ -5047,22 +5061,26 @@
   `phpc-only-reason=<reason>` from the marker text, while comparable fixtures
   omit the field. It also reports deterministic source and recognized sidecar
   byte counts for fixture entries, summaries, recognized orphan sidecars, and
-  compatibility-target summaries. It also reports recognized orphan sidecars
-  that do not have a matching `.php` fixture. It does not parse, execute, or
-  compare fixtures, hash payloads, validate that `.phpc-only` reason text is
-  non-empty, inspect non-fixture compatibility metadata, or report
-  unrecognized sidecars.
+  compatibility-target summaries. Compatibility-target entries also report
+  `source-pin.md` path, byte count, and SHA-256 when a target pin file is
+  present. It also reports recognized orphan sidecars that do not have a
+  matching `.php` fixture. It does not parse, execute, or compare fixtures,
+  hash fixture or sidecar payloads, validate that `.phpc-only` reason text is
+  non-empty, inspect non-fixture compatibility metadata beyond
+  `source-pin.md`, or report unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 5, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 6, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
   recognized sidecars, and recognized orphan sidecars, PHP-comparison
   eligibility, sibling `.phpc-only` marker text as `phpc_only_reason`, and
-  per-target compatibility counts for `compat/<target>` directories under the
+  per-target compatibility counts plus optional `source-pin.md` path, byte
+  count, and SHA-256 metadata for `compat/<target>` directories under the
   fixture root, including targets with no executable `.php` fixtures yet. It
   does not parse, execute, compare fixtures, report fixture execution results,
   validate that `.phpc-only` reason text is non-empty, inspect non-fixture
-  compatibility metadata, or report unrecognized sidecars.
+  compatibility metadata beyond `source-pin.md`, or report unrecognized
+  sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -5868,12 +5886,13 @@
   callable integration
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/normal-try
-  runtime boundaries
+  runtime boundaries; native throw and try-block lowering are still separate
+  explicit boundaries
 - interface inheritance/implementation enforcement, trait composition, and enum
   case objects/backed values/methods/interfaces
-- generator functions, generator objects, `yield`, `yield from`, key/value
-  yields, by-reference yields, `send`/`throw`/`return` generator semantics,
-  and native lowering
+- generator functions, generator objects, `yield`, `yield from` delegation,
+  key/value yields, by-reference yields, `send`/`throw`/`return` generator
+  semantics, `Traversable` forwarding, and native lowering
 - executable attribute declarations and reflection metadata beyond the current
   syntax-only skip boundary
 - `is_callable` callable-name output parameter, array/object callable dynamic

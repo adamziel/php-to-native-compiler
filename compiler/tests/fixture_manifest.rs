@@ -134,7 +134,7 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 5,\n",
+            "  \"contract_version\": 6,\n",
             "  \"fixture_count\": 3,\n",
             "  \"summary\": {\n",
             "    \"total\": 3,\n",
@@ -271,7 +271,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 5,\n",
+            "  \"contract_version\": 6,\n",
             "  \"fixture_count\": 2,\n",
             "  \"summary\": {\n",
             "    \"total\": 2,\n",
@@ -356,7 +356,8 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "          \"exit\": 0,\n",
             "          \"phpc_only\": 45\n",
             "        }\n",
-            "      }\n",
+            "      },\n",
+            "      \"source_pin\": null\n",
             "    },\n",
             "    {\n",
             "      \"target\": \"wordpress\",\n",
@@ -379,6 +380,11 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "          \"exit\": 0,\n",
             "          \"phpc_only\": 0\n",
             "        }\n",
+            "      },\n",
+            "      \"source_pin\": {\n",
+            "        \"path\": \"compat/wordpress/source-pin.md\",\n",
+            "        \"bytes\": 18,\n",
+            "        \"sha256\": \"121ab051bd83ec3873da928f13566a2b50a494359d3a62043ee02019efc876a1\"\n",
             "      }\n",
             "    }\n",
             "  ],\n",
@@ -438,8 +444,8 @@ fn cli_list_fixtures_reports_compatibility_target_byte_counts() {
             "compat/php/cross_feature.php expectations=stdout php-comparison=eligible bytes source=17 stdout=3 stderr=- exit=- phpc-only=-\n",
             "compat/php/skipped.php expectations=none php-comparison=phpc-only phpc-only-reason=compat target uses a project-only diagnostic bytes source=19 stdout=- stderr=- exit=- phpc-only=45\n",
             "orphan sidecar: compat/php/stale.stderr kind=stderr expected-fixture=compat/php/stale.php bytes=6\n",
-            "compatibility target: php path=compat/php fixtures=2 php-comparison eligible=1 phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 phpc-only=45\n",
-            "compatibility target: wordpress path=compat/wordpress fixtures=0 php-comparison eligible=0 phpc-only=0 expectations stdout=0, stderr=0, exit=0, phpc-only=0 orphan sidecars=0 bytes source=0 stdout=0 stderr=0 exit=0 phpc-only=0\n",
+            "compatibility target: php path=compat/php fixtures=2 php-comparison eligible=1 phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 phpc-only=45 source-pin path=- bytes=- sha256=-\n",
+            "compatibility target: wordpress path=compat/wordpress fixtures=0 php-comparison eligible=0 phpc-only=0 expectations stdout=0, stderr=0, exit=0, phpc-only=0 orphan sidecars=0 bytes source=0 stdout=0 stderr=0 exit=0 phpc-only=0 source-pin path=compat/wordpress/source-pin.md bytes=18 sha256=121ab051bd83ec3873da928f13566a2b50a494359d3a62043ee02019efc876a1\n",
         )
     );
 }

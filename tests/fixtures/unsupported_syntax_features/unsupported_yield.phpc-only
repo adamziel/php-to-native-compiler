@@ -1,1 +1,1 @@
-
+Project-specific stable parse diagnostic for unsupported yield from generator delegation before generator objects and Traversable forwarding exist.

@@ -56,10 +56,13 @@ selected folds, and a documented set of native builtin folds.
 Anything outside that lowerable subset is rejected before misleading IR is
 emitted. Arrays, objects, ArrayAccess object-offset dispatch, clone expressions,
 include/require expression return semantics, functions, general control flow,
-references, copy-on-write, and broad PHP coercions remain interpreter-only or
-unsupported for native lowering. The compile mode flag is validated before the
-input file is read, so invalid modes such as `--emit-object` report a stable CLI
-usage error instead of an unrelated file, parse, or codegen diagnostic.
+try/catch/finally exception control, references, copy-on-write, and broad PHP
+coercions remain interpreter-only or unsupported for native lowering. Try blocks
+are rejected through a dedicated native diagnostic until catch matching, catch
+variable binding, finally execution, and stack unwinding have native semantics.
+The compile mode flag is validated before the input file is read, so invalid
+modes such as `--emit-object` report a stable CLI usage error instead of an
+unrelated file, parse, or codegen diagnostic.
 
 ### `phpc compile --emit-asm`
 
@@ -159,8 +162,10 @@ incorrect native code.
   metadata check, and to pass the current bounded interface return-type
   metadata check; class `implements` clauses record comma-separated
   interface names as relationship metadata for `is_a`, `is_subclass_of`, and
-  `instanceof`, including unresolved built-in/internal interface names without
-  seeding `interface_exists()` or enforcing built-in/internal methods
+  `instanceof`, including unresolved built-in/internal interface names; the
+  current internal-interface enforcement slice is limited to concrete
+  `Countable` implementors exposing a public non-static `count()` method with
+  no required parameters
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -213,7 +218,8 @@ incorrect native code.
   including declared interface metadata with concrete-class public method
   presence checks, declared empty-trait metadata,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
-  `Countable`, and bounded `is_iterable()` metadata for
+  `Countable` implementors that pass the current method-shape check, and
+  bounded `is_iterable()` metadata for
   `Traversable`/`Iterator`/`IteratorAggregate`
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, bounded truthy assertions, object/class metadata, and
@@ -232,8 +238,9 @@ callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
-full interface inheritance/signature enforcement, built-in/internal interface
-method enforcement/catalogs, trait members and trait
+full interface inheritance/signature enforcement, broad built-in/internal
+interface method enforcement/catalogs beyond the current `Countable` shape
+check, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
@@ -269,7 +276,8 @@ magic methods beyond direct missing-property
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, and direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
-`is_countable()`/`count()` object protocol dispatch,
+`is_countable()`/`count()` object protocol dispatch with concrete implementor
+method-shape checks,
 resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
@@ -347,15 +355,18 @@ its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
 also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts for
-fixtures, summaries, orphan sidecars, and compatibility targets.
+fixtures, summaries, orphan sidecars, and compatibility targets. Compatibility
+target entries also report `source-pin.md` path, byte count, and SHA-256 when a
+target pin file is present.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 5. The JSON records
+manifest as deterministic JSON with `contract_version` 6. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
 sidecar byte counts, and SHA-256 digests for fixture sources, recognized
 sidecars, and recognized orphan sidecars so comparison opt-outs and committed
 expectation payloads are visible without executing fixtures. When the fixture
 root contains `compat/<target>` directories, the JSON also includes per-target
-compatibility counts, including targets with no executable `.php` fixtures yet.
+compatibility counts and optional `source-pin.md` audit metadata, including
+targets with no executable `.php` fixtures yet.
 
 Use these commands while developing:
 

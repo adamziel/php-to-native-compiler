@@ -358,8 +358,19 @@ fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar)
 fn render_fixture_manifest_compatibility_target(
     target: &FixtureManifestCompatibilityTarget,
 ) -> String {
+    let source_pin = target
+        .source_pin
+        .as_ref()
+        .map(|source_pin| {
+            format!(
+                " source-pin path={} bytes={} sha256={}",
+                source_pin.path, source_pin.bytes, source_pin.sha256
+            )
+        })
+        .unwrap_or_else(|| " source-pin path=- bytes=- sha256=-".to_string());
+
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -374,14 +385,15 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.stdout_bytes,
         target.summary.stderr_bytes,
         target.summary.exit_bytes,
-        target.summary.phpc_only_bytes
+        target.summary.phpc_only_bytes,
+        source_pin
     )
 }
 
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 5,\n");
+    output.push_str("  \"contract_version\": 6,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -585,7 +597,24 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             target.summary.phpc_only_bytes
         ));
         output.push_str("        }\n");
-        output.push_str("      }\n");
+        output.push_str("      },\n");
+        output.push_str("      \"source_pin\": ");
+        match &target.source_pin {
+            Some(source_pin) => {
+                output.push_str("{\n");
+                output.push_str(&format!(
+                    "        \"path\": {},\n",
+                    json_string_literal(&source_pin.path)
+                ));
+                output.push_str(&format!("        \"bytes\": {},\n", source_pin.bytes));
+                output.push_str(&format!(
+                    "        \"sha256\": {}\n",
+                    json_string_literal(&source_pin.sha256)
+                ));
+                output.push_str("      }\n");
+            }
+            None => output.push_str("null\n"),
+        }
         output.push_str("    }");
         if index + 1 < manifest.compatibility_targets.len() {
             output.push(',');

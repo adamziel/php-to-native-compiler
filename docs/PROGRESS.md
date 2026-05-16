@@ -4,6 +4,99 @@
 
 Implemented:
 
+- Added Milestone 1175, a tests/docs queue refresh after the 1171-1174
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1171-1175
+  complete and opens Milestones 1176-1180, public docs describe the dedicated
+  `yield from` parse boundary, bounded `Countable::count()` method-shape
+  registration check, dedicated native try-block rejection, and fixture
+  manifest compatibility-target source-pin metadata. This does not change
+  runtime behavior, native lowering, fixture execution, or PHP/WordPress
+  compatibility claims beyond the implemented 1171-1174 slices. Full
+  gate passed at checkpoint: `1342` fixture tests, `761` system PHP
+  comparisons, and `581` skipped `phpc-only` fixtures.
+
+- Added Milestone 1174, a deterministic compiler-output/audit compatibility
+  target manifest refinement. `phpc test --list-fixtures-json [fixture-dir]`
+  now emits `contract_version: 6` and compatibility-target entries include
+  optional `source_pin` metadata with the deterministic
+  `compat/<target>/source-pin.md` path, byte count, and SHA-256 digest when a
+  target pin file is present; the text fixture manifest reports the same
+  source-pin audit metadata on compatibility-target lines. This does not change
+  fixture execution, system PHP comparison behavior, parser/runtime behavior,
+  native lowering, or PHP/WordPress compatibility claims. Unsupported/unchanged
+  audit gaps: the manifests do not parse or execute fixtures, compare system
+  PHP, validate non-empty `.phpc-only` reasons, inspect compatibility metadata
+  beyond `source-pin.md`, inspect unrecognized sidecars, or prove
+  branch-specific compatibility. Verification so far: `cargo test -p phpc
+  --test fixture_manifest -- --test-threads=1`, direct `cargo run -q -p phpc
+  -- test --list-fixtures-json tests/fixtures` showing `contract_version: 6`
+  and WordPress `source_pin`, direct `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures` showing compatibility-target source-pin
+  metadata, `cargo run -q -p phpc -- test tests/fixtures/compat`, `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/compat`, `cargo fmt
+  --check`, and `git diff --check` passed in the compiler-output lane. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1173, a dedicated native `try`/`catch`/`finally` rejection
+  for the documented bounded no-throw interpreter behavior. `phpc compile
+  --emit-ir` and `--emit-asm` now reject try blocks with a diagnostic naming
+  missing native `Throwable` objects, stack unwinding, catch type matching,
+  catch variable binding, finally execution during normal and exceptional
+  control flow, stack traces, references/copy-on-write, and exact native
+  try-block diagnostics instead of using the broader throw/exception boundary.
+  This does not implement native exception objects, catch matching, unwinding,
+  catch variable binding, finally-during-exception/error handling, stack
+  traces, references/copy-on-write, or exact native try-block diagnostics.
+  Verification so far: `cargo test -p phpc --test exception_boundaries --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1173/native_try_block_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1173/native_try_block_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and `git diff --check`
+  passed in the IR lane. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1172, a bounded internal `Countable` method-shape
+  registration check. Concrete classes that record `implements Countable`,
+  including concrete children inheriting that metadata from abstract parents,
+  now fail class registration unless they expose a public non-static `count()`
+  method with no required parameters. Compatible optional-parameter
+  implementors continue through the existing `is_countable()` and
+  `count($object)` protocol path. This does not implement broad
+  built-in/internal interface method enforcement, tentative return-type
+  notices, return-declaration compatibility, exact PHP `Error` objects, magic
+  `__call` fallback, references/copy-on-write, or native object/interface
+  lowering. Verification so far: `cargo test -p phpc --test
+  countable_type_builtin -- --test-threads=1`, `cargo test -p phpc --test
+  object_model -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1172`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1172`, direct `phpc run` checks for
+  the compatible and boundary fixtures, `cargo fmt --check`, and
+  `git diff --check` passed in the runtime lane. Full gate/checkpoint
+  deferred until integration.
+
+- Added Milestone 1171, a parser diagnostic refinement for unsupported
+  `yield from` generator delegation. `yield from [1, 2];` and expression-form
+  `yield from` now fail with a dedicated parse diagnostic naming missing
+  `Traversable` iteration, yielded key/value forwarding, send/throw
+  propagation, generator return values, references/copy-on-write, and native
+  lowering instead of the broader unsupported-yield diagnostic. Ordinary
+  `yield` continues to use the existing generator/yield parse boundary. This
+  does not implement generator functions, generator objects, ordinary `yield`,
+  `yield from` delegation, key/value yields, by-reference yields,
+  send/throw/return generator semantics, `Traversable` forwarding, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test syntax_boundaries yield -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli --
+  --test-threads=1`, direct `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_yield.php` returning
+  exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_yield.php --emit-ir`
+  returning exit `1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_syntax_features`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/unsupported_syntax_features`,
+  `cargo fmt --check`, and `git diff --check` passed in the parser lane. Full
+  gate/checkpoint deferred until integration.
+
 - Added Milestone 1170, a tests/docs queue refresh after the 1166-1169
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1166-1170
   complete and opens Milestones 1171-1175, public docs describe the

@@ -56,7 +56,7 @@ echo count([1, 2]);
 }
 
 #[test]
-fn count_rejects_countable_object_without_count_method() {
+fn countable_internal_interface_method_shape_is_enforced_for_concrete_classes() {
     let error = run_source(
         r#"<?php
 class Marker implements Countable {}
@@ -66,11 +66,78 @@ count(new Marker());
     .unwrap_err();
 
     assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 3);
+    assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call Countable::count(): Countable objects must declare count() in the current subset"
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface method Countable::count()"
+    );
+
+    let protected_error = run_source(
+        r#"<?php
+class Marker implements Countable {
+    protected function count() { return 1; }
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(protected_error.phase, Phase::Runtime);
+    assert_eq!(protected_error.line, 2);
+    assert_eq!(protected_error.column, 1);
+    assert_eq!(
+        protected_error.message,
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface method Countable::count()"
+    );
+
+    let static_error = run_source(
+        r#"<?php
+class Marker implements Countable {
+    public static function count() { return 1; }
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(static_error.phase, Phase::Runtime);
+    assert_eq!(static_error.line, 2);
+    assert_eq!(static_error.column, 1);
+    assert_eq!(
+        static_error.message,
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface method Countable::count() as non static method; found static Marker::count()"
+    );
+
+    let required_param_error = run_source(
+        r#"<?php
+class Marker implements Countable {
+    public function count($mode) { return 1; }
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(required_param_error.phase, Phase::Runtime);
+    assert_eq!(required_param_error.line, 2);
+    assert_eq!(required_param_error.column, 1);
+    assert_eq!(
+        required_param_error.message,
+        "unsupported class inheritance for Marker: method Marker::count() cannot require parameters for internal interface method Countable::count()"
+    );
+
+    let inherited_error = run_source(
+        r#"<?php
+abstract class Base implements Countable {}
+class Child extends Base {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(inherited_error.phase, Phase::Runtime);
+    assert_eq!(inherited_error.line, 3);
+    assert_eq!(inherited_error.column, 1);
+    assert_eq!(
+        inherited_error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement internal interface method Countable::count()"
     );
 }
 

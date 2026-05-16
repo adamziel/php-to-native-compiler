@@ -79,6 +79,14 @@ pub struct FixtureManifestCompatibilityTarget {
     pub target: String,
     pub path: String,
     pub summary: FixtureManifestSummary,
+    pub source_pin: Option<FixtureManifestCompatibilitySourcePin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestCompatibilitySourcePin {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -650,10 +658,12 @@ fn collect_compatibility_targets(
         }
     }
 
-    Ok(targets
+    targets
         .into_iter()
         .map(|target| {
             let prefix = format!("compat/{target}/");
+            let target_path = root.join("compat").join(&target);
+            let source_pin_path = target_path.join("source-pin.md");
             let target_entries = entries
                 .iter()
                 .filter(|entry| entry.path.starts_with(&prefix))
@@ -666,13 +676,28 @@ fn collect_compatibility_targets(
                 .collect::<Vec<_>>();
             let summary = FixtureManifestSummary::from_entries(&target_entries, &target_orphans);
 
-            FixtureManifestCompatibilityTarget {
+            Ok(FixtureManifestCompatibilityTarget {
                 path: format!("compat/{target}"),
                 target,
                 summary,
-            }
+                source_pin: compatibility_target_source_pin(root, &source_pin_path)?,
+            })
         })
-        .collect())
+        .collect::<CompileResult<Vec<_>>>()
+}
+
+fn compatibility_target_source_pin(
+    root: &Path,
+    path: &Path,
+) -> CompileResult<Option<FixtureManifestCompatibilitySourcePin>> {
+    match (optional_file_size(path)?, optional_file_sha256(path)?) {
+        (Some(bytes), Some(sha256)) => Ok(Some(FixtureManifestCompatibilitySourcePin {
+            path: fixture_manifest_path(root, path),
+            bytes,
+            sha256,
+        })),
+        _ => Ok(None),
+    }
 }
 
 fn compatibility_target_from_manifest_path(path: &str) -> Option<&str> {

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1172/countable_interface_method_compatibility_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1172/countable_interface_method_compatibility_boundary.php:4:1: unsupported class inheritance for ChildCounter: concrete class ChildCounter must implement internal interface method Countable::count()
+--- stderr end ---

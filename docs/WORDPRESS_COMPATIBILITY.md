@@ -51,10 +51,12 @@ tools/wordpress-inventory.sh --normalize "$WORDPRESS_ROOT"
 
 Normalized output replaces the local WordPress checkout path with
 `<wordpress-root>` and the compiler executable path with `<phpc>`. The committed
-policy lives in `tests/fixtures/compat/wordpress/source-pin.md`. The repository
-also keeps a synthetic WordPress-shaped inventory fixture so the output format
-and current direct-`wp-settings.php` bootstrap blocker are tested without
-vendoring WordPress core.
+policy lives in `tests/fixtures/compat/wordpress/source-pin.md`, and fixture
+manifest audit output reports that pin file's path, byte count, and SHA-256
+digest without executing WordPress fixtures. The repository also keeps a
+synthetic WordPress-shaped inventory fixture so the output format and current
+direct-`wp-settings.php` bootstrap blocker are tested without vendoring
+WordPress core.
 
 ## Inventory Script
 

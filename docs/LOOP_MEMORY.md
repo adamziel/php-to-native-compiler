@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:39:09Z
+
+- Checkpoint before this task:
+  `29d92eeb runtime: enforce interface return types`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1171-1175, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI manifest code, focused tests and
+  fixtures for a dedicated `yield from` parse boundary, bounded
+  `Countable::count()` method-shape registration enforcement, dedicated native
+  try-block rejection, compatibility-target `source-pin.md` manifest audit
+  metadata, plus `README.md`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: enforce countable method shape"`
+  passed with `1342` fixture tests, `761` system PHP comparisons, and `581`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: generator functions/objects and `yield from`
+  execution, broad built-in/internal interface enforcement beyond the current
+  `Countable` shape check, exact PHP `Error` objects, magic `__call` fallback,
+  native exception objects and try/catch/finally lowering, compatibility
+  metadata beyond `source-pin.md`, branch-specific PHP comparison matrices,
+  real reference/COW containers, real database and filesystem services, and
+  full WordPress request/plugin/theme flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1176-1179 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T20:24:31Z
 
 - Checkpoint before this task:
