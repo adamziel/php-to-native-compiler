@@ -10180,8 +10180,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `df3b07aa runtime: add parent static reference return cells`, covering
-  Milestone 1051.
+  `6e79c8c3 runtime: add late static reference return cells`, covering
+  Milestone 1052.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
