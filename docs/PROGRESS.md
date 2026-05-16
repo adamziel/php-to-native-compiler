@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1084, a bounded object-property array-copy/reference-element
+  slice. When a declared public object property array contains a covered
+  direct array-offset reference target and that property array is copied into a
+  direct variable, the copied slot now joins the same alias metadata group as
+  the original property slot. Writes through the source variable, the object
+  property slot, or the copied array slot synchronize for covered direct key
+  paths, while plain object-property arrays without reference elements continue
+  to copy by value. Whole-property assignment removes stale property-root alias
+  metadata and whole-object-variable reassignment removes stale property-root
+  aliases for that object variable, so old references do not attach to a
+  replacement property or object value. This does not implement
+  object-property reference sources such as
+  `$alias =& $object->items[$key]`, dynamic/magic/non-public property
+  reference targets, arbitrary nested copied reference slots, ArrayAccess
+  reference containers, full PHP reference containers, exact alias destruction
+  ordering, copy-on-write containers, or native lowering. Verification so far:
+  local PHP 8.2.29 probes for object-property copied referenced slots,
+  `cargo fmt --check`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  and `cargo run -q -p phpc -- test tests/fixtures/milestone1084
+  --compare-php`.
+
 - Added Milestone 1083, a bounded `file_get_contents('php://input')`
   request-body placeholder for the reached WordPress XML-RPC entry flow. The
   interpreter now exposes `file_get_contents()` through function/callability

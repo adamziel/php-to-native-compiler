@@ -35,12 +35,16 @@ Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
 variable may route to one or more direct array-offset aliases; this lets the
 current runtime mirror the bounded PHP behavior where copying a direct array
-that contains a referenced direct slot preserves that slot's reference identity
-across the copied array. Whole-variable assignment to a direct array root drops
-stale aliases for that root before the new value is stored. Nested/object
-copied reference slots, ArrayAccess references, reference array literals, exact
-alias destruction ordering, and native lowering still require the future
-runtime reference/COW value model.
+or declared public object-property array that contains a referenced direct slot
+preserves that slot's reference identity across a copied direct array.
+Whole-variable assignment to a direct array root and whole-property assignment
+to a declared public object-property root drop stale aliases for that root
+before the replacement value is observed by future copies. Reassigning the
+direct object variable also drops stale public object-property roots for that
+object name. Arbitrary nested copied reference slots, object-property reference
+sources, ArrayAccess
+references, reference array literals, exact alias destruction ordering, and
+native lowering still require the future runtime reference/COW value model.
 
 ## Compiler Crate
 
@@ -258,11 +262,15 @@ target roots through the direct-offset and nested-array materialization paths,
 copies the current source value into the selected slot, then routes the source
 name to that slot. Writes through either the source variable or the supported
 direct array/object-property offset observe the same selected value, and
-`unset($value)` detaches only the source name. Undefined source variables
-start as `null` before binding. Existing direct alias groups, source names
-already routed through array-offset aliases, PHP's deprecated false-root
-conversion, other non-array roots, dynamic/magic/non-public property targets,
-non-direct sources, non-static
+`unset($value)` detaches only the source name. When the covered public
+object-property array is copied into a direct static variable, alias metadata
+for referenced property slots is mirrored onto the copied static array so
+writes through the source variable, the property slot, or the copied slot
+synchronize for the covered key path. Undefined source variables start as
+`null` before binding. Existing direct alias groups, source names already
+routed through array-offset aliases, PHP's deprecated false-root conversion,
+other non-array roots, object-property reference sources, dynamic/magic/non-public
+property targets, non-direct sources, non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native

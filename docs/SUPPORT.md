@@ -109,9 +109,17 @@
   group: writes through the source alias, the original array slot, or the
   copied array slot update the same value for that direct key path. Plain
   arrays without reference elements still copy by value under the current
-  array model. Nested/object copied reference slots, reference array literals,
-  ArrayAccess reference containers, exact alias destruction ordering, full PHP
-  reference containers, and native lowering remain unsupported. Direct
+  array model. When a declared public object property array with a covered
+  direct object-property array-offset reference target is copied into a direct
+  static variable, the copied slot also joins the same bounded alias group:
+  writes through the source variable, the original object-property slot, or the
+  copied static-array slot update the same selected value. Whole-property
+  assignment and whole-object-variable reassignment remove stale property-root
+  alias metadata before later copies. Object-property reference sources such as
+  `$alias =& $object->items[$key]`, arbitrary nested copied reference slots,
+  reference array literals, ArrayAccess reference containers, exact alias
+  destruction ordering, full PHP reference containers, copy-on-write
+  containers, and native lowering remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

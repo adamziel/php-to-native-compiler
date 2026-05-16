@@ -88,7 +88,9 @@ currently evaluate the referenced value without aliasing, and bounded
 object-property reference-assignment sources that copy current array/object
 values without aliasing, and bounded direct/dynamic object-property
 `unset(...)` operands that currently null visible property slots instead of
-modeling true property uninitialization. The current shim frontier
+modeling true property uninitialization, plus bounded copied reference-slot
+metadata for direct arrays and declared public object-property arrays copied
+into direct variables. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing

@@ -599,6 +599,111 @@ impl SymbolTable {
         }
     }
 
+    fn public_object_property_root_alias_fallbacks(
+        &self,
+        object_name: &str,
+        property: &str,
+    ) -> HashMap<String, Value> {
+        self.array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let root_alias = aliases.iter().find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
+                            if object == object_name && alias_property == property
+                    )
+                })?;
+                self.read_array_offset_alias(root_alias)
+                    .map(|value| (alias_name.clone(), value))
+            })
+            .collect()
+    }
+
+    fn public_object_roots_alias_fallbacks(&self, object_name: &str) -> HashMap<String, Value> {
+        self.array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let root_alias = aliases.iter().find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+                            if object == object_name
+                    )
+                })?;
+                self.read_array_offset_alias(root_alias)
+                    .map(|value| (alias_name.clone(), value))
+            })
+            .collect()
+    }
+
+    fn remove_public_object_property_root_from_array_offset_aliases(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        fallbacks: &HashMap<String, Value>,
+    ) {
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let aliases: Vec<_> = existing_aliases
+                .into_iter()
+                .filter(|alias| {
+                    !matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
+                            if object == object_name && alias_property == property
+                    )
+                })
+                .collect();
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                if let Some(value) = fallbacks.get(&alias_name) {
+                    self.write_storage_named(&alias_name, value.clone());
+                }
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn remove_public_object_roots_from_array_offset_aliases(
+        &mut self,
+        object_name: &str,
+        fallbacks: &HashMap<String, Value>,
+    ) {
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let aliases: Vec<_> = existing_aliases
+                .into_iter()
+                .filter(|alias| {
+                    !matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+                            if object == object_name
+                    )
+                })
+                .collect();
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                if let Some(value) = fallbacks.get(&alias_name) {
+                    self.write_storage_named(&alias_name, value.clone());
+                }
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
     fn mirror_static_array_offset_aliases_from_copy(
         &mut self,
         target_name: &str,
@@ -635,6 +740,42 @@ impl SymbolTable {
         }
     }
 
+    fn mirror_public_object_property_array_offset_aliases_from_copy(
+        &mut self,
+        target_name: &str,
+        object_name: &str,
+        property: &str,
+    ) {
+        let additions: Vec<(String, ArrayOffsetAlias)> = self
+            .array_offset_aliases
+            .iter()
+            .flat_map(|(alias_name, aliases)| {
+                aliases.iter().filter_map(move |alias| match &alias.root {
+                    ArrayOffsetAliasRoot::PublicObjectProperty {
+                        object,
+                        property: alias_property,
+                    } if object == object_name && alias_property == property => Some((
+                        alias_name.clone(),
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: target_name.to_string(),
+                            },
+                            keys: alias.keys.clone(),
+                        },
+                    )),
+                    _ => None,
+                })
+            })
+            .collect();
+
+        for (alias_name, alias) in additions {
+            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+        }
+    }
+
     fn sync_array_offset_aliases_for_static_root(&mut self, root_name: &str) {
         let syncs: Vec<(String, Value)> = self
             .array_offset_aliases
@@ -644,6 +785,36 @@ impl SymbolTable {
                     matches!(
                         &alias.root,
                         ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
+                    )
+                })?;
+                self.read_array_offset_alias(touched_alias)
+                    .map(|value| (alias_name.clone(), value))
+            })
+            .collect();
+
+        for (alias_name, value) in syncs {
+            if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
+                if !self.write_array_offset_aliases(&aliases, value) {
+                    self.array_offset_aliases.remove(&alias_name);
+                }
+            }
+        }
+    }
+
+    fn sync_array_offset_aliases_for_public_object_property_root(
+        &mut self,
+        object_name: &str,
+        property: &str,
+    ) {
+        let syncs: Vec<(String, Value)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let touched_alias = aliases.iter().find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
+                            if object == object_name && alias_property == property
                     )
                 })?;
                 self.read_array_offset_alias(touched_alias)
@@ -4193,12 +4364,31 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 let target_is_alias = scope.is_array_offset_alias_name(name);
                 if !target_is_alias {
+                    let object_alias_fallbacks = scope.public_object_roots_alias_fallbacks(name);
                     scope.remove_static_root_from_array_offset_aliases(name);
+                    scope.remove_public_object_roots_from_array_offset_aliases(
+                        name,
+                        &object_alias_fallbacks,
+                    );
                 }
                 scope.write_static(name, value.clone());
                 if !target_is_alias && matches!(value, Value::Array(_)) {
-                    if let Expr::Variable(source_name, _) = expr {
-                        scope.mirror_static_array_offset_aliases_from_copy(name, source_name);
+                    match expr {
+                        Expr::Variable(source_name, _) => {
+                            scope.mirror_static_array_offset_aliases_from_copy(name, source_name);
+                        }
+                        Expr::Property {
+                            target, property, ..
+                        } => {
+                            if let Expr::Variable(object_name, _) = target.as_ref() {
+                                scope.mirror_public_object_property_array_offset_aliases_from_copy(
+                                    name,
+                                    object_name,
+                                    property,
+                                );
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Ok(value)
@@ -4321,26 +4511,37 @@ impl Interpreter {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
-                    Value::Object(object) => match object.write_property_from_context(
-                        property,
-                        value.clone(),
-                        current_class_id,
-                        &protected_class_ids,
-                    ) {
-                        Ok(()) => Ok(value),
-                        Err(error) if Self::is_undefined_property_error(&error) => {
-                            match self.call_magic_instance_method_with_values(
-                                object,
-                                "__set",
-                                vec![Value::String(property.clone()), value.clone()],
-                                *span,
-                            )? {
-                                Some(_) => Ok(value),
-                                None => Err(runtime_error(*span, error)),
+                    Value::Object(object_value) => {
+                        let alias_fallbacks =
+                            scope.public_object_property_root_alias_fallbacks(object, property);
+                        match object_value.write_property_from_context(
+                            property,
+                            value.clone(),
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            Ok(()) => {
+                                scope.remove_public_object_property_root_from_array_offset_aliases(
+                                    object,
+                                    property,
+                                    &alias_fallbacks,
+                                );
+                                Ok(value)
                             }
+                            Err(error) if Self::is_undefined_property_error(&error) => {
+                                match self.call_magic_instance_method_with_values(
+                                    object_value,
+                                    "__set",
+                                    vec![Value::String(property.clone()), value.clone()],
+                                    *span,
+                                )? {
+                                    Some(_) => Ok(value),
+                                    None => Err(runtime_error(*span, error)),
+                                }
+                            }
+                            Err(error) => Err(runtime_error(*span, error)),
                         }
-                        Err(error) => Err(runtime_error(*span, error)),
-                    },
+                    }
                     other => Err(runtime_error(
                         *span,
                         RuntimeError::invalid_property_access(format!(
@@ -4369,6 +4570,7 @@ impl Interpreter {
                     *span,
                     scope,
                 )?;
+                scope.sync_array_offset_aliases_for_public_object_property_root(object, property);
                 Ok(value)
             }
             AssignTarget::ObjectPropertyArrayAppend {
@@ -4390,6 +4592,7 @@ impl Interpreter {
                     *span,
                     scope,
                 )?;
+                scope.sync_array_offset_aliases_for_public_object_property_root(object, property);
                 Ok(value)
             }
             AssignTarget::DynamicProperty {

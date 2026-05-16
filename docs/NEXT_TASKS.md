@@ -10522,14 +10522,21 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1083: WordPress XML-RPC Request Body Placeholder
+## Milestone 1084: Object-Property Copied Reference Slots
 
-- [x] Runtime/builtin lane: add a bounded `file_get_contents('php://input')`
-  empty request-body placeholder for the reached WordPress XML-RPC CLI probe,
-  while keeping local filesystem reads, other stream wrappers, contexts,
-  offsets/lengths, and native lowering unsupported.
+- [x] Runtime/value-model lane: add a bounded object-property array-copy
+  reference-element slice. When a declared public object property array has a
+  covered direct object-property array-offset reference target and is copied
+  into a direct variable, the copied slot joins the same bounded alias group.
+  Plain object-property arrays without reference elements still copy by value,
+  and whole-property or whole-object-variable assignment drops stale
+  property-root aliases. This is not object-property reference-source support,
+  dynamic/magic/non-public property reference targets, arbitrary nested copied
+  reference slots, ArrayAccess references, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, or native
+  lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  nested/object copied reference slots, remaining by-reference `foreach`
+  remaining nested copied reference slots, remaining by-reference `foreach`
   fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
   property reference targets, remaining `$GLOBALS` reference target semantics,
   by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
@@ -10540,6 +10547,13 @@ handled.
   cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
   probe documented as an external measurement unless a normalized fixture is
   added.
+
+## Milestone 1083: WordPress XML-RPC Request Body Placeholder
+
+- [x] Runtime/builtin lane: add a bounded `file_get_contents('php://input')`
+  empty request-body placeholder for the reached WordPress XML-RPC CLI probe,
+  while keeping local filesystem reads, other stream wrappers, contexts,
+  offsets/lengths, and native lowering unsupported.
 
 ## Latest Completed Checkpoint
 
