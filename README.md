@@ -228,8 +228,8 @@ property defaults beyond the current untyped constant-expression instance
 property slice,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
-magic property hooks beyond direct missing-property
-`__get`/`__isset`/`__set`/`__unset`,
+magic methods beyond direct missing-property
+`__get`/`__isset`/`__set`/`__unset` and missing-method `__call`,
 resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.

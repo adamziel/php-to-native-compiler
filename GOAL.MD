@@ -1002,7 +1002,13 @@ lowering explicit gaps. Milestone 1009 adds bounded direct missing-property
 leaving true property removal/uninitialization, inaccessible-property
 `__unset` fidelity, dynamic property-name magic, object-dimension magic,
 ArrayAccess, typed/uninitialized properties, exact warning behavior,
-references/copy-on-write, and native lowering explicit gaps. Milestone 833
+references/copy-on-write, and native lowering explicit gaps. Milestone 1010
+adds bounded instance `__call($name, $args)` dispatch for missing direct
+instance method calls while leaving inaccessible-method `__call` fidelity,
+dynamic method-name magic beyond the existing static-token method-call form,
+`__callStatic`, named arguments, splat/unpack behavior, by-reference argument
+aliasing, exact warning behavior, references/copy-on-write, and native
+lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct

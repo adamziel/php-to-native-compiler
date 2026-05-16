@@ -2849,7 +2849,7 @@ impl Interpreter {
                     ) {
                         Ok(()) => Ok(value),
                         Err(error) if Self::is_undefined_property_error(&error) => {
-                            match self.call_magic_property_method_with_values(
+                            match self.call_magic_instance_method_with_values(
                                 object,
                                 "__set",
                                 vec![Value::String(property.clone()), value.clone()],
@@ -6912,7 +6912,7 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<Option<Value>> {
-        self.call_magic_property_method_with_values(
+        self.call_magic_instance_method_with_values(
             object,
             method_name,
             vec![Value::String(property.to_string())],
@@ -6920,7 +6920,7 @@ impl Interpreter {
         )
     }
 
-    fn call_magic_property_method_with_values(
+    fn call_magic_instance_method_with_values(
         &mut self,
         object: PhpObject,
         method_name: &str,
@@ -7032,18 +7032,28 @@ impl Interpreter {
         };
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
-            let receiver_class = self
+            let receiver_class_name = self
                 .classes
                 .get(object.class_id())
-                .expect("object class id should resolve to class metadata");
+                .expect("object class id should resolve to class metadata")
+                .name()
+                .to_string();
             let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
-                return Err(runtime_error(
+                return match self.call_missing_instance_method_via_magic(
+                    object,
+                    method_name,
+                    args,
                     span,
-                    RuntimeError::undefined_function(format!(
-                        "{}::{method_name}()",
-                        receiver_class.name()
+                    caller_scope,
+                )? {
+                    Some(value) => Ok(value),
+                    None => Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{receiver_class_name}::{method_name}()"
+                        )),
                     )),
-                ));
+                };
             };
             method
         };
@@ -7078,6 +7088,40 @@ impl Interpreter {
             Some(called_class_id),
             reference_bindings,
             Some(caller_scope),
+        )
+    }
+
+    fn call_missing_instance_method_via_magic(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        if self
+            .resolve_instance_method(object.class_id(), "__call")
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        let mut argument_array = PhpArray::new();
+        for arg in args {
+            let value = self.evaluate(arg, caller_scope)?;
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(arg.span(), error))?;
+        }
+
+        self.call_magic_instance_method_with_values(
+            object,
+            "__call",
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            span,
         )
     }
 

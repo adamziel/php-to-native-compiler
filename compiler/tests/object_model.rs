@@ -1034,6 +1034,30 @@ echo $bag->title;
 }
 
 #[test]
+fn magic_call_runs_for_missing_instance_methods() {
+    let source = r#"<?php
+class Router {
+    public function known() {
+        return "known";
+    }
+
+    public function __call($method, $args) {
+        echo "call:$method\n";
+        return $method . ":" . $args[0] . ":" . $args[1];
+    }
+}
+
+$router = new Router();
+echo $router->known(), "\n";
+echo $router->route("posts", 7);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "known\ncall:route\nroute:posts:7");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

@@ -1201,7 +1201,13 @@ historical blockers and remaining full-support gaps include:
   removal/uninitialization, inaccessible-property `__unset` fidelity, dynamic
   property-name magic, object-dimension magic, ArrayAccess,
   typed/uninitialized properties, exact warning behavior,
-  references/copy-on-write, and native lowering explicit gaps.
+  references/copy-on-write, and native lowering explicit gaps. Milestone 1010
+  adds bounded instance `__call($name, $args)` dispatch for missing direct
+  instance method calls while leaving inaccessible-method `__call` fidelity,
+  dynamic method-name magic beyond the existing static-token method-call form,
+  `__callStatic`, named arguments, splat/unpack behavior, by-reference
+  argument aliasing, exact warning behavior, references/copy-on-write, and
+  native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

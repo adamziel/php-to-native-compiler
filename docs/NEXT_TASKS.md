@@ -9656,6 +9656,19 @@ handled.
   object-dimension magic, ArrayAccess, typed/uninitialized property behavior,
   exact warning/visibility diagnostics, references/copy-on-write, or native
   lowering.
+- [x] Object semantics lane: inspect the adjacent missing-method magic gap and
+  add bounded instance `__call($name, $args)` behavior or an explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
+  Milestone 1010 adds bounded instance `__call($name, $args)` dispatch for
+  missing direct `$object->method(...)` calls. Declared visible methods still
+  dispatch first; missing methods evaluate positional arguments left to right,
+  package them in a zero-indexed PHP array, invoke visible non-static
+  `__call`, and return its result. This is not inaccessible-method `__call`
+  fidelity, dynamic method-name magic beyond the existing static-token
+  method-call form, `__callStatic`, named arguments, splat/unpack behavior,
+  by-reference argument aliasing, exact warning/visibility diagnostics,
+  recursion edge-case fidelity, references/copy-on-write, or native lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9667,8 +9680,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d8b50939 runtime: add magic property writes`, covering Milestone 1008
-  before the current Milestone 1009 candidate.
+  `e2508683 runtime: add magic property unset`, covering Milestone 1009
+  before the current Milestone 1010 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -170,7 +170,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   arguments left to right, bind `$this` to the receiver object handle, and
   reuse the current user-function parameter/default/return subset. Private
   methods require an active same-class method context. Protected methods
-  require an active same-class or child method context;
+  require an active same-class or child method context. Missing direct
+  instance method calls dispatch to visible non-static `__call($name, $args)`
+  when one is declared or inherited, with `$args` materialized as a
+  zero-indexed PHP array of the evaluated positional arguments;
 - explicit `parent::method(...)` and `parent::__construct(...)` calls require
   active instance method context, a parent class, and a public or protected
   resolved method in the parent chain. They evaluate arguments left to right,
@@ -388,8 +391,9 @@ removal/uninitialization,
 typed/uninitialized property behavior, inaccessible-property `__unset`
 fidelity,
 dynamic property-name magic, property-array-offset magic, inaccessible-property
-`__set` fidelity, `__call`, `__toString`, static member execution
-through `::` beyond the current class-name constant and
+`__set` fidelity, inaccessible-method `__call` fidelity, dynamic method-name
+magic, `__callStatic`, `__toString`, static member execution through `::`
+beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 native lowering for `get_called_class` called-class context, broader late

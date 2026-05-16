@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1010, bounded instance `__call($name, $args)` dispatch for
+  missing direct instance method calls. Ordinary `$object->method(...)` still
+  dispatches declared visible methods first; when that lookup misses and a
+  visible non-static `__call()` method is declared or inherited, the
+  interpreter evaluates the original positional arguments left to right,
+  packages them into a zero-indexed PHP array, calls `__call()` with the
+  missing method name and argument array, and returns the magic method result.
+  This is not inaccessible-method `__call` fidelity, dynamic method-name
+  magic beyond the existing static-token method-call form, `__callStatic`,
+  named arguments, splat/unpack behavior, by-reference argument aliasing,
+  exact PHP warning/visibility diagnostics, recursion edge-case fidelity, or
+  native lowering. Verification so far:
+  `cargo test -p phpc --test object_model magic_call_runs_for_missing_instance_methods -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1010`.
+
 - Added Milestone 1009, bounded direct missing-property `__unset($name)`
   dispatch for ordinary direct object-property `unset(...)`. Direct
   `unset($object->name)` still nulls an existing visible slot under the

@@ -355,7 +355,10 @@
   while executing a method on the same declaring class. Protected methods are
   callable while executing a method on the same declaring class or a child
   class. Current method calls reuse the existing user-function
-  parameter/default/return subset.
+  parameter/default/return subset. Missing direct instance method calls
+  dispatch to visible non-static `__call($name, $args)` when one is declared
+  or inherited, with `$args` materialized as a zero-indexed PHP array of the
+  evaluated positional arguments.
 - explicit parent method calls by static method name:
   `parent::method(...)` and `parent::__construct(...)` are supported in active
   class method/constructor context when the current class has a parent and the
@@ -1778,7 +1781,8 @@
   method metadata with case-insensitive method names, reports
   public/protected/private and static methods as existing, returns false for
   missing methods or missing string class names, and is available through
-  string-valued dynamic function calls.
+  string-valued dynamic function calls. Magic `__call` does not make a missing
+  method name report as existing.
   `get_class_methods($object_or_class)` accepts a current object value or a
   declared string class name and returns a zero-indexed array of public method
   names in declaration order, including public static methods. It is available
