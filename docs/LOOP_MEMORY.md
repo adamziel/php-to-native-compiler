@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `c381e5e runtime: add mysqli multi query placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 926, a synthetic WordPress-shaped `wpdb`
+  connection query bookkeeping smoke over deterministic `mysqli_multi_query()`
+  charset setup placeholder support.
+- Files changed so far: `tests/fixtures/milestone926/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone926`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection query method now
+  records deterministic `mysqli_multi_query()` charset setup placeholder
+  success plus clean no-more-results and no-pending-result metadata.
+- Remaining semantic gaps: real multi-statement execution, pending result
+  queues, result object creation, mutation state, connection charset mutation,
+  warnings/errors, host database state, and native database lowering remain
+  missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, inspect the next MySQLi async or
+  multi-result execution boundary such as `mysqli_reap_async_query()` or
+  `mysqli_poll()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `7c13bf5 tests: add wordpress wpdb real query smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 925, bounded deterministic

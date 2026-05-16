@@ -225,6 +225,10 @@ warning/error fidelity, or native lowering, plus bounded deterministic
 real multi-statement execution, pending result queues,
 `mysqli_more_results()`/`mysqli_next_result()` state, result object creation,
 mutation state, host database state, warning/error fidelity, or native
+lowering, now wired through a synthetic WordPress-shaped `wpdb` connection
+query bookkeeping smoke without claiming real multi-statement execution,
+pending result queues, result object creation, mutation state, connection
+charset mutation, host database state, warning/error fidelity, or native
 lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping

@@ -1490,7 +1490,11 @@ historical blockers and remaining full-support gaps include:
   execution, pending result queues,
   `mysqli_more_results()`/`mysqli_next_result()` state, result object
   creation, mutation state, host database state, warning/error fidelity, or
-  native database lowering.
+  native database lowering. Milestone 926 wires that placeholder through a
+  synthetic WordPress-shaped `wpdb` connection query bookkeeping smoke without
+  claiming real multi-statement execution, pending result queues, result object
+  creation, mutation state, connection charset mutation, host database state,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

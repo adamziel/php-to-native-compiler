@@ -8598,17 +8598,30 @@ handled.
   result queues, `mysqli_more_results()`/`mysqli_next_result()` state, result
   object creation, mutation state, host database state, warnings/errors, or
   native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_multi_query()` charset setup placeholder through a
   WordPress-shaped connection query method without claiming real
   multi-statement execution, pending result queues, or connection charset
   mutation fidelity.
+  Milestone 926 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_multi_query()` charset setup placeholder success
+  through local query bookkeeping, then verifies clean no-more-results and
+  no-pending-result `mysqli_more_results()`, `mysqli_next_result()`,
+  `mysqli_store_result()`, and `mysqli_use_result()` metadata. It is not real
+  multi-statement execution, pending result queues, result object creation,
+  mutation state, connection charset mutation, warnings/errors, host database
+  state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi asynchronous or
+  multi-result execution boundary after placeholder `mysqli_multi_query()`
+  bookkeeping, such as `mysqli_reap_async_query()`/`mysqli_poll()` visibility
+  or a sharper unsupported diagnostic, before claiming broader async,
+  multi-result, or host database execution fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `7c13bf5 tests: add wordpress wpdb real query smoke`, covering Milestone 924
-  before the current Milestone 925 candidate.
+  `c381e5e runtime: add mysqli multi query placeholder`, covering
+  Milestone 925 before the current Milestone 926 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 926, a synthetic WordPress-shaped `wpdb` connection query
+  bookkeeping smoke that calls bounded
+  `mysqli_multi_query($this->dbh, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'")`,
+  then records deterministic clean `mysqli_more_results()`,
+  `mysqli_next_result()`, `mysqli_store_result()`, and `mysqli_use_result()`
+  no-pending-result metadata. This is a harness smoke only; it does not add
+  real WordPress multi-statement SQL execution, pending result queues, result
+  object creation, mutation state, connection charset mutation, host database
+  state, PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone926`.
+
 - Added Milestone 925, bounded `mysqli_multi_query()` support for
   deterministic placeholder MySQLi charset setup execution metadata. The
   runtime accepts current placeholder `mysqli` handles plus the exact
