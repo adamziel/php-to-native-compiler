@@ -24,7 +24,10 @@ Implemented:
   `cargo test -p phpc --test functions_and_scopes
   reference_assignment_array_append_source -- --test-threads=1`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`. The
+  serialized checkpoint gate passed with 1293 fixture tests, 738 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `1be45334 runtime: add globals append reference sources`.
 
 - Added Milestone 1087, a bounded append array-offset reference-source slice
   for direct arrays and direct public object-property arrays. Statement-form

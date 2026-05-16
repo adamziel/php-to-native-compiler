@@ -10619,8 +10619,9 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5cb8be59 runtime: add append reference sources`, covering Milestone 1087.
-  The serialized checkpoint gate passed with 1292 fixture tests, 737
+  `1be45334 runtime: add globals append reference sources`, covering
+  Milestone 1088. The serialized checkpoint gate passed with 1293 fixture
+  tests, 738
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations

@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `a0be96cc docs: record append reference source gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `1be45334 runtime: add globals append reference sources`.
 - Task attempted: Milestone 1088, bounded string-keyed `$GLOBALS` append
   array-offset reference sources. `$alias =& $GLOBALS["bag"][];` and
   `$alias =& $GLOBALS["bag"]["outer"][];` now bind a direct alias variable to
@@ -51,15 +53,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test functions_and_scopes
   reference_assignment_array_append_source -- --test-threads=1`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed. The
+  serialized checkpoint gate passed with 1293 fixture tests, 738 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `1be45334 runtime: add globals append reference sources`.
 - Remaining semantic gaps: `$GLOBALS[]` append sources, non-string root keys,
   recursive `$GLOBALS` materialization, dynamic global names, non-variable
   reference targets, ArrayAccess reference sources, full PHP reference
   containers, copy-on-write containers, exact alias destruction ordering, and
   native lowering remain missing.
-- Next concrete task: checkpoint with
-  `tools/checkpoint.sh "runtime: add globals append reference sources"` if
-  the working tree still matches the focused checks.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-16T15:42:57Z
 
