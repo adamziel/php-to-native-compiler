@@ -231,6 +231,9 @@ impl<'a> Lexer<'a> {
                 '^' => TokenKind::Caret,
                 '~' => TokenKind::Tilde,
                 '@' => TokenKind::At,
+                '`' => {
+                    return Err(self.error_at(span, unsupported_backtick_operator_message()));
+                }
                 ':' => {
                     if self.match_char(':') {
                         TokenKind::DoubleColon
@@ -1029,6 +1032,10 @@ fn unsupported_heredoc_message() -> &'static str {
 
 fn unsupported_short_echo_tag_message() -> &'static str {
     "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
+}
+
+fn unsupported_backtick_operator_message() -> &'static str {
+    "unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented"
 }
 
 fn trim_heredoc_final_newline(value: &mut String, parts: &mut [InterpolatedStringPart]) {

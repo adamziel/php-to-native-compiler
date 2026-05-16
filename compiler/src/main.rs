@@ -296,7 +296,7 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
@@ -304,6 +304,7 @@ fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
         summary.exit_expectations,
         summary.phpc_only_markers,
         summary.cli_exercises,
+        summary.cli_exercise_gaps,
         summary.orphan_sidecars,
         summary.source_bytes,
         summary.stdout_bytes,
@@ -387,7 +388,7 @@ fn render_fixture_manifest_compatibility_target(
         .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} probe expectations={} bytes={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -398,6 +399,7 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.exit_expectations,
         target.summary.phpc_only_markers,
         target.summary.cli_exercises,
+        target.summary.cli_exercise_gaps,
         target.summary.orphan_sidecars,
         target.summary.source_bytes,
         target.summary.stdout_bytes,
@@ -424,7 +426,7 @@ fn render_fixture_manifest_compatibility_probe_expectation(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 9,\n");
+    output.push_str("  \"contract_version\": 10,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -460,6 +462,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     output.push_str(&format!(
         "    \"cli_exercises\": {},\n",
         manifest.summary.cli_exercises
+    ));
+    output.push_str(&format!(
+        "    \"cli_exercise_gaps\": {},\n",
+        manifest.summary.cli_exercise_gaps
     ));
     output.push_str(&format!(
         "    \"orphan_sidecars\": {},\n",
@@ -622,6 +628,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         output.push_str(&format!(
             "        \"cli_exercises\": {},\n",
             target.summary.cli_exercises
+        ));
+        output.push_str(&format!(
+            "        \"cli_exercise_gaps\": {},\n",
+            target.summary.cli_exercise_gaps
         ));
         output.push_str(&format!(
             "        \"orphan_sidecars\": {},\n",

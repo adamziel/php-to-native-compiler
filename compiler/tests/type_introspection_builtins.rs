@@ -228,6 +228,7 @@ echo function_exists("LOCAL_NAME") ? "1" : "0";
 echo function_exists("strlen") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
+echo function_exists("basename") ? "1" : "0";
 echo function_exists("dirname") ? "1" : "0";
 echo function_exists("spl_autoload_register") ? "1" : "0";
 echo function_exists("assert") ? "1" : "0";
@@ -240,7 +241,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1111111100\n1");
+    assert_eq!(execution.stdout, "11111111100\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -399,6 +400,7 @@ echo function_exists("strlen") ? "1" : "0";
 echo function_exists("STRLEN") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
+echo function_exists("basename") ? "1" : "0";
 echo function_exists("dirname") ? "1" : "0";
 echo function_exists("spl_autoload_register") ? "1" : "0";
 echo function_exists("assert") ? "1" : "0";
@@ -411,7 +413,7 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
 }
@@ -450,6 +452,7 @@ $syntax = true;
 echo is_callable("strlen") ? "1" : "0";
 echo is_callable("STRLEN") ? "1" : "0";
 echo is_callable("extension_loaded") ? "1" : "0";
+echo is_callable("basename") ? "1" : "0";
 echo is_callable("dirname") ? "1" : "0";
 echo is_callable("spl_autoload_register") ? "1" : "0";
 echo is_callable("assert") ? "1" : "0";
@@ -466,7 +469,7 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 13, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

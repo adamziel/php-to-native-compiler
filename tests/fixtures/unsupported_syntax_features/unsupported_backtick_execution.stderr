@@ -1,0 +1,2 @@
+lex error at 3:11: unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented
+

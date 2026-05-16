@@ -122,6 +122,35 @@ fn emit_ir_rejects_short_echo_tags_at_lex_boundary() {
 }
 
 #[test]
+fn unsupported_backtick_execution_operator_has_stable_lex_errors() {
+    let cases = [
+        ("<?php\n$output = `whoami`;\n", 2, 11),
+        ("<?php\necho `printf {$name}`;\n", 2, 6),
+    ];
+
+    for (source, line, column) in cases {
+        let error = lex_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_backtick_execution_operator_at_lex_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$output = `whoami`;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Lex);
+    assert_eq!(
+        error.message,
+        "unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_interpolated_heredoc_until_native_string_runtime_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\n$name = \"Ada\";\necho <<<TXT\nhello {$name}\nTXT;\n")

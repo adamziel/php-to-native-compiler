@@ -41,7 +41,7 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
         stdout,
         concat!(
             "fixture manifest: 3 fixtures\n",
-            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 cli-exercises=1 orphan sidecars=0 bytes source=64 stdout=6 stderr=12 exit=2 cli=19 phpc-only=48 orphan-sidecars=0\n",
+            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 cli-exercises=1 cli-exercise-gaps=2 orphan sidecars=0 bytes source=64 stdout=6 stderr=12 exit=2 cli=19 phpc-only=48 orphan-sidecars=0\n",
             "alpha.php expectations=stdout cli-exercise=yes php-comparison=eligible bytes source=20 stdout=6 stderr=- exit=- cli=19 phpc-only=-\n",
             "nested/beta.php expectations=stderr,exit cli-exercise=no php-comparison=phpc-only phpc-only-reason=project diagnostic has no system PHP equivalent bytes source=19 stdout=- stderr=12 exit=2 cli=- phpc-only=48\n",
             "zeta.php expectations=none cli-exercise=no php-comparison=eligible bytes source=25 stdout=- stderr=- exit=- cli=- phpc-only=-\n",
@@ -88,7 +88,7 @@ fn cli_list_fixtures_reports_orphan_sidecars_deterministically() {
         stdout,
         concat!(
             "fixture manifest: 1 fixtures\n",
-            "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=0 orphan sidecars=5 bytes source=19 stdout=5 stderr=0 exit=0 cli=0 phpc-only=0 orphan-sidecars=24\n",
+            "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=0 cli-exercise-gaps=1 orphan sidecars=5 bytes source=19 stdout=5 stderr=0 exit=0 cli=0 phpc-only=0 orphan-sidecars=24\n",
             "live.php expectations=stdout cli-exercise=no php-comparison=phpc-only phpc-only-reason= bytes source=19 stdout=5 stderr=- exit=- cli=- phpc-only=0\n",
             "orphan sidecar: alpha.stdout kind=stdout expected-fixture=alpha.php bytes=6 sha256=44ea8ede9025c26663124ceeefca2a35e40e5021cd116e436d368e2deae3355e\n",
             "orphan sidecar: nested/beta.cli kind=cli expected-fixture=nested/beta.php bytes=10 sha256=14ffec25f97b4b6f339e67a30c022ca5f17b984160fb4b71ed239a281c7745d0\n",
@@ -138,7 +138,7 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 9,\n",
+            "  \"contract_version\": 10,\n",
             "  \"fixture_count\": 3,\n",
             "  \"summary\": {\n",
             "    \"total\": 3,\n",
@@ -151,6 +151,7 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
             "      \"phpc_only\": 1\n",
             "    },\n",
             "    \"cli_exercises\": 1,\n",
+            "    \"cli_exercise_gaps\": 2,\n",
             "    \"orphan_sidecars\": 1,\n",
             "    \"file_bytes\": {\n",
             "      \"source\": 64,\n",
@@ -294,7 +295,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 9,\n",
+            "  \"contract_version\": 10,\n",
             "  \"fixture_count\": 2,\n",
             "  \"summary\": {\n",
             "    \"total\": 2,\n",
@@ -307,6 +308,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "      \"phpc_only\": 1\n",
             "    },\n",
             "    \"cli_exercises\": 1,\n",
+            "    \"cli_exercise_gaps\": 1,\n",
             "    \"orphan_sidecars\": 1,\n",
             "    \"file_bytes\": {\n",
             "      \"source\": 36,\n",
@@ -379,6 +381,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "          \"phpc_only\": 1\n",
             "        },\n",
             "        \"cli_exercises\": 1,\n",
+            "        \"cli_exercise_gaps\": 1,\n",
             "        \"orphan_sidecars\": 1,\n",
             "        \"file_bytes\": {\n",
             "          \"source\": 36,\n",
@@ -408,6 +411,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "          \"phpc_only\": 0\n",
             "        },\n",
             "        \"cli_exercises\": 0,\n",
+            "        \"cli_exercise_gaps\": 0,\n",
             "        \"orphan_sidecars\": 0,\n",
             "        \"file_bytes\": {\n",
             "          \"source\": 0,\n",
@@ -495,12 +499,12 @@ fn cli_list_fixtures_reports_compatibility_target_byte_counts() {
         stdout,
         concat!(
             "fixture manifest: 2 fixtures\n",
-            "summary: php-comparison eligible=1, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 cli=38 phpc-only=45 orphan-sidecars=6\n",
+            "summary: php-comparison eligible=1, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=1 cli-exercise-gaps=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 cli=38 phpc-only=45 orphan-sidecars=6\n",
             "compat/php/cross_feature.php expectations=stdout cli-exercise=yes php-comparison=eligible bytes source=17 stdout=3 stderr=- exit=- cli=38 phpc-only=-\n",
             "compat/php/skipped.php expectations=none cli-exercise=no php-comparison=phpc-only phpc-only-reason=compat target uses a project-only diagnostic bytes source=19 stdout=- stderr=- exit=- cli=- phpc-only=45\n",
             "orphan sidecar: compat/php/stale.stderr kind=stderr expected-fixture=compat/php/stale.php bytes=6 sha256=44ea8ede9025c26663124ceeefca2a35e40e5021cd116e436d368e2deae3355e\n",
-            "compatibility target: php path=compat/php fixtures=2 php-comparison eligible=1 phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 cli=38 phpc-only=45 orphan-sidecars=6 probe expectations=0 bytes=0 source-pin path=- bytes=- sha256=-\n",
-            "compatibility target: wordpress path=compat/wordpress fixtures=0 php-comparison eligible=0 phpc-only=0 expectations stdout=0, stderr=0, exit=0, phpc-only=0 cli-exercises=0 orphan sidecars=0 bytes source=0 stdout=0 stderr=0 exit=0 cli=0 phpc-only=0 orphan-sidecars=0 probe expectations=1 bytes=15 source-pin path=compat/wordpress/source-pin.md bytes=18 sha256=121ab051bd83ec3873da928f13566a2b50a494359d3a62043ee02019efc876a1\n",
+            "compatibility target: php path=compat/php fixtures=2 php-comparison eligible=1 phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 cli-exercises=1 cli-exercise-gaps=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 cli=38 phpc-only=45 orphan-sidecars=6 probe expectations=0 bytes=0 source-pin path=- bytes=- sha256=-\n",
+            "compatibility target: wordpress path=compat/wordpress fixtures=0 php-comparison eligible=0 phpc-only=0 expectations stdout=0, stderr=0, exit=0, phpc-only=0 cli-exercises=0 cli-exercise-gaps=0 orphan sidecars=0 bytes source=0 stdout=0 stderr=0 exit=0 cli=0 phpc-only=0 orphan-sidecars=0 probe expectations=1 bytes=15 source-pin path=compat/wordpress/source-pin.md bytes=18 sha256=121ab051bd83ec3873da928f13566a2b50a494359d3a62043ee02019efc876a1\n",
             "compatibility probe expectation: compat/wordpress/front_controller_smoke.expected bytes=15 sha256=f157bfc95bc502cbd4020422a86b7bf1c0b4f4d650f3ffb5390d4f97f7714fba\n",
         )
     );

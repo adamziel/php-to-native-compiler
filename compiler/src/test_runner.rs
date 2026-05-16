@@ -37,6 +37,7 @@ pub struct FixtureManifestSummary {
     pub stderr_expectations: usize,
     pub exit_expectations: usize,
     pub cli_exercises: usize,
+    pub cli_exercise_gaps: usize,
     pub phpc_only_markers: usize,
     pub orphan_sidecars: usize,
     pub source_bytes: u64,
@@ -186,6 +187,7 @@ impl FixtureManifestSummary {
     ) -> Self {
         let mut summary = Self {
             total: entries.len(),
+            cli_exercise_gaps: entries.iter().filter(|entry| !entry.has_cli).count(),
             orphan_sidecars: orphan_sidecars.len(),
             orphan_sidecar_bytes: orphan_sidecars.iter().map(|sidecar| sidecar.bytes).sum(),
             ..Self::default()

@@ -194,20 +194,20 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1190 closes the 1186-1189 implementation-batch
-  queue refresh. Milestone 1195 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1195 closes the 1191-1194 implementation-batch
+  queue refresh. Milestone 1200 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 1191 is the next parser slot, selecting a small
+- Parser lane: Milestone 1196 is the next parser slot, selecting a small
   syntax or parse-diagnostic boundary from the refreshed PHP/WordPress gap map
   without widening runtime or native support claims.
-- Runtime lane: Milestone 1192 is the next runtime slot, selecting a bounded
+- Runtime lane: Milestone 1197 is the next runtime slot, selecting a bounded
   value-model, object-semantics, request-state, filesystem, database, or
   WordPress-probe blocker with focused tests, CLI coverage, and named
   unsupported edges.
-- IR/lowering lane: Milestone 1193 is the next native slot, selecting a narrow
+- IR/lowering lane: Milestone 1198 is the next native slot, selecting a narrow
   native IR/lowering refinement or precise rejection boundary from already
   documented interpreter behavior.
-- Compiler-output lane: Milestone 1194 is the next compiler-output slot,
+- Compiler-output lane: Milestone 1199 is the next compiler-output slot,
   choosing a deterministic CLI, fixture-runner, compatibility-manifest, or
   backend artifact contract that improves auditability without broadening PHP
   support claims.

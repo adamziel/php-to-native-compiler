@@ -277,6 +277,7 @@ write-once enforcement, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 nullsafe object access `?->`, PHP 8 `match` expressions,
+backtick shell execution operators,
 magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
@@ -332,6 +333,7 @@ include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, double-quoted string
 interpolation, dynamic calls, `assert()`, runtime constant tables,
 direct `str_starts_with(...)` string-prefix calls,
+direct `str_ends_with(...)` string-suffix calls,
 PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
@@ -364,22 +366,24 @@ whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
 also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts,
 including `.cli` snapshot exercise files, for fixtures, summaries, orphan
-sidecars, and compatibility targets. Text orphan sidecar rows include SHA-256
+sidecars, and compatibility targets, plus CLI exercise gap counts for fixtures
+without `.cli` snapshot sidecars. Text orphan sidecar rows include SHA-256
 digests. Compatibility target entries also report `source-pin.md` path, byte
 count, and SHA-256 when a target pin file is present, plus deterministic
 `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
 count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 9. The JSON records
+manifest as deterministic JSON with `contract_version` 10. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
-sidecar byte counts, recognized orphan sidecar byte counts, and SHA-256 digests
-for fixture sources, recognized sidecars, and recognized orphan sidecars so
-comparison opt-outs and committed expectation and `.cli` exercise payloads are
-visible without executing fixtures or CLI snapshots. When the fixture root
-contains `compat/<target>` directories, the JSON also includes per-target
-compatibility counts, optional `source-pin.md` audit metadata, and `.expected`
-probe expectation artifact metadata, including targets with no executable
-`.php` fixtures yet.
+sidecar byte counts, recognized orphan sidecar byte counts, CLI exercise gap
+counts, and SHA-256 digests for fixture sources, recognized sidecars, and
+recognized orphan sidecars so comparison opt-outs and committed expectation and
+`.cli` exercise payloads are visible without executing fixtures or CLI
+snapshots. When the fixture root contains `compat/<target>` directories, the
+JSON also includes per-target compatibility counts, per-target CLI exercise gap
+counts, optional `source-pin.md` audit metadata, and `.expected` probe
+expectation artifact metadata, including targets with no executable `.php`
+fixtures yet.
 
 Use these commands while developing:
 

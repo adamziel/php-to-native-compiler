@@ -14639,6 +14639,53 @@ impl Interpreter {
             "call_user_func" => self.call_user_func_builtin(args, span),
             "call_user_func_array" => self.call_user_func_array_builtin(args, span),
             "implode" => call_implode(&args, span),
+            "basename" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "basename()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                let path = match &args[0] {
+                    Value::String(path) => path,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "basename()",
+                                format!(
+                                    "path argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+
+                let suffix = match args.get(1) {
+                    Some(Value::String(suffix)) => Some(suffix.as_str()),
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "basename()",
+                                format!(
+                                    "suffix argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => None,
+                };
+
+                Ok(Value::String(basename_path(path, suffix)))
+            }
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -20140,6 +20187,7 @@ fn is_builtin(name: &str) -> bool {
             | "call_user_func"
             | "call_user_func_array"
             | "implode"
+            | "basename"
             | "dirname"
             | "abs"
             | "version_compare"
@@ -20393,6 +20441,35 @@ fn dirname_once(path: &str) -> String {
         }
         None => ".".to_string(),
     }
+}
+
+fn basename_path(path: &str, suffix: Option<&str>) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+
+    let bytes = path.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 && bytes[end - 1] == b'/' {
+        end -= 1;
+    }
+
+    if end == 0 {
+        return String::new();
+    }
+
+    let trimmed = &path[..end];
+    let start = trimmed.rfind('/').map_or(0, |position| position + 1);
+    let mut name = trimmed[start..].to_string();
+
+    if let Some(suffix) = suffix {
+        if !suffix.is_empty() && name.ends_with(suffix) {
+            let new_len = name.len() - suffix.len();
+            name.truncate(new_len);
+        }
+    }
+
+    name
 }
 
 const PHP_E_ERROR: i64 = 1;

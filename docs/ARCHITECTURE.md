@@ -91,6 +91,10 @@ close-tag newline behavior for the covered fixtures. Short echo open tags
 such as `<?= $value ?>` stop in lexing with a dedicated unsupported diagnostic
 until the lexer/parser can expand them into echo statements with correct source
 mapping, inline-HTML interaction, and native rejection behavior.
+Backtick shell execution expressions such as `` `whoami` `` also stop in
+lexing with a dedicated unsupported diagnostic until command-string
+interpolation, process execution, stdout capture, platform error behavior,
+references/copy-on-write, and native lowering have an explicit implementation.
 
 Assignment targets are intentionally narrower than expression reads. Direct
 variables, direct array offsets, direct append offsets, direct object
@@ -1252,7 +1256,10 @@ known builtin name.
 same scalar/null string-convertible haystack and needle subset. It keeps PHP's
 empty-needle `true` result for represented runtime strings, and leaves binary
 string edge cases, object/resource coercions, exact diagnostics, and native
-lowering out of scope.
+lowering out of scope. Direct native `str_ends_with(...)` calls stop at a
+dedicated string-suffix codegen boundary before argument lowering or backend
+selection, while native function-table introspection can still see the known
+builtin name.
 `substr()` is an interpreter-only bounded string-slicing builtin for current
 scalar/null string-convertible inputs, integer offsets, and optional integer
 lengths. It uses byte positions over represented runtime strings and rejects

@@ -816,7 +816,7 @@
   `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
-  `implode`, `dirname`, `file_exists`, `file_get_contents`,
+  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
   `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -1724,6 +1724,14 @@
   policy, callbacks, `AssertionError`, `Throwable` descriptions, exact
   warning/fatal behavior, PHP 8.3 deprecations, partial-output behavior, and
   native lowering are not implemented.
+  `basename($path, $suffix = "")` accepts a string path and optional string
+  suffix. It performs lexical Unix-style slash basename extraction for local
+  paths used by the current WordPress-oriented probes, trims trailing slashes,
+  and removes the suffix only when the extracted name ends with that non-empty
+  suffix. It does not resolve the filesystem, symlinks, include paths, stream
+  wrappers, Windows drive/UNC paths, locale/codepage details, null-byte
+  behavior, broad scalar coercions, exact PHP warnings/`TypeError` behavior, or
+  native lowering.
   `dirname($path, $levels = 1)` accepts string paths and an optional positive
   integer level count. It performs lexical Unix-style slash parent-directory
   extraction for local paths used by the current WordPress bootstrap probes;
@@ -1990,6 +1998,9 @@
   dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_OS`
+- explicit lex diagnostics for unsupported backtick shell execution operators
+  such as `` `whoami` ``; command interpolation, process I/O, platform error
+  behavior, references/copy-on-write, and native lowering are not implemented
 - explicit parse diagnostics for unsupported array spread elements and
   reference array keys
 - explicit parse diagnostics for unsupported array/list destructuring beyond
@@ -3369,7 +3380,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`, `file_get_contents`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
   `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
@@ -3741,7 +3752,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_dir`, `is_file`, `is_readable`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_dir`, `is_file`, `is_readable`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -3753,7 +3764,7 @@
   `array_unshift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
+  `function_exists`, `basename`, `dirname`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -3925,7 +3936,7 @@
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
   `uniqid`, `hash_hmac`,
-  `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
+  `basename`, `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
   `mysqli_get_server_info`, `mysqli_get_server_version`,
   `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
@@ -4321,8 +4332,11 @@
   recognizes the name.
   `str_ends_with` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
-  `str_ends_with(...)` calls still reject under the function-call boundary,
-  while native function-table introspection recognizes the name.
+  `str_ends_with(...)` calls reject under a dedicated string-suffix boundary
+  until native PHP string conversion, empty-needle handling, binary string byte
+  semantics, argument diagnostics, references/copy-on-write, and exact native
+  diagnostics exist, while native function-table introspection recognizes the
+  name.
   `strpos` accepts the same current scalar/null string-convertible haystack and
   needle subset plus an optional integer offset as the builtin section above;
   direct native `strpos(...)` calls still reject under the function-call
@@ -4365,6 +4379,9 @@
   builtin section above; direct native `implode(...)` calls still reject under
   the function-call boundary, while native function-table introspection
   recognizes the name.
+  `basename` accepts the same current lexical Unix-style local path subset as
+  the builtin section above; direct native `basename(...)` calls still reject
+  under the function-call boundary.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
@@ -5124,7 +5141,9 @@
   `phpc-only-reason=<reason>` from the marker text, while comparable fixtures
   omit the field. It also reports deterministic source and recognized sidecar
   byte counts, including `.cli` snapshot exercise files, for fixture entries,
-  summaries, recognized orphan sidecars, and compatibility-target summaries.
+  summaries, recognized orphan sidecars, and compatibility-target summaries,
+  plus aggregate CLI exercise gap counts for fixtures without `.cli` snapshot
+  sidecars.
   Compatibility-target entries also report `source-pin.md` path, byte count,
   and SHA-256 when a target pin file is present, and deterministic
   `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
@@ -5137,17 +5156,18 @@
   non-fixture compatibility metadata beyond `source-pin.md` and `.expected`
   probe artifacts, or report unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 8, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 10, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
   recognized sidecars including `.cli` snapshot exercise files, and
   recognized orphan sidecars, PHP-comparison eligibility, sibling
   `.phpc-only` marker text as `phpc_only_reason`, and per-target
-  compatibility counts plus optional `source-pin.md` path, byte count,
-  SHA-256 metadata, and deterministic `.expected` probe expectation artifact
-  metadata for `compat/<target>` directories under the fixture root, including
-  targets with no executable `.php` fixtures yet. It does not parse, execute,
-  compare fixtures, report fixture execution results, execute or validate
+  compatibility counts, aggregate and per-target CLI exercise gap counts, plus
+  optional `source-pin.md` path, byte count, SHA-256 metadata, and
+  deterministic `.expected` probe expectation artifact metadata for
+  `compat/<target>` directories under the fixture root, including targets with
+  no executable `.php` fixtures yet. It does not parse, execute, compare
+  fixtures, report fixture execution results, execute or validate
   `.cli` snapshots, validate compatibility probe expectations, parse expected
   inventory output, validate that `.phpc-only` reason text is non-empty,
   inspect non-fixture compatibility metadata beyond `source-pin.md` and
@@ -5292,6 +5312,11 @@
   Short-circuit evaluation, mixed `->`/`?->` chain ordering, call argument
   evaluation behavior, assignment-target restrictions, exact PHP diagnostics,
   and native lowering are not implemented.
+- PHP backtick shell execution operators currently fail with a stable lex
+  diagnostic before command interpolation or process execution exists.
+  Captured stdout, shell selection, exit status/error behavior, platform
+  differences, references/copy-on-write, and native lowering are not
+  implemented.
 - exception execution beyond the current statement boundaries: reached
   `throw expr;` statements fail with a stable runtime diagnostic before
   evaluating the operand; reached `try` blocks execute only the normal no-throw
@@ -6162,6 +6187,11 @@
   canonicalization, symlink resolution, null-byte behavior, broad scalar
   coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
   beyond function-table introspection
+- `basename()` path behavior outside the current lexical Unix-style local path
+  subset, including Windows drive and UNC paths, stream wrappers, filesystem
+  canonicalization, symlink resolution, null-byte behavior, locale/codepage
+  details, broad scalar coercions, exact warning/`TypeError` diagnostics, and
+  native lowering beyond function-table introspection
 - `is_dir()` behavior beyond the current one-string local path metadata slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission/open_basedir behavior, non-string coercions, stat-cache behavior,

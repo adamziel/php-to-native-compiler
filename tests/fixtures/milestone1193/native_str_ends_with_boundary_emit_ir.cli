@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone1193/native_str_ends_with_boundary.phpc-source:2:6: LLVM str_ends_with lowering rejects direct string-suffix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_ends_with diagnostics exist; phpc run handles current bounded str_ends_with behavior
+--- stderr end ---

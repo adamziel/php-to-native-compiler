@@ -1,8 +1,13 @@
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+use php_compiler::emit_asm_source;
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_STR_ENDS_WITH_REJECTION: &str = "LLVM str_ends_with lowering rejects direct string-suffix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_ends_with diagnostics exist; phpc run handles current bounded str_ends_with behavior";
 
 #[test]
 fn str_ends_with_executes_current_scalar_string_subset() {
@@ -91,5 +96,78 @@ echo is_callable("str_ends_with") ? "1" : "0";
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_STR_ENDS_WITH_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_str_ends_with_before_lowering_arguments() {
+    let error = emit_ir_source("<?php\nstr_ends_with([], 'c');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_STR_ENDS_WITH_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_str_ends_with_before_backend_execution() {
+    let error = emit_asm_source("<?php\nstr_ends_with('abc', 'c');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_STR_ENDS_WITH_REJECTION);
+}
+
+#[test]
+fn native_str_ends_with_emit_ir_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-ir",
+        "tests/fixtures/milestone1193/native_str_ends_with_boundary_emit_ir.cli",
+    );
+}
+
+#[test]
+fn native_str_ends_with_emit_asm_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-asm",
+        "tests/fixtures/milestone1193/native_str_ends_with_boundary_emit_asm.cli",
+    );
+}
+
+fn assert_cli_snapshot_matches(mode: &str, snapshot_path: &str) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1193/native_str_ends_with_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, mode])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(snapshot_path))
+        .expect("native str_ends_with CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
 }

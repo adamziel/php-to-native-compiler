@@ -26,6 +26,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T21:29:12Z
+
+- Checkpoint before this task:
+  `77dbd541 runtime: add is_file`, pushed to `origin/master`.
+- Task attempted: Milestones 1191-1195, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: lexer/runtime/codegen/fixture-manifest code, focused tests and
+  fixtures for a dedicated backtick shell-execution lex diagnostic, bounded
+  `basename()` runtime support, dedicated native `str_ends_with(...)`
+  rejection, fixture-manifest CLI exercise gap metadata, plus `README.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/COMPATIBILITY.md`,
+  `docs/OPERATIONS.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: add basename"` passed with
+  `1351` fixture tests, `767` system PHP comparisons, and `584` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: backtick shell execution, command-string
+  interpolation, process I/O and shell/platform behavior, native
+  `basename(...)` and `str_ends_with(...)` lowering, fixture `.cli` execution
+  and validation, broad path/stream wrapper semantics, real reference/COW
+  containers, real database and filesystem services, web/SAPI request state,
+  and full WordPress request/plugin/theme flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1196-1199 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T21:16:13Z
 
 - Checkpoint before this task:
