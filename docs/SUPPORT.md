@@ -337,6 +337,8 @@
   private property slots owned by the active declaring class and protected
   property slots owned by the active class or an ancestor are also supported,
   including inherited parent-declared protected slots on child objects.
+  Missing direct-property reads call a visible non-static `__get($name)` method
+  when one is declared or inherited.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -393,7 +395,8 @@
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class, protected property operands owned by the active class or an
-  ancestor, and supported static property operands
+  ancestor, missing direct-property fallback through visible non-static
+  `__isset($name)`, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `PREG_SPLIT_DELIM_CAPTURE`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
@@ -1720,8 +1723,10 @@
   and direct-variable writes work by static property name; property names are case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
-  false for `null` slots, missing property names, undefined target variables,
-  and non-object target variables. `get_class($object)` returns the declared
+  false for `null` slots, missing property names without visible non-static
+  `__isset`, undefined target variables, and non-object target variables.
+  Missing direct-property names call visible non-static `__isset($name)`.
+  `get_class($object)` returns the declared
   class name stored on the current minimal object value and is also available
   through string-valued dynamic function calls. Undefined properties, property
   access on non-object values, non-public properties outside the current
@@ -1784,9 +1789,12 @@
   Protected/private slots and static properties are not included. It is
   available through string-valued dynamic function calls.
   Direct `empty($object->name)` accepts direct object-variable public-property
-  operands, returns true for falsey public property slots, missing properties,
-  undefined target variables, and non-object target variables, and uses a
-  stable unsupported-property diagnostic for non-public properties.
+  operands, returns true for falsey public property slots, undefined target
+  variables, and non-object target variables, and uses a stable
+  unsupported-property diagnostic for non-public properties. Missing direct
+  properties call visible non-static `__isset($name)` first, return empty when
+  it is absent or falsey, and call visible non-static `__get($name)` to test
+  the returned value when `__isset` is truthy.
   `get_mangled_object_vars($object)` accepts current object values and returns
   public, protected, and private instance slots in declaration order. Public
   property keys are emitted as the declared name, protected property keys are
@@ -4170,13 +4178,15 @@
   In active method context, direct private operands owned by the active
   declaring class and protected operands owned by the active class or an
   ancestor are also supported.
-  `isset` can safely check undefined
+  Missing direct object-property names call visible non-static
+  `__isset($name)` when available. `isset` can safely check undefined
   variables, missing/null array slots, missing/null intermediate array path
   entries, undefined array variables, non-array array targets, and undefined
   object-property targets. Non-variable array roots, append offset operands,
   object dimensions, dynamic property names, non-public property operands
   outside the current private/protected visibility context, complex lvalues,
-  and general expression operands remain unsupported. `empty`
+  magic property behavior beyond direct missing-property `__isset`, and
+  general expression operands remain unsupported. `empty`
   supports one direct variable operand, direct nested array offset operands
   such as `empty($array[$outer][$inner])`, one direct public object-property
   operand such as `empty($object->name)`, direct object-property array offset
@@ -4186,13 +4196,15 @@
   protected operands owned by the active class or an ancestor are also
   supported; undefined variables, missing array keys, missing/null/non-array
   intermediate array path entries, undefined array targets, non-array array
-  targets, missing object properties, missing supported static properties,
+  targets, missing object properties without a truthy visible non-static
+  `__isset`, missing supported static properties,
   undefined object targets, and non-object property targets are treated as
   empty, and existing values use the current PHP truthiness rules. Nested
   offsets rooted in function calls or other non-direct expressions, dynamic
   property names, non-public property visibility context outside the current
   private/protected method context, append offset operands, complex lvalues,
-  general expression operands, ArrayAccess, magic methods, and unsupported
+  general expression operands, ArrayAccess, magic property behavior beyond
+  direct missing-property `__isset`/`__get`, and unsupported
   array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `current`, `next`, `array_pop`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
@@ -5107,7 +5119,8 @@
   namespaces/import aliases, exact native `TypeError` behavior, and native
   lowering beyond direct string/string false folding
 - `empty($object->name)` dynamic property names, non-public visibility
-  context, complex lvalues, magic `__isset`/`__get` behavior,
+  context, complex lvalues, magic `__isset`/`__get` behavior beyond direct
+  missing properties,
   references/copy-on-write, exact native error behavior, and native lowering
 - `unset($object->name)`/`unset($object->$name)` true property removal and
   property uninitialization, typed/uninitialized property behavior,
@@ -5432,7 +5445,8 @@
   supported static property operands, including function-call rooted offsets,
   dynamic property names, non-public property visibility context outside the
   current method-context slice, append offsets, complex lvalues, ArrayAccess,
-  magic methods, and general expressions
+  magic property behavior beyond direct missing-property `__isset`/`__get`,
+  and general expressions
 - Zend extension loading
 - full WordPress compatibility beyond the documented deterministic
   bootstrap/front-controller placeholder probes

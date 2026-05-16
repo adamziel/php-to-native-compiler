@@ -11,7 +11,7 @@ use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
     PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
     PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError,
-    RuntimeResult, Value, Visibility,
+    RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -6868,9 +6868,17 @@ impl Interpreter {
             Value::Object(object) => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                object
-                    .read_property_from_context(property, current_class_id, &protected_class_ids)
-                    .map_err(|error| runtime_error(span, error))
+                match object.read_property_from_context(
+                    property,
+                    current_class_id,
+                    &protected_class_ids,
+                ) {
+                    Ok(value) => Ok(value),
+                    Err(error) if Self::is_undefined_property_error(&error) => self
+                        .call_magic_property_method(object, "__get", property, span)?
+                        .ok_or_else(|| runtime_error(span, error)),
+                    Err(error) => Err(runtime_error(span, error)),
+                }
             }
             other => Err(runtime_error(
                 span,
@@ -6880,6 +6888,52 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn call_magic_property_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static magic property methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_signature(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_this(
+            function,
+            object,
+            vec![Value::String(property.to_string())],
+            Some(class_id),
+            Some(called_class_id),
+        )
+        .map(Some)
+    }
+
+    fn is_undefined_property_error(error: &RuntimeError) -> bool {
+        matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. })
     }
 
     fn evaluate_dynamic_property_read(
@@ -13434,9 +13488,19 @@ impl Interpreter {
             Some(Value::Object(object)) => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                object
-                    .is_property_set_from_context(property, current_class_id, &protected_class_ids)
-                    .map_err(|error| runtime_error(span, error))
+                match object
+                    .read_property_for_isset_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    Some(value) => Ok(!matches!(value, Value::Null)),
+                    None => Ok(self
+                        .call_magic_property_method(object, "__isset", property, span)?
+                        .is_some_and(|value| value.is_truthy())),
+                }
             }
             Some(_) | None => Ok(false),
         }
@@ -13680,13 +13744,34 @@ impl Interpreter {
             Some(Value::Object(object)) => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                object
-                    .is_property_empty_from_context(
+                match object
+                    .read_property_for_isset_from_context(
                         property,
                         current_class_id,
                         &protected_class_ids,
                     )
-                    .map_err(|error| runtime_error(span, error))
+                    .map_err(|error| runtime_error(span, error))?
+                {
+                    Some(value) => Ok(!value.is_truthy()),
+                    None => {
+                        let Some(isset_value) = self.call_magic_property_method(
+                            object.clone(),
+                            "__isset",
+                            property,
+                            span,
+                        )?
+                        else {
+                            return Ok(true);
+                        };
+                        if !isset_value.is_truthy() {
+                            return Ok(true);
+                        }
+
+                        Ok(self
+                            .call_magic_property_method(object, "__get", property, span)?
+                            .map_or(true, |value| !value.is_truthy()))
+                    }
+                }
             }
             Some(_) | None => Ok(true),
         }

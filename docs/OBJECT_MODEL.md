@@ -127,6 +127,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   effective visibility from the compatible descendant declaration, while
   private parent properties remain separate from same-name child properties;
 - public instance property reads return the current slot value;
+- missing direct instance property reads call a visible non-static
+  `__get($name)` method when one is declared or inherited, and otherwise keep
+  the existing undefined-property diagnostic;
 - public instance property writes mutate the current object value stored in that
   variable;
 - dynamic property-name reads and direct writes resolve string and integer
@@ -139,11 +142,14 @@ The model follows the PHP lookup rules needed by the first object slice:
   including parent-declared protected slots on child objects and peer objects;
 - direct `isset($object->name)` checks return true for non-null public slots,
   same-declaring-class private slots, and protected slots visible from the
-  active class or an ancestor, and false for null or missing slots;
+  active class or an ancestor, false for null slots, and call visible
+  non-static `__isset($name)` for missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
   same-declaring-class private slots, protected slots visible from the active
-  class or an ancestor, missing slots, undefined target variables, and
-  non-object target variables;
+  class or an ancestor, undefined target variables, and non-object target
+  variables. Missing slots call visible non-static `__isset($name)` first;
+  when it returns truthy, `empty` calls `__get($name)` and checks the returned
+  value's truthiness;
 - direct object-property compound assignment and pre/post increment/decrement
   work for public slots, private slots owned by the active declaring class, and
   protected slots owned by the active class or an ancestor, reusing the current
@@ -248,13 +254,18 @@ or integer dynamic names that resolve to existing public slots, plus public
 dynamic slot creation on `stdClass`. It also accepts direct
 `isset($object->name)` checks over direct object-variable operands and direct
 `empty($object->name)` checks over direct object-variable operands for the
-same public/private/protected context slice. Property names remain
+same public/private/protected context slice. For missing direct property
+slots, ordinary reads can dispatch visible non-static `__get($name)`,
+`isset` can dispatch visible non-static `__isset($name)`, and `empty` can
+dispatch `__isset($name)` followed by `__get($name)` when `__isset` is truthy.
+Property names remain
 case-sensitive. Undefined properties, property access on non-object values,
 and non-public properties outside the current method-context slice produce
 stable runtime errors for ordinary reads/writes; `isset` returns false for
-null slots, missing property names, undefined target variables, and non-object
-target variables, while `empty` returns true for falsey slots, missing
-property names, undefined target variables, and non-object target variables.
+null slots, missing property names without `__isset`, undefined target
+variables, and non-object target variables, while `empty` returns true for
+falsey slots, missing property names without a truthy `__isset`, undefined
+target variables, and non-object target variables.
 Static properties are recorded as metadata and stored per declaring class, but
 are not stored in object values. `ClassName::$prop`, `self::$prop`, and
 `parent::$prop` support direct reads and writes, compound assignment, pre/post
@@ -342,7 +353,8 @@ objects, enum methods/constants/properties, enum interface implementation,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
-binding, magic methods, namespaces,
+binding, magic methods beyond the current direct missing-property
+`__get`/`__isset` slice, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
 cloning, destructors, serialization hooks, broader visibility enforcement,
@@ -361,9 +373,11 @@ operands outside the current private/protected method context, complex object-pr
 operands, dynamic property-name `empty` operands, non-public property
 visibility context for `empty` outside the current private/protected method context, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
-`empty`, object-property `unset`, property uninitialization,
+dynamic property names and object-property dimensions, object-property `unset`,
+property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,
-static member execution through `::` beyond the current class-name constant and
+dynamic property-name magic, property-array-offset magic, `__set`, `__unset`,
+`__call`, `__toString`, static member execution through `::` beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 native lowering for `get_called_class` called-class context, broader late

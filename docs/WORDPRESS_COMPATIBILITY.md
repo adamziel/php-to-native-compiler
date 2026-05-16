@@ -1184,6 +1184,13 @@ historical blockers and remaining full-support gaps include:
   objects with zero rows. This is still not host-backed query execution, real
   table/schema reads, field metadata, warning/error fidelity, mutation SQL,
   mysqlnd behavior, native lowering, or WordPress support. The real
+  object-model lane's Milestone 1007 adds bounded direct missing-property
+  `__get`/`__isset` dispatch for ordinary reads, `isset($object->name)`, and
+  `empty($object->name)`. This is not dynamic property-name magic,
+  object-dimension magic, `__set`, `__unset`, `__call`, ArrayAccess,
+  typed/uninitialized properties, exact warning behavior,
+  references/copy-on-write, or native lowering.
+  The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
   Milestone 833 implements bounded dynamic static-receiver property reads and

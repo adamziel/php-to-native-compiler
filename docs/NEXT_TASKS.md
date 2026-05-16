@@ -9615,6 +9615,20 @@ handled.
   remains a false no-result boundary. This is not host-backed query execution,
   real table/schema reads, real field metadata, warning/error fidelity,
   mutation SQL, mysqlnd behavior, or native database lowering.
+- [x] Object semantics lane: inspect the next magic method gap from the audited
+  PHP/WordPress surface, such as missing-property `__get`/`__isset`,
+  `__set`, `__unset`, dynamic property-name magic, `__call`, or ArrayAccess,
+  and add the next bounded behavior or explicit runtime boundary with tests,
+  CLI fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
+  Milestone 1007 adds bounded direct missing-property magic for ordinary
+  `$object->name` reads, `isset($object->name)`, and `empty($object->name)`.
+  Existing visible slots still use direct storage; missing slots call visible
+  non-static `__get($name)` or `__isset($name)` under the current instance
+  method execution model. This is not dynamic property-name magic,
+  object-dimension magic, `__set`, `__unset`, `__call`, ArrayAccess,
+  typed/uninitialized property behavior, exact warning/visibility diagnostics,
+  recursion edge-case fidelity, references/copy-on-write, or native lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9626,8 +9640,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b95e24f6 runtime: add direct reference cells`, covering Milestone 1005
-  before the current Milestone 1006 candidate.
+  `b74c6906 runtime: return mysqli empty results`, covering Milestone 1006
+  before the current Milestone 1007 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

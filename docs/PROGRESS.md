@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1007, bounded magic property reads and `isset`/`empty`
+  checks for missing direct object properties. Ordinary `$object->name` reads
+  now call a visible non-static `__get($name)` when the visible slot is
+  missing, while existing visible slots still read directly. Direct
+  `isset($object->name)` calls visible non-static `__isset($name)` for missing
+  slots, and direct `empty($object->name)` follows the current PHP-shaped
+  sequence for missing slots: call `__isset($name)`, return empty when it is
+  false or absent, and call `__get($name)` only when `__isset` is truthy.
+  This is not dynamic property-name magic, array-offset/object-dimension magic,
+  `__set`, `__unset`, `__call`, typed/uninitialized property behavior,
+  ArrayAccess, exact PHP warning/visibility diagnostics, recursion edge-case
+  fidelity, references/copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test object_model magic_get_and_isset_run_for_missing_direct_properties -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1007`.
+
 - Added Milestone 1006, PHP-shaped empty `mysqli_result` placeholders for
   exact WordPress options-table and metadata reads through direct
   `mysqli_query()`. The same known empty-result machinery already used by

@@ -986,7 +986,12 @@ MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
 metadata read placeholders from `false` boundaries into PHP-shaped empty
 `mysqli_result` objects with zero rows, while still avoiding any claim of host
 database execution, real table/schema reads, field metadata, warning/error
-fidelity, mutation SQL, mysqlnd behavior, or native lowering. Milestone 833
+fidelity, mutation SQL, mysqlnd behavior, or native lowering. Milestone 1007
+adds bounded direct missing-property `__get`/`__isset` dispatch for ordinary
+reads, `isset($object->name)`, and `empty($object->name)`, while leaving
+dynamic property-name magic, object-dimension magic, `__set`, `__unset`,
+`__call`, ArrayAccess, typed/uninitialized properties, exact warning behavior,
+references/copy-on-write, and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct

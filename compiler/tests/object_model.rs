@@ -914,6 +914,62 @@ if (empty($missing->name)) {
 }
 
 #[test]
+fn magic_get_and_isset_run_for_missing_direct_properties() {
+    let source = r#"<?php
+class Bag {
+    public $name = "declared";
+
+    public function __get($property) {
+        echo "get:$property\n";
+        if ($property === "count") {
+            return 0;
+        }
+        return "value:" . $property;
+    }
+
+    public function __isset($property) {
+        echo "isset:$property\n";
+        return $property === "title" || $property === "count";
+    }
+}
+
+$bag = new Bag();
+echo $bag->name, "\n";
+echo $bag->title, "\n";
+echo isset($bag->name) ? "name:set\n" : "name:unset\n";
+echo isset($bag->title) ? "title:set\n" : "title:unset\n";
+echo isset($bag->missing) ? "missing:set\n" : "missing:unset\n";
+echo empty($bag->title) ? "title:empty\n" : "title:not-empty\n";
+echo empty($bag->count) ? "count:empty\n" : "count:not-empty\n";
+echo empty($bag->missing) ? "missing:empty" : "missing:not-empty";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "declared\n",
+            "get:title\n",
+            "value:title\n",
+            "name:set\n",
+            "isset:title\n",
+            "title:set\n",
+            "isset:missing\n",
+            "missing:unset\n",
+            "isset:title\n",
+            "get:title\n",
+            "title:not-empty\n",
+            "isset:count\n",
+            "get:count\n",
+            "count:empty\n",
+            "isset:missing\n",
+            "missing:empty",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

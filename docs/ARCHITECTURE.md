@@ -197,7 +197,8 @@ through aliases, preserve lingering loop-variable references, or implement PHP
 copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
-  semantics, magic methods, typed/default property compatibility, broader
+  semantics, magic methods beyond the current direct missing-property
+  `__get`/`__isset` slice, typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, exact nested declaration timing, and
   exact PHP object lifecycle behavior
@@ -1402,7 +1403,8 @@ unsupported.
 Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
-object property reads/writes including dynamic property-name forms, instance method calls, and
+object property reads/writes including dynamic property-name and magic-property
+forms, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct
 string-name metadata-exists false-folding slice and string/string

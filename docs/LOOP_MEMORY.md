@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b74c6906 runtime: return mysqli empty results`, pushed to `origin/master`.
+- Task attempted: Milestone 1007, bounded direct missing-property magic for
+  ordinary object-property reads, `isset($object->name)`, and
+  `empty($object->name)`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1007/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model magic_get_and_isset_run_for_missing_direct_properties -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1007`
+  passed.
+- Current WordPress frontier: object code that uses direct missing-property
+  `__get`/`__isset` now has a PHP-compared interpreter path instead of an
+  immediate undefined-property or false/empty shortcut.
+- Remaining semantic gaps: dynamic property-name magic, object-dimension
+  magic, `__set`, `__unset`, `__call`, ArrayAccess, typed/uninitialized
+  property behavior, exact PHP warning/visibility diagnostics, recursion
+  edge-case fidelity, references/copy-on-write, and native lowering remain
+  missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b95e24f6 runtime: add direct reference cells`, pushed to `origin/master`.
 - Task attempted: Milestone 1006, direct `mysqli_query()` now returns
   deterministic empty `mysqli_result` placeholders for exact reached
