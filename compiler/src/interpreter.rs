@@ -1755,6 +1755,15 @@ impl Interpreter {
                 scope.write_static(name, Value::Array(array));
                 Ok(())
             }
+            Some(Value::Object(object)) => {
+                self.call_array_access_method(
+                    object,
+                    "offsetUnset",
+                    vec![Self::array_key_value(Some(key))],
+                    span,
+                )?;
+                Ok(())
+            }
             Some(Value::Null) | None => Ok(()),
             Some(other) => Err(runtime_error(
                 span,
@@ -2775,6 +2784,16 @@ impl Interpreter {
 
                 if matches!(slot, Value::Null) {
                     slot = Value::Array(PhpArray::new());
+                }
+
+                if let Value::Object(object) = slot {
+                    self.call_array_access_method(
+                        object,
+                        "offsetSet",
+                        vec![Self::array_key_value(key), value.clone()],
+                        *span,
+                    )?;
+                    return Ok(value);
                 }
 
                 match &mut slot {
@@ -6685,6 +6704,12 @@ impl Interpreter {
                     RuntimeError::undefined_array_key(key.diagnostic_key()),
                 )
             }),
+            Value::Object(object) => self.call_array_access_method(
+                object,
+                "offsetGet",
+                vec![Self::array_key_value(Some(key))],
+                span,
+            ),
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
@@ -6770,6 +6795,22 @@ impl Interpreter {
                 .get(key)
                 .cloned()
                 .filter(|value| !matches!(value, Value::Null))),
+            Some(Value::Object(object))
+                if self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                if !self.array_access_offset_exists(object.clone(), key.clone(), index.span())? {
+                    return Ok(None);
+                }
+                Ok(Some(self.call_array_access_method(
+                    object,
+                    "offsetGet",
+                    vec![Self::array_key_value(Some(key))],
+                    index.span(),
+                )?)
+                .filter(|value| !matches!(value, Value::Null)))
+            }
             Some(_) | None => Ok(None),
         }
     }
@@ -13607,6 +13648,14 @@ impl Interpreter {
             }
 
             return match caller_scope.read_named(name) {
+                Some(Value::Object(object))
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.array_access_offset_exists(object, keys[0].clone(), target.span())
+                }
                 Some(value) => Ok(Self::array_path_isset(&value, &keys)),
                 None => Ok(false),
             };
@@ -13863,6 +13912,14 @@ impl Interpreter {
             }
 
             return match caller_scope.read_named(name) {
+                Some(Value::Object(object))
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.is_array_access_offset_empty(object, keys[0].clone(), target.span())
+                }
                 Some(value) => Ok(Self::array_path_empty(&value, &keys)),
                 None => Ok(true),
             };
@@ -13980,6 +14037,82 @@ impl Interpreter {
         Ok(self
             .evaluate_late_static_property_for_null_coalescing(property, span)?
             .map_or(true, |value| !value.is_truthy()))
+    }
+
+    fn array_key_value(key: Option<ArrayKey>) -> Value {
+        match key {
+            Some(ArrayKey::Int(value)) => Value::Int(value),
+            Some(ArrayKey::String(value)) => Value::String(value),
+            None => Value::Null,
+        }
+    }
+
+    fn call_array_access_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "object of class {} does not implement ArrayAccess",
+                    object.class_name()
+                )),
+            ));
+        }
+
+        self.call_magic_instance_method_with_values(object, method_name, args, span)?
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ArrayAccess::{method_name}()"),
+                        "ArrayAccess objects must declare the required offset method in the current subset",
+                    ),
+                )
+            })
+    }
+
+    fn array_access_offset_exists(
+        &mut self,
+        object: PhpObject,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<bool> {
+        Ok(self
+            .call_array_access_method(
+                object,
+                "offsetExists",
+                vec![Self::array_key_value(Some(key))],
+                span,
+            )?
+            .is_truthy())
+    }
+
+    fn is_array_access_offset_empty(
+        &mut self,
+        object: PhpObject,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if !self.array_access_offset_exists(object.clone(), key.clone(), span)? {
+            return Ok(true);
+        }
+
+        Ok(!self
+            .call_array_access_method(
+                object,
+                "offsetGet",
+                vec![Self::array_key_value(Some(key))],
+                span,
+            )?
+            .is_truthy())
     }
 
     fn object_to_string_with_magic(

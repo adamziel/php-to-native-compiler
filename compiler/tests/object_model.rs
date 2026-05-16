@@ -1175,6 +1175,61 @@ echo $box->text;
 }
 
 #[test]
+fn array_access_offsets_dispatch_to_user_methods() {
+    let source = r#"<?php
+class Bag implements ArrayAccess {
+    public $items = [];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        echo "exists:$offset\n";
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        echo "get:$offset\n";
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:" . ($offset === null ? "null" : $offset) . ":$value\n";
+        if ($offset === null) {
+            $this->items[] = $value;
+        } else {
+            $this->items[$offset] = $value;
+        }
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        echo "unset:$offset\n";
+        unset($this->items[$offset]);
+    }
+}
+
+$bag = new Bag();
+$bag["name"] = "Ada";
+echo $bag["name"], "\n";
+echo isset($bag["name"]) ? "isset\n" : "missing\n";
+echo empty($bag["name"]) ? "empty\n" : "not-empty\n";
+echo $bag["missing"] ?? "fallback", "\n";
+unset($bag["name"]);
+echo isset($bag["name"]) ? "isset\n" : "missing\n";
+$bag[] = "tail";
+echo $bag[0];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "set:name:Ada\nget:name\nAda\nexists:name\nisset\nexists:name\nget:name\nnot-empty\nexists:missing\nfallback\nunset:name\nexists:name\nmissing\nset:null:tail\nget:0\ntail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

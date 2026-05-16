@@ -1224,7 +1224,13 @@ concat compound assignment `.=` over current supported compound-assignment
 targets while leaving `Stringable` metadata, object interpolation, heredoc
 conversion, exact non-string-return `TypeError` objects, references/
 copy-on-write aliasing during read-modify-write, and native lowering explicit
-gaps.
+gaps. Milestone 1014 adds bounded direct object-offset `ArrayAccess` dispatch
+for classes that declare `implements ArrayAccess`, covering direct
+read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while
+leaving nested/mixed object-property/ArrayAccess paths, compound assignment,
+increment/decrement, iteration, built-in interface enforcement/signature
+validation, typed method invocation, references/copy-on-write, exact
+diagnostics, and native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

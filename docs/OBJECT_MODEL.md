@@ -394,7 +394,8 @@ non-public constructor access beyond the current constructor slice, dynamic
 method names, dynamic property-name forms beyond existing public slots and
 `stdClass` public dynamic slots,
 property assignment targets other than a direct variable, object comparisons,
-object callables, array-offset `isset` operands, non-public property `isset`
+object callables, ArrayAccess beyond current direct object-offset
+read/write/append/isset/empty/`??`/unset forms, non-public property `isset`
 operands outside the current private/protected method context, complex object-property `isset`
 operands, dynamic property-name `empty` operands, non-public property
 visibility context for `empty` outside the current private/protected method context, complex

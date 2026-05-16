@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1014, bounded direct object-offset `ArrayAccess` dispatch
+  for classes that declare `implements ArrayAccess` in the current class
+  metadata slice. Direct `$object[$key]` reads call visible non-static
+  `offsetGet($key)`, direct `$object[$key] = $value` and `$object[] = $value`
+  call `offsetSet($key_or_null, $value)`, direct `isset($object[$key])` and
+  `??` checks call `offsetExists($key)` and fetch with `offsetGet($key)` only
+  when needed, direct `empty($object[$key])` calls `offsetExists($key)` and
+  then `offsetGet($key)` when present, and direct `unset($object[$key])` calls
+  `offsetUnset($key)`. This is not nested/mixed object-property/ArrayAccess
+  paths, ArrayAccess compound assignment or increment/decrement, ArrayAccess
+  iteration, built-in interface enforcement/signature validation, typed method
+  invocation, exact PHP warning/visibility diagnostics, references/
+  copy-on-write aliasing, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model array_access_offsets_dispatch_to_user_methods -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1014`.
+
 - Added Milestone 1013, bounded object string conversion for concat compound
   assignment through visible non-static `__toString()`. The shared compound
   assignment path now dispatches `__toString()` for `.=` on direct variables,

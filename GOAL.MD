@@ -1107,9 +1107,9 @@ Full WordPress support is still missing at several layers:
    namespace/import forms, and version-specific parse/runtime behavior.
 3. Object model: full constructors/inheritance, interfaces, traits, enums,
    magic methods beyond the current bounded `__get`/`__isset`/`__set`/
-   `__unset`/`__call`/`__callStatic`/direct-`__toString` slices, dynamic
-   properties/methods, typed properties and property defaults beyond the
-   current constant-expression subset,
+   `__unset`/`__call`/`__callStatic`/direct-`__toString` and direct
+   `ArrayAccess` offset slices, dynamic properties/methods, typed properties
+   and property defaults beyond the current constant-expression subset,
    reflection, cloning/destructors, late static binding, and exact visibility
    behavior.
 4. Error model: warnings/notices/deprecations, recoverable errors, `@`
@@ -1437,6 +1437,10 @@ Scope:
 - object conversion beyond the current direct `__toString()` echo/print/cast/
   concat/`.=` slice, including `Stringable` metadata, interpolation, heredoc,
   and exact PHP error behavior;
+- object protocol behavior beyond the current direct `ArrayAccess`
+  read/write/append/isset/empty/`??`/unset slice, including nested/mixed paths,
+  compound assignment, increment/decrement, iteration, signature enforcement,
+  exact diagnostics, references/copy-on-write, and native lowering;
 - inheritance after the single-class model is stable.
 
 Exit criteria:
@@ -1612,11 +1616,11 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1013 is the active checkpoint candidate: visible non-static
-  `__toString()` now also runs for concat compound assignment `.=` over
-  supported compound-assignment targets while object interpolation, heredoc
-  conversion, `Stringable` metadata, exact error objects, references/
-  copy-on-write, and native lowering remain open.
+- Milestone 1014 is the active checkpoint candidate: direct object-offset
+  `ArrayAccess` dispatch now covers direct read/write/append, `isset`,
+  `empty`, `??`, and `unset` offset contexts while nested/mixed paths,
+  compound assignment, increment/decrement, iteration, exact diagnostics,
+  references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `2e341a07 runtime: add magic concat assignment`, pushed to `origin/master`.
+- Task attempted: Milestone 1014, bounded direct object-offset `ArrayAccess`
+  dispatch for classes whose metadata records `implements ArrayAccess`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1014/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model array_access_offsets_dispatch_to_user_methods -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1014`
+  passed.
+- Current WordPress frontier: direct object-offset access on current
+  `ArrayAccess` classes can now dispatch `offsetGet`, `offsetSet`,
+  `offsetExists`, and `offsetUnset` instead of treating object offsets as
+  ordinary invalid array access.
+- Remaining semantic gaps: nested/mixed object-property/ArrayAccess paths,
+  ArrayAccess compound assignment and increment/decrement, ArrayAccess
+  iteration, built-in interface enforcement/signature validation, typed method
+  invocation, exact diagnostics, references/copy-on-write, and native lowering
+  remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `94dfcf5d runtime: add magic string conversion`, pushed to `origin/master`.
 - Task attempted: Milestone 1013, bounded object string conversion through
   visible non-static `__toString()` for concat compound assignment `.=` over

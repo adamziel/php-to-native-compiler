@@ -9713,6 +9713,22 @@ handled.
   add the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+- [x] Object semantics lane: add bounded direct object-offset `ArrayAccess`
+  dispatch for classes that record `implements ArrayAccess` in current class
+  metadata.
+  Milestone 1014 covers direct `$object[$key]` reads, direct writes and append
+  writes, direct `isset`, `empty`, `??`, and `unset` offset contexts by
+  dispatching visible non-static `offsetGet`, `offsetSet`, `offsetExists`, and
+  `offsetUnset` methods. This is not nested/mixed object-property/ArrayAccess
+  paths, ArrayAccess compound assignment or increment/decrement, ArrayAccess
+  iteration, built-in interface enforcement/signature validation, typed method
+  invocation, exact diagnostics, references/copy-on-write, or native lowering.
+- [ ] Object semantics lane: inspect the next object protocol gap from the
+  audited PHP/WordPress surface, such as nested ArrayAccess paths,
+  ArrayAccess compound assignment, object interpolation, `__clone` dispatch,
+  destructors, or inaccessible-member magic fidelity, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9724,8 +9740,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `94dfcf5d runtime: add magic string conversion`, covering Milestone 1012
-  before the current Milestone 1013 candidate.
+  `2e341a07 runtime: add magic concat assignment`, covering Milestone 1013
+  before the current Milestone 1014 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -113,6 +113,18 @@
   current ordered array. It reads numeric keys `0..n`, evaluates the right-hand
   side once before writes, assigns targets left to right, and assigns `null` for
   missing numeric offsets without emitting PHP's warning/notice yet.
+- direct object-offset `ArrayAccess` over current object variables whose class
+  metadata records `implements ArrayAccess`. Direct reads call visible
+  non-static `offsetGet($key)`, direct writes and append writes call
+  `offsetSet($key_or_null, $value)`, direct `isset($object[$key])` and `??`
+  call `offsetExists($key)` and fetch with `offsetGet($key)` only when needed,
+  direct `empty($object[$key])` calls `offsetExists($key)` then `offsetGet`
+  for present offsets, and direct `unset($object[$key])` calls
+  `offsetUnset($key)`. Nested/mixed object-property/ArrayAccess paths,
+  ArrayAccess compound assignment and increment/decrement, ArrayAccess
+  iteration, built-in interface enforcement/signature validation, typed method
+  invocation, references/copy-on-write, exact warning/visibility diagnostics,
+  and native lowering remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name %= expr`,
   `$name .= expr`, `$name &= expr`, `$name |= expr`, `$name ^= expr`,
@@ -480,8 +492,8 @@
 - direct object-property array-offset `isset(...)` paths such as
   `isset($object->items[$outer][$inner])` over visible array-valued properties
   and the current integer/string key subset. Missing/null/non-array path
-  components return false; dynamic property paths, ArrayAccess, references,
-  copy-on-write, and native lowering remain unsupported.
+  components return false; dynamic property paths, nested/mixed ArrayAccess,
+  references, copy-on-write, and native lowering remain unsupported.
 - `empty($name)`, `empty($array[$key])`, nested direct-variable array-offset
   paths such as `empty($array[$outer][$inner])`,
   `empty($object->publicProperty)`, direct object-property array-offset paths
