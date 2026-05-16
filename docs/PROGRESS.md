@@ -18,7 +18,9 @@ Implemented:
   `cargo test -p php_runtime array_slot_lookup_helpers_expose_entry_storage_without_aliasing -- --test-threads=1`,
   `cargo test -p php_runtime -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `14487d56 runtime: add array slot lookup helpers`.
 
 - Added Milestone 1057, an explicit clone-by-value `ArraySlot` wrapper for
   PHP array entries. `ArrayEntry` now stores an `ArraySlot` rather than a raw

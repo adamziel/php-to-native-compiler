@@ -10253,7 +10253,7 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `bcd5f929 runtime: add array slot value wrapper`, covering Milestone 1057.
+  `14487d56 runtime: add array slot lookup helpers`, covering Milestone 1058.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

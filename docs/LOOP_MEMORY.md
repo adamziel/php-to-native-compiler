@@ -32,14 +32,17 @@ injects this file into every prompt. Each Codex pass should update it with:
   `c59eb0af docs: record array slot wrapper gate`, pushed to `origin/master`.
 - Task attempted: Milestone 1058, explicit normalized-key array slot lookup
   helpers on top of `ArraySlot`.
-- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+- Files changed: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
   `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime array_slot_lookup_helpers_expose_entry_storage_without_aliasing -- --test-threads=1`
   passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
   with 109 tests. `cargo check -p php_runtime -p phpc`,
-  `cargo fmt --check`, and `git diff --check` passed.
+  `cargo fmt --check`, and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1269 fixture tests, 714 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `14487d56 runtime: add array slot lookup helpers`.
 - Current WordPress frontier: PHP arrays now have an explicit normalized-key
   slot lookup boundary over `ArraySlot`, so future array-offset reference work
   can target storage objects instead of searching entries ad hoc.
