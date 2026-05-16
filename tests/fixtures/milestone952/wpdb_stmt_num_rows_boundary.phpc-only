@@ -1,0 +1,6 @@
+This fixture exercises phpc's explicit MySQLi statement row-count boundary
+through a WordPress-shaped `wpdb` method. System PHP would require a real
+mysqli statement object, buffered statement result state, and statement
+row-count metadata; phpc only records the reached `mysqli_stmt_num_rows()`
+boundary with a stable unsupported diagnostic and does not implement host
+database state.

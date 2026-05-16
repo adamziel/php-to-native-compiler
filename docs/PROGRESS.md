@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 952, synthetic WordPress-shaped `wpdb` prepared-statement
+  result/cursor smokes that reach the explicit
+  `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and
+  `mysqli_stmt_fetch()` boundaries through `wpdb`-style methods. These are
+  harness smokes only; they do not add statement object allocation, buffered
+  result storage, cursor/fetch state, bound result variables, result-row
+  materialization, statement row-count metadata, host database execution, PHP
+  warning/error fidelity, or native database lowering. Focused verification
+  so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone952`.
+
 - Added Milestone 951, explicit MySQLi statement result/cursor boundaries for
   `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and
   `mysqli_stmt_fetch()`. The runtime exposes the names through

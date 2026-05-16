@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone952/wpdb_stmt_fetch_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone952/wpdb_stmt_fetch_boundary.php:12:16: unsupported call mysqli_stmt_fetch(): mysqli statement objects, bound result buffers, cursor advancement, and host database rows are not implemented in the current subset
+--- stderr end ---

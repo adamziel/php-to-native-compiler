@@ -8883,19 +8883,30 @@ handled.
   result storage, statement row-count metadata, cursor advancement, bound
   result buffers, host database rows, warning/error fidelity, or native
   lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement
   result/cursor smokes that reach the explicit `mysqli_stmt_store_result()`,
   `mysqli_stmt_num_rows()`, or `mysqli_stmt_fetch()` boundary through
   WordPress-shaped methods without claiming statement objects, buffered result
   storage, cursor/fetch state, bound result variables, result-row
   materialization, statement row-count metadata, host database state,
   warning/error fidelity, or native lowering.
+  Milestone 952 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and
+  `mysqli_stmt_fetch()` unsupported diagnostics through WordPress-shaped
+  methods. These are not statement object allocation, buffered result storage,
+  cursor/fetch state, bound result variables, result-row materialization,
+  statement row-count metadata, host database state, warning/error fidelity,
+  or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+  output-binding boundary after result/cursor visibility, such as
+  `mysqli_stmt_bind_result()` callable metadata and explicit unsupported
+  diagnostics, before claiming broader prepared statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `eab379b tests: add wordpress wpdb stmt metadata smokes`, covering
-  Milestone 950 before the current Milestone 951 candidate.
+  `8067b32 runtime: add mysqli stmt result cursor boundaries`, covering
+  Milestone 951 before the current Milestone 952 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

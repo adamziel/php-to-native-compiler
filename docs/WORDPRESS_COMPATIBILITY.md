@@ -1601,7 +1601,12 @@ historical blockers and remaining full-support gaps include:
   metadata and stable unsupported diagnostics, without statement object
   allocation, buffered result storage, statement row-count metadata, cursor
   advancement, bound result buffers, host database rows, warning/error
-  fidelity, or native database lowering.
+  fidelity, or native database lowering. Milestone 952 wires those boundaries
+  through synthetic WordPress-shaped `wpdb` result/cursor methods without
+  claiming statement objects, buffered result storage, cursor/fetch state,
+  bound result variables, result-row materialization, statement row-count
+  metadata, host database state, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
