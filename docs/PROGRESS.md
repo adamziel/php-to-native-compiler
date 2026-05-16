@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1083, a bounded `file_get_contents('php://input')`
+  request-body placeholder for the reached WordPress XML-RPC entry flow. The
+  interpreter now exposes `file_get_contents()` through function/callability
+  metadata, accepts exactly one string path, returns an empty string for the
+  `php://input` wrapper, and keeps local filesystem reads plus other stream
+  wrappers as explicit unsupported-call boundaries. Direct native calls still
+  reject under the function-call boundary. This does not implement real
+  request body state, stream contexts, offsets/lengths, include paths, local
+  filesystem reads, warning fidelity, `open_basedir`, or native lowering.
+  Verification so far:
+  `cargo test -p phpc --test file_get_contents_builtin -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1083 --compare-php`,
+  `cargo check -p php_runtime -p phpc`, `git diff --check`, and
+  `cargo run -q -p phpc -- run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/xmlrpc.php`,
+  which exited 0 with no stdout/stderr under the current deterministic
+  placeholder assumptions.
+
 - Added Milestone 1082, a bounded dynamic variable class-name instantiation
   slice for the reached WordPress XML-RPC parse blocker. `new $class(...)` now
   parses when the class name is a direct variable, requires that variable to

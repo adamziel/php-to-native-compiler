@@ -14975,6 +14975,36 @@ impl Interpreter {
                     )),
                 }
             }
+            "file_get_contents" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) if path == "php://input" => Ok(Value::String(String::new())),
+                    Value::String(path) if path.contains("://") => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "file_get_contents()",
+                            "only php://input is supported in the current stream-wrapper subset",
+                        ),
+                    )),
+                    Value::String(_) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "file_get_contents()",
+                            "local filesystem reads are not implemented in the current subset",
+                        ),
+                    )),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "file_get_contents()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "is_dir" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -18288,6 +18318,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
+            | "file_get_contents"
             | "is_dir"
             | "is_readable"
             | "register_shutdown_function"

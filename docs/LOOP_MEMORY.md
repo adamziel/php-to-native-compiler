@@ -26,6 +26,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:50:00Z
+
+- Checkpoint before this task:
+  `d4aa5a2e docs: record dynamic variable class gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1083, bounded `file_get_contents('php://input')`
+  empty request-body placeholder for the reached WordPress XML-RPC runtime
+  blocker.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/file_get_contents_builtin.rs`,
+  `tests/fixtures/milestone1083/file_get_contents_php_input.*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `cargo test -p phpc --test file_get_contents_builtin --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1083 --compare-php`, `cargo check -p php_runtime -p
+  phpc`, and `git diff --check` passed. The local WordPress 6.9.4 `xmlrpc.php`
+  probe exited 0 with no stdout/stderr under current deterministic placeholder
+  assumptions.
+- Remaining semantic gaps: real request body state, stream contexts,
+  offsets/lengths, include-path lookup, local filesystem reads, warning
+  fidelity, `open_basedir`, real XML-RPC request handling, and native lowering
+  remain missing.
+- Next concrete task: run the serialized checkpoint gate for Milestone 1083 if
+  the tree stays coherent.
+
 ## Loop Event 2026-05-16T23:25:00Z
 
 - Checkpoint before this task:

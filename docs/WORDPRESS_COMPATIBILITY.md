@@ -97,6 +97,12 @@ instantiation shape and now reaches runtime blocker
 operator-supplied measurement, not a committed WordPress source fixture and not
 a claim of real XML-RPC request handling.
 
+After Milestone 1083, that `xmlrpc.php` entrypoint exits `0` with no
+stdout/stderr under the current deterministic placeholder database/request/SAPI
+assumptions after `file_get_contents('php://input')` returns an empty request
+body. This is still an operator-supplied measurement, not a committed WordPress
+source fixture and not a claim of real XML-RPC request handling.
+
 The committed synthetic harness is exercised by:
 
 ```sh

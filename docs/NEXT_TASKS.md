@@ -10522,12 +10522,12 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1082: WordPress XML-RPC Dynamic Class Name
+## Milestone 1083: WordPress XML-RPC Request Body Placeholder
 
-- [x] Object/runtime lane: add bounded direct-variable dynamic class-name
-  instantiation for `new $class(...)`, preserving the existing constructor and
-  undefined-class behavior while keeping arbitrary dynamic expressions and
-  native object lowering unsupported.
+- [x] Runtime/builtin lane: add a bounded `file_get_contents('php://input')`
+  empty request-body placeholder for the reached WordPress XML-RPC CLI probe,
+  while keeping local filesystem reads, other stream wrappers, contexts,
+  offsets/lengths, and native lowering unsupported.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object copied reference slots, remaining by-reference `foreach`
   fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
@@ -10536,10 +10536,10 @@ handled.
   native lowering boundaries, and add the next bounded behavior or explicit
   diagnostic with PHP comparison coverage where applicable.
 - [ ] WordPress entry-flow lane: choose the next real entry blocker from a
-  stricter XML-RPC `file_get_contents('php://input')` trace, REST/front
-  controller request state, cron/request/SAPI fidelity, or a stricter
-  admin/AJAX trace, and keep the probe documented as an external measurement
-  unless a normalized fixture is added.
+  stricter XML-RPC request-body trace, REST/front controller request state,
+  cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
+  probe documented as an external measurement unless a normalized fixture is
+  added.
 
 ## Latest Completed Checkpoint
 

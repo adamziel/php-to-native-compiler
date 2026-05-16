@@ -169,7 +169,11 @@ bounded direct-variable dynamic class-name instantiation for
 `new $wp_xmlrpc_server_class()`, moving the local real WordPress 6.9.4
 `xmlrpc.php` probe from a parse blocker to the next runtime blocker:
 undefined `file_get_contents('php://input')`, without claiming real XML-RPC
-request handling. Milestones 854 through 862 then moved the database-consumption smoke from an explicit
+request handling. The next XML-RPC slice added a bounded
+`file_get_contents('php://input')` empty request-body placeholder, after which
+the same local `xmlrpc.php` probe exits `0` with no stdout/stderr under current
+placeholder assumptions, still without claiming real XML-RPC request handling.
+Milestones 854 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
 synthetic `wpdb::get_results()` harnesses for those row shapes, including a

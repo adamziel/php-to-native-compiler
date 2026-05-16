@@ -6523,6 +6523,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
+            | "file_get_contents"
             | "is_dir"
             | "is_readable"
             | "register_shutdown_function"
