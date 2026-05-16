@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `011c241 tests: add wordpress wpdb stmt bind execute smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 947, explicit MySQLi statement result/cleanup
+  boundaries for `mysqli_stmt_get_result()` and `mysqli_stmt_close()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone947/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone947`;
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement result/cleanup APIs
+  will now produce stable diagnostics instead of generic unknown call
+  behavior.
+- Remaining semantic gaps: statement object allocation, mysqlnd result
+  transfer, result metadata, statement cleanup/lifecycle state, host database
+  execution, warnings/errors, and native database lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, add a synthetic WordPress-shaped `wpdb` result/cleanup
+  boundary smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `3460aa9 runtime: add mysqli stmt bind execute boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 946, synthetic WordPress-shaped `wpdb`

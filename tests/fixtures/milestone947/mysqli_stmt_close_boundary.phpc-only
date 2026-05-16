@@ -1,0 +1,4 @@
+This fixture exercises phpc's explicit MySQLi statement close boundary. System
+PHP would require a real mysqli statement object and statement resource
+cleanup; phpc only exposes `mysqli_stmt_close()` through callable metadata and
+reports a stable unsupported diagnostic when cleanup is reached.

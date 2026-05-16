@@ -1,0 +1,5 @@
+This fixture exercises phpc's explicit MySQLi statement result boundary.
+System PHP would require a real mysqli statement object and mysqlnd result
+transfer; phpc only exposes `mysqli_stmt_get_result()` through callable
+metadata and reports a stable unsupported diagnostic when result
+materialization is reached.

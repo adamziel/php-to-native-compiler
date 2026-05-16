@@ -520,6 +520,62 @@ mysqli_stmt_execute($stmt);
 }
 
 #[test]
+fn mysqli_statement_result_and_close_are_visible_but_explicit_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$get_result = "mysqli_stmt_get_result";
+$close = "mysqli_stmt_close";
+echo function_exists($get_result) ? "yes" : "no";
+echo "|";
+echo is_callable($get_result) ? "result-callable" : "result-missing";
+echo "|";
+echo function_exists($close) ? "close-exists" : "close-missing";
+echo "|";
+echo is_callable($close) ? "close-callable" : "close-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|result-callable|close-exists|close-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let result_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_get_result($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(result_error.phase, Phase::Runtime);
+    assert_eq!(result_error.line, 3);
+    assert_eq!(result_error.column, 1);
+    assert_eq!(
+        result_error.message,
+        "unsupported call mysqli_stmt_get_result(): mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset"
+    );
+
+    let close_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_close($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(close_error.phase, Phase::Runtime);
+    assert_eq!(close_error.line, 3);
+    assert_eq!(close_error.column, 1);
+    assert_eq!(
+        close_error.message,
+        "unsupported call mysqli_stmt_close(): mysqli statement objects, statement resource cleanup, and statement lifecycle state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -2764,6 +2820,10 @@ echo function_exists("mysqli_stmt_bind_param") ? "1" : "0";
 echo is_callable("mysqli_stmt_bind_param") ? "1" : "0";
 echo function_exists("mysqli_stmt_execute") ? "1" : "0";
 echo is_callable("mysqli_stmt_execute") ? "1" : "0";
+echo function_exists("mysqli_stmt_get_result") ? "1" : "0";
+echo is_callable("mysqli_stmt_get_result") ? "1" : "0";
+echo function_exists("mysqli_stmt_close") ? "1" : "0";
+echo is_callable("mysqli_stmt_close") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -2862,7 +2922,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 150, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 154, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3170,6 +3230,30 @@ mysqli_stmt_bind_param(mysqli_init(), "s", $value);
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_execute(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_get_result(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_close(mysqli_init());
 "#,
     )
     .unwrap_err();

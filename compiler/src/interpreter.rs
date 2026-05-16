@@ -4548,6 +4548,28 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_get_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_get_result", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_get_result()",
+                "mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_close(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_close", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_close()",
+                "mysqli statement objects, statement resource cleanup, and statement lifecycle state are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9758,6 +9780,8 @@ impl Interpreter {
             "mysqli_prepare" => self.call_mysqli_prepare(&args, span),
             "mysqli_stmt_bind_param" => self.call_mysqli_stmt_bind_param(&args, span),
             "mysqli_stmt_execute" => self.call_mysqli_stmt_execute(&args, span),
+            "mysqli_stmt_get_result" => self.call_mysqli_stmt_get_result(&args, span),
+            "mysqli_stmt_close" => self.call_mysqli_stmt_close(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12732,6 +12756,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_prepare"
             | "mysqli_stmt_bind_param"
             | "mysqli_stmt_execute"
+            | "mysqli_stmt_get_result"
+            | "mysqli_stmt_close"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

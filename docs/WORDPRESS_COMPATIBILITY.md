@@ -1576,7 +1576,12 @@ historical blockers and remaining full-support gaps include:
   `wpdb` bind/execute methods without claiming statement objects,
   by-reference binding, type-string validation, statement execution, result
   state, host database state, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 947 adds explicit
+  `mysqli_stmt_get_result()`/`mysqli_stmt_close()` statement result/cleanup
+  boundaries with callable metadata and stable unsupported diagnostics,
+  without statement object allocation, mysqlnd result transfer, result
+  metadata, resource cleanup, lifecycle state, host database execution,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

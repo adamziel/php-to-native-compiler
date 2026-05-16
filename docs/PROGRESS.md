@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 947, explicit MySQLi statement result/cleanup boundaries
+  for `mysqli_stmt_get_result()` and `mysqli_stmt_close()`. The runtime
+  exposes both names through function/callability metadata, validates arity
+  for the one-argument signatures, and reports stable unsupported diagnostics
+  when result materialization or statement cleanup is reached. Native metadata
+  lookup knows the names while direct native lowering remains rejected. This
+  is not statement object allocation, mysqlnd result transfer, result
+  metadata, resource cleanup, statement lifecycle state, host database
+  execution, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone947`.
+
 - Added Milestone 946, synthetic WordPress-shaped `wpdb` prepared-statement
   smokes that reach the explicit `mysqli_stmt_bind_param()` and
   `mysqli_stmt_execute()` boundaries through `wpdb`-style methods. These are

@@ -8826,17 +8826,28 @@ handled.
   allocation, by-reference binding, type-string validation, statement
   execution, result state, host database state, warning/error fidelity, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement-result API
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement-result API
   boundary after bind/execute visibility, such as
   `mysqli_stmt_get_result()`/`mysqli_stmt_close()` callable metadata and
   explicit unsupported diagnostics, before claiming broader prepared statement
   fidelity.
+  Milestone 947 exposes `mysqli_stmt_get_result()` and
+  `mysqli_stmt_close()` through callable metadata and turns reached result
+  materialization or statement cleanup calls into stable unsupported
+  diagnostics. This is not statement object allocation, mysqlnd result
+  transfer, result metadata, resource cleanup, lifecycle state, host database
+  execution, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement result
+  or cleanup smoke that reaches the explicit `mysqli_stmt_get_result()` or
+  `mysqli_stmt_close()` boundary through a WordPress-shaped method without
+  claiming statement objects, result transfer, result metadata, cleanup state,
+  host database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3460aa9 runtime: add mysqli stmt bind execute boundaries`, covering
-  Milestone 945 before the current Milestone 946 candidate.
+  `011c241 tests: add wordpress wpdb stmt bind execute smokes`, covering
+  Milestone 946 before the current Milestone 947 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

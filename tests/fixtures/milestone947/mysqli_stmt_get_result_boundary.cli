@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone947/mysqli_stmt_get_result_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone947/mysqli_stmt_get_result_boundary.php:3:1: unsupported call mysqli_stmt_get_result(): mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset
+--- stderr end ---
