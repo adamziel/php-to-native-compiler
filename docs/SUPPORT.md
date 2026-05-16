@@ -121,10 +121,13 @@
   direct `empty($object[$key])` calls `offsetExists($key)` then `offsetGet`
   for present offsets, and direct `unset($object[$key])` calls
   `offsetUnset($key)`. Nested/mixed object-property/ArrayAccess paths,
-  ArrayAccess compound assignment and increment/decrement, ArrayAccess
+  append compound assignment, ArrayAccess increment/decrement, ArrayAccess
   iteration, built-in interface enforcement/signature validation, typed method
   invocation, references/copy-on-write, exact warning/visibility diagnostics,
-  and native lowering remain unsupported.
+  and native lowering remain unsupported. Direct `$object[$key] op= expr`
+  compound assignment is supported by reading through `offsetGet($key)`,
+  applying the current compound-assignment helper, and writing the result back
+  through `offsetSet($key, $value)`.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name %= expr`,
   `$name .= expr`, `$name &= expr`, `$name |= expr`, `$name ^= expr`,

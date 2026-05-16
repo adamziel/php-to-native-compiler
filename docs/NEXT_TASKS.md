@@ -9707,12 +9707,6 @@ handled.
   object interpolation, heredoc conversion, exact non-string-return
   `TypeError` objects, references/copy-on-write aliasing during
   read-modify-write, recursion edge-case fidelity, or native lowering.
-- [ ] Object semantics lane: inspect the next object protocol gap from the
-  audited PHP/WordPress surface, such as ArrayAccess, object interpolation,
-  `__clone` dispatch, destructors, or inaccessible-member magic fidelity, and
-  add the next bounded behavior or explicit runtime boundary with tests, CLI
-  fixtures, docs, and native rejection coverage where lowering remains
-  unsupported.
 - [x] Object semantics lane: add bounded direct object-offset `ArrayAccess`
   dispatch for classes that record `implements ArrayAccess` in current class
   metadata.
@@ -9720,12 +9714,22 @@ handled.
   writes, direct `isset`, `empty`, `??`, and `unset` offset contexts by
   dispatching visible non-static `offsetGet`, `offsetSet`, `offsetExists`, and
   `offsetUnset` methods. This is not nested/mixed object-property/ArrayAccess
-  paths, ArrayAccess compound assignment or increment/decrement, ArrayAccess
+  paths, ArrayAccess increment/decrement, ArrayAccess iteration, built-in
+  interface enforcement/signature validation, typed method invocation, exact
+  diagnostics, references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded direct object-offset `ArrayAccess`
+  compound assignment for classes that record `implements ArrayAccess` in
+  current class metadata.
+  Milestone 1015 covers direct `$object[$key] op= expr` by dispatching visible
+  non-static `offsetGet($key)`, applying the current compound-assignment
+  helper, and dispatching visible non-static `offsetSet($key, $value)` for the
+  updated value. This is not nested/mixed object-property/ArrayAccess paths,
+  append compound assignment, ArrayAccess increment/decrement, ArrayAccess
   iteration, built-in interface enforcement/signature validation, typed method
   invocation, exact diagnostics, references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess paths,
-  ArrayAccess compound assignment, object interpolation, `__clone` dispatch,
+  ArrayAccess increment/decrement, object interpolation, `__clone` dispatch,
   destructors, or inaccessible-member magic fidelity, and add the next bounded
   behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
   native rejection coverage where lowering remains unsupported.
@@ -9740,8 +9744,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2e341a07 runtime: add magic concat assignment`, covering Milestone 1013
-  before the current Milestone 1014 candidate.
+  `fdb9a88a runtime: add array access offsets`, covering Milestone 1014
+  before the current Milestone 1015 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

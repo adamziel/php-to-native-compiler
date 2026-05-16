@@ -199,8 +199,8 @@ copy-on-write.
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property
   `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
-  direct object-to-string `__toString`, and direct `ArrayAccess` offset
-  slices,
+  direct object-to-string `__toString`, and direct `ArrayAccess` offset and
+  compound-assignment slices,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, exact nested declaration timing, and

@@ -1616,9 +1616,10 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1014 is the active checkpoint candidate: direct object-offset
-  `ArrayAccess` dispatch now covers direct read/write/append, `isset`,
-  `empty`, `??`, and `unset` offset contexts while nested/mixed paths,
+- Milestone 1015 is the active checkpoint candidate: direct object-offset
+  `ArrayAccess` compound assignment now covers direct `$object[$key] op= expr`
+  by reading through `offsetGet`, applying the current compound-assignment
+  helper, and writing back through `offsetSet`; nested/mixed paths, append
   compound assignment, increment/decrement, iteration, exact diagnostics,
   references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics

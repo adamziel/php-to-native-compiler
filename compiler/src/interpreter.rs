@@ -237,6 +237,10 @@ enum CompoundAssignmentPlace {
         name: String,
         key: ArrayKey,
     },
+    ArrayAccessOffset {
+        name: String,
+        key: ArrayKey,
+    },
     ObjectProperty {
         object: String,
         property: String,
@@ -3365,6 +3369,21 @@ impl Interpreter {
                             value,
                         ))
                     }
+                    Some(Value::Object(object)) => {
+                        let value = self.call_array_access_method(
+                            object,
+                            "offsetGet",
+                            vec![Self::array_key_value(Some(key.clone()))],
+                            span,
+                        )?;
+                        Ok((
+                            CompoundAssignmentPlace::ArrayAccessOffset {
+                                name: name.clone(),
+                                key,
+                            },
+                            value,
+                        ))
+                    }
                     Some(other) => Err(runtime_error(
                         span,
                         RuntimeError::invalid_array_access(format!(
@@ -3531,6 +3550,26 @@ impl Interpreter {
                 )),
                 None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
             },
+            CompoundAssignmentPlace::ArrayAccessOffset { name, key } => {
+                match scope.read_named(&name) {
+                    Some(Value::Object(object)) => self
+                        .call_array_access_method(
+                            object,
+                            "offsetSet",
+                            vec![Self::array_key_value(Some(key)), value],
+                            span,
+                        )
+                        .map(|_| ()),
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();

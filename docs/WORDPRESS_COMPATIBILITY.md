@@ -1230,7 +1230,13 @@ read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while
 leaving nested/mixed object-property/ArrayAccess paths, compound assignment,
 increment/decrement, iteration, built-in interface enforcement/signature
 validation, typed method invocation, references/copy-on-write, exact
-diagnostics, and native lowering explicit gaps.
+diagnostics, and native lowering explicit gaps. Milestone 1015 extends
+direct object-offset `ArrayAccess` to compound assignment by calling
+`offsetGet($key)`, applying the current compound operator helper, and writing
+back with `offsetSet($key, $value)`, while leaving nested/mixed
+object-property/ArrayAccess paths, append compound assignment, increment/
+decrement, iteration, references/copy-on-write, exact diagnostics, and native
+lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

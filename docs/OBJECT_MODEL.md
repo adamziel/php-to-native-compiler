@@ -395,9 +395,10 @@ method names, dynamic property-name forms beyond existing public slots and
 `stdClass` public dynamic slots,
 property assignment targets other than a direct variable, object comparisons,
 object callables, ArrayAccess beyond current direct object-offset
-read/write/append/isset/empty/`??`/unset forms, non-public property `isset`
-operands outside the current private/protected method context, complex object-property `isset`
-operands, dynamic property-name `empty` operands, non-public property
+read/write/append/isset/empty/`??`/unset and compound-assignment forms,
+non-public property `isset` operands outside the current private/protected
+method context, complex object-property `isset` operands, dynamic
+property-name `empty` operands, non-public property
 visibility context for `empty` outside the current private/protected method context, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 dynamic property names and object-property dimensions, true object-property

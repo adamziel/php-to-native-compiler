@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1015, bounded direct object-offset `ArrayAccess` compound
+  assignment. Direct `$object[$key] op= expr` now reads the current left value
+  through visible non-static `offsetGet($key)`, applies the existing compound
+  assignment operator helper, and writes the updated value back through
+  visible non-static `offsetSet($key, $value)`. The new fixture covers integer
+  addition and string concatenation forms against system PHP. This is not
+  nested/mixed object-property/ArrayAccess paths, append compound assignment,
+  ArrayAccess increment/decrement, ArrayAccess iteration, built-in interface
+  enforcement/signature validation, typed method invocation, exact PHP
+  warning/visibility diagnostics, references/copy-on-write aliasing during
+  read-modify-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model array_access_offsets_support_compound_assignment -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1015`.
+
 - Added Milestone 1014, bounded direct object-offset `ArrayAccess` dispatch
   for classes that declare `implements ArrayAccess` in the current class
   metadata slice. Direct `$object[$key]` reads call visible non-static
@@ -13,8 +28,8 @@ Implemented:
   when needed, direct `empty($object[$key])` calls `offsetExists($key)` and
   then `offsetGet($key)` when present, and direct `unset($object[$key])` calls
   `offsetUnset($key)`. This is not nested/mixed object-property/ArrayAccess
-  paths, ArrayAccess compound assignment or increment/decrement, ArrayAccess
-  iteration, built-in interface enforcement/signature validation, typed method
+  paths, ArrayAccess increment/decrement, ArrayAccess iteration, built-in
+  interface enforcement/signature validation, typed method
   invocation, exact PHP warning/visibility diagnostics, references/
   copy-on-write aliasing, or native lowering. Verification so far:
   `cargo test -p phpc --test object_model array_access_offsets_dispatch_to_user_methods -- --test-threads=1`
