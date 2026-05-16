@@ -4,13 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1022, bounded keyed compound assignment for direct
+  object-property `ArrayAccess` offsets when the visible property value is an
+  object whose metadata records `implements ArrayAccess`. Direct
+  `$holder->bag[$key] op= expr` now reads through `offsetGet($key)`, applies
+  the existing compound-assignment helper, writes back through
+  `offsetSet($key, $value)`, and preserves the expression result value. This
+  is not nested `ArrayAccess` chains, append compound assignment,
+  increment/decrement, magic-property-provided containers, ArrayAccess
+  iteration, by-reference `offsetGet()` mutation, protocol/signature
+  enforcement, exact diagnostics, references/copy-on-write, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test object_model object_property_array_access_offsets_support_compound_assignment -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1022`.
+
 - Added Milestone 1021, bounded direct object-property `ArrayAccess` append
   dispatch when the visible property value is itself an object whose metadata
   records `implements ArrayAccess`. Direct `$holder->bag[] = $value` now
   calls `offsetSet(null, $value)` on the property-held object and preserves
   the assignment expression result. This is not nested `ArrayAccess` chains,
-  keyed object-property `ArrayAccess` compound assignment,
-  increment/decrement, magic-property-provided containers, ArrayAccess
+  keyed object-property `ArrayAccess` increment/decrement,
+  magic-property-provided containers, ArrayAccess
   iteration, by-reference `offsetGet()` mutation, protocol/signature
   enforcement, exact diagnostics, references/copy-on-write, or native
   lowering. Verification so far:

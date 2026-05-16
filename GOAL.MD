@@ -1054,6 +1054,11 @@ slice through `offsetSet(null, $value)`, while leaving nested chains, keyed
 compound/increment property-held `ArrayAccess`, magic-property containers,
 iteration, protocol enforcement, exact diagnostics, references/copy-on-write,
 and native lowering explicit gaps.
+Milestone 1022 adds keyed compound assignment for that property-held
+`ArrayAccess` slice through `offsetGet($key)` plus `offsetSet($key, $value)`,
+while leaving nested chains, append compound assignment, increment/decrement,
+magic-property containers, iteration, protocol enforcement, exact diagnostics,
+references/copy-on-write, and native lowering explicit gaps.
 Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
@@ -1651,12 +1656,13 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1021 is the active checkpoint candidate: direct object-property
-  `ArrayAccess` append now covers visible property-held `ArrayAccess` objects
-  through `offsetSet(null, $value)`, while nested chains, keyed compound
-  assignment, increment/decrement, magic-property containers, iteration,
-  by-reference `offsetGet()` mutation, protocol enforcement, exact
-  diagnostics, references/copy-on-write, and native lowering remain open.
+- Milestone 1022 is the active checkpoint candidate: direct object-property
+  `ArrayAccess` keyed compound assignment now covers visible property-held
+  `ArrayAccess` objects through `offsetGet($key)` plus
+  `offsetSet($key, $value)`, while nested chains, append compound assignment,
+  increment/decrement, magic-property containers, iteration, by-reference
+  `offsetGet()` mutation, protocol enforcement, exact diagnostics,
+  references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

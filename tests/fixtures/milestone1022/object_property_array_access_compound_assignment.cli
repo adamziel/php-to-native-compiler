@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+get:n
+set:n:7
+7
+get:s
+set:s:ab
+ab
+get:n
+7:get:s
+ab
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -124,12 +124,15 @@
   `??`/`unset` dispatch is supported when a visible direct object property
   holds an `ArrayAccess` object, such as `$holder->bag[$key]`. Direct append
   writes through visible property-held `ArrayAccess` objects, such as
-  `$holder->bag[] = $value`, call `offsetSet(null, $value)`. Nested
-  `ArrayAccess` chains, compound assignment and increment/decrement through object-property
-  `ArrayAccess`, ArrayAccess iteration, built-in interface enforcement/
-  signature validation, typed method invocation, references/copy-on-write,
-  exact warning/visibility diagnostics, and native lowering remain
-  unsupported. Direct `$object[$key] op= expr`
+  `$holder->bag[] = $value`, call `offsetSet(null, $value)`. Direct
+  `$holder->bag[$key] op= expr` compound assignment is supported by reading
+  through `offsetGet($key)`, applying the current compound-assignment helper,
+  and writing the result back through `offsetSet($key, $value)`. Nested
+  `ArrayAccess` chains, append compound assignment and increment/decrement
+  through object-property `ArrayAccess`, ArrayAccess iteration, built-in
+  interface enforcement/signature validation, typed method invocation,
+  references/copy-on-write, exact warning/visibility diagnostics, and native
+  lowering remain unsupported. Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back
   through `offsetSet($key, $value)`. Direct `++$object[$key]`,

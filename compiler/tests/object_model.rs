@@ -1460,6 +1460,54 @@ echo $holder->bag[0];
 }
 
 #[test]
+fn object_property_array_access_offsets_support_compound_assignment() {
+    let source = r#"<?php
+class Bag implements ArrayAccess {
+    public $items = ["n" => 2, "s" => "a"];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        echo "get:$offset\n";
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:$offset:$value\n";
+        $this->items[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->items[$offset]);
+    }
+}
+
+class Holder {
+    public $bag;
+}
+
+$holder = new Holder();
+$holder->bag = new Bag();
+echo ($holder->bag["n"] += 5), "\n";
+echo ($holder->bag["s"] .= "b"), "\n";
+echo $holder->bag["n"], ":", $holder->bag["s"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "get:n\nset:n:7\n7\nget:s\nset:s:ab\nab\nget:n\n7:get:s\nab"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `47e3478b runtime: add object property array access append`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1022, bounded keyed compound assignment for direct
+  object-property `ArrayAccess` offsets when a visible property value is itself
+  an `ArrayAccess` object.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1022/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test object_model object_property_array_access_offsets_support_compound_assignment -- --test-threads=1`,
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1022`
+  passed.
+- Current WordPress frontier: direct visible property-held `ArrayAccess`
+  objects now support keyed compound assignment through `offsetGet($key)` and
+  `offsetSet($key, $value)`.
+- Remaining semantic gaps: nested `ArrayAccess` chains, append compound
+  assignment, increment/decrement, magic-property-provided containers,
+  ArrayAccess iteration, by-reference `offsetGet()` mutation, protocol/
+  signature enforcement, exact diagnostics, references/copy-on-write, and
+  native lowering remain missing.
+- Next concrete task: rerun diff checks and the serialized checkpoint gate
+  under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ea418ac5 runtime: add object property array access`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1021, bounded direct object-property

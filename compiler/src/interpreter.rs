@@ -241,6 +241,11 @@ enum CompoundAssignmentPlace {
         name: String,
         key: ArrayKey,
     },
+    ObjectPropertyArrayAccessOffset {
+        object: String,
+        property: String,
+        key: ArrayKey,
+    },
     ArrayAccessTemporary,
     ObjectProperty {
         object: String,
@@ -3497,6 +3502,29 @@ impl Interpreter {
                                 &protected_class_ids,
                             )
                             .map_err(|error| runtime_error(span, error))?;
+                        if let Value::Object(array_access_object) = property_value.clone() {
+                            if keys.len() == 1
+                                && self.classes.implements_interface(
+                                    array_access_object.class_id(),
+                                    "ArrayAccess",
+                                )
+                            {
+                                let left = self.call_array_access_method(
+                                    array_access_object,
+                                    "offsetGet",
+                                    vec![Self::array_key_value(Some(keys[0].clone()))],
+                                    span,
+                                )?;
+                                return Ok((
+                                    CompoundAssignmentPlace::ObjectPropertyArrayAccessOffset {
+                                        object: object.clone(),
+                                        property: property.clone(),
+                                        key: keys[0].clone(),
+                                    },
+                                    left,
+                                ));
+                            }
+                        }
                         let Value::Array(array) = property_value else {
                             return Err(runtime_error(
                                 span,
@@ -3644,6 +3672,49 @@ impl Interpreter {
                 }
             }
             CompoundAssignmentPlace::ArrayAccessTemporary => Ok(()),
+            CompoundAssignmentPlace::ObjectPropertyArrayAccessOffset {
+                object,
+                property,
+                key,
+            } => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                match scope.read_static(&object, span)? {
+                    Value::Object(object) => {
+                        let property_value = object
+                            .read_property_from_context(
+                                &property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))?;
+                        match property_value {
+                            Value::Object(array_access_object) => self
+                                .call_array_access_method(
+                                    array_access_object,
+                                    "offsetSet",
+                                    vec![Self::array_key_value(Some(key)), value],
+                                    span,
+                                )
+                                .map(|_| ()),
+                            other => Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_array_access(format!(
+                                    "cannot write offset on {}",
+                                    other.type_name()
+                                )),
+                            )),
+                        }
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
