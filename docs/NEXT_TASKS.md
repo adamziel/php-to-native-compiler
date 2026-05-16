@@ -8574,16 +8574,27 @@ handled.
   pending result tracking for `mysqli_store_result()`/`mysqli_use_result()`,
   result object creation, mutation state, host database state, warnings/errors,
   or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_real_query()` charset setup placeholder through a
   WordPress-shaped connection query method without claiming real query
   execution, pending result, or connection charset mutation fidelity.
+  Milestone 924 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_real_query()` charset setup placeholder success through
+  local query bookkeeping, then verifies clean no-pending-result
+  `mysqli_store_result()` and `mysqli_use_result()` metadata. It is not real
+  SQL execution, pending result tracking, result object creation, mutation
+  state, connection charset mutation, warnings/errors, host database state, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi execution boundary after
+  placeholder `mysqli_real_query()` bookkeeping, such as `mysqli_multi_query()`
+  or a sharper unsupported diagnostic for unsupported query/pending-result
+  state, before claiming broader SQL execution or multi-result fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `fafe694 tests: add wordpress wpdb refresh smoke`, covering Milestone 922
-  before the current Milestone 923 candidate.
+  `fe2a720 runtime: add mysqli real query placeholder`, covering Milestone 923
+  before the current Milestone 924 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -1480,7 +1480,12 @@ historical blockers and remaining full-support gaps include:
   fidelity. Milestone 923 adds deterministic `mysqli_real_query()` placeholder
   charset setup execution metadata without real query execution, pending
   result tracking, result object creation, mutation state, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 924 wires
+  that placeholder through a synthetic WordPress-shaped `wpdb` connection
+  query bookkeeping smoke without claiming real SQL execution, pending result
+  tracking, result object creation, mutation state, connection charset
+  mutation, host database state, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

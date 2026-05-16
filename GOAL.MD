@@ -216,7 +216,11 @@ host server state, connection/session mutation, PHP deprecation/warning
 fidelity, or native lowering, plus bounded deterministic `mysqli_real_query()`
 placeholder charset setup execution metadata without real query execution,
 pending result tracking, result object creation, mutation state, host database
-state, warning/error fidelity, or native lowering, plus deterministic
+state, warning/error fidelity, or native lowering, now wired through a
+synthetic WordPress-shaped `wpdb` connection query bookkeeping smoke without
+claiming real SQL execution, pending result tracking, result object creation,
+mutation state, connection charset mutation, host database state,
+warning/error fidelity, or native lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
 smoke, plus deterministic
