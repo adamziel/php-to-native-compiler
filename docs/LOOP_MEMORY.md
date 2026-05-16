@@ -43,7 +43,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test mysqli_extension mysqli_transactions_restore_current_wordpress_option_state -- --test-threads=1`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1036`,
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1035`
-  passed.
+  passed. The full checkpoint gate passed with 1251 fixture tests, 701 system
+  PHP comparisons, and 550 skipped comparisons, then committed
+  `c43b1088 runtime: add wp options transaction state`.
 - Current WordPress frontier: `mysqli_begin_transaction()` and
   `mysqli_autocommit(false)` can capture the current exact option-state
   snapshot, `mysqli_rollback()` can restore it, and `mysqli_commit()` plus
@@ -53,8 +55,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   transactions, isolation/locking, auto-increment rollback fidelity, broad SQL
   execution, host database execution, warning/error fidelity, PDO,
   references/copy-on-write, and native lowering remain missing.
-- Next concrete task: run formatting, diff checks, focused verification, then
-  the serialized checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint and continue with the next bounded
+  WordPress compatibility lane.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
