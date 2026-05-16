@@ -23,8 +23,13 @@ Implemented:
   local PHP 8.2.29 probes for object-property copied referenced slots,
   `cargo fmt --check`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
-  and `cargo run -q -p phpc -- test tests/fixtures/milestone1084
-  --compare-php`.
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1084
+  --compare-php`, `cargo check -p php_runtime -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1289
+  fixture tests, 734 system PHP comparisons, and 555 skipped PHP comparisons
+  before commit
+  `089ce8e4 runtime: preserve object property reference array copies`.
 
 - Added Milestone 1083, a bounded `file_get_contents('php://input')`
   request-body placeholder for the reached WordPress XML-RPC entry flow. The

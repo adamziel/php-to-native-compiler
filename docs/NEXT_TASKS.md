@@ -10558,8 +10558,9 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `36733d05 runtime: add php input file get contents`, covering Milestone
-  1083. The serialized checkpoint gate passed with 1288 fixture tests, 733
+  `089ce8e4 runtime: preserve object property reference array copies`,
+  covering Milestone 1084. The serialized checkpoint gate passed with 1289
+  fixture tests, 734
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations

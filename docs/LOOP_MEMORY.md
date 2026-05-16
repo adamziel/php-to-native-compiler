@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `dda05e94 docs: record php input file get contents gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `089ce8e4 runtime: preserve object property reference array copies`.
 - Task attempted: Milestone 1084, bounded object-property array-copy reference
   element metadata. A declared public object property array with a covered
   direct object-property array-offset reference target can now be copied into a
@@ -47,17 +49,20 @@ injects this file into every prompt. Each Codex pass should update it with:
   referenced slots, `cargo fmt --check`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
   and `cargo run -q -p phpc -- test tests/fixtures/milestone1084
-  --compare-php` passed.
+  --compare-php`, `cargo check -p php_runtime -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1289
+  fixture tests, 734 system PHP comparisons, and 555 skipped PHP comparisons
+  before commit
+  `089ce8e4 runtime: preserve object property reference array copies`.
 - Remaining semantic gaps: object-property reference sources such as
   `$alias =& $object->items[$key]`, dynamic/magic/non-public property
   reference targets, arbitrary nested copied reference slots, ArrayAccess
   reference containers, full PHP reference containers, exact alias destruction
   ordering, copy-on-write containers, and native lowering remain missing.
-- Next concrete task: run `cargo check -p php_runtime -p phpc`, a focused
-  object/property regression test, `git diff --check`, and the serialized
-  checkpoint gate, then checkpoint with
-  `tools/checkpoint.sh "runtime: preserve object property reference array copies"`
-  if the gate passes.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-16T23:50:00Z
 
