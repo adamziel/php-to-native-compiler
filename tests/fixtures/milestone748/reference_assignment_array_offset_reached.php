@@ -1,4 +1,9 @@
 <?php
-$items = [1];
-$alias =& $items[0];
-echo $alias;
+$items = ["name" => "Ada", "other" => "Grace"];
+$key = "name";
+$alias =& $items[$key];
+$alias = "Katherine";
+echo $items["name"], "|", $alias;
+echo "|";
+$items[$key] = "Hedy";
+echo $items["name"], "|", $alias, "|", $items["other"];

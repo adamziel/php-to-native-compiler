@@ -794,12 +794,14 @@ Reconciliation into concrete workstreams:
   clone-by-value `ArraySlot` wrapper with an internal `ArraySlotCell` that
   has stable internal identity and shared-handle groundwork while preserving
   eager array cloning, by-value public writes, and value-based equality,
-  normalized-key array slot lookup helpers, a precise direct array-offset
-  reference-source runtime boundary over that slot lookup,
-  documented runtime boundaries, and focused reference fixtures.
-  Missing artifact: full runtime reference containers, array/object offset
-  aliases, magic reference-return dispatch and broader by-reference returns,
-  exact by-reference `foreach`, and COW tests that compare against PHP.
+  normalized-key array slot lookup helpers, and a bounded PHP-visible
+  existing-key direct array-offset reference-source slice for
+  `$alias =& $array[$key];`, documented runtime boundaries, and focused
+  reference fixtures.
+  Missing artifact: missing-offset reference materialization, nested and
+  object-property offset aliases, full runtime reference containers, magic
+  reference-return dispatch and broader by-reference returns, exact
+  by-reference `foreach`, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact

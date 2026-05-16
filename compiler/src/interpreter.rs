@@ -287,10 +287,17 @@ struct SymbolTable {
     symbols: SymbolStorage,
     global_symbols: Option<SymbolStorage>,
     imported_globals: HashSet<String>,
+    array_offset_aliases: HashMap<String, ArrayOffsetAlias>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
 type VariableCell = Rc<RefCell<Value>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ArrayOffsetAlias {
+    array_name: String,
+    key: ArrayKey,
+}
 
 const CORE_INTERFACE_NAMES: &[&str] = &[
     "Traversable",
@@ -318,6 +325,7 @@ impl SymbolTable {
             symbols: Rc::new(RefCell::new(HashMap::new())),
             global_symbols: Some(global_symbols),
             imported_globals: HashSet::new(),
+            array_offset_aliases: HashMap::new(),
         }
     }
 
@@ -326,6 +334,7 @@ impl SymbolTable {
             symbols,
             global_symbols: None,
             imported_globals: HashSet::new(),
+            array_offset_aliases: HashMap::new(),
         }
     }
 
@@ -354,6 +363,7 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
+        self.array_offset_aliases.remove(name);
         if is_auto_global_name(name) {
             if let Some(global_symbols) = &self.global_symbols {
                 global_symbols.borrow_mut().remove(name);
@@ -369,7 +379,11 @@ impl SymbolTable {
     }
 
     fn read_named(&self, name: &str) -> Option<Value> {
-        self.read_cell(name).map(|cell| cell.borrow().clone())
+        if let Some(alias) = self.array_offset_aliases.get(name) {
+            return self.read_array_offset_alias(alias);
+        }
+
+        self.read_storage_named(name)
     }
 
     fn read_global_name(&self, name: &str) -> Option<Value> {
@@ -380,7 +394,18 @@ impl SymbolTable {
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
-        let storage = self.routed_storage(name).clone();
+        if let Some(alias) = self.array_offset_aliases.get(name).cloned() {
+            if self.write_array_offset_alias(&alias, value.clone()) {
+                return;
+            }
+            self.array_offset_aliases.remove(name);
+        }
+
+        self.write_storage_named(name, value);
+    }
+
+    fn write_global_name(&mut self, name: &str, value: Value) {
+        let storage = self.global_storage().clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
             *cell.borrow_mut() = value;
@@ -391,8 +416,12 @@ impl SymbolTable {
         }
     }
 
-    fn write_global_name(&mut self, name: &str, value: Value) {
-        let storage = self.global_storage().clone();
+    fn read_storage_named(&self, name: &str) -> Option<Value> {
+        self.read_cell(name).map(|cell| cell.borrow().clone())
+    }
+
+    fn write_storage_named(&mut self, name: &str, value: Value) {
+        let storage = self.routed_storage(name).clone();
         let cell = storage.borrow().get(name).cloned();
         if let Some(cell) = cell {
             *cell.borrow_mut() = value;
@@ -409,9 +438,16 @@ impl SymbolTable {
         source: &str,
         span: Span,
     ) -> CompileResult<()> {
+        if let Some(alias) = self.array_offset_aliases.get(source).cloned() {
+            self.ensure_existing_array_offset_alias(&alias, span)?;
+            self.bind_static_to_array_offset_alias(target, alias);
+            return Ok(());
+        }
+
         let source_cell = self
             .read_cell(source)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
+        self.array_offset_aliases.remove(target);
         self.routed_storage(target)
             .borrow_mut()
             .insert(target.to_string(), source_cell);
@@ -419,9 +455,85 @@ impl SymbolTable {
     }
 
     fn bind_static_to_cell(&mut self, target: &str, cell: VariableCell) {
+        self.array_offset_aliases.remove(target);
         self.routed_storage(target)
             .borrow_mut()
             .insert(target.to_string(), cell);
+    }
+
+    fn bind_static_to_existing_array_offset(
+        &mut self,
+        target: &str,
+        array_name: &str,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            array_name: array_name.to_string(),
+            key,
+        };
+        self.ensure_existing_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
+        self.routed_storage(target).borrow_mut().remove(target);
+        self.array_offset_aliases.insert(target.to_string(), alias);
+    }
+
+    fn ensure_existing_array_offset_alias(
+        &self,
+        alias: &ArrayOffsetAlias,
+        span: Span,
+    ) -> CompileResult<()> {
+        match self.read_storage_named(&alias.array_name) {
+            Some(Value::Array(array)) => {
+                if array.get_slot(alias.key.clone()).is_some() {
+                    Ok(())
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "reference assignment",
+                            "missing array-offset reference materialization is not implemented",
+                        ),
+                    ))
+                }
+            }
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot read offset on {}",
+                    other.type_name()
+                )),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::undefined_variable(&alias.array_name),
+            )),
+        }
+    }
+
+    fn read_array_offset_alias(&self, alias: &ArrayOffsetAlias) -> Option<Value> {
+        match self.read_storage_named(&alias.array_name) {
+            Some(Value::Array(array)) => array.get(alias.key.clone()).cloned(),
+            _ => None,
+        }
+    }
+
+    fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
+        let Some(Value::Array(mut array)) = self.read_storage_named(&alias.array_name) else {
+            return false;
+        };
+
+        if array.get_slot(alias.key.clone()).is_none() {
+            return false;
+        }
+
+        array.insert(alias.key.clone(), value);
+        self.write_storage_named(&alias.array_name, Value::Array(array));
+        true
     }
 
     fn read_cell(&self, name: &str) -> Option<VariableCell> {
@@ -2776,6 +2888,14 @@ impl Interpreter {
                 } = source
                 {
                     scope.bind_static_to_static(name, source_name, span)?;
+                } else if let ReferenceSource::ArrayIndex {
+                    name: array_name,
+                    index,
+                    ..
+                } = source
+                {
+                    let key = self.evaluate_array_key(index, scope)?;
+                    scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
                     scope.bind_static_to_cell(name, cell);

@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Katherine|Katherine|Hedy|Hedy|Grace
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone748/reference_assignment_array_offset_reached.php:3:1: unsupported call reference assignment: array-offset reference sources require array slot reference cells, which are not implemented
 --- stderr end ---

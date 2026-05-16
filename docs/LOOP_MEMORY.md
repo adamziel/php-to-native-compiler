@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T12:26:25Z
+
+- Checkpoint before this task:
+  `9a37643a docs: record array slot shared cell gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1063, bounded existing-key direct array-offset
+  reference source execution for `$alias =& $array[$key];`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone748/reference_assignment_array_offset_reached.*`,
+  `tests/fixtures/runtime_errors/reference_assignment.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
+  passed with 16 tests.
+  `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`
+  passed with 1 test.
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`
+  passed with 2 fixtures, 2 PHP comparisons, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 164
+  fixtures. `cargo check -p phpc` passed.
+- Current WordPress frontier: existing-key direct array-offset reference
+  sources now have a tested PHP-visible slice for direct array variables and
+  direct variable targets. Alias writes update the selected slot, direct offset
+  writes are visible through the alias, chained direct aliases share the route,
+  and `unset($alias)` detaches the alias name.
+- Remaining semantic gaps: missing-offset reference materialization,
+  nested/object/`ArrayAccess` offset aliases, direct array-offset reference
+  targets, exact by-reference `foreach`, lingering references, copy-on-write,
+  mutation ordering, and native lowering remain missing.
+- Next concrete task: choose one of the remaining reference/COW gaps, likely
+  missing-offset materialization or nested/object offset aliases, and add a
+  bounded behavior or explicit diagnostic with focused PHP comparison coverage.
+
 ## Loop Event 2026-05-16T12:17:12Z
 
 - Checkpoint before this task:

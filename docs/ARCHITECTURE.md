@@ -193,11 +193,16 @@ mutable cells, so `$alias =& $value;` can bind both direct names to the same
 cell in the current scope/global-routing model. Assignment through either name
 updates the other, and `unset($alias)` or `unset($value)` removes only that
 name binding while the cell remains alive through any remaining alias. Direct
-array-offset reference sources evaluate their key and reach normalized-key
-`ArraySlot` lookup before reporting the current explicit missing array slot
-reference-cell diagnostic; they do not bind aliases yet. Direct
-variable sources holding object values can also be assigned into direct array
-offsets under the existing object-handle value model. Direct free-function
+array-offset reference sources now have a narrow existing-key execution path:
+`$alias =& $array[$key];` over a direct array variable can bind the target
+direct variable name to the selected normalized-key array slot route. Writes
+through the alias and through the direct array offset observe the same value,
+and `unset($alias)` removes only the alias binding. Missing offsets are still a
+runtime boundary rather than slot materialization. Nested offsets,
+object-property offsets, `ArrayAccess` offsets, exact by-reference `foreach`,
+full reference containers, copy-on-write, and native lowering remain future
+work. Direct variable sources holding object values can also be assigned into
+direct array offsets under the existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function
 declares `&`, returns a direct variable, and is used as a statement-form
 reference-assignment source; the target name is bound to the returned variable

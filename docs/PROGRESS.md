@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1063, a bounded PHP-visible direct array-offset reference
+  source slice for existing keys. Statement-form `$alias =& $array[$key];`
+  now works when the source is a direct array variable, the evaluated key
+  already exists after current key normalization, and the target is a direct
+  variable. Writes through the alias update the selected array slot, writes
+  through the direct array offset are visible through the alias, chained direct
+  aliases to that alias share the same direct slot route, and `unset($alias)`
+  detaches only the alias name. Missing-offset reference materialization stays
+  an explicit runtime boundary. This does not implement missing-offset
+  reference materialization, nested offsets, object-property offsets,
+  `ArrayAccess` offsets, direct array-offset reference targets, exact
+  by-reference `foreach`, copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p phpc`, and `git diff --check`.
+
 - Added Milestone 1062, an internal shared-cell primitive behind
   `ArraySlot` without changing current public by-value writes. `ArraySlot`
   now stores its private `ArraySlotCell` behind a shared handle, normal

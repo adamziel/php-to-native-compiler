@@ -1317,11 +1317,57 @@ echo "registered";
 }
 
 #[test]
-fn reference_assignment_array_offset_source_executes_as_stable_runtime_boundary() {
+fn reference_assignment_existing_array_offset_source_aliases_direct_slot() {
+    let execution = run_source(
+        r#"<?php
+$items = ["name" => "Ada"];
+$key = "name";
+$alias =& $items[$key];
+$alias = "Grace";
+echo $items["name"];
+echo "|";
+$items["name"] = "Katherine";
+echo $alias;
+unset($alias);
+$items["name"] = "Dorothy";
+echo "|";
+echo $items["name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Grace|Katherine|Dorothy");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_existing_array_offset_source_can_chain_direct_aliases() {
+    let execution = run_source(
+        r#"<?php
+$items = [0 => "zero"];
+$alias =& $items[0];
+$other =& $alias;
+$other = "one";
+echo $items[0];
+$items[0] = "two";
+echo "|";
+echo $alias;
+echo "|";
+echo $other;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "one|two|two");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_missing_array_offset_source_remains_boundary() {
     let error = runtime_error(
         r#"<?php
-$items = [1];
-$alias =& $items[0];
+$items = [];
+$alias =& $items["missing"];
 "#,
     );
 
@@ -1329,7 +1375,7 @@ $alias =& $items[0];
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: array-offset reference sources require array slot reference cells, which are not implemented"
+        "unsupported call reference assignment: missing array-offset reference materialization is not implemented"
     );
 }
 

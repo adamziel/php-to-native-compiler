@@ -10286,11 +10286,24 @@ handled.
   before mutation. This is not PHP-visible array-offset aliasing, missing-offset
   reference materialization, copy-on-write, exact by-reference `foreach`,
   object-property offsets, or native lowering.
-- [ ] Runtime/value-model lane: route one bounded PHP-visible direct
-  array-offset reference-source slice onto real array slot reference cells,
-  such as `$alias =& $array[$key];` for existing direct array keys, while
-  keeping missing offsets, nested/object offsets, by-reference `foreach`, COW,
-  and native lowering as explicit unsupported boundaries.
+
+## Milestone 1063: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: route one bounded PHP-visible direct
+  array-offset reference-source slice through the interpreter. In the current
+  subset, `$alias =& $array[$key];` works when the source is a direct array
+  variable, the evaluated normalized key already exists, and the target is a
+  direct variable: alias writes update the selected array slot, direct array
+  offset writes are visible through the alias, chained direct aliases share
+  that slot route, and `unset($alias)` detaches only the alias name. This is
+  not missing-offset reference materialization, nested/object/`ArrayAccess`
+  offsets, direct array-offset reference targets, exact by-reference
+  `foreach`, copy-on-write, or native lowering.
+- [ ] Runtime/value-model lane: choose the next reference/COW gap from
+  missing-offset reference materialization, nested/object offset aliases,
+  exact by-reference `foreach`, array/object copy-on-write split behavior, or
+  native lowering boundaries, and add the next bounded behavior or explicit
+  diagnostic with PHP comparison coverage where applicable.
 
 ## Latest Completed Checkpoint
 
