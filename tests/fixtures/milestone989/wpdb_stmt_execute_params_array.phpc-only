@@ -1,0 +1,6 @@
+This fixture records deterministic positional params-array statement execution
+through a WordPress-shaped `wpdb` object. It covers only positional scalar/null
+arrays over the exact seed-post placeholder SQL shape and does not implement
+named params arrays, true by-reference aliasing, mutation SQL, broad SQL
+execution, host database state, PHP warning/error fidelity, or native database
+lowering.

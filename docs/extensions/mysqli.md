@@ -244,8 +244,10 @@ value from the caller scope. `call_user_func("mysqli_stmt_execute",
 $statement)` and positional `call_user_func_array("mysqli_stmt_execute",
 array($statement))` use the same refresh path. The exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` shape currently
-returns an empty deterministic placeholder result. Array parameter execution,
-mutations, unknown SELECT metadata, real mysqlnd result transfer, host
+returns an empty deterministic placeholder result. Positional
+`mysqli_stmt_execute($statement, array(...))` params arrays are accepted for
+the exact known SQL shapes, including through `call_user_func()`. Named params
+arrays, mutations, unknown SELECT metadata, real mysqlnd result transfer, host
 database state, PHP warning/error fidelity, named-argument callback dispatch,
 and native lowering remain unsupported.
 

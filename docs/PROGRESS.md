@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 989, bounded positional params-array support for
+  `mysqli_stmt_execute($stmt, array(...))` over exact known placeholder
+  statement SQL shapes. Direct calls and
+  `call_user_func("mysqli_stmt_execute", $stmt, array(...))` can now provide
+  scalar/null positional parameter arrays; the runtime validates positional
+  integer-keyed arrays, stores the current values on the placeholder
+  statement, and executes the deterministic seed-post shape. The new fixtures
+  include direct MySQLi and WordPress-shaped `wpdb` smokes. This is not named
+  params arrays, true by-reference aliasing, mutation SQL, broad SQL
+  execution, host database state, PHP warning/error fidelity, mysqlnd behavior,
+  or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone989`.
+
 - Added Milestone 988, bounded caller-scope refresh for callback-dispatched
   `mysqli_stmt_execute()` over active placeholder statements. Direct
   `call_user_func("mysqli_stmt_execute", $stmt)` and positional

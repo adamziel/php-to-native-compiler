@@ -635,13 +635,20 @@ $result3 = mysqli_stmt_get_result($stmt3);
 $row3 = mysqli_fetch_assoc($result3);
 echo "|";
 echo $row3["ID"], ":", $row3["post_title"];
+$stmt4 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+echo "|";
+echo mysqli_stmt_execute($stmt4, array(1)) ? "array-executed" : "not-executed";
+$result4 = mysqli_stmt_get_result($stmt4);
+$row4 = mysqli_fetch_assoc($result4);
+echo "|";
+echo $row4["ID"], ":", $row4["post_title"];
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder"
+        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder|array-executed|1:Hello world placeholder"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -725,6 +732,22 @@ mysqli_stmt_bind_param($stmt, "i", 1);
     assert_eq!(
         variable_error.message,
         "unsupported call mysqli_stmt_bind_param(): parameter bindings must be direct variables in the current subset"
+    );
+
+    let params_array_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_execute($stmt, array("id" => 1));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(params_array_error.phase, Phase::Runtime);
+    assert_eq!(params_array_error.line, 3);
+    assert_eq!(params_array_error.column, 1);
+    assert_eq!(
+        params_array_error.message,
+        "unsupported call mysqli_stmt_execute(): params array must be positional in the current subset"
     );
 }
 

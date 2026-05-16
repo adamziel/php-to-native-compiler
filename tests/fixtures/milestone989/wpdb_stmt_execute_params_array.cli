@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone989/wpdb_stmt_execute_params_array.php
+exit: 0
+stdout:
+1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

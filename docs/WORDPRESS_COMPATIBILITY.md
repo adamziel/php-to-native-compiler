@@ -1786,7 +1786,12 @@ historical blockers and remaining full-support gaps include:
   without claiming true by-reference aliasing, cross-scope reference cells,
   named-argument callback dispatch, array parameter execution, mutation SQL,
   broad SQL execution, host database state, PHP warning/error fidelity, or
-  native database lowering. Milestone 965 adds explicit
+  native database lowering. Milestone 989 adds bounded positional params-array
+  support for `mysqli_stmt_execute($stmt, array(...))`, including a
+  WordPress-shaped `wpdb` smoke, without claiming named params arrays, true
+  by-reference aliasing, mutation SQL, broad SQL execution, host database
+  state, PHP warning/error fidelity, mysqlnd behavior, or native database
+  lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

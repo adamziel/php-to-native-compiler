@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone989/mysqli_stmt_execute_params_array.php
+exit: 0
+stdout:
+array-executed|1:Hello world placeholder|callback-array-executed|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

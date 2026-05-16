@@ -4743,17 +4743,12 @@ impl Interpreter {
         }
 
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
-        if args.len() == 2 && !matches!(args[1], Value::Null) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_stmt_execute()",
-                    format!(
-                        "params argument must be null or omitted in the current subset, got {}",
-                        args[1].type_name()
-                    ),
-                ),
-            ));
+        if args.len() == 2 {
+            if !matches!(args[1], Value::Null) {
+                let params = mysqli_stmt_execute_params_from_value(&args[1], span)?;
+                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                    .bound_parameter_values = params;
+            }
         }
 
         self.execute_mysqli_stmt_placeholder(stmt_id, span)
@@ -8728,21 +8723,17 @@ impl Interpreter {
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &statement, span)?;
         if let Some(params_arg) = args.get(1) {
             let params = self.evaluate(params_arg, caller_scope)?;
-            if !matches!(params, Value::Null) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "mysqli_stmt_execute()",
-                        format!(
-                            "params argument must be null or omitted in the current subset, got {}",
-                            params.type_name()
-                        ),
-                    ),
-                ));
+            if matches!(params, Value::Null) {
+                self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+            } else {
+                let params = mysqli_stmt_execute_params_from_value(&params, span)?;
+                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                    .bound_parameter_values = params;
             }
+        } else {
+            self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
         }
 
-        self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
         self.execute_mysqli_stmt_placeholder(stmt_id, span)
     }
 
@@ -8764,20 +8755,18 @@ impl Interpreter {
         }
 
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
-        if args.len() == 2 && !matches!(args[1], Value::Null) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_stmt_execute()",
-                    format!(
-                        "params argument must be null or omitted in the current subset, got {}",
-                        args[1].type_name()
-                    ),
-                ),
-            ));
+        if args.len() == 2 {
+            if matches!(args[1], Value::Null) {
+                self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+            } else {
+                let params = mysqli_stmt_execute_params_from_value(&args[1], span)?;
+                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                    .bound_parameter_values = params;
+            }
+        } else {
+            self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
         }
 
-        self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
         self.execute_mysqli_stmt_placeholder(stmt_id, span)
     }
 
@@ -14617,6 +14606,14 @@ fn validate_mysqli_stmt_bind_param_types(
 }
 
 fn validate_mysqli_stmt_bound_parameter_value(value: &Value, span: Span) -> CompileResult<()> {
+    validate_mysqli_stmt_parameter_value("mysqli_stmt_bind_param()", value, span)
+}
+
+fn validate_mysqli_stmt_parameter_value(
+    function: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<()> {
     if matches!(
         value,
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_)
@@ -14626,7 +14623,7 @@ fn validate_mysqli_stmt_bound_parameter_value(value: &Value, span: Span) -> Comp
         Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "mysqli_stmt_bind_param()",
+                function,
                 format!(
                     "bound parameter values must be scalar or null in the current subset, got {}",
                     value.type_name()
@@ -14634,6 +14631,37 @@ fn validate_mysqli_stmt_bound_parameter_value(value: &Value, span: Span) -> Comp
             ),
         ))
     }
+}
+
+fn mysqli_stmt_execute_params_from_value(value: &Value, span: Span) -> CompileResult<Vec<Value>> {
+    let Value::Array(array) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_execute()",
+                format!(
+                    "params argument must be null, omitted, or a positional array in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+
+    let mut params = Vec::with_capacity(array.len());
+    for entry in array.entries() {
+        if matches!(entry.key, ArrayKey::String(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_execute()",
+                    "params array must be positional in the current subset",
+                ),
+            ));
+        }
+        validate_mysqli_stmt_parameter_value("mysqli_stmt_execute()", &entry.value, span)?;
+        params.push(entry.value.clone());
+    }
+    Ok(params)
 }
 
 fn mysqli_placeholder_param_count(query: &str) -> usize {

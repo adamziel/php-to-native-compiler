@@ -9349,19 +9349,33 @@ handled.
   aliasing, cross-scope reference cells, named-argument callback dispatch,
   array parameter execution, mutation SQL, broad SQL execution, host database
   state, PHP warning/error fidelity, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as positional
+  params-array execution, real reference aliasing around bound
+  parameters/results, broader escaping charset fidelity, local-infile option
+  effects, connection multi-result pending queues, or the next real database
+  integration gap, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
+  Milestone 989 adds bounded positional params-array support for
+  `mysqli_stmt_execute($stmt, array(...))`, including a WordPress-shaped
+  `wpdb` smoke. This is not named params arrays, true by-reference aliasing,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
-  aliasing around bound parameters/results, broader escaping charset fidelity,
-  local-infile option effects, connection multi-result pending queues, or the
-  next real database integration gap, and add the next bounded behavior or
-  explicit runtime boundary with tests, CLI fixtures, docs, and native
-  rejection coverage where lowering remains unsupported.
+  aliasing around bound parameters/results, named params-array behavior,
+  broader escaping charset fidelity, local-infile option effects, connection
+  multi-result pending queues, or the next real database integration gap, and
+  add the next bounded behavior or explicit runtime boundary with tests, CLI
+  fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `aeaabfe5 runtime: refresh mysqli stmt bound params`, covering
-  Milestone 987 before the current Milestone 988 candidate.
+  `d6efa312 runtime: refresh mysqli stmt execute callbacks`, covering
+  Milestone 988 before the current Milestone 989 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

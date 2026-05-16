@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic positional params-array support
+for `mysqli_stmt_execute($stmt, array(...))`, including callback dispatch
+through `call_user_func()`. System PHP requires a real initialized MySQLi
+connection and mysqlnd statement execution; phpc accepts only positional
+scalar/null arrays for exact known placeholder SQL shapes. It does not
+implement named params arrays, true by-reference aliasing, mutation SQL, broad
+SQL execution, host database state, PHP warning/error fidelity, or native
+database lowering.

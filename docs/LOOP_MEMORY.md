@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `d6efa312 runtime: refresh mysqli stmt execute callbacks`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 989, bounded positional params-array support for
+  `mysqli_stmt_execute($stmt, array(...))` over exact known placeholder
+  statement SQL shapes, with direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone989/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone989`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder prepared statement execution can now
+  consume positional scalar/null params arrays for exact known `?` SQL shapes
+  through a WordPress-shaped `wpdb` method.
+- Remaining semantic gaps: named params arrays, true by-reference aliasing,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect true
+  reference aliasing, named params-array behavior, or the next real database
+  integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `aeaabfe5 runtime: refresh mysqli stmt bound params`, pushed to
   `origin/master`.
 - Task attempted: Milestone 988, bounded caller-scope refresh for

@@ -1011,6 +1011,12 @@
   named-argument callback dispatch, array parameter execution, mutation SQL,
   broad SQL execution, host database state, PHP warning/error fidelity, or
   native statement lowering.
+  `mysqli_stmt_execute($statement, array(...))` also accepts positional
+  integer-keyed scalar/null parameter arrays for the exact known statement SQL
+  shapes, including through `call_user_func("mysqli_stmt_execute", $statement,
+  array(...))`. This is not named params arrays, broad mysqlnd parameter
+  binding, mutation SQL, broad SQL execution, host database state, PHP
+  warning/error fidelity, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -3340,9 +3346,9 @@
   affected-row metadata, insert-id metadata, or host database execution,
   `mysqli_stmt_execute(...)`/`mysqli_stmt_get_result(...)` expose only
   deterministic unbound placeholder execution and direct-variable bound
-  execution for current known statement shapes without array parameter
-  execution, mutations, real mysqlnd transfer, host database state, broad SQL
-  execution, or named-argument callback dispatch,
+  execution plus positional params-array execution for current known statement
+  shapes without named params arrays, mutations, real mysqlnd transfer, host
+  database state, broad SQL execution, or named-argument callback dispatch,
   `mysqli_stmt_bind_param(...)` exposes only direct scalar/null variable
   snapshots and direct-execute-time re-reads for known placeholder statement
   SQL shapes without true by-reference aliasing, cross-scope reference cells,
