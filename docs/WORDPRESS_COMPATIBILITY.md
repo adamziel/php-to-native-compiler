@@ -1211,9 +1211,15 @@ historical blockers and remaining full-support gaps include:
   `__callStatic($name, $args)` dispatch for missing named, dynamic-receiver,
   `self::`, and late `static::` method calls while leaving
   inaccessible-method `__callStatic` fidelity, `parent::` missing-method magic,
-  dynamic method-name syntax, named arguments, splat/unpack behavior,
-  by-reference argument aliasing, exact warning behavior,
-  references/copy-on-write, and native lowering explicit gaps.
+dynamic method-name syntax, named arguments, splat/unpack behavior,
+by-reference argument aliasing, exact warning behavior,
+references/copy-on-write, and native lowering explicit gaps. Milestone 1012
+adds bounded object string conversion through visible non-static
+`__toString()` for `echo`, `print`, `(string)`, and binary concatenation while
+leaving `Stringable` metadata, object interpolation, heredoc conversion,
+compound concat assignment, exact non-string-return `TypeError` objects,
+recursion edge-case fidelity, references/copy-on-write, and native lowering
+explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

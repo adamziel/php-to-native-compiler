@@ -229,7 +229,8 @@ property slice,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 magic methods beyond direct missing-property
-`__get`/`__isset`/`__set`/`__unset` and missing-method `__call`,
+`__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
+and direct object-to-string `__toString`,
 resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.

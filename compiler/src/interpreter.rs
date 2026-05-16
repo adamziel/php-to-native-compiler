@@ -945,18 +945,14 @@ impl Interpreter {
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.evaluate(expr, scope)?;
-                    let output = value
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(expr.span(), error))?;
+                    let output = self.value_to_echo_string(value, expr.span())?;
                     self.stdout.push_str(&output);
                 }
                 Ok(Flow::Normal)
             }
             Stmt::Print { expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
-                let output = value
-                    .try_echo_string()
-                    .map_err(|error| runtime_error(expr.span(), error))?;
+                let output = self.value_to_echo_string(value, expr.span())?;
                 self.stdout.push_str(&output);
                 Ok(Flow::Normal)
             }
@@ -6938,7 +6934,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     format!("{class_name}::{method_name}()"),
-                    "static magic property methods are not implemented in the current subset",
+                    "static magic instance methods are not implemented in the current subset",
                 ),
             ));
         }
@@ -13977,20 +13973,100 @@ impl Interpreter {
             .map_or(true, |value| !value.is_truthy()))
     }
 
+    fn object_to_string_with_magic(
+        &mut self,
+        object: PhpObject,
+        context: &str,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let Some(value) =
+            self.call_magic_instance_method_with_values(object, "__toString", Vec::new(), span)?
+        else {
+            return Ok(None);
+        };
+
+        match value {
+            Value::String(value) => Ok(Some(value)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    format!(
+                        "__toString() must return string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn value_to_echo_string(&mut self, value: Value, span: Span) -> CompileResult<String> {
+        if let Value::Object(object) = value.clone() {
+            if let Some(output) =
+                self.object_to_string_with_magic(object, "object-to-string", span)?
+            {
+                return Ok(output);
+            }
+        }
+
+        value
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn value_to_string_cast(&mut self, value: Value, span: Span) -> CompileResult<String> {
+        match value {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                Ok(value.echo_string())
+            }
+            Value::Array(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "(string)",
+                    "array-to-string cast warning behavior is not implemented",
+                ),
+            )),
+            Value::Object(object) => {
+                if let Some(output) =
+                    self.object_to_string_with_magic(object.clone(), "(string)", span)?
+                {
+                    Ok(output)
+                } else {
+                    Value::Object(object)
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(span, error))
+                }
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "(string)",
+                    "Closure __toString() and cast error behavior are not implemented",
+                ),
+            )),
+        }
+    }
+
     fn apply_binary(
-        &self,
+        &mut self,
         op: BinaryOp,
         left: Value,
         right: Value,
         span: Span,
     ) -> CompileResult<Value> {
+        if matches!(op, BinaryOp::Concat) {
+            let left = self.value_to_echo_string(left, span)?;
+            let right = self.value_to_echo_string(right, span)?;
+            return Ok(Value::String(format!("{left}{right}")));
+        }
+
         let result: RuntimeResult<Value> = match op {
             BinaryOp::Add => left.php_add(&right),
             BinaryOp::Sub => left.php_sub(&right),
             BinaryOp::Mul => left.php_mul(&right),
             BinaryOp::Div => left.php_div(&right),
             BinaryOp::Mod => left.php_mod(&right),
-            BinaryOp::Concat => left.php_concat(&right),
+            BinaryOp::Concat => unreachable!("concatenation is handled before runtime helpers"),
             BinaryOp::Eq => left
                 .php_cmp_checked(&right, Comparison::Eq)
                 .map(Value::Bool),
@@ -14037,36 +14113,9 @@ impl Interpreter {
         result.map_err(|error| runtime_error(span, error))
     }
 
-    fn apply_cast(&self, kind: CastKind, value: Value, span: Span) -> CompileResult<Value> {
+    fn apply_cast(&mut self, kind: CastKind, value: Value, span: Span) -> CompileResult<Value> {
         match kind {
-            CastKind::String => match value {
-                Value::Null
-                | Value::Bool(_)
-                | Value::Int(_)
-                | Value::Float(_)
-                | Value::String(_) => Ok(Value::String(value.echo_string())),
-                Value::Array(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(string)",
-                        "array-to-string cast warning behavior is not implemented",
-                    ),
-                )),
-                Value::Object(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(string)",
-                        "object __toString() and cast error behavior are not implemented",
-                    ),
-                )),
-                Value::Closure(_) => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "(string)",
-                        "Closure __toString() and cast error behavior are not implemented",
-                    ),
-                )),
-            },
+            CastKind::String => self.value_to_string_cast(value, span).map(Value::String),
             CastKind::Int => match value {
                 Value::Null => Ok(Value::Int(0)),
                 Value::Bool(value) => Ok(Value::Int(if value { 1 } else { 0 })),

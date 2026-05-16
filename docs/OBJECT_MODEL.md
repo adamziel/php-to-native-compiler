@@ -174,6 +174,12 @@ The model follows the PHP lookup rules needed by the first object slice:
   instance method calls dispatch to visible non-static `__call($name, $args)`
   when one is declared or inherited, with `$args` materialized as a
   zero-indexed PHP array of the evaluated positional arguments;
+- bounded object string conversion dispatches visible non-static
+  `__toString()` with no arguments for `echo $object`, `print $object`,
+  `(string) $object`, and binary concatenation. The method must return a
+  string in the current subset; non-string returns, `Stringable` metadata,
+  object interpolation, heredoc conversion, compound concat assignment, exact
+  PHP `TypeError` objects, and native lowering remain unsupported;
 - explicit `parent::method(...)` and `parent::__construct(...)` calls require
   active instance method context, a parent class, and a public or protected
   resolved method in the parent chain. They evaluate arguments left to right,
@@ -387,7 +393,6 @@ non-public constructor access beyond the current constructor slice, dynamic
 method names, dynamic property-name forms beyond existing public slots and
 `stdClass` public dynamic slots,
 property assignment targets other than a direct variable, object comparisons,
-object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
 operands outside the current private/protected method context, complex object-property `isset`
 operands, dynamic property-name `empty` operands, non-public property
@@ -400,7 +405,8 @@ fidelity,
 dynamic property-name magic, property-array-offset magic, inaccessible-property
 `__set` fidelity, inaccessible-method `__call` fidelity, dynamic method-name
 magic, inaccessible-method `__callStatic` fidelity, parent missing-method
-`__callStatic`, `__toString`, static member execution through `::` beyond the current class-name constant and
+`__callStatic`, `Stringable` metadata, object interpolation, exact
+`__toString()` non-string-return error objects, static member execution through `::` beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 native lowering for `get_called_class` called-class context, broader late

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1012, bounded object string conversion through visible
+  non-static `__toString()` for the interpreter string contexts that can
+  safely dispatch userland methods today: `echo $object`, `print $object`,
+  `(string) $object`, and binary concatenation with `.`. Objects without
+  `__toString()` keep the existing invalid string-conversion diagnostic;
+  declared static `__toString()` remains rejected by the magic instance-method
+  boundary; and the current subset requires `__toString()` to return a string.
+  This is not `Stringable` interface metadata, object interpolation,
+  heredoc/object conversion, compound concat assignment, array-to-string
+  warning recovery, throwable `__toString()` fatal/exception behavior, exact
+  PHP `TypeError` objects for non-string returns, recursion edge-case
+  fidelity, visibility diagnostic fidelity, or native lowering. Verification
+  so far:
+  `cargo test -p phpc --test object_model magic_to_string_runs_for_echo_print_cast_and_concat -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1012`.
+
 - Added Milestone 1011, bounded static `__callStatic($name, $args)` dispatch
   for missing static method calls through named class receivers, dynamic
   object/class-string receivers, `self::`, and late-bound `static::`.

@@ -1014,7 +1014,12 @@ lowering explicit gaps. Milestone 1011 adds bounded static
 inaccessible-method `__callStatic` fidelity, `parent::` missing-method magic,
 dynamic method-name syntax, named arguments, splat/unpack behavior,
 by-reference argument aliasing, exact warning behavior, references/copy-on-write,
-and native lowering explicit gaps. Milestone 833
+and native lowering explicit gaps. Milestone 1012 adds bounded object string
+conversion through visible non-static `__toString()` for `echo`, `print`,
+`(string)`, and binary concatenation while leaving `Stringable` metadata,
+object interpolation, heredoc conversion, compound concat assignment, exact
+non-string-return `TypeError` objects, recursion edge-case fidelity,
+references/copy-on-write, and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
@@ -1096,8 +1101,10 @@ Full WordPress support is still missing at several layers:
    named arguments, spread/unpack, full
    namespace/import forms, and version-specific parse/runtime behavior.
 3. Object model: full constructors/inheritance, interfaces, traits, enums,
-   magic methods, dynamic properties/methods, typed properties and property
-   defaults beyond the current constant-expression subset,
+   magic methods beyond the current bounded `__get`/`__isset`/`__set`/
+   `__unset`/`__call`/`__callStatic`/direct-`__toString` slices, dynamic
+   properties/methods, typed properties and property defaults beyond the
+   current constant-expression subset,
    reflection, cloning/destructors, late static binding, and exact visibility
    behavior.
 4. Error model: warnings/notices/deprecations, recoverable errors, `@`
@@ -1422,6 +1429,9 @@ Scope:
   semantics, broader late static binding, and broader class-name resolution;
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
+- object conversion beyond the current direct `__toString()` echo/print/cast/
+  concat slice, including `Stringable` metadata, interpolation, heredoc,
+  compound concat assignment, and exact PHP error behavior;
 - inheritance after the single-class model is stable.
 
 Exit criteria:
@@ -1597,10 +1607,11 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 859 is the active checkpoint candidate: deterministic
-  `mysqli_fetch_array($result, MYSQLI_ASSOC)` returns the seed-post
-  placeholder row as an associative PHP array while numeric and mixed fetch
-  modes remain named unsupported boundaries.
+- Milestone 1012 is the active checkpoint candidate: visible non-static
+  `__toString()` now runs for direct object echo, print, `(string)` cast, and
+  binary concatenation while object interpolation, heredoc conversion,
+  compound concat assignment, `Stringable` metadata, exact error objects,
+  references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

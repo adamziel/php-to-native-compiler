@@ -9683,6 +9683,24 @@ handled.
   method-name syntax, named arguments, splat/unpack behavior, by-reference
   argument aliasing, exact warning/visibility diagnostics, recursion edge-case
   fidelity, references/copy-on-write, or native lowering.
+- [x] Object semantics lane: inspect the adjacent object-to-string magic gap
+  and add bounded `__toString()` behavior or an explicit runtime boundary with
+  tests, CLI fixtures, docs, and native rejection coverage where lowering
+  remains unsupported.
+  Milestone 1012 adds bounded object string conversion through visible
+  non-static `__toString()` for `echo $object`, `print $object`,
+  `(string) $object`, and binary concatenation. Objects without `__toString`
+  keep the existing invalid string-conversion diagnostic; static
+  `__toString()` and non-string returns remain stable boundaries. This is not
+  `Stringable` metadata, object interpolation, heredoc conversion, compound
+  concat assignment, exact `TypeError`/fatal behavior, recursion edge-case
+  fidelity, references/copy-on-write, or native lowering.
+- [ ] Object semantics lane: inspect the next object protocol gap from the
+  audited PHP/WordPress surface, such as ArrayAccess, object interpolation,
+  compound concat assignment through `__toString`, `__clone` dispatch,
+  destructors, or inaccessible-member magic fidelity, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9694,8 +9712,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `bded7582 runtime: add magic method calls`, covering Milestone 1010
-  before the current Milestone 1011 candidate.
+  `9c432e94 runtime: add magic static method calls`, covering Milestone 1011
+  before the current Milestone 1012 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

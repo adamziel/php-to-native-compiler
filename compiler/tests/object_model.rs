@@ -1112,6 +1112,33 @@ echo $object::route("object", 4);
 }
 
 #[test]
+fn magic_to_string_runs_for_echo_print_cast_and_concat() {
+    let source = r#"<?php
+class Label {
+    public $value = "core";
+
+    public function __toString() {
+        echo "toString\n";
+        return "label:" . $this->value;
+    }
+}
+
+$label = new Label();
+echo $label, "\n";
+echo (string) $label, "\n";
+echo "prefix-" . $label, "\n";
+print $label;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "toString\nlabel:core\ntoString\nlabel:core\ntoString\nprefix-label:core\ntoString\nlabel:core"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

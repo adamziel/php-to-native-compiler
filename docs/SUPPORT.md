@@ -359,6 +359,13 @@
   dispatch to visible non-static `__call($name, $args)` when one is declared
   or inherited, with `$args` materialized as a zero-indexed PHP array of the
   evaluated positional arguments.
+- bounded object string conversion through visible non-static `__toString()`
+  for `echo $object`, `print $object`, `(string) $object`, and binary
+  concatenation. Objects without `__toString()` keep the existing invalid
+  string-conversion diagnostic, static `__toString()` remains rejected through
+  the current magic instance-method boundary, and non-string `__toString()`
+  returns report a stable unsupported diagnostic instead of constructing exact
+  PHP `TypeError` objects.
 - explicit parent method calls by static method name:
   `parent::method(...)` and `parent::__construct(...)` are supported in active
   class method/constructor context when the current class has a parent and the
@@ -1483,7 +1490,6 @@
   unsupported `get_parent_class` object/class arguments,
   unsupported `get_called_class()` calls outside method or static class
   context,
-  object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
   inside `switch`, and runaway user-function recursion
@@ -2373,7 +2379,8 @@
   unsupported `get_called_class()` calls outside method or static class
   context, non-object `spl_object_id` operands, non-object `spl_object_hash`
   operands,
-  object-to-string conversion, invalid `break`/`continue` outside a loop,
+  object-to-string conversion outside the documented direct `__toString`
+  slice, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   for the current statically lowerable scalar subset: literal `null`,
@@ -4288,7 +4295,9 @@
   constants, typed static properties, static property storage removal, late
   static binding beyond the current `static::` method/property/constant and
   `new static` slices, magic methods beyond the current direct
-  missing-property `__get`/`__isset`/`__set` slice, namespaces,
+  missing-property `__get`/`__isset`/`__set`/`__unset`,
+  missing-method `__call`/`__callStatic`, and direct object-to-string
+  `__toString` slices, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties
   beyond `stdClass` public slot materialization, dynamic property-name forms
   beyond existing public slots and `stdClass` including complex assignment
@@ -4303,8 +4312,12 @@
   object handle identity/aliasing,
   cloning, destructors, serialization hooks, visibility enforcement,
   broader `self`/`parent`/`static` behavior, object comparisons, full
-  `instanceof` interface/class relationship metadata, object-to-string
-  conversion, object callables, and native lowering are unsupported.
+  `instanceof` interface/class relationship metadata, object callables, and
+  native lowering are unsupported. Object string conversion is supported only
+  for the documented direct `__toString()` echo/print/cast/concat slice;
+  object interpolation, heredoc conversion, compound concat assignment,
+  `Stringable` metadata, exact non-string-return `TypeError` objects,
+  recursion edge cases, and native lowering remain unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in

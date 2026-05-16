@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `9c432e94 runtime: add magic static method calls`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1012, bounded object string conversion through
+  visible non-static `__toString()` for direct object echo, print, `(string)`
+  cast, and binary concatenation.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1012/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model magic_to_string_runs_for_echo_print_cast_and_concat -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1012`
+  passed.
+- Current WordPress frontier: direct object-to-string contexts can now invoke
+  userland `__toString()` instead of failing with the generic object string
+  conversion diagnostic.
+- Remaining semantic gaps: `Stringable` metadata, object interpolation,
+  heredoc conversion, compound concat assignment, exact non-string-return
+  `TypeError` objects, recursion edge-case fidelity, references/copy-on-write,
+  and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `bded7582 runtime: add magic method calls`, pushed to `origin/master`.
 - Task attempted: Milestone 1011, bounded static
   `__callStatic($name, $args)` for missing named, dynamic-receiver, `self::`,
