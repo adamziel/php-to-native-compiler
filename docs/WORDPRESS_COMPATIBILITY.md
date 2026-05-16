@@ -1595,7 +1595,13 @@ historical blockers and remaining full-support gaps include:
   950 wires those boundaries through synthetic WordPress-shaped `wpdb`
   metadata/error methods without claiming statement objects, statement error
   state, affected-row metadata, host database state, warning/error fidelity,
-  or native database lowering.
+  or native database lowering. Milestone 951 adds explicit
+  `mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/
+  `mysqli_stmt_fetch()` statement result/cursor boundaries with callable
+  metadata and stable unsupported diagnostics, without statement object
+  allocation, buffered result storage, statement row-count metadata, cursor
+  advancement, bound result buffers, host database rows, warning/error
+  fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

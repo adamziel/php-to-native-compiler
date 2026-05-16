@@ -1,0 +1,5 @@
+This fixture exercises phpc's explicit MySQLi statement cursor-fetch
+boundary. System PHP would require a real mysqli statement object, bound
+result buffers, cursor advancement, and host database rows; phpc only records
+the reached `mysqli_stmt_fetch()` boundary with a stable unsupported
+diagnostic and does not implement result-row materialization.

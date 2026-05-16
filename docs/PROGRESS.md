@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 951, explicit MySQLi statement result/cursor boundaries for
+  `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and
+  `mysqli_stmt_fetch()`. The runtime exposes the names through
+  function/callability metadata, validates the one-argument arity, and reports
+  stable unsupported diagnostics when statement result buffering, row-count
+  metadata, or cursor fetching is reached. Native metadata lookup knows the
+  names while direct native lowering remains rejected. This is not statement
+  object allocation, buffered result storage, statement row-count metadata,
+  cursor advancement, bound result buffers, host database rows, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_cursor -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone951`.
+
 - Added Milestone 950, synthetic WordPress-shaped `wpdb` prepared-statement
   metadata/error smokes that reach the explicit `mysqli_stmt_errno()`,
   `mysqli_stmt_error()`, and `mysqli_stmt_affected_rows()` boundaries through

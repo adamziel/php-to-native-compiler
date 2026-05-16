@@ -1,0 +1,2 @@
+runtime error at 3:1: unsupported call mysqli_stmt_num_rows(): mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset
+

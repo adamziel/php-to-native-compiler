@@ -8871,17 +8871,31 @@ handled.
   statement error-state tracking, statement error-message tracking, statement
   execution state, affected-row metadata, host database state, warning/error
   fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement result/cursor
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement result/cursor
   boundary after statement metadata visibility, such as
   `mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/
   `mysqli_stmt_fetch()` callable metadata and explicit unsupported
   diagnostics, before claiming broader prepared statement fidelity.
+  Milestone 951 exposes `mysqli_stmt_store_result()`,
+  `mysqli_stmt_num_rows()`, and `mysqli_stmt_fetch()` through callable
+  metadata and turns reached statement result/cursor calls into stable
+  unsupported diagnostics. This is not statement object allocation, buffered
+  result storage, statement row-count metadata, cursor advancement, bound
+  result buffers, host database rows, warning/error fidelity, or native
+  lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+  result/cursor smokes that reach the explicit `mysqli_stmt_store_result()`,
+  `mysqli_stmt_num_rows()`, or `mysqli_stmt_fetch()` boundary through
+  WordPress-shaped methods without claiming statement objects, buffered result
+  storage, cursor/fetch state, bound result variables, result-row
+  materialization, statement row-count metadata, host database state,
+  warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4b55b14 runtime: add mysqli stmt metadata boundaries`, covering
-  Milestone 949 before the current Milestone 950 candidate.
+  `eab379b tests: add wordpress wpdb stmt metadata smokes`, covering
+  Milestone 950 before the current Milestone 951 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

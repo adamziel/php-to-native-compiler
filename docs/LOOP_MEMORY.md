@@ -29,19 +29,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `eab379b tests: add wordpress wpdb stmt metadata smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 951, explicit MySQLi statement result/cursor
+  boundaries for `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and
+  `mysqli_stmt_fetch()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone951/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_cursor -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone951`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement result/cursor APIs will
+  now produce stable diagnostics instead of generic unknown call behavior.
+- Remaining semantic gaps: statement object allocation, buffered result
+  storage, statement row-count metadata, cursor advancement, bound result
+  buffers, host database rows, warnings/errors, and native database lowering
+  remain missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, add synthetic WordPress-shaped `wpdb` result/cursor smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `4b55b14 runtime: add mysqli stmt metadata boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 950, synthetic WordPress-shaped `wpdb`
   prepared-statement metadata/error smokes that reach the explicit
   `mysqli_stmt_errno()`, `mysqli_stmt_error()`, and
   `mysqli_stmt_affected_rows()` boundaries.
-- Files changed so far: `tests/fixtures/milestone950/*`,
+- Files changed: `tests/fixtures/milestone950/*`,
   `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
   `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone950`.
-  Passed; the fixtures are `phpc-only` and skipped for system PHP
-  comparison.
+  Passed; checkpoint gate later passed with 1111 fixture tests, 682 system PHP
+  comparisons, and 429 skipped.
 - Current WordPress frontier: WordPress-shaped statement metadata/error
   methods now record explicit statement errno, error-message, and
   affected-row diagnostics.
@@ -49,8 +78,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   tracking, statement error-message tracking, statement execution state,
   affected-row metadata, host database execution, warnings/errors, and native
   database lowering remain missing.
-- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
-  after checkpoint, inspect the next MySQLi statement result/cursor boundary
+- Checkpoint result: committed and pushed
+  `eab379b tests: add wordpress wpdb stmt metadata smokes`.
+- Next concrete task: inspect the next MySQLi statement result/cursor boundary
   such as `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, or
   `mysqli_stmt_fetch()`.
 

@@ -13,7 +13,9 @@ Status: boundary only.
 `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
 `mysqli_prepare`, `mysqli_stmt_bind_param`, `mysqli_stmt_execute`,
 `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
-`mysqli_stmt_error`, `mysqli_stmt_affected_rows`, `mysqli_dump_debug_info`,
+`mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
+`mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
+`mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
@@ -187,6 +189,13 @@ but are explicit runtime boundaries. Reached calls report stable unsupported
 diagnostics because statement objects, statement error state, statement error
 messages, statement execution state, and affected-row metadata are not
 implemented.
+
+`mysqli_stmt_store_result($statement)`, `mysqli_stmt_num_rows($statement)`,
+and `mysqli_stmt_fetch($statement)` are visible through callable metadata but
+are explicit runtime boundaries. Reached calls report stable unsupported
+diagnostics because statement objects, buffered result storage, statement
+row-count metadata, cursor advancement, bound result buffers, and host
+database rows are not implemented.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

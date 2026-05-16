@@ -320,6 +320,12 @@ warning/error fidelity, or native lowering, now wired through synthetic
 WordPress-shaped `wpdb` metadata/error smokes without claiming statement
 objects, statement error state, affected-row metadata, host database state,
 warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/
+`mysqli_stmt_fetch()` statement result/cursor boundaries that expose callable
+metadata and stable unsupported diagnostics without statement object
+allocation, buffered result storage, statement row-count metadata, cursor
+advancement, bound result buffers, host database rows, warning/error
+fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

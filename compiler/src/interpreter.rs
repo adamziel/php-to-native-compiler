@@ -4603,6 +4603,39 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_store_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_store_result", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_store_result()",
+                "mysqli statement objects, result buffering, and statement result state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_num_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_num_rows", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_num_rows()",
+                "mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_fetch(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_fetch", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_fetch()",
+                "mysqli statement objects, bound result buffers, cursor advancement, and host database rows are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9818,6 +9851,9 @@ impl Interpreter {
             "mysqli_stmt_errno" => self.call_mysqli_stmt_errno(&args, span),
             "mysqli_stmt_error" => self.call_mysqli_stmt_error(&args, span),
             "mysqli_stmt_affected_rows" => self.call_mysqli_stmt_affected_rows(&args, span),
+            "mysqli_stmt_store_result" => self.call_mysqli_stmt_store_result(&args, span),
+            "mysqli_stmt_num_rows" => self.call_mysqli_stmt_num_rows(&args, span),
+            "mysqli_stmt_fetch" => self.call_mysqli_stmt_fetch(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12797,6 +12833,9 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_errno"
             | "mysqli_stmt_error"
             | "mysqli_stmt_affected_rows"
+            | "mysqli_stmt_store_result"
+            | "mysqli_stmt_num_rows"
+            | "mysqli_stmt_fetch"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

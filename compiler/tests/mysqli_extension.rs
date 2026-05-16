@@ -653,6 +653,83 @@ mysqli_stmt_affected_rows($stmt);
 }
 
 #[test]
+fn mysqli_statement_result_cursor_is_visible_but_explicit_boundary() {
+    let execution = run_source(
+        r#"<?php
+$store = "mysqli_stmt_store_result";
+$num_rows = "mysqli_stmt_num_rows";
+$fetch = "mysqli_stmt_fetch";
+echo function_exists($store) ? "yes" : "no";
+echo "|";
+echo is_callable($store) ? "store-callable" : "store-missing";
+echo "|";
+echo function_exists($num_rows) ? "num-rows-exists" : "num-rows-missing";
+echo "|";
+echo is_callable($num_rows) ? "num-rows-callable" : "num-rows-missing";
+echo "|";
+echo function_exists($fetch) ? "fetch-exists" : "fetch-missing";
+echo "|";
+echo is_callable($fetch) ? "fetch-callable" : "fetch-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|store-callable|num-rows-exists|num-rows-callable|fetch-exists|fetch-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let store_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_store_result($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(store_error.phase, Phase::Runtime);
+    assert_eq!(store_error.line, 3);
+    assert_eq!(store_error.column, 1);
+    assert_eq!(
+        store_error.message,
+        "unsupported call mysqli_stmt_store_result(): mysqli statement objects, result buffering, and statement result state are not implemented in the current subset"
+    );
+
+    let num_rows_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_num_rows($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(num_rows_error.phase, Phase::Runtime);
+    assert_eq!(num_rows_error.line, 3);
+    assert_eq!(num_rows_error.column, 1);
+    assert_eq!(
+        num_rows_error.message,
+        "unsupported call mysqli_stmt_num_rows(): mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset"
+    );
+
+    let fetch_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_fetch($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(fetch_error.phase, Phase::Runtime);
+    assert_eq!(fetch_error.line, 3);
+    assert_eq!(fetch_error.column, 1);
+    assert_eq!(
+        fetch_error.message,
+        "unsupported call mysqli_stmt_fetch(): mysqli statement objects, bound result buffers, cursor advancement, and host database rows are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -2907,6 +2984,12 @@ echo function_exists("mysqli_stmt_error") ? "1" : "0";
 echo is_callable("mysqli_stmt_error") ? "1" : "0";
 echo function_exists("mysqli_stmt_affected_rows") ? "1" : "0";
 echo is_callable("mysqli_stmt_affected_rows") ? "1" : "0";
+echo function_exists("mysqli_stmt_store_result") ? "1" : "0";
+echo is_callable("mysqli_stmt_store_result") ? "1" : "0";
+echo function_exists("mysqli_stmt_num_rows") ? "1" : "0";
+echo is_callable("mysqli_stmt_num_rows") ? "1" : "0";
+echo function_exists("mysqli_stmt_fetch") ? "1" : "0";
+echo is_callable("mysqli_stmt_fetch") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3005,7 +3088,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 160, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 166, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3373,6 +3456,42 @@ mysqli_stmt_error(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_affected_rows(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_store_result(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_num_rows(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_fetch(mysqli_init());
 "#,
     )
     .unwrap_err();
