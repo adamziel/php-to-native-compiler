@@ -652,6 +652,14 @@ use const App\Demo\VALUE;
             1,
             "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering",
         ),
+        (
+            r#"<?php
+use App\A, App\B;
+"#,
+            2,
+            10,
+            "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering",
+        ),
     ];
 
     for (source, line, column, message) in cases {

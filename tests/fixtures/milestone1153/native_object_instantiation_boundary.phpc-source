@@ -1,0 +1,3 @@
+<?php
+$box = new Box("Ada");
+echo "after";

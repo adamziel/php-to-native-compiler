@@ -284,7 +284,7 @@ fn emit_ir_rejects_object_instantiation_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$box = new Box();\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("object instantiation"),
+        error.message.contains("object-instantiation"),
         "{}",
         error.message
     );

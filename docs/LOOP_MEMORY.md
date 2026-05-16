@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T19:35:23Z
+
+- Checkpoint before this task:
+  `58e4f920 runtime: enforce interface method boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1151-1155, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI test-runner code, focused tests
+  and fixtures for multiple-simple-class-import parse boundaries,
+  declared-interface non-static method-shape enforcement, dedicated native
+  object-instantiation rejection, text fixture manifest `.phpc-only` reason
+  text, plus `README.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed, then
+  `tools/checkpoint.sh "runtime: enforce interface staticness boundary"`
+  passed with `1331` fixture tests, `757` system PHP comparisons, and `574`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: full namespace import/resolution semantics,
+  static interface method declarations, parameter and return type
+  compatibility/variance, interface inheritance/constants, traits, exact PHP
+  diagnostics/error objects, native object allocation and constructor
+  dispatch, branch-specific PHP comparison matrices, real reference/COW
+  containers, real database and filesystem services, and full WordPress
+  request/plugin/theme flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1156-1159 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T19:19:31Z
 
 - Checkpoint before this task:

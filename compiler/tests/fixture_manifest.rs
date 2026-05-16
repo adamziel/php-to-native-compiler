@@ -14,7 +14,11 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
     fs::write(nested_dir.join("beta.php"), "<?php echo 'beta';\n").unwrap();
     fs::write(nested_dir.join("beta.stderr"), "beta stderr\n").unwrap();
     fs::write(nested_dir.join("beta.exit"), "7\n").unwrap();
-    fs::write(nested_dir.join("beta.phpc-only"), "").unwrap();
+    fs::write(
+        nested_dir.join("beta.phpc-only"),
+        "project diagnostic has no system PHP equivalent\n",
+    )
+    .unwrap();
     fs::write(fixture_dir.join("alpha.php"), "<?php echo 'alpha';\n").unwrap();
     fs::write(fixture_dir.join("alpha.stdout"), "alpha\n").unwrap();
 
@@ -38,7 +42,7 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
             "fixture manifest: 3 fixtures\n",
             "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 orphan sidecars=0\n",
             "alpha.php expectations=stdout php-comparison=eligible\n",
-            "nested/beta.php expectations=stderr,exit php-comparison=phpc-only\n",
+            "nested/beta.php expectations=stderr,exit php-comparison=phpc-only phpc-only-reason=project diagnostic has no system PHP equivalent\n",
             "zeta.php expectations=none php-comparison=eligible\n",
         )
     );
@@ -83,7 +87,7 @@ fn cli_list_fixtures_reports_orphan_sidecars_deterministically() {
         concat!(
             "fixture manifest: 1 fixtures\n",
             "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=4\n",
-            "live.php expectations=stdout php-comparison=phpc-only\n",
+            "live.php expectations=stdout php-comparison=phpc-only phpc-only-reason=\n",
             "orphan sidecar: alpha.stdout kind=stdout expected-fixture=alpha.php\n",
             "orphan sidecar: nested/beta.exit kind=exit expected-fixture=nested/beta.php\n",
             "orphan sidecar: nested/beta.phpc-only kind=phpc-only expected-fixture=nested/beta.php\n",

@@ -335,7 +335,8 @@ PHP-version-specific diagnostics, or replace committed fixture expectations.
 Use `phpc test --list-fixtures [fixture-dir]` to print a deterministic fixture
 manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and
-whether it is eligible for system PHP comparison.
+whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
+also include their marker text as `phpc-only-reason=<reason>`.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
 manifest as deterministic JSON with `contract_version` 3. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason` so comparison opt-outs

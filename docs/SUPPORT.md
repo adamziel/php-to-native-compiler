@@ -1932,10 +1932,12 @@
   to same-namespace functions with global builtin/user-function fallback.
 - explicit parse diagnostics for unsupported namespace forms and imports:
   bracketed/global/multiple namespaces, namespace-scoped constants, grouped
-  imports, function imports, constant imports, qualified function calls, and
-  namespace-qualified function calls such as `App\make()`. Function and const
-  imports have dedicated diagnostics naming missing import metadata,
-  namespace-aware lookup, alias handling, fallback lookup, and native lowering.
+  imports, multiple simple class imports in one `use` declaration, function
+  imports, constant imports, qualified function calls, and
+  namespace-qualified function calls such as `App\make()`. Multiple class
+  imports, function imports, and const imports have dedicated diagnostics
+  naming missing import metadata, namespace-aware lookup, alias handling,
+  fallback lookup where applicable, and native lowering.
 - explicit parse diagnostics for unsupported magic class names in `new`
   expressions such as `new self()`, `new parent()`, and `new static()`
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
@@ -2279,11 +2281,13 @@
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes. For interfaces declared in the current
   parsed program, concrete classes must expose public methods with the required
-  interface method names; abstract classes may defer that requirement until a
-  concrete child is registered, and inherited public methods count. This is a
-  public method-presence check only, not parameter/return type compatibility
-  or exact PHP error-object behavior. Unresolved interface names and
-  built-in/internal interface names remain relationship metadata only. The
+  interface method names and current supported non-static method shape;
+  abstract classes may defer that requirement until a concrete child is
+  registered, and inherited public methods count. Public static methods do not
+  satisfy non-static interface method requirements. This is a bounded
+  public-method compatibility check only, not parameter/return type
+  compatibility or exact PHP error-object behavior. Unresolved interface names
+  and built-in/internal interface names remain relationship metadata only. The
   bounded core interface catalog currently includes `Traversable`,
   `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
   and `Stringable` for `interface_exists()` and `get_declared_interfaces()`.
@@ -3399,8 +3403,8 @@
   lowering with a specific codegen diagnostic until generated code has native
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
-  Native class declarations, inheritance metadata, object instantiation,
-  constructor dispatch, instance method calls, and object metadata builtins
+  Native class declarations, inheritance metadata, instance method calls, and
+  object metadata builtins
   beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
@@ -3409,6 +3413,11 @@
   with a specific codegen diagnostic until generated code has native object
   layout, handles, visibility, method dispatch, class metadata tables,
   inheritance, autoload interaction, and exact native error objects.
+  Native object-instantiation lowering has a separate rejection for `new`
+  expressions and constructor dispatch until generated code has native object
+  allocation, object handles, constructor calls, visibility checks,
+  autoload/class lookup, references/copy-on-write, and exact native
+  object-instantiation errors.
   Native object-property lowering has a separate rejection for instance
   property reads/writes and dynamic property-name access until generated code
   has native object layout, property tables/slots, visibility checks, magic
@@ -4995,9 +5004,10 @@
 - `phpc test --list-fixtures [fixture-dir]` prints a sorted fixture manifest
   with each fixture's recognized expectation files and PHP-comparison
   eligibility, plus aggregate counts for eligible versus `.phpc-only` fixtures
-  and recognized sidecars. It also reports recognized orphan sidecars that do
-  not have a matching `.php` fixture. It does not parse, execute, or compare
-  fixtures.
+  and recognized sidecars. `.phpc-only` fixture entries include
+  `phpc-only-reason=<reason>` from the marker text, while comparable fixtures
+  omit the field. It also reports recognized orphan sidecars that do not have
+  a matching `.php` fixture. It does not parse, execute, or compare fixtures.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
   fixture manifest as deterministic JSON with `contract_version` 3, aggregate
   counts, sorted fixture entries, recognized expectation metadata,

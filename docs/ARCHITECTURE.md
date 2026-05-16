@@ -1393,8 +1393,8 @@ constant reads, top-level `const` declarations, `define()`/`constant()`, and
 unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
-Native lowering rejects class declarations, object instantiation, clone
-expressions, method-call expressions, and object metadata builtins before
+Native lowering rejects class declarations, clone expressions,
+method-call expressions, and object metadata builtins before
 body, operand, receiver, or argument lowering, except for direct static
 false-folding of
 `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists` when
@@ -1411,6 +1411,10 @@ Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
 metadata access, property-slot cloning, `__clone` dispatch, reference-slot
 metadata, inheritance, autoload interaction, and exact native error behavior.
+Object instantiation and constructor dispatch have a separate native rejection
+until generated code has native object allocation, object handles, constructor
+calls, visibility checks, autoload/class lookup, references/copy-on-write, and
+exact native object-instantiation errors.
 Instance property reads/writes and dynamic property-name access have a
 separate native object-property boundary until generated code has native
 object layout, property tables/slots, visibility checks, magic property hooks,
@@ -1623,10 +1627,12 @@ Non-object values return false. `implements` names are recorded as metadata so
 internal names can participate in relationships without being declared. For
 interfaces declared in the current parsed program, runtime class registration
 checks concrete classes, including concrete children of abstract implementors,
-for public methods with the required interface method names. This is a bounded
-presence check only; parameter and return type compatibility, interface
-inheritance, built-in/internal interface method enforcement, exact PHP error
-objects, autoload behavior, and native lowering remain separate work. A bounded
+for public methods with the required interface method names and the current
+supported non-static method shape. Public static methods do not satisfy
+non-static interface method requirements. This is a bounded compatibility
+check only; parameter and return type compatibility, interface inheritance,
+built-in/internal interface method enforcement, exact PHP error objects,
+autoload behavior, and native lowering remain separate work. A bounded
 core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at

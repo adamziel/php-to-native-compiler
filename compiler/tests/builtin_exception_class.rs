@@ -3,6 +3,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 
 #[test]
 fn builtin_exception_metadata_supports_lookup_instantiation_and_inheritance() {
@@ -81,7 +82,7 @@ fn emit_ir_rejects_builtin_exception_instantiation_before_native_object_lowering
     let error = emit_ir_source("<?php\n$exception = new Exception();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
@@ -122,5 +123,5 @@ fn emit_asm_rejects_builtin_exception_instantiation_before_backend_execution() {
     let error = emit_asm_source("<?php\n$exception = new Exception();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }

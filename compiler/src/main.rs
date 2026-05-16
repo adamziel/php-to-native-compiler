@@ -323,9 +323,15 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         "eligible"
     };
 
+    let reason = entry
+        .phpc_only_reason
+        .as_ref()
+        .map(|reason| format!(" phpc-only-reason={}", text_field_value(reason)))
+        .unwrap_or_default();
+
     format!(
-        "{} expectations={} php-comparison={}",
-        entry.path, expectations, comparison
+        "{} expectations={} php-comparison={}{}",
+        entry.path, expectations, comparison, reason
     )
 }
 
@@ -617,6 +623,23 @@ fn json_string_literal(value: &str) -> String {
         }
     }
     escaped.push('"');
+    escaped
+}
+
+fn text_field_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
     escaped
 }
 

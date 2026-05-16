@@ -445,7 +445,9 @@ fn emit_ir_rejects_magic_class_name_instantiation_after_parse() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error
+            .message
+            .contains("object-instantiation lowering rejects"),
         "{}",
         error.message
     );

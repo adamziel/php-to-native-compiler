@@ -1995,6 +1995,68 @@ class Service implements Logger {
 }
 
 #[test]
+fn interface_required_method_static_compatibility_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public function log($message) {
+        return "log:" . $message;
+    }
+}
+
+$service = new Service();
+echo $service->log("ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "log:ok");
+    assert_eq!(execution.exit_code, 0);
+
+    let static_method_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public static function log($message) {}
+}
+"#,
+    );
+    assert_eq!(static_method_error.line, 6);
+    assert_eq!(static_method_error.column, 1);
+    assert_eq!(
+        static_method_error.message,
+        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log() as non static method; found static Service::log()"
+    );
+
+    let inherited_static_method_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+abstract class Base implements Logger {
+    public static function log($message) {}
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(inherited_static_method_error.line, 10);
+    assert_eq!(inherited_static_method_error.column, 1);
+    assert_eq!(
+        inherited_static_method_error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log() as non static method; found static Base::log()"
+    );
+}
+
+#[test]
 fn inherited_interface_required_method_presence_is_enforced_for_concrete_classes() {
     let execution = run_source(
         r#"<?php

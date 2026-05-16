@@ -1,0 +1,2 @@
+parse error at 2:10: unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering
+

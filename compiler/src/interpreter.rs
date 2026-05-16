@@ -19072,10 +19072,28 @@ fn validate_interface_method_implementation(
             )) {
                 continue;
             }
-            if class_has_public_method(classes, class_id, &lookup_name) {
+            let Some((declaring_class_name, class_method)) =
+                find_public_method(classes, class_id, &lookup_name)
+            else {
+                missing.push(format!("{}::{}()", interface.name, method.function.name));
                 continue;
+            };
+
+            if class_method.is_static() {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!(
+                        "concrete class {} must implement interface method {}::{}() as {} method; found {} {}::{}()",
+                        class.name,
+                        interface.name,
+                        method.function.name,
+                        method_static_name(false),
+                        method_static_name(class_method.is_static()),
+                        declaring_class_name,
+                        class_method.name()
+                    ),
+                ));
             }
-            missing.push(format!("{}::{}()", interface.name, method.function.name));
         }
     }
 
@@ -19112,23 +19130,25 @@ fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Ve
     names
 }
 
-fn class_has_public_method(
-    classes: &PhpClassTable,
+fn find_public_method<'a>(
+    classes: &'a PhpClassTable,
     class_id: ClassId,
     method_lookup_name: &str,
-) -> bool {
+) -> Option<(&'a str, &'a PhpMethodMetadata)> {
     let mut current = Some(class_id);
     while let Some(current_id) = current {
         let current_class = classes
             .get(current_id)
             .expect("class id should resolve to class metadata");
         if let Some(method) = current_class.method(method_lookup_name) {
-            return method.visibility() == Visibility::Public;
+            if method.visibility() == Visibility::Public {
+                return Some((current_class.name(), method));
+            }
         }
         current = current_class.parent_id();
     }
 
-    false
+    None
 }
 
 fn validate_abstract_method_implementation(
@@ -19366,16 +19386,8 @@ fn validate_inherited_method_static_compatibility(
             }
 
             if parent_method.is_static() != method.is_static {
-                let parent_static = if parent_method.is_static() {
-                    "static"
-                } else {
-                    "non static"
-                };
-                let child_static = if method.is_static {
-                    "static"
-                } else {
-                    "non static"
-                };
+                let parent_static = method_static_name(parent_method.is_static());
+                let child_static = method_static_name(method.is_static);
                 return Err(RuntimeError::unsupported_class_inheritance(
                     class_name,
                     format!(
@@ -19395,6 +19407,14 @@ fn validate_inherited_method_static_compatibility(
     }
 
     Ok(())
+}
+
+fn method_static_name(is_static: bool) -> &'static str {
+    if is_static {
+        "static"
+    } else {
+        "non static"
+    }
 }
 
 fn validate_inherited_method_signature_compatibility(

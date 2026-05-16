@@ -1,0 +1,2 @@
+runtime error at 6:1: unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log() as non static method; found static Service::log()
+

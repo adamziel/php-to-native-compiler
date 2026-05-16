@@ -227,6 +227,14 @@ use const App\Demo\VALUE as DEMO_VALUE;
         ),
         (
             r#"<?php
+use App\A, App\B;
+"#,
+            2,
+            10,
+            "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering",
+        ),
+        (
+            r#"<?php
 use App\Demo\{Service, Repository};
 "#,
             2,
