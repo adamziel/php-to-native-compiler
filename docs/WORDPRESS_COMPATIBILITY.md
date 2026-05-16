@@ -1801,7 +1801,14 @@ historical blockers and remaining full-support gaps include:
   integration, including a WordPress-shaped `wpdb` smoke, without claiming
   real blob binding, packet buffering, send timing, mutation SQL, broad SQL
   execution, host database state, PHP warning/error fidelity, mysqlnd
-  behavior, or native database lowering. Milestone 965 adds explicit
+  behavior, or native database lowering. Milestone 992 adds deterministic
+  single-statement `mysqli_multi_query()` pending result placeholders for
+  exact known seed-post and empty-result SQL shapes, including a
+  WordPress-shaped `wpdb` smoke, without claiming true multi-statement
+  execution, connection result queues,
+  `mysqli_more_results()`/`mysqli_next_result()` advancement, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

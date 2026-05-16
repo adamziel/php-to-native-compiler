@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone992/wpdb_multi_query_pending_result_placeholder.php
+exit: 0
+stdout:
+1:Hello world placeholder|done
+--- stdout end ---
+stderr:
+--- stderr end ---

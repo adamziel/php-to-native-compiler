@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 992, deterministic single-statement
+  `mysqli_multi_query()` pending result placeholders for the exact known
+  result shapes already supported by `mysqli_real_query()`. The runtime now
+  queues one pending placeholder result on the connection for the current
+  seed-post and empty-result SQL shapes, so `mysqli_field_count()` can observe
+  it until `mysqli_store_result()` or `mysqli_use_result()` consumes it. The
+  new fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes. This
+  is not true multi-statement execution, connection result queues,
+  `mysqli_more_results()`/`mysqli_next_result()` advancement, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_accepts_current_wordpress_charset_setup_placeholder -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone992`.
+
 - Added Milestone 991, bounded `b` type-marker support for
   `mysqli_stmt_bind_param()` plus deterministic long-data execution
   integration. The runtime now accepts `b` alongside the current `s`, `i`, and

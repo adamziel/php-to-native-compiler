@@ -405,10 +405,14 @@ fidelity, and native lowering remain unsupported.
 
 `mysqli_multi_query($handle, 'SET NAMES \'utf8mb4\' COLLATE
 \'utf8mb4_unicode_520_ci\'')` accepts the placeholder object and that exact
-WordPress charset setup statement, returning deterministic `true`. Real
-multi-statement execution, pending result queues,
-`mysqli_more_results()`/`mysqli_next_result()` state, result objects, mutation
-state, warning/error behavior, and host database state are not implemented.
+WordPress charset setup statement, returning deterministic `true` without
+pending result state. It also accepts the exact deterministic seed-post and
+empty-result SQL shapes already supported by `mysqli_real_query()`, queues one
+pending placeholder result, and lets `mysqli_store_result()` or
+`mysqli_use_result()` consume that result. Real multi-statement execution,
+connection result queues, `mysqli_more_results()`/`mysqli_next_result()`
+advancement, mutation state, warning/error behavior, host database state, and
+native lowering are not implemented.
 
 `mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
 placeholder `mysqli_result` object for the first deterministic empty result

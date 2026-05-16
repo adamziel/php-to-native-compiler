@@ -225,11 +225,15 @@ warning/error fidelity, or native lowering, plus bounded deterministic
 real multi-statement execution, pending result queues,
 `mysqli_more_results()`/`mysqli_next_result()` state, result object creation,
 mutation state, host database state, warning/error fidelity, or native
-lowering, now wired through a synthetic WordPress-shaped `wpdb` connection
-query bookkeeping smoke without claiming real multi-statement execution,
-pending result queues, result object creation, mutation state, connection
-charset mutation, host database state, warning/error fidelity, or native
-lowering, plus bounded deterministic `mysqli_reap_async_query()` clean
+lowering, plus deterministic single-statement pending result placeholders for
+the exact known seed-post and empty-result shapes without real
+multi-statement execution, connection result queue advancement, mutation SQL,
+host database state, mysqlnd behavior, or native lowering, now wired through
+synthetic WordPress-shaped `wpdb` connection query bookkeeping smokes without
+claiming real multi-statement execution, result queue advancement, mutation
+state, connection charset mutation, host database state, warning/error
+fidelity, or native lowering, plus bounded deterministic
+`mysqli_reap_async_query()` clean
 no-async-result placeholder metadata without `MYSQLI_ASYNC`, `mysqli_poll()`,
 async socket readiness, pending async result queues, result object creation,
 host database state, warning/error fidelity, or native lowering, now wired

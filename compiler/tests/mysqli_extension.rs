@@ -3295,13 +3295,38 @@ echo "|";
 echo mysqli_next_result($handle) ? "next" : "done";
 echo "|";
 echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
+echo "|";
+echo mysqli_multi_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle);
+$result = mysqli_store_result($handle);
+echo "|";
+echo get_class($result);
+echo "|";
+echo mysqli_field_count($handle);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "done";
+echo "|";
+echo mysqli_store_result($handle) === false ? "drained" : "pending";
+
+$handle2 = mysqli_init();
+mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_multi_query($handle2, "SELECT * FROM wp_posts WHERE 1 = 0");
+$empty = mysqli_use_result($handle2);
+echo "|";
+echo get_class($empty), ":", mysqli_num_rows($empty), ":", mysqli_num_fields($empty);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|charset-ok|dynamic|done|done|no-pending"
+        "yes|callable|charset-ok|dynamic|done|done|no-pending|queued|2|mysqli_result|0|1:Hello world placeholder|done|done|drained|mysqli_result:0:0"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4037,7 +4062,7 @@ mysqli_multi_query(mysqli_init(), "SELECT 1");
     assert_eq!(unsupported_select.column, 1);
     assert_eq!(
         unsupported_select.message,
-        "unsupported call mysqli_multi_query(): result-producing mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_store_result()/mysqli_use_result() state are not modeled; got SELECT 1"
+        "unsupported call mysqli_multi_query(): general result-producing mysqli_multi_query() SQL is not implemented; only deterministic pending result placeholders are supported in the current subset; got SELECT 1"
     );
 
     let unsupported_mutation = run_source(

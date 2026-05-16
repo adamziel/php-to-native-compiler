@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `85d06127 runtime: wire mysqli stmt blob long data`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 992, deterministic single-statement
+  `mysqli_multi_query()` pending result placeholders for exact known seed-post
+  and empty-result SQL shapes, with direct MySQLi and WordPress-shaped `wpdb`
+  smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone992/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_accepts_current_wordpress_charset_setup_placeholder -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone992`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder `mysqli_multi_query()` can now queue
+  one deterministic pending result for exact known single-statement result
+  shapes and drain it through `mysqli_store_result()`/`mysqli_use_result()`.
+- Remaining semantic gaps: true multi-statement execution, connection result
+  queues, `mysqli_more_results()`/`mysqli_next_result()` advancement,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect true
+  reference aliasing, named params-array behavior, true multi-result queues,
+  mutation SQL, or the next real database integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `70f1097a runtime: add mysqli stmt long data state`, pushed to
   `origin/master`.
 - Task attempted: Milestone 991, bounded `b` type-marker support for

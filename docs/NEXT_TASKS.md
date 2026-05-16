@@ -9389,7 +9389,7 @@ handled.
   blob binding, packet buffering, send timing, mutation SQL, broad SQL
   execution, host database state, PHP warning/error fidelity, mysqlnd
   behavior, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, named params-array behavior,
   broader escaping charset fidelity, local-infile option effects, connection
@@ -9397,12 +9397,27 @@ handled.
   add the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 992 adds deterministic single-statement `mysqli_multi_query()`
+  pending result placeholders for exact known seed-post and empty-result SQL
+  shapes, including a WordPress-shaped `wpdb` smoke. This is not true
+  multi-statement execution, connection result queues,
+  `mysqli_more_results()`/`mysqli_next_result()` advancement, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, named params-array behavior,
+  broader escaping charset fidelity, local-infile option effects, true
+  connection multi-result queues, mutation SQL, or the next real database
+  integration gap, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `70f1097a runtime: add mysqli stmt long data state`, covering
-  Milestone 990 before the current Milestone 991 candidate.
+  `85d06127 runtime: wire mysqli stmt blob long data`, covering
+  Milestone 991 before the current Milestone 992 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

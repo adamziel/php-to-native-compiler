@@ -5527,9 +5527,9 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_multi_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_multi_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_multi_query", args, 2, span)?;
-        expect_mysqli_handle("mysqli_multi_query()", &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_multi_query()", &args[0], span)?;
         let Value::String(query) = &args[1] else {
             return Err(runtime_error(
                 span,
@@ -5559,13 +5559,18 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
-        if is_mysqli_select_query(query) || is_wordpress_empty_options_query(query) {
+        if let Some(result) = mysqli_pending_result_for_query(query) {
+            self.mysqli_pending_results.insert(handle_id, result);
+            return Ok(Value::Bool(true));
+        }
+
+        if is_mysqli_select_query(query) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "mysqli_multi_query()",
                     format!(
-                        "result-producing mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_store_result()/mysqli_use_result() state are not modeled; got {query}"
+                        "general result-producing mysqli_multi_query() SQL is not implemented; only deterministic pending result placeholders are supported in the current subset; got {query}"
                     ),
                 ),
             ));

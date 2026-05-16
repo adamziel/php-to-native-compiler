@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone992/mysqli_multi_query_pending_result_placeholder.php
+exit: 0
+stdout:
+queued|2|mysqli_result:1:Hello world placeholder|done|done|drained
+--- stdout end ---
+stderr:
+--- stderr end ---
