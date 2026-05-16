@@ -33,14 +33,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1041, bounded direct `mysqli_query()` `wp_options`
   autoload readback from the current per-placeholder-handle option state.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1041/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
   `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
   `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test mysqli_extension mysqli_query_reads_current_wordpress_option_autoload_from_state -- --test-threads=1`
   and `cargo run -p phpc -- test tests/fixtures/milestone1041` passed.
+  `cargo fmt --check`, `git diff --check`, and the serialized checkpoint gate
+  also passed. The full gate passed with 1256 fixture tests, 702 system PHP
+  comparisons, and 554 skipped comparisons, then committed
+  `8fc6c0f9 runtime: add wp options autoload readback`.
 - Current WordPress frontier: exact direct option autoload reads can expose
   the recorded `autoload` value from the placeholder `wp_options` state island
   through the existing result/fetch path.
@@ -49,8 +53,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   character-set/collation fidelity, schema/index behavior, host database
   execution, PDO, prepared-statement autoload reads, warning/error fidelity,
   references/copy-on-write, and native lowering remain missing.
-- Next concrete task: rerun focused checks after docs, then the serialized
-  checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint, then continue with an independent
+  next lane candidate: parser short `[...]` destructuring, object
+  `is_iterable()` metadata, native helper signature layout rendering, or the
+  next database state consumer.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

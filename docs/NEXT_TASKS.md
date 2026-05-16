@@ -10047,8 +10047,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `623cf186 docs: record countable object protocol gate`, covering
-  Milestone 1040.
+  `8fc6c0f9 runtime: add wp options autoload readback`, covering
+  Milestone 1041.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
