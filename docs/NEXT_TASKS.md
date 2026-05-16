@@ -10544,8 +10544,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1478e0b0 runtime: add mutable ini set registry`, covering Milestone 1081.
-  The serialized checkpoint gate passed with 1286 fixture tests, 731
+  `160e0661 runtime: add dynamic variable class instantiation`, covering
+  Milestone 1082. The serialized checkpoint gate passed with 1287 fixture tests, 732
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations
