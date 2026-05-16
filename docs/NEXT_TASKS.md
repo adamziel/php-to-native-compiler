@@ -10539,8 +10539,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `09601a33 runtime: add ignore user abort placeholder`, covering Milestone
-  1079. The serialized checkpoint gate passed with 1284 fixture tests, 729
+  `4b402762 runtime: preserve copied reference array slots`, covering
+  Milestone 1080. The serialized checkpoint gate passed with 1285 fixture tests, 730
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations

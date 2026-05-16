@@ -30,25 +30,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 
 - Checkpoint before this task:
   `1d0aea46 docs: record ignore user abort gate`, pushed to `origin/master`.
+- Checkpoint after this task:
+  `4b402762 runtime: preserve copied reference array slots`.
 - Task attempted: Milestone 1080, bounded direct static array-copy preservation
   for direct array-offset reference elements.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/array_reference_literals.rs`,
   `tests/fixtures/milestone1080/array_copy_reference_elements.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check`, `cargo test -p phpc --test array_reference_literals
   -- --test-threads=1`, `cargo run -q -p phpc -- test
   tests/fixtures/milestone1080 --compare-php`, `cargo check -p php_runtime -p
   phpc`, `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
-  and `cargo test -p phpc --test foreach -- --test-threads=1` passed.
+  and `cargo test -p phpc --test foreach -- --test-threads=1` passed. The
+  serialized checkpoint gate passed with 1285 fixture tests, 730 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `4b402762 runtime: preserve copied reference array slots`.
 - Remaining semantic gaps: runtime reference containers, nested/object copied
   reference slots, reference array literals, ArrayAccess reference containers,
   exact alias destruction ordering, full array/object copy-on-write, and native
   lowering remain missing.
-- Next concrete task: run `git diff --check`, then the serialized checkpoint
-  gate for Milestone 1080 if the tree stays coherent.
+- Next concrete task: choose the next reference/COW or WordPress entry-flow
+  blocker from `docs/NEXT_TASKS.md` and keep the slice bounded with focused PHP
+  comparison coverage.
 
 ## Loop Event 2026-05-16T21:45:00Z
 

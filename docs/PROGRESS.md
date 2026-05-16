@@ -16,12 +16,15 @@ Implemented:
   so later plain array copies do not inherit old reference metadata. This does
   not implement runtime reference containers, nested/object copied reference
   slots, reference array literals, ArrayAccess reference containers, exact PHP
-  alias destruction ordering, or native lowering. Verification so far:
+  alias destruction ordering, or native lowering. Verification:
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
   `cargo run -q -p phpc -- test tests/fixtures/milestone1080 --compare-php`,
   `cargo check -p php_runtime -p phpc`,
   `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
-  and `cargo test -p phpc --test foreach -- --test-threads=1`.
+  and `cargo test -p phpc --test foreach -- --test-threads=1`. The
+  serialized checkpoint gate passed with 1285 fixture tests, 730 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `4b402762 runtime: preserve copied reference array slots`.
 
 - Added Milestone 1079, a bounded `ignore_user_abort()` SAPI/connection-state
   placeholder for the reached WordPress `wp-cron.php` entry flow. The
