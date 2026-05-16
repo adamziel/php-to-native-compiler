@@ -414,9 +414,12 @@ pending placeholder result, and lets `mysqli_store_result()` or
 multi-result queue when every statement is one of those exact known result
 placeholders; `mysqli_more_results()` reports queued future placeholders, and
 `mysqli_next_result()` advances after the current pending result is consumed.
-Real SQL execution, mixed no-result/result multi-statements, broad
-multi-statement parsing, mutation state, warning/error behavior, host database
-state, mysqlnd fidelity, and native lowering are not implemented.
+Known no-result charset setup statements can also appear before or after those
+exact result placeholders; they expose field count `0`, `mysqli_store_result()
+=== false`, and advance through `mysqli_next_result()`. Real SQL execution,
+broad multi-statement parsing, mutation state, arbitrary no-result statements,
+warning/error behavior, host database state, mysqlnd fidelity, and native
+lowering are not implemented.
 
 `mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
 placeholder `mysqli_result` object for the first deterministic empty result

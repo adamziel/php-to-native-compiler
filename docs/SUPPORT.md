@@ -1115,11 +1115,14 @@
   deterministic multi-result queue when every statement is one of those exact
   known result placeholders; `mysqli_more_results($handle)` reports queued
   future placeholder results, and `mysqli_next_result($handle)` advances after
-  the current pending result has been consumed. True SQL execution, mixed
-  no-result/result multi-statements, broad multi-statement parsing, mutation
-  state, connection charset mutation, host database state, warning/error
-  fidelity, and native database lowering remain unsupported. `mysqli_query(...)`
-  also accepts the
+  the current pending result has been consumed. Known no-result charset setup
+  statements can also appear before or after those exact result placeholders:
+  they expose `mysqli_field_count($handle) === 0`,
+  `mysqli_store_result($handle) === false`, and advance through
+  `mysqli_next_result($handle)`. True SQL execution, broad multi-statement
+  parsing, mutation state, arbitrary no-result statements, connection charset
+  mutation, host database state, warning/error fidelity, and native database
+  lowering remain unsupported. `mysqli_query(...)` also accepts the
   reached WordPress options-table bootstrap reads
   `SELECT option_name, option_value FROM <prefix>options WHERE autoload IN (
   'yes', 'on', 'auto-on', 'auto' )` and
@@ -3427,9 +3430,9 @@
   `mysqli_multi_query(...)` can queue one deterministic pending result for
   exact known single-statement result shapes, and `mysqli_multi_query(...)`
   can queue bounded deterministic multi-results when every statement is an
-  exact known result placeholder, without true SQL execution, mixed
-  no-result/result multi-statements, broad multi-statement parsing, mutation
-  state, host database state, or mysqlnd fidelity;
+  exact known result placeholder or known no-result charset setup statement,
+  without true SQL execution, broad multi-statement parsing, mutation state,
+  arbitrary no-result statements, host database state, or mysqlnd fidelity;
   `mysqli_reap_async_query(...)` returns only deterministic clean no-async
   result state without `MYSQLI_ASYNC`, `mysqli_poll()`, async socket readiness,
   or pending async result queues;

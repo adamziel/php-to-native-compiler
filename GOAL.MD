@@ -232,11 +232,15 @@ host database state, mysqlnd behavior, or native lowering, plus bounded
 deterministic multi-result queues when every semicolon-separated statement is
 one of those exact known result placeholders, without true SQL execution,
 mixed no-result/result statement handling, broad multi-statement parsing,
-mutation SQL, host database state, mysqlnd fidelity, or native lowering, now
-wired through synthetic WordPress-shaped `wpdb` connection query bookkeeping
-smokes without claiming real SQL execution, broad multi-statement behavior,
-mutation state, connection charset mutation, host database state,
-warning/error fidelity, or native lowering, plus bounded deterministic
+mutation SQL, host database state, mysqlnd fidelity, or native lowering, plus
+bounded mixed no-result/result queue slots for known charset setup statements
+before or after exact known result placeholders without true SQL execution,
+broad multi-statement parsing, arbitrary no-result statements, mutation SQL,
+host database state, mysqlnd fidelity, or native lowering, now wired through
+synthetic WordPress-shaped `wpdb` connection query bookkeeping smokes without
+claiming real SQL execution, broad multi-statement behavior, mutation state,
+connection charset mutation, host database state, warning/error fidelity, or
+native lowering, plus bounded deterministic
 `mysqli_reap_async_query()` clean
 no-async-result placeholder metadata without `MYSQLI_ASYNC`, `mysqli_poll()`,
 async socket readiness, pending async result queues, result object creation,

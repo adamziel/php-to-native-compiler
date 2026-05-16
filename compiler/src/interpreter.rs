@@ -103,7 +103,7 @@ struct Interpreter {
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
-    mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliPendingResultState>>,
+    mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -132,6 +132,12 @@ struct MysqliResultState {
 struct MysqliPendingResultState {
     fields: Vec<String>,
     rows: Vec<Vec<(String, Value)>>,
+}
+
+#[derive(Debug, Clone)]
+enum MysqliMultiResultSlot {
+    NoResult,
+    Result(MysqliPendingResultState),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -4463,16 +4469,23 @@ impl Interpreter {
     fn set_mysqli_pending_result_queue(
         &mut self,
         handle_id: i64,
-        results: Vec<MysqliPendingResultState>,
+        results: Vec<MysqliMultiResultSlot>,
     ) {
         let mut results: VecDeque<_> = results.into();
-        let Some(first) = results.pop_front() else {
+        let Some(first_slot) = results.pop_front() else {
             self.mysqli_pending_results.remove(&handle_id);
             self.mysqli_pending_result_queues.remove(&handle_id);
             return;
         };
 
-        self.mysqli_pending_results.insert(handle_id, first);
+        match first_slot {
+            MysqliMultiResultSlot::NoResult => {
+                self.mysqli_pending_results.remove(&handle_id);
+            }
+            MysqliMultiResultSlot::Result(result) => {
+                self.mysqli_pending_results.insert(handle_id, result);
+            }
+        }
         if results.is_empty() {
             self.mysqli_pending_result_queues.remove(&handle_id);
         } else {
@@ -5510,7 +5523,10 @@ impl Interpreter {
         }
 
         if let Some(result) = mysqli_pending_result_for_query(query) {
-            self.set_mysqli_pending_result_queue(handle_id, vec![result]);
+            self.set_mysqli_pending_result_queue(
+                handle_id,
+                vec![MysqliMultiResultSlot::Result(result)],
+            );
             return Ok(Value::Bool(true));
         }
 
@@ -5576,7 +5592,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "mysqli_multi_query()",
                     format!(
-                        "multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known result-statement queues are supported in the current subset; got {query}"
+                        "multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known no-result/result queues are supported in the current subset; got {query}"
                     ),
                 ),
             ));
@@ -5587,7 +5603,10 @@ impl Interpreter {
         }
 
         if let Some(result) = mysqli_pending_result_for_query(query) {
-            self.set_mysqli_pending_result_queue(handle_id, vec![result]);
+            self.set_mysqli_pending_result_queue(
+                handle_id,
+                vec![MysqliMultiResultSlot::Result(result)],
+            );
             return Ok(Value::Bool(true));
         }
 
@@ -6187,7 +6206,7 @@ impl Interpreter {
         let Some(results) = self.mysqli_pending_result_queues.get_mut(&handle_id) else {
             return Ok(Value::Bool(false));
         };
-        let Some(result) = results.pop_front() else {
+        let Some(slot) = results.pop_front() else {
             self.mysqli_pending_result_queues.remove(&handle_id);
             return Ok(Value::Bool(false));
         };
@@ -6195,7 +6214,14 @@ impl Interpreter {
         if queue_is_empty {
             self.mysqli_pending_result_queues.remove(&handle_id);
         }
-        self.mysqli_pending_results.insert(handle_id, result);
+        match slot {
+            MysqliMultiResultSlot::NoResult => {
+                self.mysqli_pending_results.remove(&handle_id);
+            }
+            MysqliMultiResultSlot::Result(result) => {
+                self.mysqli_pending_results.insert(handle_id, result);
+            }
+        }
         Ok(Value::Bool(true))
     }
 
@@ -14625,7 +14651,7 @@ fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultSta
 
 fn mysqli_pending_results_for_multi_statement_query(
     query: &str,
-) -> Option<Vec<MysqliPendingResultState>> {
+) -> Option<Vec<MysqliMultiResultSlot>> {
     let statements: Vec<_> = query
         .split(';')
         .map(str::trim)
@@ -14637,8 +14663,16 @@ fn mysqli_pending_results_for_multi_statement_query(
 
     statements
         .into_iter()
-        .map(mysqli_pending_result_for_query)
+        .map(mysqli_multi_result_slot_for_query)
         .collect()
+}
+
+fn mysqli_multi_result_slot_for_query(query: &str) -> Option<MysqliMultiResultSlot> {
+    if is_wordpress_charset_setup_query(query) {
+        return Some(MysqliMultiResultSlot::NoResult);
+    }
+
+    mysqli_pending_result_for_query(query).map(MysqliMultiResultSlot::Result)
 }
 
 fn mysqli_statement_result_for_query(

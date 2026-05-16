@@ -3373,6 +3373,61 @@ echo mysqli_next_result($handle) ? "next" : "done";
 }
 
 #[test]
+fn mysqli_multi_query_tracks_current_mixed_no_result_and_result_queue() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_multi_query($handle, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT ID, post_title FROM wp_posts WHERE ID = 1") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-result" : "result";
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "blocked";
+echo "|";
+echo mysqli_field_count($handle);
+$result = mysqli_store_result($handle);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "done";
+
+$handle2 = mysqli_init();
+mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_multi_query($handle2, "SELECT ID, post_title FROM wp_posts WHERE ID = 1; SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'") ? "queued" : "failed";
+$first = mysqli_store_result($handle2);
+$first_row = mysqli_fetch_assoc($first);
+echo "|";
+echo $first_row["ID"], ":", $first_row["post_title"];
+echo "|";
+echo mysqli_more_results($handle2) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle2) ? "next" : "blocked";
+echo "|";
+echo mysqli_field_count($handle2);
+echo "|";
+echo mysqli_store_result($handle2) === false ? "no-result" : "result";
+echo "|";
+echo mysqli_more_results($handle2) ? "more" : "done";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "queued|0|no-result|more|next|2|1:Hello world placeholder|done|done|queued|1:Hello world placeholder|more|next|0|no-result|done"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_reap_async_query_returns_current_clean_placeholder_state() {
     let execution = run_source(
         r#"<?php
@@ -4088,7 +4143,7 @@ mysqli_multi_query(mysqli_init(), "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_
     assert_eq!(unsupported_multi_statement.column, 1);
     assert_eq!(
         unsupported_multi_statement.message,
-        "unsupported call mysqli_multi_query(): multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known result-statement queues are supported in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1"
+        "unsupported call mysqli_multi_query(): multi-statement mysqli_multi_query() SQL is not implemented; only deterministic known no-result/result queues are supported in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1"
     );
 
     let unsupported_select = run_source(

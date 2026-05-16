@@ -9418,7 +9418,7 @@ handled.
   not true SQL execution, mixed no-result/result statement handling, broad
   multi-statement parsing, mutation SQL, host database state, PHP
   warning/error fidelity, mysqlnd behavior, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as mixed
   no-result/result multi-statement handling, real reference aliasing around
   bound parameters/results, named params-array behavior, broader escaping
@@ -9426,12 +9426,26 @@ handled.
   real database integration gap, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
+  Milestone 994 adds bounded mixed no-result/result queue slots for known
+  charset setup statements before or after exact known result placeholders,
+  including a WordPress-shaped `wpdb` smoke. This is not true SQL execution,
+  broad multi-statement parsing, arbitrary no-result statements, mutation SQL,
+  host database state, PHP warning/error fidelity, mysqlnd behavior, or native
+  database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as arbitrary
+  no-result statement handling, real reference aliasing around bound
+  parameters/results, named params-array behavior, broader escaping charset
+  fidelity, local-infile option effects, mutation SQL, or the next real
+  database integration gap, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `76e18c58 runtime: add mysqli multi query pending results`, covering
-  Milestone 992 before the current Milestone 993 candidate.
+  `f5c43faa runtime: add mysqli multi query result queues`, covering
+  Milestone 993 before the current Milestone 994 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

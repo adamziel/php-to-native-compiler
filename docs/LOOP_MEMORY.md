@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `f5c43faa runtime: add mysqli multi query result queues`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 994, bounded mixed no-result/result queue slots
+  for deterministic `mysqli_multi_query()` input, with direct MySQLi and
+  WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone994/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_tracks_current_mixed_no_result_and_result_queue -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone994`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder `mysqli_multi_query()` can now move
+  through known charset setup no-result slots before or after exact known
+  result placeholders.
+- Remaining semantic gaps: true SQL execution, broad multi-statement parsing,
+  arbitrary no-result statements, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, and native database lowering remain
+  missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect arbitrary
+  no-result statements, true reference aliasing, named params-array behavior,
+  mutation SQL, or the next real database integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `76e18c58 runtime: add mysqli multi query pending results`, pushed to
   `origin/master`.
 - Task attempted: Milestone 993, bounded deterministic multi-result queue

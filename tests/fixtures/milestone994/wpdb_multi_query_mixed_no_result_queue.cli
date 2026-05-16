@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone994/wpdb_multi_query_mixed_no_result_queue.php
+exit: 0
+stdout:
+Hello world placeholder|done
+--- stdout end ---
+stderr:
+--- stderr end ---

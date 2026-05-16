@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone994/mysqli_multi_query_mixed_no_result_queue.php
+exit: 0
+stdout:
+queued|0|no-result|next|2|1:Hello world placeholder|done
+--- stdout end ---
+stderr:
+--- stderr end ---

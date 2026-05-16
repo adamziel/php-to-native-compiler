@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 994, bounded mixed no-result/result queue slots for
+  deterministic `mysqli_multi_query()` input. Known no-result charset setup
+  statements can now appear before or after exact known result placeholders in
+  semicolon-separated input: no-result slots expose `mysqli_field_count() ===
+  0`, `mysqli_store_result() === false`, and advance with
+  `mysqli_next_result()` while preserving queued result placeholders. The new
+  fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes. This is
+  not true SQL execution, broad multi-statement parsing, mutation SQL,
+  arbitrary no-result statements, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, or native database lowering. Verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_tracks_current_mixed_no_result_and_result_queue -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone994`.
+
 - Added Milestone 993, bounded deterministic multi-result queue state for
   `mysqli_multi_query()` when every semicolon-separated statement is one of
   the exact known result placeholders. The runtime now stores the first

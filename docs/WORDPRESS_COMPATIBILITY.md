@@ -1815,6 +1815,12 @@ historical blockers and remaining full-support gaps include:
   true SQL execution, mixed no-result/result statement handling, broad
   multi-statement parsing, mutation SQL, host database state, PHP
   warning/error fidelity, mysqlnd behavior, or native database lowering.
+  Milestone 994 adds bounded mixed no-result/result queue slots for known
+  charset setup statements before or after exact known result placeholders,
+  including a WordPress-shaped `wpdb` smoke, without claiming true SQL
+  execution, broad multi-statement parsing, arbitrary no-result statements,
+  mutation SQL, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering.
   Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
