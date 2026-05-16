@@ -10318,8 +10318,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f987615d runtime: add direct array offset reference aliases`, covering
-  Milestone 1063.
+  `2399d462 runtime: materialize missing array offset reference aliases`,
+  covering Milestone 1064.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

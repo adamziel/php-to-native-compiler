@@ -18,7 +18,12 @@ Implemented:
   `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
   `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
-  `cargo run -p phpc -- test tests/fixtures/runtime_errors`.
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1269 fixture
+  tests, 715 system PHP comparisons, and 554 skipped comparisons, then
+  committed
+  `2399d462 runtime: materialize missing array offset reference aliases`.
 
 - Added Milestone 1063, a bounded PHP-visible direct array-offset reference
   source slice for existing keys. Statement-form `$alias =& $array[$key];`
