@@ -31,27 +31,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `55c67d63 docs: record copied reference array slot gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `1478e0b0 runtime: add mutable ini set registry`.
 - Task attempted: Milestone 1081, bounded mutable `ini_set()` support over the
   existing deterministic INI registry for the WordPress admin/AJAX entry-flow
   shape.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/src/codegen.rs`, `compiler/tests/ini_builtins.rs`,
   `tests/fixtures/milestone1081/ini_set_state.*`, `docs/PROGRESS.md`,
   `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`,
   and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check`, `cargo test -p phpc --test ini_builtins --
   --test-threads=1`, `cargo run -q -p phpc -- test
   tests/fixtures/milestone1081 --compare-php`, `cargo check -p php_runtime -p
   phpc`, and `git diff --check` passed. The local WordPress 6.9.4
   `wp-admin/admin-ajax.php` probe exited 0 with no stdout/stderr under current
-  deterministic placeholder assumptions.
+  deterministic placeholder assumptions. The serialized checkpoint gate passed
+  with 1286 fixture tests, 731 system PHP comparisons, and 555 skipped PHP
+  comparisons before commit `1478e0b0 runtime: add mutable ini set registry`.
 - Remaining semantic gaps: host php.ini discovery, INI access-level
   enforcement, `ini_restore()`, `ini_get_all()`, SAPI differences,
   extension-owned option catalogs, exact warnings/`TypeError`s, real admin/AJAX
   request state, and native lowering remain missing.
-- Next concrete task: run the serialized checkpoint gate for Milestone 1081 if
-  the tree stays coherent.
+- Next concrete task: choose the next reference/COW or WordPress entry-flow
+  blocker from `docs/NEXT_TASKS.md` and keep the slice bounded with focused PHP
+  comparison coverage.
 
 ## Loop Event 2026-05-16T22:20:00Z
 

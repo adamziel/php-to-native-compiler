@@ -14,13 +14,15 @@ Implemented:
   still reject under the function-call boundary. This does not implement
   host php.ini discovery, access-level enforcement, `ini_restore()`,
   `ini_get_all()`, SAPI differences, extension-owned option catalogs, exact
-  warnings/`TypeError`s, or native lowering. Verification so far:
+  warnings/`TypeError`s, or native lowering. Verification:
   `cargo test -p phpc --test ini_builtins -- --test-threads=1`,
   `cargo run -q -p phpc -- test tests/fixtures/milestone1081 --compare-php`,
   `cargo check -p php_runtime -p phpc`, `git diff --check`, and
   `cargo run -q -p phpc -- run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-admin/admin-ajax.php`,
   which exited 0 with no stdout/stderr under the current deterministic
-  placeholder assumptions.
+  placeholder assumptions. The serialized checkpoint gate passed with 1286
+  fixture tests, 731 system PHP comparisons, and 555 skipped PHP comparisons
+  before commit `1478e0b0 runtime: add mutable ini set registry`.
 
 - Added Milestone 1080, a bounded direct array-copy/reference-element slice.
   The interpreter now keeps array-offset alias groups for direct static array
