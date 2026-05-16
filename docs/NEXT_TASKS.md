@@ -10309,17 +10309,29 @@ handled.
   variable to that slot route. This is not undefined/null root materialization,
   nested/object/`ArrayAccess` offsets, direct array-offset reference targets,
   exact by-reference `foreach`, copy-on-write, or native lowering.
+
+## Milestone 1065: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: materialize undefined or `null` direct roots
+  for the bounded direct array-offset reference-source slice. In the current
+  subset, `$alias =& $array[$key];` now converts an undefined or `null` direct
+  source root into an array containing the selected normalized key as `null`,
+  then binds the direct target variable to that slot route. Alias writes update
+  the materialized slot, direct offset writes are visible through the alias,
+  and non-array roots remain an explicit runtime boundary. This is not
+  nested/object/`ArrayAccess` offsets, direct array-offset reference targets,
+  exact by-reference `foreach`, copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  undefined/null root materialization, nested/object offset aliases, exact
-  by-reference `foreach`, array/object copy-on-write split behavior, or native
-  lowering boundaries, and add the next bounded behavior or explicit
-  diagnostic with PHP comparison coverage where applicable.
+  nested/object offset aliases, exact by-reference `foreach`, array/object
+  copy-on-write split behavior, or native lowering boundaries, and add the next
+  bounded behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2399d462 runtime: materialize missing array offset reference aliases`,
-  covering Milestone 1064.
+  `a4fc20d2 runtime: materialize array offset reference roots`, covering
+  Milestone 1065.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

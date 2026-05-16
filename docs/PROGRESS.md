@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 1065, undefined/null root materialization for the bounded
+  direct array-offset reference-source slice. Statement-form
+  `$alias =& $array[$key];` now materializes an undefined or `null` direct
+  source root as an array containing the normalized key with value `null`,
+  then binds the target direct variable to that slot route. Writes through the
+  alias update the materialized array slot, and subsequent direct offset writes
+  are visible through the alias. Non-array roots remain an explicit runtime
+  boundary. This does not implement nested offsets, object-property offsets,
+  `ArrayAccess` offsets, direct array-offset reference targets, exact
+  by-reference `foreach`, copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1269 fixture
+  tests, 715 system PHP comparisons, and 554 skipped comparisons, then
+  committed
+  `a4fc20d2 runtime: materialize array offset reference roots`.
+
 - Added Milestone 1064, missing-offset materialization for the bounded direct
   array-offset reference-source slice. Statement-form
   `$alias =& $array[$key];` now materializes a missing key as `null` when the

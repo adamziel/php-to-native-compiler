@@ -96,15 +96,16 @@
   rebinding beyond direct names and the direct array-offset source slice,
   PHP reference-container edge cases, copy-on-write, and native lowering remain
   unsupported. Direct array-offset reference sources such as
-  `$alias =& $array[$key];` execute when the source is an existing direct array
-  variable and the target is a direct variable. The evaluated key is normalized
-  with the current array key rules; an absent key is materialized as `null` on
-  that array root before binding. Writes through the alias and direct array
-  offset observe the same selected slot, and `unset($alias)` detaches only the
-  alias name. Undefined/null roots, nested offsets, object-property offsets,
-  `ArrayAccess` offsets, direct array-offset reference targets, exact
-  by-reference `foreach`, full PHP reference containers, copy-on-write, and
-  native lowering remain unsupported.
+  `$alias =& $array[$key];` execute when the source is a direct array variable
+  and the target is a direct variable. The evaluated key is normalized with the
+  current array key rules; an absent key is materialized as `null` on an
+  existing array root before binding. Undefined or `null` direct source roots
+  are materialized as arrays containing the selected `null` slot before
+  binding. Writes through the alias and direct array offset observe the same
+  selected slot, and `unset($alias)` detaches only the alias name. Non-array
+  roots, nested offsets, object-property offsets, `ArrayAccess` offsets, direct
+  array-offset reference targets, exact by-reference `foreach`, full PHP
+  reference containers, copy-on-write, and native lowering remain unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

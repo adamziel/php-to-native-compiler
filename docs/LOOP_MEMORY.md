@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T13:12:00Z
+
+- Checkpoint before this task:
+  `6a99839a docs: record missing array offset reference gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1065, undefined/null direct-root materialization
+  for the bounded direct array-offset reference-source slice.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone748/reference_assignment_array_offset_reached.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
+  passed with 18 tests.
+  `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`
+  passed with 1 test.
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`
+  passed with 2 fixtures, 2 PHP comparisons, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 164
+  fixtures. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1269
+  fixture tests, 715 system PHP comparisons, and 554 skipped comparisons, then
+  committed
+  `a4fc20d2 runtime: materialize array offset reference roots`.
+- Current WordPress frontier: direct `$alias =& $array[$key]` now works for
+  direct array roots with existing or missing normalized keys, and for
+  undefined or `null` direct roots by materializing the root as an array with a
+  `null` selected slot before binding the alias route.
+- Remaining semantic gaps: non-array direct roots still reject;
+  nested/object/`ArrayAccess` offset aliases, direct array-offset reference
+  targets, exact by-reference `foreach`, lingering references, copy-on-write,
+  mutation ordering, and native lowering remain missing.
+- Next concrete task: choose the next reference/COW gap, likely nested/object
+  offset aliases, exact by-reference `foreach`, COW split behavior, or native
+  lowering boundaries, and add a bounded behavior or explicit diagnostic with
+  PHP comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T12:33:28Z
 
 - Checkpoint before this task:

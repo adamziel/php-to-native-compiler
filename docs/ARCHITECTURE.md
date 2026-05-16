@@ -194,16 +194,17 @@ cell in the current scope/global-routing model. Assignment through either name
 updates the other, and `unset($alias)` or `unset($value)` removes only that
 name binding while the cell remains alive through any remaining alias. Direct
 array-offset reference sources now have a narrow execution path:
-`$alias =& $array[$key];` over an existing direct array variable binds the
-target direct variable name to the selected normalized-key array slot route.
-Missing keys on that array root are materialized as `null` before binding.
-Writes through the alias and through the direct array offset observe the same
-value, and `unset($alias)` removes only the alias binding. Undefined/null roots,
-nested offsets, object-property offsets, `ArrayAccess` offsets, exact
-by-reference `foreach`, full reference containers, copy-on-write, and native
-lowering remain future work. Direct variable sources holding object values can
-also be assigned into direct array offsets under the existing object-handle
-value model. Direct free-function
+`$alias =& $array[$key];` over a direct array variable binds the target direct
+variable name to the selected normalized-key array slot route. Missing keys on
+an existing array root are materialized as `null` before binding, and undefined
+or `null` direct source roots are materialized as arrays containing that `null`
+slot before binding. Writes through the alias and through the direct array
+offset observe the same value, and `unset($alias)` removes only the alias
+binding. Non-array roots, nested offsets, object-property offsets,
+`ArrayAccess` offsets, exact by-reference `foreach`, full reference containers,
+copy-on-write, and native lowering remain future work. Direct variable sources
+holding object values can also be assigned into direct array offsets under the
+existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function
 declares `&`, returns a direct variable, and is used as a statement-form
 reference-assignment source; the target name is bound to the returned variable

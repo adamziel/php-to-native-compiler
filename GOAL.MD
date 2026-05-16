@@ -796,12 +796,13 @@ Reconciliation into concrete workstreams:
   eager array cloning, by-value public writes, and value-based equality,
   normalized-key array slot lookup helpers, and a bounded PHP-visible
   direct array-offset reference-source slice for `$alias =& $array[$key];`
-  over existing array roots, including missing-key-to-`null` materialization,
-  documented runtime boundaries, and focused reference fixtures.
-  Missing artifact: undefined/null root reference materialization, nested and
-  object-property offset aliases, full runtime reference containers, magic
-  reference-return dispatch and broader by-reference returns, exact
-  by-reference `foreach`, and COW tests that compare against PHP.
+  over direct array roots, including missing-key-to-`null` materialization and
+  undefined/`null` direct root materialization, documented runtime boundaries,
+  and focused reference fixtures.
+  Missing artifact: nested and object-property offset aliases, full runtime
+  reference containers, magic reference-return dispatch and broader
+  by-reference returns, exact by-reference `foreach`, and COW tests that
+  compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
