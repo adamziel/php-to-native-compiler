@@ -9335,6 +9335,20 @@ handled.
   aliasing, cross-scope reference cells, array parameter execution, mutation
   SQL, broad SQL execution, host database state, PHP warning/error fidelity,
   call-user-func refresh behavior, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as callback
+  dispatch for bound statement execution, real reference aliasing around bound
+  parameters/results, broader escaping charset fidelity, local-infile option
+  effects, connection multi-result pending queues, or the next real database
+  integration gap, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
+  Milestone 988 adds bounded callback-dispatched `mysqli_stmt_execute()`
+  refresh through `call_user_func()` and positional `call_user_func_array()`,
+  including a WordPress-shaped `wpdb` smoke. This is not true by-reference
+  aliasing, cross-scope reference cells, named-argument callback dispatch,
+  array parameter execution, mutation SQL, broad SQL execution, host database
+  state, PHP warning/error fidelity, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9346,8 +9360,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a7e160cd runtime: add mysqli stmt param bind placeholders`, covering
-  Milestone 986 before the current Milestone 987 candidate.
+  `aeaabfe5 runtime: refresh mysqli stmt bound params`, covering
+  Milestone 987 before the current Milestone 988 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

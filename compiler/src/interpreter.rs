@@ -8199,6 +8199,12 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "call_user_func" {
+                    return self.call_user_func_direct(args, span, caller_scope);
+                }
+                if key == "call_user_func_array" {
+                    return self.call_user_func_array_direct(args, span, caller_scope);
+                }
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
@@ -8267,6 +8273,12 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "call_user_func" {
+                    return self.call_user_func_direct(args, span, caller_scope);
+                }
+                if key == "call_user_func_array" {
+                    return self.call_user_func_array_direct(args, span, caller_scope);
+                }
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
@@ -8313,6 +8325,161 @@ impl Interpreter {
         match callable {
             Callable::Builtin(key) => self.call_builtin(&key, args, span),
             Callable::User(function) => self.call_user_function_with_values(function, args, span),
+        }
+    }
+
+    fn call_user_func_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func()",
+                    ArityExpectation::AtLeast(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[0], caller_scope)?;
+        let callback_name = match &callback {
+            Value::String(name) => name,
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        "array callables are not implemented in the current subset",
+                    ),
+                ));
+            }
+            Value::Closure(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        "closure invocation is not implemented",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func()",
+                        format!(
+                            "callback must evaluate to string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let callable = self.lookup_function(callback_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback_name)),
+            )
+        })?;
+        if matches!(&callable, Callable::Builtin(key) if key == "mysqli_stmt_execute") {
+            return self.call_mysqli_stmt_execute_direct(&args[1..], span, caller_scope);
+        }
+
+        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
+        for arg in &args[1..] {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+        self.call_callable_with_values(callable, values, span)
+    }
+
+    fn call_user_func_array_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func_array()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[0], caller_scope)?;
+        let argument_array = self.evaluate(&args[1], caller_scope)?;
+        let Value::Array(argument_array) = &argument_array else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        argument_array.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        let mut positional_args = Vec::with_capacity(argument_array.len());
+        for entry in argument_array.entries() {
+            if matches!(entry.key, ArrayKey::String(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "string-keyed named arguments are not implemented in the current subset",
+                    ),
+                ));
+            }
+            positional_args.push(entry.value.clone());
+        }
+
+        match &callback {
+            Value::String(callback_name) => {
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                if matches!(&callable, Callable::Builtin(key) if key == "mysqli_stmt_execute") {
+                    return self.call_mysqli_stmt_execute_with_refresh(
+                        &positional_args,
+                        span,
+                        caller_scope,
+                    );
+                }
+                self.call_callable_with_values(callable, positional_args, span)
+            }
+            Value::Array(callback) => {
+                self.call_array_callable_with_values(callback, positional_args, span)
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "closure invocation is not implemented",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "callback must evaluate to string or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
         }
     }
 
@@ -8575,6 +8742,51 @@ impl Interpreter {
             }
         }
 
+        self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+    }
+
+    fn call_mysqli_stmt_execute_with_refresh(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_execute()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
+        if args.len() == 2 && !matches!(args[1], Value::Null) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_execute()",
+                    format!(
+                        "params argument must be null or omitted in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        }
+
+        self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+    }
+
+    fn refresh_mysqli_stmt_bound_parameter_variables(
+        &mut self,
+        stmt_id: i64,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<()> {
         let variable_names = self
             .mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?
             .bound_parameter_variables
@@ -8590,7 +8802,7 @@ impl Interpreter {
                 .bound_parameter_values = variable_values;
         }
 
-        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+        Ok(())
     }
 
     fn call_mysqli_stmt_bind_result_direct(

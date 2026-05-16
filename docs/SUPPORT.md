@@ -1003,11 +1003,14 @@
   `mysqli_result` containing those rows. `mysqli_stmt_bind_param($statement,
   $types, &...$vars)` records direct scalar/null variable snapshots for
   active statements using `s`, `i`, or `d` type markers and direct
-  `mysqli_stmt_execute($statement)` re-reads those direct variables from the
-  current caller scope before execution. This is not true by-reference
-  aliasing, cross-scope reference cells, array parameter execution, mutation
-  SQL, broad SQL execution, host database state, PHP warning/error fidelity,
-  call-user-func refresh behavior, or native statement lowering.
+  `mysqli_stmt_execute($statement)` plus
+  `call_user_func("mysqli_stmt_execute", $statement)` and positional
+  `call_user_func_array("mysqli_stmt_execute", array($statement))` re-read
+  those direct variables from the current caller scope before execution. This
+  is not true by-reference aliasing, cross-scope reference cells,
+  named-argument callback dispatch, array parameter execution, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity, or
+  native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -3339,7 +3342,7 @@
   deterministic unbound placeholder execution and direct-variable bound
   execution for current known statement shapes without array parameter
   execution, mutations, real mysqlnd transfer, host database state, broad SQL
-  execution, or call-user-func refresh behavior,
+  execution, or named-argument callback dispatch,
   `mysqli_stmt_bind_param(...)` exposes only direct scalar/null variable
   snapshots and direct-execute-time re-reads for known placeholder statement
   SQL shapes without true by-reference aliasing, cross-scope reference cells,

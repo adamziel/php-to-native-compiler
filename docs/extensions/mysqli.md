@@ -240,20 +240,22 @@ a placeholder `mysqli_result` containing those rows. The exact
 `SELECT ID, post_title FROM wp_posts WHERE ID = ?` shape can also execute
 after `mysqli_stmt_bind_param($statement, "i", $id)` records a direct
 variable and direct `mysqli_stmt_execute()` re-reads its current scalar/null
-value from the caller scope; the exact
+value from the caller scope. `call_user_func("mysqli_stmt_execute",
+$statement)` and positional `call_user_func_array("mysqli_stmt_execute",
+array($statement))` use the same refresh path. The exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` shape currently
 returns an empty deterministic placeholder result. Array parameter execution,
 mutations, unknown SELECT metadata, real mysqlnd result transfer, host
-database state, PHP warning/error fidelity, call-user-func refresh behavior,
+database state, PHP warning/error fidelity, named-argument callback dispatch,
 and native lowering remain unsupported.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, or `d`
-type markers; direct `mysqli_stmt_execute()` re-reads those variables before
-execution. This is not true by-reference aliasing, cross-scope reference
-cells, array parameter execution, mutation SQL, broad SQL execution, host
-database state, PHP warning/error fidelity, call-user-func refresh behavior,
-or native lowering.
+type markers; direct and callback-dispatched `mysqli_stmt_execute()` re-read
+those variables before execution. This is not true by-reference aliasing,
+cross-scope reference cells, named-argument callback dispatch, array parameter
+execution, mutation SQL, broad SQL execution, host database state, PHP
+warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable names
 for the current known placeholder statement result shapes.

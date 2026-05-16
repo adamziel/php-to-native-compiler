@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 988, bounded caller-scope refresh for callback-dispatched
+  `mysqli_stmt_execute()` over active placeholder statements. Direct
+  `call_user_func("mysqli_stmt_execute", $stmt)` and positional
+  `call_user_func_array("mysqli_stmt_execute", array($stmt))` now retain
+  enough caller-scope context to re-read direct variables previously recorded
+  by `mysqli_stmt_bind_param()` before executing exact known statement SQL
+  shapes. The new fixtures include direct MySQLi and WordPress-shaped `wpdb`
+  smokes. This is not true by-reference aliasing, cross-scope reference cells,
+  named-argument callback dispatch, array parameter execution, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity, or
+  native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone988`.
+
 - Added Milestone 987, bounded execute-time refresh for direct-variable
   `mysqli_stmt_bind_param()` values on direct `mysqli_stmt_execute()` calls.
   The runtime now re-reads the bound direct variables from the current caller

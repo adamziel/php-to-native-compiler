@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone988/mysqli_stmt_execute_callback_bound_param_refresh.php
+exit: 0
+stdout:
+call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

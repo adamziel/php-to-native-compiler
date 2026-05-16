@@ -1780,7 +1780,13 @@ historical blockers and remaining full-support gaps include:
   by-reference aliasing, cross-scope reference cells, array parameter
   execution, mutation SQL, broad SQL execution, host database state, PHP
   warning/error fidelity, call-user-func refresh behavior, or native database
-  lowering. Milestone 965 adds explicit
+  lowering. Milestone 988 adds bounded callback-dispatched
+  `mysqli_stmt_execute()` refresh through `call_user_func()` and positional
+  `call_user_func_array()`, including a WordPress-shaped `wpdb` smoke,
+  without claiming true by-reference aliasing, cross-scope reference cells,
+  named-argument callback dispatch, array parameter execution, mutation SQL,
+  broad SQL execution, host database state, PHP warning/error fidelity, or
+  native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

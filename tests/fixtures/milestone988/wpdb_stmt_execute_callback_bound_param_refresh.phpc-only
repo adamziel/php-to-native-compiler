@@ -1,0 +1,7 @@
+This fixture records deterministic callback-dispatched statement parameter
+refresh through a WordPress-shaped `wpdb` object. It covers only
+direct scalar/null variable re-reads in the current execution scope over the
+exact seed-post placeholder SQL shape and does not implement true by-reference
+aliasing, cross-scope reference cells, array parameter execution, mutation SQL,
+broad SQL execution, host database state, PHP warning/error fidelity, or native
+database lowering.
