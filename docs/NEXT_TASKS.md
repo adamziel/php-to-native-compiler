@@ -10752,6 +10752,47 @@ handled.
   comparison behavior, comparison normalization, PHP-version-specific
   diagnostics, or runtime/native support.
 
+## Milestone 1098: Context Clone Reference-Slot Mirroring
+
+- [x] Runtime/value-model lane: extend bounded direct clone assignment
+  reference-slot mirroring to context-aware object-property aliases created
+  through a valid method visibility context. `$copy = clone $object;` now
+  mirrors `ContextObjectProperty` alias roots, preserving the stored
+  private/protected access context, so writes through the alias, original
+  non-public property path, or cloned non-public property path observe the same
+  bounded reference slot inside the covered method-context slice. This is not
+  clone alias mirroring for non-direct clone expressions, non-public property
+  array-offset aliases, dynamic non-public properties, magic-property aliases,
+  ArrayAccess references, declared `__clone` dispatch, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
+
+## Milestone 1099: Nullsafe Object Operator Boundary
+
+- [x] Parser/syntax-boundary lane: add a stable parse diagnostic for
+  unsupported PHP 8 nullsafe object access such as `$user?->name` and
+  `$user?->profile()`. This keeps null-aware property/method chaining out of
+  the AST/runtime until short-circuit evaluation, mixed `->`/`?->` chain
+  ordering, call argument evaluation behavior, assignment-target restrictions,
+  exact PHP diagnostics, and native lowering are implemented.
+
+## Milestone 1100: Native Clone Boundary
+
+- [x] IR/lowering lane: give `clone` expressions a dedicated native codegen
+  rejection boundary for `phpc compile --emit-ir` and `--emit-asm`, separate
+  from the broader object/class boundary. This is not native object handles,
+  property-slot cloning, `__clone` dispatch, clone-method visibility,
+  reference-slot metadata, full references, copy-on-write, backend execution,
+  or exact native PHP diagnostics.
+
+## Milestone 1101: Compile Mode Validation Contract
+
+- [x] Compiler-output/CLI lane: validate unsupported `phpc compile` emit modes
+  before input IO or parsing, with a deterministic CLI snapshot for
+  `--emit-object` on a missing input path. This is not object-file emission,
+  new backends, backend fallback recovery, parser/runtime behavior, or native
+  lowering support.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

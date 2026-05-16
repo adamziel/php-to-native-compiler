@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 
 #[test]
 fn phpc_run_still_handles_current_object_class_subset() {
@@ -90,6 +91,20 @@ fn emit_ir_rejects_constructor_argument_instantiation_before_native_constructor_
 }
 
 #[test]
+fn emit_ir_rejects_clone_expressions_with_specific_boundary() {
+    for source in [
+        "<?php\n$copy = clone $object;\n",
+        "<?php\necho clone $object;\n",
+        "<?php\n$copy = clone missing_object();\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_CLONE_REJECTION);
+    }
+}
+
+#[test]
 fn emit_ir_rejects_public_property_reads_and_writes_with_specific_boundary() {
     for source in [
         "<?php\necho $box->name;\n",
@@ -168,6 +183,18 @@ fn emit_asm_rejects_constructor_argument_instantiation_before_backend_execution(
 }
 
 #[test]
+fn emit_asm_rejects_clone_expressions_before_backend_execution() {
+    let error = emit_asm_source("<?php\n$copy = clone $object;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CLONE_REJECTION);
+    let assembly_error = emit_asm_source("<?php\necho clone $object;\n").unwrap_err();
+
+    assert_eq!(assembly_error.phase, Phase::Codegen);
+    assert_eq!(assembly_error.message, LLVM_CLONE_REJECTION);
+}
+
+#[test]
 fn emit_asm_rejects_instance_method_calls_before_backend_execution() {
     let error = emit_asm_source("<?php\n$box->label();\n").unwrap_err();
 
@@ -200,6 +227,36 @@ fn native_object_class_emit_ir_cli_snapshot_matches_committed_output() {
         workspace_root.join("tests/fixtures/milestone173/native_object_class_boundary_emit_ir.cli"),
     )
     .expect("native object/class CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_clone_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone1100/native_clone_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone1100/native_clone_boundary_emit_ir.cli"),
+    )
+    .expect("native clone CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

@@ -3382,6 +3382,55 @@ whole-property|whole-property|whole-property"
 }
 
 #[test]
+fn clone_expression_mirrors_context_property_reference_slots() {
+    let source = r#"<?php
+class Base {
+    protected $shared = "base";
+
+    public function readShared() {
+        return $this->shared;
+    }
+}
+
+class Box extends Base {
+    private $secret = "initial";
+
+    public function exercisePrivate() {
+        $alias =& $this->secret;
+        $copy = clone $this;
+        $copy->secret = "copy-secret";
+        echo $alias, "|", $this->secret, "|", $copy->secret, "\n";
+        $alias = "alias-secret";
+        echo $alias, "|", $this->secret, "|", $copy->secret, "\n";
+    }
+
+    public function exerciseProtected($other) {
+        $alias =& $other->shared;
+        $copy = clone $other;
+        $copy->shared = "copy-shared";
+        echo $alias, "|", $other->readShared(), "|", $copy->readShared(), "\n";
+        $alias = "alias-shared";
+        echo $alias, "|", $other->readShared(), "|", $copy->readShared();
+    }
+}
+
+$box = new Box();
+$box->exercisePrivate();
+$box->exerciseProtected(new Box());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "copy-secret|copy-secret|copy-secret\n\
+alias-secret|alias-secret|alias-secret\n\
+copy-shared|copy-shared|copy-shared\n\
+alias-shared|alias-shared|alias-shared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 
@@ -3888,7 +3937,7 @@ fn emit_ir_rejects_clone_expression_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering"),
+        error.message.contains("clone lowering"),
         "{}",
         error.message
     );

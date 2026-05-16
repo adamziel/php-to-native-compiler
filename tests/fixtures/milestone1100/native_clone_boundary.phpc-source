@@ -1,0 +1,4 @@
+<?php
+$object = null;
+$copy = clone $object;
+echo "unreachable";

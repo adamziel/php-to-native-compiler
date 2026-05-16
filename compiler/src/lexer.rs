@@ -81,6 +81,7 @@ pub enum TokenKind {
     Percent,
     Dot,
     ObjectOperator,
+    NullsafeObjectOperator,
     DoubleColon,
     Backslash,
     Ellipsis,
@@ -208,6 +209,10 @@ impl<'a> Lexer<'a> {
                 '?' => {
                     if self.match_char('?') {
                         TokenKind::QuestionQuestion
+                    } else if self.starts_with("->") {
+                        self.advance();
+                        self.advance();
+                        TokenKind::NullsafeObjectOperator
                     } else {
                         TokenKind::Question
                     }

@@ -24,6 +24,8 @@ const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering reje
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
+const ASSEMBLY_CLONE_REJECTION: &str = "assembly clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const ASSEMBLY_INTERFACE_REJECTION: &str = "assembly interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
@@ -557,7 +559,7 @@ impl LlvmGenerator {
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, LLVM_CLOSURE_REJECTION)),
             Expr::New { span, .. } => Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION)),
-            Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION)),
+            Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_CLONE_REJECTION)),
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -3355,9 +3357,7 @@ impl CGenerator {
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLOSURE_REJECTION)),
             Expr::New { span, .. } => Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION)),
-            Expr::Clone { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
+            Expr::Clone { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLONE_REJECTION)),
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {

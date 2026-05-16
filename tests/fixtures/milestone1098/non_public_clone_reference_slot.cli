@@ -1,0 +1,3 @@
+$ phpc run tests/fixtures/milestone1098/non_public_clone_reference_slot.php
+copy-secret|copy-secret|copy-secret
+alias-secret|alias-secret|alias-secret

@@ -5,6 +5,7 @@ const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
@@ -567,10 +568,7 @@ fn emit_ir_rejects_clone_expression_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$copy = clone $object;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior"
-    );
+    assert_eq!(error.message, LLVM_CLONE_REJECTION);
 }
 
 #[test]
@@ -884,6 +882,48 @@ fn emit_ir_rejects_null_coalescing_expression_at_codegen_boundary() {
     assert_eq!(
         error.message,
         "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
+    );
+}
+
+#[test]
+fn unsupported_nullsafe_object_operator_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$name = $user?->name;\n",
+            2,
+            14,
+            "unsupported nullsafe object operator: ?-> property and method access is not implemented",
+        ),
+        (
+            "<?php\necho $user?->name;\n",
+            2,
+            11,
+            "unsupported nullsafe object operator: ?-> property and method access is not implemented",
+        ),
+        (
+            "<?php\n$value = $user?->profile();\n",
+            2,
+            15,
+            "unsupported nullsafe object operator: ?-> property and method access is not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_nullsafe_object_operator_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$name = $user?->name;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported nullsafe object operator: ?-> property and method access is not implemented"
     );
 }
 

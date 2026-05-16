@@ -4,6 +4,94 @@
 
 Implemented:
 
+- Added Milestone 1101, deterministic compiler-output/CLI coverage for compile
+  mode validation precedence. `phpc compile` now rejects unsupported emit modes
+  such as `--emit-object` before reading or parsing the input file, so usage
+  mistakes cannot be hidden by missing-file, parse, or codegen diagnostics. A
+  CLI snapshot deliberately combines a missing input path with an invalid emit
+  mode and pins the stable `cli error at 0:0: expected --emit-ir or --emit-asm`
+  result. This does not add object-file emission, new assembly backends,
+  backend fallback recovery, parser behavior, runtime semantics, or native
+  lowering support. Verification so far: `cargo test -p phpc --test
+  cli_contract compile_invalid_emit_mode_is_reported_before_input_io --
+  --test-threads=1`, `cargo test -p phpc --test cli_contract --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1101/missing-input.php --emit-object` returned exit
+  `1` with the pinned CLI diagnostic, `cargo fmt --check`, and scoped `git
+  diff --check` passed in the compiler-output lane. Full gate deferred until
+  integration.
+
+- Added Milestone 1100, a dedicated native clone-expression rejection
+  boundary. `phpc compile --emit-ir` and `--emit-asm` now reject `clone`
+  expressions through a clone-specific codegen diagnostic instead of the
+  broader object/class boundary, including direct-variable clone assignment
+  shapes that can mirror public and context-aware non-public property
+  reference-slot metadata in `phpc run`. This does not implement native object
+  handles, property-slot cloning, declared `__clone` dispatch,
+  private/protected clone-method visibility behavior, reference-slot metadata,
+  full references, copy-on-write, backend execution for `clone`, or exact
+  native PHP diagnostics. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary emit_ir_rejects_clone_expressions_with_specific_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  native_clone_emit_ir_cli_snapshot_matches_committed_output --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test object_model
+  emit_ir_rejects_clone_expression_until_native_object_lowering_exists --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1100/native_clone_boundary.phpc-source --emit-ir`
+  returned exit `1` with the pinned clone diagnostic, `cargo fmt --check`, and
+  scoped `git diff --check` passed in the IR lane. Full gate deferred until
+  integration.
+
+- Added Milestone 1099, a parser/syntax-boundary diagnostic for unsupported
+  PHP 8 nullsafe object access. The lexer now tokenizes `?->` as a distinct
+  operator so property and method forms such as `$user?->name` and
+  `$user?->profile()` fail with a stable parse diagnostic instead of falling
+  through to the generic ternary-expression error path. This does not
+  implement null-aware property/method chaining, short-circuit evaluation,
+  mixed `->`/`?->` chain ordering, call argument evaluation behavior,
+  assignment-target restrictions, exact PHP diagnostics, runtime behavior, or
+  native lowering. Verification so far: `cargo test -p phpc --test
+  syntax_boundaries unsupported_nullsafe_object_operator_has_stable_parse_errors
+  -- --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_nullsafe_object_operator_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --test-threads=1`, `cargo run -q -p
+  phpc -- test tests/fixtures/unsupported_syntax_features`, `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`,
+  `cargo test -p phpc --test ternary_expression -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`, direct
+  `phpc run` and `phpc compile --emit-ir` checks for the new fixture returned
+  the expected parse error and exit `1`, `cargo fmt --check`, and scoped `git
+  diff --check` passed in the parser lane. Full gate deferred until
+  integration.
+
+- Added Milestone 1098, bounded clone reference-slot mirroring for
+  context-aware non-public object-property aliases. Direct-variable clone
+  assignments of the form `$copy = clone $object;` now mirror
+  `ContextObjectProperty` alias roots from the direct source object variable to
+  the cloned target variable, preserving the method visibility context that
+  previously validated private/protected access. Direct writes through the
+  cloned non-public property path now synchronize through the same bounded
+  alias group as writes through the original property path or alias variable
+  for the covered method-context slice. This does not implement clone alias
+  mirroring for non-direct clone expressions, non-public property array-offset
+  aliases, dynamic non-public properties, magic-property aliases, ArrayAccess
+  references, declared `__clone` dispatch, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, or native
+  lowering. Verification so far: local PHP probes for private `$this` and
+  protected peer-object property references across clone, `cargo test -p phpc
+  --test object_model clone_expression_mirrors_context_property_reference_slots
+  -- --test-threads=1`, `cargo test -p phpc --test object_model
+  clone_expression_mirrors_public_property_reference_slots --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public -- --test-threads=1`, `cargo test -p phpc
+  --test object_model clone_expression -- --test-threads=1`, direct `phpc run`
+  for the new fixture, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1098`, `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1098`, `cargo fmt --check`, and scoped `git diff
+  --check` passed in the runtime lane. Full gate deferred until integration.
+
 - Added Milestone 1097, deterministic compiler-output/CLI coverage for the
   fixture-runner comparison summary contract. `phpc test --compare-php` now has
   an integration test that installs a fake `php` binary on `PATH`, runs one

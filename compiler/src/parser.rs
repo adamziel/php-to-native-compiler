@@ -3718,6 +3718,13 @@ impl Parser {
                 continue;
             }
 
+            if self.match_token(|kind| matches!(kind, TokenKind::NullsafeObjectOperator)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_nullsafe_object_operator_message(),
+                ));
+            }
+
             if self.match_token(|kind| matches!(kind, TokenKind::DoubleColon)) {
                 let operator_span = self.previous().span;
                 let member = self.peek().clone();
@@ -5593,6 +5600,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Percent => "%",
         TokenKind::Dot => ".",
         TokenKind::ObjectOperator => "->",
+        TokenKind::NullsafeObjectOperator => "?->",
         TokenKind::DoubleColon => "::",
         TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
@@ -5793,6 +5801,10 @@ fn unsupported_nested_ternary_message() -> &'static str {
 
 fn unsupported_null_coalescing_message() -> &'static str {
     "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+}
+
+fn unsupported_nullsafe_object_operator_message() -> &'static str {
+    "unsupported nullsafe object operator: ?-> property and method access is not implemented"
 }
 
 fn unsupported_exponentiation_message() -> &'static str {

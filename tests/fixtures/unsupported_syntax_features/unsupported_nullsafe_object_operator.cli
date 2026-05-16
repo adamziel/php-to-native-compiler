@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_nullsafe_object_operator.php:3:14: unsupported nullsafe object operator: ?-> property and method access is not implemented
+--- stderr end ---

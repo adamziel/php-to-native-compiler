@@ -1037,7 +1037,7 @@ impl SymbolTable {
         }
     }
 
-    fn mirror_public_object_property_aliases_from_clone(
+    fn mirror_object_property_aliases_from_clone(
         &mut self,
         target_object_name: &str,
         source_object_name: &str,
@@ -1065,6 +1065,23 @@ impl SymbolTable {
                             },
                         ))
                     }
+                    ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object,
+                        property,
+                        current_class_id,
+                        protected_class_ids,
+                    } if object == source_object_name && alias.keys.is_empty() => Some((
+                        alias_name.clone(),
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::ContextObjectProperty {
+                                object: target_object_name.to_string(),
+                                property: property.clone(),
+                                current_class_id: *current_class_id,
+                                protected_class_ids: protected_class_ids.clone(),
+                            },
+                            keys: alias.keys.clone(),
+                        },
+                    )),
                     _ => None,
                 })
             })
@@ -1103,7 +1120,7 @@ impl SymbolTable {
         }
     }
 
-    fn sync_array_offset_aliases_for_public_object_property_root(
+    fn sync_array_offset_aliases_for_object_property_root(
         &mut self,
         object_name: &str,
         property: &str,
@@ -5042,10 +5059,7 @@ impl Interpreter {
                 if !target_is_alias && matches!(value, Value::Object(_)) {
                     if let Expr::Clone { expr, .. } = expr {
                         if let Expr::Variable(source_name, _) = expr.as_ref() {
-                            scope.mirror_public_object_property_aliases_from_clone(
-                                name,
-                                source_name,
-                            );
+                            scope.mirror_object_property_aliases_from_clone(name, source_name);
                         }
                     }
                 }
@@ -5184,6 +5198,9 @@ impl Interpreter {
                                     property,
                                     &alias_fallbacks,
                                 );
+                                scope.sync_array_offset_aliases_for_object_property_root(
+                                    object, property,
+                                );
                                 Ok(value)
                             }
                             Err(error) if Self::is_undefined_property_error(&error) => {
@@ -5228,7 +5245,7 @@ impl Interpreter {
                     *span,
                     scope,
                 )?;
-                scope.sync_array_offset_aliases_for_public_object_property_root(object, property);
+                scope.sync_array_offset_aliases_for_object_property_root(object, property);
                 Ok(value)
             }
             AssignTarget::ObjectPropertyArrayAppend {
@@ -5250,7 +5267,7 @@ impl Interpreter {
                     *span,
                     scope,
                 )?;
-                scope.sync_array_offset_aliases_for_public_object_property_root(object, property);
+                scope.sync_array_offset_aliases_for_object_property_root(object, property);
                 Ok(value)
             }
             AssignTarget::DynamicProperty {
@@ -5272,6 +5289,7 @@ impl Interpreter {
                             &property,
                             &alias_fallbacks,
                         );
+                        scope.sync_array_offset_aliases_for_object_property_root(object, &property);
                         Ok(value)
                     }
                     other => Err(runtime_error(

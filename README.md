@@ -50,9 +50,11 @@ variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
 selected folds, and a documented set of native builtin folds.
 
 Anything outside that lowerable subset is rejected before misleading IR is
-emitted. Arrays, objects, functions, general control flow, references,
-copy-on-write, and broad PHP coercions remain interpreter-only or unsupported for
-native lowering.
+emitted. Arrays, objects, clone expressions, functions, general control flow,
+references, copy-on-write, and broad PHP coercions remain interpreter-only or
+unsupported for native lowering. The compile mode flag is validated before the
+input file is read, so invalid modes such as `--emit-object` report a stable
+CLI usage error instead of an unrelated file, parse, or codegen diagnostic.
 
 ### `phpc compile --emit-asm`
 
@@ -185,8 +187,8 @@ incorrect native code.
   public dynamic slots when property-name values are strings or integers,
   `clone $object` for current object values without declared `__clone`
   methods, using fresh object handles, shallow-copied property slots, and
-  bounded public-property reference-slot mirroring for direct-variable clone
-  assignments,
+  bounded public-property plus context-aware non-public property reference-slot
+  mirroring for direct-variable clone assignments,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata, declared empty-trait metadata,
@@ -234,6 +236,7 @@ property defaults beyond the current untyped constant-expression instance
 property slice, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
+nullsafe object access `?->`,
 magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
@@ -280,7 +283,7 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, array destructuring, objects, user functions,
+Native lowering rejects arrays, array destructuring, objects, clone expressions, user functions,
 closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, dynamic calls, `assert()`,

@@ -60,6 +60,38 @@ injects this file into every prompt. Each Codex pass should update it with:
   checkpoint gate, commit, push, then start the next parallel lane batch from
   the new clean checkpoint.
 
+## Loop Event 2026-05-16T18:05:00Z
+
+- Checkpoint before this task:
+  `51e4c716 runtime: integrate parallel lane batch`, pushed to
+  `origin/master`.
+- Task attempted: four parallel lane batch from separate worktrees. Runtime
+  lane extended direct clone reference-slot mirroring to context-aware
+  non-public property aliases. Parser lane added a stable PHP 8 nullsafe
+  object operator `?->` boundary. IR/lowering lane split `clone` into a
+  dedicated native codegen rejection boundary. Compiler-output lane made
+  invalid compile emit modes validate before input IO.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/main.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/native_object_class_boundary.rs`,
+  `compiler/tests/cli_contract.rs`, new fixtures under
+  `tests/fixtures/milestone1098`, `tests/fixtures/milestone1100`,
+  `tests/fixtures/milestone1101`, and
+  `tests/fixtures/unsupported_syntax_features`, plus `README.md`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: each lane reported focused checks passing in its own
+  worktree and target directory. Integration focused checks and serialized
+  checkpoint gate are pending in the main workspace.
+- Remaining semantic gaps: full PHP references, copy-on-write containers,
+  clone alias mirroring outside the covered direct/context property slices,
+  nullsafe runtime semantics, native clone execution, exact PHP diagnostics,
+  and WordPress SAPI/database/filesystem/request fidelity remain missing.
+- Next concrete task: run integrated focused checks, run the serialized
+  checkpoint gate, commit, push, then start the next clean lane batch.
+
 ## Loop Event 2026-05-16T16:27:15Z
 
 - Checkpoint before this task:

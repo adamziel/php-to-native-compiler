@@ -152,14 +152,18 @@
   replacement value; whole-object-variable reassignment still removes stale
   property-root alias metadata before later copies. When a direct variable is
   assigned `clone $object` from another direct object variable, existing public
-  object-property and public object-property array-offset alias metadata is
-  mirrored to the cloned variable so writes through the original property, the
-  clone property, or the alias observe the same bounded reference slot for the
-  covered public-property slice. Arbitrary nested copied reference slots,
-  non-public clone alias mirroring, magic-property clone alias mirroring,
-  reference array literals, ArrayAccess reference containers, exact alias
-  destruction ordering, full PHP reference containers, copy-on-write
-  containers, and native lowering remain unsupported. Direct public
+  object-property, public object-property array-offset, and context-aware
+  non-public object-property alias metadata is mirrored to the cloned variable
+  so writes through the original property, the clone property, or the alias
+  observe the same bounded reference slot for the covered direct clone slice.
+  Non-public clone mirroring is limited to aliases that were created through a
+  valid method visibility context, such as private `$this->property` or
+  protected same-class/child peer-object property sources. Arbitrary nested
+  copied reference slots, non-public property array-offset clone alias
+  mirroring, magic-property clone alias mirroring, reference array literals,
+  ArrayAccess reference containers, exact alias destruction ordering, full PHP
+  reference containers, copy-on-write containers, and native lowering remain
+  unsupported. Direct public
   object-property reference sources such as `$alias =& $object->property;`
   alias a direct variable target to the selected property on a direct object
   variable when that property is visible through the current
@@ -1940,6 +1944,10 @@
   increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
+- explicit parse diagnostics for unsupported PHP 8 nullsafe object access
+  `?->`; null-aware property/method chaining, short-circuit evaluation,
+  assignment-target restrictions, exact diagnostics, and native lowering are
+  not implemented
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
@@ -2247,15 +2255,20 @@
   arguments. `clone $object` expressions evaluate the operand, require a
   current object value,
   allocate a fresh process-local object handle, shallow-copy the object's
-  current property slots, mirror the current bounded public-property
-  reference-slot metadata for direct-variable `clone $object` assignments, and
-  return the cloned object. Object-valued properties keep their existing
-  handles under the current no-copy-on-write model. Classes that declare
-  `__clone`, non-object operands, clone expressions outside direct-variable
-  assignments for reference-slot mirroring, private/protected clone-method
-  visibility behavior, destructor/reuse behavior, exact PHP `Error` objects,
-  partial-output behavior, full references, copy-on-write, and native lowering
-  remain unsupported.
+  current property slots, mirror the current bounded public-property and
+  context-aware non-public property reference-slot metadata for direct-variable
+  `clone $object` assignments, and return the cloned object. Object-valued
+  properties keep their existing handles under the current no-copy-on-write
+  model. Classes that declare `__clone`, non-object operands, clone
+  expressions outside direct-variable assignments for reference-slot mirroring,
+  non-public property-offset clone alias mirroring, private/protected
+  clone-method visibility behavior, destructor/reuse behavior, exact PHP
+  `Error` objects, partial-output behavior, full references, copy-on-write,
+  and native lowering remain unsupported. Native lowering rejects `clone`
+  expressions with a clone-specific codegen diagnostic before lowering the
+  operand, because generated code still lacks object handles, property-slot
+  cloning, `__clone` dispatch, reference-slot metadata,
+  references/copy-on-write, and exact PHP error behavior.
   `$value instanceof Name` executes for the current bounded runtime slice:
   non-object left operands return `false`, object operands check declared class
   metadata, the current single-parent chain, and recorded `implements`
@@ -3308,6 +3321,10 @@
   native error objects.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset. CLI coverage for
+  invalid compile output modes proves the mode flag is rejected before input
+  IO or parsing, so unsupported modes such as `--emit-object` remain a CLI
+  usage boundary and do not imply object-file emission support. CLI coverage
+  for
   `phpc compile --emit-asm` records a normalized success summary for the current
   scalar echo/assignment fixture instead of exact assembly text, because
   emitted assembly varies by platform and backend. A separate CLI snapshot runs
@@ -4976,6 +4993,11 @@
 - native lowering for cast expressions; generated code currently rejects casts
   before implying PHP scalar conversion, diagnostics, allocation behavior,
   references/copy-on-write, or exact native error behavior
+- PHP 8 nullsafe object access `?->` currently fails with a stable parse
+  diagnostic before null-aware object-property or method-call chaining exists.
+  Short-circuit evaluation, mixed `->`/`?->` chain ordering, call argument
+  evaluation behavior, assignment-target restrictions, exact PHP diagnostics,
+  and native lowering are not implemented.
 - exception execution beyond the current statement boundaries: reached
   `throw expr;` statements fail with a stable runtime diagnostic before
   evaluating the operand; reached `try` blocks execute only the normal no-throw

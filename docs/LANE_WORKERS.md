@@ -226,6 +226,10 @@ Milestone 1094 closed the runtime clone/reference-slot mirroring slice,
 Milestone 1095 closed the promoted constructor property parameter parse
 boundary, Milestone 1096 closed the native reference-assignment rejection
 boundary, and Milestone 1097 closed fixture-runner compare-summary coverage.
+Milestone 1098 closed context-aware non-public clone reference-slot mirroring,
+Milestone 1099 closed the nullsafe object operator parse boundary, Milestone
+1100 closed the native clone rejection boundary, and Milestone 1101 closed
+compile emit-mode validation precedence.
 The next batch should again keep one active milestone per lane and should use
 separate worktrees and separate `CARGO_TARGET_DIR` values when workers run in
 parallel.

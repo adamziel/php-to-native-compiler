@@ -38,17 +38,18 @@ current runtime mirror the bounded PHP behavior where copying a direct array
 or declared public object-property array that contains a referenced direct slot
 preserves that slot's reference identity across a copied direct array. Direct
 object-variable clone assignments also mirror public object-property alias
-metadata from the cloned source variable to the target variable, so the current
-bounded reference-slot model can keep public property slots shared across a
-fresh object handle for the covered `clone $object` assignment shape.
+metadata and context-aware non-public object-property alias metadata from the
+cloned source variable to the target variable, so the current bounded
+reference-slot model can keep covered property slots shared across a fresh
+object handle for the covered `clone $object` assignment shape.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
-object name. Arbitrary nested copied reference slots, non-public or magic clone
-alias mirroring, ArrayAccess references, reference array literals, exact alias
-destruction ordering, and native lowering still require the future runtime
-reference/COW value model.
+object name. Arbitrary nested copied reference slots, non-public
+property-offset or magic clone alias mirroring, ArrayAccess references,
+reference array literals, exact alias destruction ordering, and native lowering
+still require the future runtime reference/COW value model.
 
 ## Compiler Crate
 
@@ -59,6 +60,11 @@ reference/COW value model.
 - interpreter bridge for `phpc run`
 - LLVM IR text emission for currently lowerable code
 - CLI and fixture test runner
+
+The `phpc compile` CLI validates its requested output mode before reading or
+parsing the input file. That keeps usage mistakes such as `--emit-object`
+reported as CLI diagnostics even when the input path is missing or the source
+would otherwise fail earlier in the compiler pipeline.
 
 The parser is handwritten recursive descent. This keeps the early grammar easy
 to audit while avoiding regex-based parsing. Unsupported syntax boundaries use
@@ -100,6 +106,11 @@ direct/nested array offsets, selected static-property diagnostics, and
 direct-object-property nested array offsets have explicit targets, while plain
 object-property uninitialization and mixed target paths remain separate
 boundaries.
+PHP 8 nullsafe object access `?->` is tokenized so the parser can stop with a
+specific unsupported syntax diagnostic before creating any AST node. Faithful
+support still needs null-aware property/method chain evaluation,
+short-circuiting, call argument ordering, assignment-target restrictions, and
+native lowering.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1341,8 +1352,8 @@ unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
 Native lowering rejects class declarations, object instantiation, public
-property reads/writes, and object metadata builtins before body, operand, or
-argument lowering, except for direct static false-folding of
+property reads/writes, clone expressions, and object metadata builtins before
+body, operand, or argument lowering, except for direct static false-folding of
 `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists` when
 their name argument is already lowerable as a string and the optional autoload
 argument is already lowerable as a boolean. That metadata-exists native slice
@@ -1355,8 +1366,8 @@ boolean `allow_string` flags fold to false for the same no-native-class-table
 and no-native-inheritance boundary.
 Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
-metadata access, inheritance, autoload interaction, and exact native error
-behavior.
+metadata access, property-slot cloning, `__clone` dispatch, reference-slot
+metadata, inheritance, autoload interaction, and exact native error behavior.
 Native lowering rejects array literals, array indexing, array assignment,
 `foreach` array iteration, array offset `unset`, and array builtin function
 calls before body, operand, argument, or callback lowering until generated code

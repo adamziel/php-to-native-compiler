@@ -50,18 +50,22 @@ fn command_compile(args: &[String]) -> CompileResult<u8> {
 
     let input = PathBuf::from(&args[0]);
     let flag = args[1].as_str();
+    if flag != "--emit-ir" && flag != "--emit-asm" {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "expected --emit-ir or --emit-asm",
+        ));
+    }
+
     let source = read_source(&input)?;
     let program = parse_source(&source).map_err(|error| error.with_file(&input))?;
 
     let output = match flag {
         "--emit-ir" => emit_llvm_ir(&program),
         "--emit-asm" => emit_assembly(&program),
-        _ => Err(Diagnostic::new(
-            Phase::Cli,
-            0,
-            0,
-            "expected --emit-ir or --emit-asm",
-        )),
+        _ => unreachable!("compile mode was validated before reading input"),
     }
     .map_err(|error| error.with_file(&input))?;
 
