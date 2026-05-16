@@ -26,6 +26,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:25:00Z
+
+- Checkpoint before this task:
+  `6a4adc31 docs: record mutable ini set gate`, pushed to `origin/master`.
+- Task attempted: Milestone 1082, bounded direct-variable dynamic class-name
+  instantiation for the reached WordPress XML-RPC `new
+  $wp_xmlrpc_server_class()` parse blocker.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone1082/dynamic_variable_new.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `README.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `cargo test -p phpc --test object_model
+  dynamic_variable_class_name -- --test-threads=1`, `cargo test -p phpc --test
+  object_model -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1082 --compare-php`, and `cargo check -p php_runtime
+  -p phpc` passed. The local WordPress 6.9.4 `xmlrpc.php` probe now parses the
+  reached dynamic class-name instantiation and reaches undefined
+  `file_get_contents()` at `xmlrpc.php:21`.
+- Remaining semantic gaps: arbitrary dynamic class-name expressions, anonymous
+  classes, runtime string namespace/import resolution beyond the current class
+  table lookup, exact PHP `Error`/`TypeError` objects, native object lowering,
+  and real XML-RPC request body handling remain missing.
+- Next concrete task: run `git diff --check`, then the serialized checkpoint
+  gate for Milestone 1082 if the tree stays coherent.
+
 ## Loop Event 2026-05-16T22:55:00Z
 
 - Checkpoint before this task:

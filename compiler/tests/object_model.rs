@@ -165,6 +165,54 @@ print_r($box);
 }
 
 #[test]
+fn dynamic_variable_class_name_instantiates_declared_classes() {
+    let source = r#"<?php
+class Box {
+    public $value;
+
+    public function __construct($value = "default") {
+        $this->value = $value;
+    }
+}
+
+$class = "box";
+$box = new $class("dynamic");
+echo get_class($box), "|", $box->value;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "Box|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_variable_class_name_reports_stable_boundaries() {
+    let non_string = runtime_error(
+        r#"<?php
+class Box {}
+$class = 42;
+$box = new $class();
+"#,
+    );
+    assert_eq!(non_string.line, 4);
+    assert_eq!(non_string.column, 8);
+    assert_eq!(
+        non_string.message,
+        "unsupported object instantiation for dynamic class name: dynamic class variable must contain a string in the current subset, got int"
+    );
+
+    let missing = runtime_error(
+        r#"<?php
+$class = "Missing";
+$box = new $class();
+"#,
+    );
+    assert_eq!(missing.line, 3);
+    assert_eq!(missing.column, 8);
+    assert_eq!(missing.message, "undefined class Missing");
+}
+
+#[test]
 fn public_instance_property_reads_and_writes_mutate_object_slots() {
     let source = r#"<?php
 class Account {

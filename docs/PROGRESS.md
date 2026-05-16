@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1082, a bounded dynamic variable class-name instantiation
+  slice for the reached WordPress XML-RPC parse blocker. `new $class(...)` now
+  parses when the class name is a direct variable, requires that variable to
+  contain a string at runtime, resolves the string through the existing class
+  table, and then uses the same object construction path as named classes,
+  including constructor argument handling and stable undefined-class errors.
+  Native lowering still rejects object instantiation. This does not implement
+  arbitrary dynamic class-name expressions, anonymous classes, namespace/import
+  resolution for runtime strings beyond the current class table lookup, exact
+  PHP `Error`/`TypeError` objects, or native object lowering. Verification so
+  far: `cargo test -p phpc --test object_model dynamic_variable_class_name --
+  --test-threads=1`, `cargo test -p phpc --test object_model --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1082 --compare-php`, `cargo check -p php_runtime -p
+  phpc`, and `cargo run -q -p phpc -- run
+  /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/xmlrpc.php`,
+  which now parses the XML-RPC entrypoint and reaches the next runtime blocker:
+  undefined `file_get_contents()` at `xmlrpc.php:21`.
+
 - Added Milestone 1081, a bounded mutable `ini_set()` registry slice for the
   WordPress admin/AJAX entry-flow shape. The interpreter now keeps
   per-execution overrides for the existing deterministic INI registry:

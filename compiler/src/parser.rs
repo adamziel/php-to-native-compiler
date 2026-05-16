@@ -4304,6 +4304,7 @@ impl Parser {
                 let suffix = self.parse_qualified_name(false, "expected class name after 'new'")?;
                 NewClassName::Named(self.resolve_relative_namespace_class_name(&suffix))
             }
+            TokenKind::Variable(name) => NewClassName::DynamicVariable(name),
             _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
         };
         let args = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {

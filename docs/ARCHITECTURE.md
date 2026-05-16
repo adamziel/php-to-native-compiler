@@ -166,7 +166,8 @@ Implemented now:
   parsed abstract/final/readonly class modifiers plus abstract/final method
   modifiers as metadata, with abstract class instantiation rejected at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
-  class contexts,
+  class contexts, and bounded direct-variable dynamic class-name instantiation
+  through the current class table for `new $class(...)`,
   bounded dynamic property-name reads/writes for existing public slots,
   `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
   class's dynamic table-name slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy

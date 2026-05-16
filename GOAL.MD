@@ -164,7 +164,12 @@ placeholder assumptions, without claiming real WP-Cron behavior. Later work
 added bounded mutable `ini_set()` support over the deterministic INI registry,
 and the local real WordPress 6.9.4 `wp-admin/admin-ajax.php` probe now exits
 `0` with no stdout/stderr under the same placeholder assumptions, without
-claiming real admin/AJAX request handling. Milestones 854 through 862 then moved the database-consumption smoke from an explicit
+claiming real admin/AJAX request handling. Later XML-RPC entry-flow work added
+bounded direct-variable dynamic class-name instantiation for
+`new $wp_xmlrpc_server_class()`, moving the local real WordPress 6.9.4
+`xmlrpc.php` probe from a parse blocker to the next runtime blocker:
+undefined `file_get_contents('php://input')`, without claiming real XML-RPC
+request handling. Milestones 854 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
 synthetic `wpdb::get_results()` harnesses for those row shapes, including a

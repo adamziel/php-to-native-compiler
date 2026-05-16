@@ -162,7 +162,8 @@ incorrect native code.
   `abstract`/`final` method modifiers as metadata, with abstract class
   instantiation rejected as a runtime boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
-  in active class/method contexts,
+  in active class/method contexts, plus direct-variable dynamic class-name
+  instantiation through the current class table for `new $class(...)`,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
   no-argument instantiation and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method

@@ -90,6 +90,13 @@ reached mutable `ini_set()` blocker. This is also an operator-supplied
 measurement, not a committed WordPress source fixture and not a claim of real
 admin/AJAX request handling.
 
+After Milestone 1082, the same local WordPress 6.9.4 checkout's `xmlrpc.php`
+entrypoint parses the reached `new $wp_xmlrpc_server_class()` dynamic class-name
+instantiation shape and now reaches runtime blocker
+`undefined function file_get_contents()` at `xmlrpc.php:21`. This is an
+operator-supplied measurement, not a committed WordPress source fixture and not
+a claim of real XML-RPC request handling.
+
 The committed synthetic harness is exercised by:
 
 ```sh

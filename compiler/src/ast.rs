@@ -850,6 +850,7 @@ pub enum Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub enum NewClassName {
     Named(String),
+    DynamicVariable(String),
     SelfClass,
     ParentClass,
     StaticClass,

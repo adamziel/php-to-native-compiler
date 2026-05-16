@@ -3370,7 +3370,7 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let class_name = self.resolve_new_class_name(class_name, span)?;
+        let class_name = self.resolve_new_class_name(class_name, span, scope)?;
         let (class_id, declared_class_name) = {
             let class = self
                 .classes
@@ -3490,9 +3490,23 @@ impl Interpreter {
         &self,
         class_name: &NewClassName,
         span: Span,
+        scope: &SymbolTable,
     ) -> CompileResult<String> {
         match class_name {
             NewClassName::Named(name) => Ok(name.clone()),
+            NewClassName::DynamicVariable(name) => match scope.read_static(name, span)? {
+                Value::String(class_name) => Ok(class_name),
+                other => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "dynamic class name",
+                        format!(
+                            "dynamic class variable must contain a string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+            },
             NewClassName::SelfClass => {
                 let Some(current_class_id) = self.class_context.last().copied() else {
                     return Err(runtime_error(

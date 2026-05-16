@@ -10522,11 +10522,12 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1081: WordPress Admin/AJAX INI Mutation
+## Milestone 1082: WordPress XML-RPC Dynamic Class Name
 
-- [x] Runtime/builtin lane: add a bounded mutable `ini_set()` path over the
-  existing deterministic INI registry so reached WordPress admin/AJAX setup
-  calls can update later `ini_get()` reads in the same execution.
+- [x] Object/runtime lane: add bounded direct-variable dynamic class-name
+  instantiation for `new $class(...)`, preserving the existing constructor and
+  undefined-class behavior while keeping arbitrary dynamic expressions and
+  native object lowering unsupported.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object copied reference slots, remaining by-reference `foreach`
   fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
@@ -10535,9 +10536,10 @@ handled.
   native lowering boundaries, and add the next bounded behavior or explicit
   diagnostic with PHP comparison coverage where applicable.
 - [ ] WordPress entry-flow lane: choose the next real entry blocker from a
-  stricter admin/AJAX trace, XML-RPC dynamic class instantiation, REST/front
-  controller request state, or cron/request/SAPI fidelity, and keep the probe
-  documented as an external measurement unless a normalized fixture is added.
+  stricter XML-RPC `file_get_contents('php://input')` trace, REST/front
+  controller request state, cron/request/SAPI fidelity, or a stricter
+  admin/AJAX trace, and keep the probe documented as an external measurement
+  unless a normalized fixture is added.
 
 ## Latest Completed Checkpoint
 

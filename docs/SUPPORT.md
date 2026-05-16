@@ -470,18 +470,24 @@
   only when execution reaches the `class` statement; skipped branches do not
   define the class, and repeated reached declarations report a stable duplicate
   class runtime diagnostic.
-- object instantiation with `new ClassName(...)` for declared classes. Classes
-  without `__construct` are supported only with no constructor arguments.
-  Declared or inherited public instance `__construct` methods execute with
-  scoped `$this`, positional arguments, and the current default-parameter
-  subset. Instantiating an abstract class reports a stable runtime boundary;
+- object instantiation with `new ClassName(...)` for declared classes, plus
+  `new $class(...)` when `$class` is a direct variable containing a string class
+  name resolved through the current class table. Classes without `__construct`
+  are supported only with no constructor arguments. Declared or inherited
+  public instance `__construct` methods execute with scoped `$this`,
+  positional arguments, and the current default-parameter subset. Dynamic class
+  variables with non-string values report a stable runtime boundary, and
+  dynamic strings naming missing classes use the current undefined-class
+  diagnostic. Instantiating an abstract class reports a stable runtime boundary;
   abstract-method implementation enforcement, final inheritance/method
   enforcement, and readonly class semantics are not implemented. Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
   is supported in active class/method contexts, including no-argument forms
   without parentheses, by resolving to the current, parent, or called class
   before using the same instantiation path. Contextless magic class
-  instantiation reports a stable runtime boundary.
+  instantiation reports a stable runtime boundary. Arbitrary dynamic class-name
+  expressions, anonymous classes, exact PHP `Error`/`TypeError` objects, and
+  native object lowering remain unsupported.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
