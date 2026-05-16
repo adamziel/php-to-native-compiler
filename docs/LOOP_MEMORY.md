@@ -45,7 +45,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1035`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1034`,
   `cargo run -p phpc -- test tests/fixtures/milestone873`, and
-  `cargo run -p phpc -- test tests/fixtures/milestone874` passed.
+  `cargo run -p phpc -- test tests/fixtures/milestone874` passed. The full
+  checkpoint gate passed with 1250 fixture tests, 701 system PHP comparisons,
+  and 549 skipped comparisons, then committed
+  `31b649a7 runtime: add wp options direct upsert state`.
 - Current WordPress frontier: exact direct option insert-on-duplicate shapes
   can update existing recorded options with affected rows `2`, insert missing
   options with affected rows `1`, advance deterministic insert IDs, and expose
@@ -55,8 +58,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   unique-index enforcement, no-op update affected-row fidelity, schema/index
   behavior, transactions, host database execution, warning/error fidelity,
   PDO, references/copy-on-write, and native lowering remain missing.
-- Next concrete task: run formatting, diff checks, focused verification, then
-  the serialized checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint and continue with the next bounded
+  WordPress compatibility lane.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
