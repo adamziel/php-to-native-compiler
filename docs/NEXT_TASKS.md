@@ -10689,6 +10689,23 @@ handled.
   containers, copy-on-write containers, exact warning/fatal wording, or native
   lowering.
 
+## Milestone 1093: Magic `__get` Reference Sources
+
+- [x] Runtime/value-model lane: add a bounded magic `__get`
+  reference-source slice. `$alias =& $object->missing;` and
+  `$alias =& $object->$property;` parse and execute when the alias target is a
+  direct variable, the source object is a direct variable, the selected
+  property is undefined, a visible non-static `__get()` method exists, that
+  method is declared by reference, and its body returns a direct variable
+  through the existing reference-return subset. The alias binds to the
+  returned variable cell, so writes through the alias and returned variable
+  observe the same value. This is not non-reference-returning `__get()`
+  support, `__get()` property/array-offset/expression reference-return
+  support, inaccessible private/protected property magic fallback fidelity
+  from outside context, non-direct object expression support, dynamic
+  non-public magic-property behavior, full PHP reference containers,
+  copy-on-write containers, exact notices, or native lowering.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

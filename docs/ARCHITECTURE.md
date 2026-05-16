@@ -223,10 +223,20 @@ explicit offset path inside a declared public property on a direct object
 variable, materializing a `null` property as an array and missing selected
 slots as `null`. Writes through the alias and through the direct array or
 supported object-property offset observe the same value, and `unset($alias)`
-removes only the alias binding. Non-array roots, append-at-depth reference
-sources, dynamic/magic/non-public property sources, `ArrayAccess` offsets,
-exact by-reference `foreach`, full reference containers, copy-on-write, and
-native lowering remain future work. Direct variable sources
+removes only the alias binding. Append-at-depth reference sources and dynamic
+public object-property reference sources have similarly bounded routes for
+direct object variables. Named visible object-property sources can bind through
+the current public/private/protected method context. Missing direct object
+properties can also dispatch to a visible non-static magic `__get()`
+reference source when the method is declared by reference and returns a direct
+variable through the existing reference-return method path; the alias target
+binds to that returned variable cell rather than to a property slot. Dynamic
+missing public-property names use the same magic route after the property
+expression resolves to a string or integer. Non-array roots, non-direct object
+expressions, inaccessible private/protected magic fallback fidelity, `__get()`
+returns of properties/offsets/expressions, dynamic non-public magic-property
+behavior, `ArrayAccess` offsets, exact by-reference `foreach`, full reference
+containers, copy-on-write, and native lowering remain future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function

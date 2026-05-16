@@ -2291,6 +2291,111 @@ $alias =& $box->$property;
 }
 
 #[test]
+fn reference_assignment_magic_get_source_aliases_direct_variable_return() {
+    let execution = run_source(
+        r#"<?php
+$storage = "initial";
+
+class MagicBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+$box = new MagicBox();
+$alias =& $box->missing;
+$alias = "from-alias";
+echo $storage;
+echo "|";
+$storage = "from-global";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-global");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_dynamic_magic_get_source_aliases_direct_variable_return() {
+    let execution = run_source(
+        r#"<?php
+$storage = "initial";
+
+class MagicBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+$box = new MagicBox();
+$property = "missing";
+$alias =& $box->$property;
+$alias = "from-alias";
+echo $storage;
+echo "|";
+$storage = "from-global";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-global");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_magic_get_source_without_reference_return_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class MagicBox {
+    public function __get($name) {
+        return "value";
+    }
+}
+
+$box = new MagicBox();
+$alias =& $box->missing;
+"#,
+    );
+
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call MagicBox::__get(): magic __get reference sources require __get() to return by reference in the current subset"
+    );
+}
+
+#[test]
+fn reference_assignment_magic_get_source_non_direct_return_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class MagicBox {
+    public $value = "initial";
+
+    public function &__get($name) {
+        return $this->value;
+    }
+}
+
+$box = new MagicBox();
+$alias =& $box->missing;
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "unsupported call __get(): reference returns are only implemented for direct variable return expressions"
+    );
+}
+
+#[test]
 fn reference_assignment_non_public_object_property_source_aliases_inside_method_context() {
     let execution = run_source(
         r#"<?php

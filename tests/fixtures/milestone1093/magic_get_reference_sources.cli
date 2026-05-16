@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+from-alias|from-global|dynamic-alias|dynamic-global
+--- stdout end ---
+stderr:
+--- stderr end ---

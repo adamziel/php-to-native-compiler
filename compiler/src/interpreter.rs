@@ -4331,15 +4331,8 @@ impl Interpreter {
                 } = source
                 {
                     if let Expr::Variable(object, _) = target.as_ref() {
-                        let (current_class_id, protected_class_ids) =
-                            self.current_property_access_context();
-                        scope.bind_static_to_existing_context_object_property(
-                            name,
-                            object,
-                            property,
-                            current_class_id,
-                            protected_class_ids,
-                            span,
+                        self.bind_static_to_context_property_or_magic_get(
+                            name, object, property, span, scope,
                         )?;
                     } else {
                         let value = self
@@ -4357,8 +4350,8 @@ impl Interpreter {
                     if let Expr::Variable(object, _) = target.as_ref() {
                         let property =
                             self.evaluate_dynamic_property_name(property, span, scope)?;
-                        scope.bind_static_to_dynamic_object_property(
-                            name, object, &property, span,
+                        self.bind_static_to_dynamic_property_or_magic_get(
+                            name, object, &property, span, scope,
                         )?;
                     } else {
                         let value = self
@@ -4681,6 +4674,104 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn bind_static_to_context_property_or_magic_get(
+        &mut self,
+        target_name: &str,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => {
+                scope.bind_static_to_existing_context_object_property(
+                    target_name,
+                    object_name,
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                    span,
+                )?;
+                Ok(())
+            }
+            Err(error) if Self::is_undefined_property_error(&error) => {
+                if let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, property, span)?
+                {
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
+                } else {
+                    Err(runtime_error(span, error))
+                }
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn bind_static_to_dynamic_property_or_magic_get(
+        &mut self,
+        target_name: &str,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        match object.read_public_property(property) {
+            Ok(_) => {
+                scope.bind_static_to_dynamic_object_property(
+                    target_name,
+                    object_name,
+                    property,
+                    span,
+                )?;
+                Ok(())
+            }
+            Err(error) if Self::is_undefined_property_error(&error) => {
+                if let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, property, span)?
+                {
+                    scope.bind_static_to_cell(target_name, cell);
+                    Ok(())
+                } else {
+                    scope.bind_static_to_dynamic_object_property(
+                        target_name,
+                        object_name,
+                        property,
+                        span,
+                    )
+                }
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
     }
 
     fn evaluate_reference_return_call_cell(
@@ -9966,6 +10057,57 @@ impl Interpreter {
             vec![Value::String(property.to_string())],
             span,
         )
+    }
+
+    fn call_magic_get_reference_return_cell(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<VariableCell>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__get")
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "magic __get reference sources require __get() to return by reference in the current subset",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_reference_return_function_with_checked_values(
+            function,
+            vec![Value::String(property.to_string())],
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+        )
+        .map(Some)
     }
 
     fn call_magic_instance_method_with_values(

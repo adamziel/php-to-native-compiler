@@ -168,12 +168,19 @@
   evaluates to a string or integer public property name. Existing declared or
   dynamic public properties alias through the same public-property root, and
   allowed dynamic-property objects such as `stdClass` materialize a missing
-  selected property as `null` before binding. Dynamic-property sources on
+  selected property as `null` before binding. Missing direct object
+  properties can dispatch to visible non-static magic `__get()` when it is
+  declared by reference and its body returns a direct variable in the current
+  reference-return subset; the alias binds to that returned variable cell.
+  This includes named missing-property sources and dynamic public property
+  names that resolve to strings or integers. Dynamic-property sources on
   non-direct object expressions, missing dynamic properties on classes that do
-  not allow dynamic public slots, dynamic non-public property source aliases,
-  magic `__get` by-reference behavior, non-variable reference targets,
-  full reference containers, copy-on-write, exact alias destruction ordering,
-  and native lowering remain unsupported. `ArrayAccess` reference sources
+  not allow dynamic public slots and have no supported magic fallback, dynamic
+  non-public property source aliases, non-reference-returning `__get()`,
+  `__get()` returns of properties, array offsets, or expressions, non-variable
+  reference targets, full reference containers, copy-on-write, exact alias
+  destruction ordering, exact magic-property notices, and native lowering
+  remain unsupported. `ArrayAccess` reference sources
   such as `$alias =& $bag[$key];` and
   `$alias =& $holder->bag[$key];` report a stable unsupported-call boundary
   because faithful support requires by-reference `ArrayAccess::offsetGet()`

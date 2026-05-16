@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 1093, a bounded magic `__get` reference-source slice.
+  Statement-form `$alias =& $object->missing;` and
+  `$alias =& $object->$property;` now alias a direct variable target to the
+  variable cell returned by a visible non-static `__get()` method when the
+  source object is a direct variable, the selected property is undefined, the
+  magic method is declared by reference, and the method body returns a direct
+  variable through the existing reference-return subset. Writes through the
+  alias or through the returned direct variable observe the same value. This
+  does not implement non-reference-returning `__get()` reference sources,
+  `__get()` methods that return properties, array offsets, or arbitrary
+  expressions by reference, inaccessible private/protected property magic
+  fallback fidelity from outside context, non-direct object expressions,
+  dynamic non-public magic-property behavior, full PHP reference containers,
+  copy-on-write containers, exact notices, or native lowering. Verification so
+  far: `cargo fmt --check`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_magic_get -- --test-threads=1`, `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_dynamic_magic_get --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1093 --compare-php`, `cargo test -p phpc --test
+  object_model magic_get -- --test-threads=1`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_public_object_property --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_dynamic -- --test-threads=1`, and `cargo check -p
+  php_runtime -p phpc` passed.
+
 - Added Milestone 1092, a stable `ArrayAccess` reference-source boundary.
   Statement-form `$alias =& $bag[$key];` and
   `$alias =& $holder->bag[$key];` now report a specific unsupported-call
