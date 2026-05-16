@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone966/wpdb_stmt_param_count_boundary.php

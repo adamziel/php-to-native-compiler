@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 966, synthetic WordPress-shaped `wpdb`
+  prepared-statement prepare/parameter-count and diagnostic-list smokes that
+  reach the explicit `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
+  `mysqli_stmt_get_warnings()`, and `mysqli_stmt_error_list()` boundaries
+  through `wpdb`-style methods. These are harness smokes only; they do not add
+  statement object allocation, prepared SQL parsing, parameter metadata,
+  warning-chain objects, error-list arrays, statement diagnostic state, host
+  database execution, PHP warning/error fidelity, or native database lowering.
+  Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone966`.
+
 - Added Milestone 965, explicit MySQLi statement prepare/parameter-count and
   diagnostic-list boundaries for `mysqli_stmt_prepare()`,
   `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, and

@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_prepare(): mysqli statement objects, prepared SQL parsing, prepared statement state, and host database execution are not implemented in the current subset
+

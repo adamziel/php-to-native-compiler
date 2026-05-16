@@ -9064,19 +9064,31 @@ handled.
   SQL parsing, parameter metadata, warning-chain objects, error-list arrays,
   statement diagnostic state, host database execution, warning/error fidelity,
   or native lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement
   prepare/parameter-count and diagnostic-list smokes that reach the explicit
   `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
   `mysqli_stmt_get_warnings()`, or `mysqli_stmt_error_list()` boundary through
   WordPress-shaped methods without claiming statement objects, prepared SQL
   parsing, parameter metadata, warning-chain objects, error-list arrays, host
   database state, warning/error fidelity, or native lowering.
+  Milestone 966 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
+  `mysqli_stmt_get_warnings()`, and `mysqli_stmt_error_list()` unsupported
+  diagnostics through WordPress-shaped methods. These are not statement object
+  allocation, prepared SQL parsing, parameter metadata, warning-chain objects,
+  error-list arrays, host database state, warning/error fidelity, or native
+  lowering.
+- [ ] Runtime/database lane: audit the remaining database API surface against
+  current WordPress blockers after the MySQLi prepared-statement procedural
+  boundaries, then add the next explicit runtime boundary or small deterministic
+  behavior slice with parser/runtime tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2e1112fc tests: add wordpress wpdb stmt field metadata smokes`, covering
-  Milestone 964 before the current Milestone 965 candidate.
+  `402cff23 runtime: add mysqli stmt prepare diagnostics boundaries`, covering
+  Milestone 965 before the current Milestone 966 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -300,7 +300,11 @@ prepare/parameter-count and diagnostic-list boundaries that expose callable
 metadata and stable unsupported diagnostics without statement object
 allocation, prepared SQL parsing, parameter metadata, warning-chain objects,
 error-list arrays, statement diagnostic state, host database execution,
-warning/error fidelity, or native lowering,
+warning/error fidelity, or native lowering, now wired through synthetic
+WordPress-shaped `wpdb` prepare/parameter-count and diagnostic-list smokes
+without claiming statement objects, prepared SQL parsing, parameter metadata,
+warning-chain objects, error-list arrays, host database state, warning/error
+fidelity, or native lowering,
 plus explicit `mysqli_stmt_bind_param()`/`mysqli_stmt_execute()` statement
 binding/execution boundaries that expose callable metadata and stable
 unsupported diagnostics without statement object allocation, by-reference

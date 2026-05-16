@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone966/wpdb_stmt_error_list_boundary.php

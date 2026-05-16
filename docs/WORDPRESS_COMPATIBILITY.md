@@ -1679,7 +1679,11 @@ historical blockers and remaining full-support gaps include:
   diagnostics, without statement object allocation, prepared SQL parsing,
   parameter metadata, warning-chain objects, error-list arrays, statement
   diagnostic state, host database execution, warning/error fidelity, or native
-  database lowering.
+  database lowering. Milestone 966 wires those boundaries through synthetic
+  WordPress-shaped `wpdb` prepare/parameter-count and diagnostic-list methods
+  without claiming statement objects, prepared SQL parsing, parameter
+  metadata, warning-chain objects, error-list arrays, host database state,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

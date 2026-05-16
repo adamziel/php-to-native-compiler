@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_error_list(): mysqli statement objects, statement error-list tracking, and statement diagnostic state are not implemented in the current subset
+
