@@ -1,0 +1,1 @@
+Documents the current lexer boundary for PHP short echo tags; host PHP treats <?= expr ?> as echo syntax, while phpc requires <?php echo expr; ?> in the current subset.

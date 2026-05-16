@@ -93,6 +93,35 @@ fn unsupported_heredoc_nowdoc_forms_have_stable_lex_errors() {
 }
 
 #[test]
+fn unsupported_short_echo_tags_have_stable_lex_errors() {
+    let cases = [
+        ("<?= $name ?>\n", 1, 1),
+        ("<?php\n?>\n<?= $name ?>\n", 3, 1),
+    ];
+
+    for (source, line, column) in cases {
+        let error = lex_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_short_echo_tags_at_lex_boundary() {
+    let error = php_compiler::emit_ir_source("<?= $name ?>\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Lex);
+    assert_eq!(
+        error.message,
+        "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_interpolated_heredoc_until_native_string_runtime_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\n$name = \"Ada\";\necho <<<TXT\nhello {$name}\nTXT;\n")

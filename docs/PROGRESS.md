@@ -4,6 +4,103 @@
 
 Implemented:
 
+- Added Milestone 1165, a tests/docs queue refresh after the 1161-1164
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1161-1165
+  complete and opens Milestones 1166-1170, public docs describe the short echo
+  tag lex boundary, declared-interface parameter-type metadata enforcement,
+  dedicated native object-metadata rejection, and text fixture-manifest byte
+  counts. This does not change runtime behavior, native lowering, fixture
+  execution, or PHP/WordPress compatibility claims beyond the implemented
+  1161-1164 slices. Full gate passed at checkpoint: `1337` fixture tests,
+  `759` system PHP comparisons, and `578` skipped `phpc-only` fixtures.
+
+- Added Milestone 1164, a deterministic compiler-output/audit text fixture
+  manifest refinement. `phpc test --list-fixtures [fixture-dir]` now reports
+  source and recognized sidecar byte counts for fixture entries, aggregate
+  summaries, compatibility-target summaries, and recognized orphan sidecars,
+  bringing the human-readable manifest's audit surface in line with the JSON
+  manifest without changing fixture execution. This does not change
+  `--list-fixtures-json` contract/version, normal fixture execution,
+  `--compare-php` behavior, supported PHP syntax/runtime behavior, native
+  lowering, or PHP/WordPress compatibility claims. Unsupported/unchanged audit
+  gaps: the text manifest does not hash fixture payloads, parse or execute
+  fixtures, compare system PHP, validate non-empty `.phpc-only` reasons,
+  inspect unrecognized sidecars, or prove branch-specific compatibility.
+  Verification so far: `cargo test -p phpc --test fixture_manifest --
+  --test-threads=1`, direct `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone2` showing text `bytes source=...` and per-sidecar
+  byte fields, `cargo fmt --check`, and `git diff --check` passed in the
+  compiler-output lane. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1163, a dedicated native object-metadata rejection for
+  documented interpreter metadata builtins. `phpc compile --emit-ir` and
+  `--emit-asm` now reject object/class metadata builtin calls such as
+  `get_class()`, `get_declared_classes()`, `get_object_vars()`, and
+  `spl_object_id()` with a diagnostic naming missing native class metadata
+  tables, object handles, inheritance/interface/trait/enum registries,
+  property/method tables, autoload interaction, references/copy-on-write, and
+  exact native object-metadata errors instead of using the broader
+  object/class boundary. Existing native scalar false-folds for `is_object`,
+  `get_debug_type`, metadata-exists calls, member checks, and relationship
+  checks remain unchanged where no native class table is needed. This does not
+  implement native object metadata tables, object handles, inherited metadata,
+  property/method tables, autoloading, references, copy-on-write, or exact
+  native object-metadata errors. Verification so far: `cargo test -p phpc
+  --test native_object_class_boundary -- --test-threads=1`, `cargo test -p
+  phpc --test builtin_exception_class -- --test-threads=1`, `cargo test -p
+  phpc --test pdo_extension -- --test-threads=1`, direct `cargo run -q -p
+  phpc -- compile
+  tests/fixtures/milestone1163/native_object_metadata_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1163/native_object_metadata_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and `git diff --check`
+  passed in the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1162, a bounded runtime interface method parameter-type
+  compatibility check. Concrete classes that implement declared user
+  interfaces, including concrete children inheriting `implements` metadata,
+  now reject implementations that add a parameter type where the interface
+  parameter is untyped or substitute a different parameter type for a typed
+  interface parameter. Implementations that repeat the same type text
+  case-insensitively or omit a typed interface parameter type continue to
+  register. This does not implement full PHP signature variance, return type
+  compatibility, class/interface type subtyping, type aliases/imports,
+  union/intersection canonicalization, built-in/internal interface method
+  enforcement, exact PHP `Error` objects, call-time type enforcement, or
+  native object/interface lowering. Verification so far: `cargo test -p phpc
+  --test object_model
+  interface_required_method_parameter_type_compatibility_is_enforced_for_concrete_classes
+  -- --test-threads=1`, `cargo test -p phpc --test object_model --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1162`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1162`, direct `phpc run` on the
+  compatible Milestone 1162 fixture returning `registered`, and direct `phpc
+  run` on the boundary fixture returning exit `1` with the stable runtime
+  diagnostic, `cargo fmt --check`, and `git diff --check` passed in the
+  runtime lane. Full gate deferred until integration.
+
+- Added Milestone 1161, a parser-lane lex diagnostic refinement for PHP short
+  echo tags. `<?= $value ?>` now fails with a dedicated lex diagnostic naming
+  the unsupported short echo tag and the current `<?php echo ... ?>` subset
+  instead of falling through to a broad unexpected-character error. This does
+  not implement short echo tag expansion, source mapping across inline HTML,
+  echo expression parsing through the short tag form, interaction with close
+  tag newline handling beyond the named rejection, or native lowering.
+  Verification so far: `cargo test -p phpc --test syntax_boundaries
+  unsupported_short_echo_tags_have_stable_lex_errors -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_short_echo_tags_at_lex_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_syntax_features`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/unsupported_syntax_features`, direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_short_echo_tag.php`
+  returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_short_echo_tag.php
+  --emit-ir` returning exit `1`, `cargo fmt --check`, and `git diff --check`
+  passed in the parser lane. Full gate deferred until integration.
+
 - Added Milestone 1160, a tests/docs queue refresh after the 1156-1159
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1156-1160
   complete and opens Milestones 1161-1165, public docs describe the

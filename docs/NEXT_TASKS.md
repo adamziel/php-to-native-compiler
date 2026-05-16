@@ -11324,13 +11324,58 @@ handled.
 
 ## Milestone 1161: Next Parser Boundary
 
+- [x] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed full-compatibility gap map.
+  Prefer a PHP/WordPress surface that still falls through to a broad or
+  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
+  where applicable, and keep runtime/native support claims unchanged.
+  Milestone 1161 adds a dedicated lex boundary for short echo tags such as
+  `<?= $value ?>`, replacing the broad unexpected-character error while
+  leaving echo-tag expansion, source mapping, inline-HTML interaction beyond
+  the named rejection, and native lowering unsupported.
+
+## Milestone 1162: Runtime Interface Parameter-Type Compatibility Slice
+
+- [x] Runtime lane: enforce a bounded declared-interface method parameter-type
+  metadata compatibility rule for concrete classes, including inherited
+  `implements` metadata on concrete children. Implementations may omit an
+  interface parameter type or repeat the same type text case-insensitively, but
+  may not add a type to an untyped interface parameter or substitute a
+  different type for a typed interface parameter. This does not implement full
+  PHP signature variance, return type compatibility, class/interface type
+  subtyping, type aliases/imports, union/intersection canonicalization,
+  built-in/internal interface method enforcement, exact PHP `Error` objects,
+  or native object/interface lowering.
+
+## Milestone 1163: Next Native Boundary
+
+- [x] IR/lowering lane: split documented object/class metadata builtins into a
+  dedicated native object-metadata rejection for `phpc compile --emit-ir` and
+  `--emit-asm`, while preserving existing native scalar false-folds for
+  `is_object`, `get_debug_type`, metadata-exists calls, member checks, and
+  relationship checks where no native class table is needed.
+
+## Milestone 1164: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: choose one deterministic CLI, fixture-runner,
+  compatibility-manifest, or backend artifact contract that improves
+  auditability without broadening PHP support claims.
+
+## Milestone 1165: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1161-1164 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1166: Next Parser Boundary
+
 - [ ] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
   misleading diagnostic. Add stable focused coverage, CLI fixture evidence
   where applicable, and keep runtime/native support claims unchanged.
 
-## Milestone 1162: Next Runtime Value/Object Slice
+## Milestone 1167: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
@@ -11338,22 +11383,22 @@ handled.
   or external probes. Prove it with focused tests, CLI coverage, system PHP
   comparison where applicable, and named unsupported edges.
 
-## Milestone 1163: Next Native Boundary
+## Milestone 1168: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1164: Next Compiler-Output Contract
+## Milestone 1169: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1165: Next Tests/Docs Queue Refresh
+## Milestone 1170: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1161-1164 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1166-1169 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

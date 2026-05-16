@@ -90,7 +90,8 @@ incorrect native code.
 `phpc run` currently supports the documented subset of:
 
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
-  coalescing forms, plus bounded inline HTML output between PHP close/open tags
+  coalescing forms, plus bounded inline HTML output between PHP close/open
+  tags; short echo tags such as `<?= $value ?>` remain a lex boundary
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
   operators, shifts, `(string)`, `(int)`, `(bool)`, `(float)`/`(double)`, and
   `(array)` casts over documented
@@ -153,8 +154,9 @@ incorrect native code.
   `interface_exists()` and `get_declared_interfaces()`, and require concrete
   classes that implement declared interfaces, including through inherited
   `implements` metadata, to expose public methods with the required names at
-  class registration time and to avoid requiring more parameters than those
-  interface methods; class `implements` clauses record comma-separated
+  class registration time, to avoid requiring more parameters than those
+  interface methods, and to pass the current bounded interface parameter-type
+  metadata check; class `implements` clauses record comma-separated
   interface names as relationship metadata for `is_a`, `is_subclass_of`, and
   `instanceof`, including unresolved built-in/internal interface names without
   seeding `interface_exists()` or enforcing built-in/internal methods
@@ -339,7 +341,9 @@ Use `phpc test --list-fixtures [fixture-dir]` to print a deterministic fixture
 manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
-also include their marker text as `phpc-only-reason=<reason>`.
+also include their marker text as `phpc-only-reason=<reason>`, and the text
+manifest reports deterministic source and recognized sidecar byte counts for
+fixtures, summaries, orphan sidecars, and compatibility targets.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
 manifest as deterministic JSON with `contract_version` 4. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason` and source/recognized

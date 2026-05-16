@@ -2,8 +2,8 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 
 #[test]
 fn builtin_exception_metadata_supports_lookup_instantiation_and_inheritance() {
@@ -97,7 +97,7 @@ fn emit_ir_rejects_builtin_exception_metadata_folds_before_native_class_tables()
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+        assert_eq!(error.message, LLVM_OBJECT_METADATA_REJECTION);
     }
 }
 
@@ -107,7 +107,7 @@ fn emit_asm_rejects_builtin_exception_metadata_folds_before_backend_execution() 
         emit_asm_source("<?php\necho class_exists(\"Exception\") ? \"1\" : \"0\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, LLVM_OBJECT_METADATA_REJECTION);
 }
 
 #[test]

@@ -289,14 +289,19 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
         summary.stderr_expectations,
         summary.exit_expectations,
         summary.phpc_only_markers,
-        summary.orphan_sidecars
+        summary.orphan_sidecars,
+        summary.source_bytes,
+        summary.stdout_bytes,
+        summary.stderr_bytes,
+        summary.exit_bytes,
+        summary.phpc_only_bytes
     )
 }
 
@@ -330,15 +335,23 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         .unwrap_or_default();
 
     format!(
-        "{} expectations={} php-comparison={}{}",
-        entry.path, expectations, comparison, reason
+        "{} expectations={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
+        entry.path,
+        expectations,
+        comparison,
+        reason,
+        entry.source_bytes,
+        text_optional_u64(entry.stdout_bytes),
+        text_optional_u64(entry.stderr_bytes),
+        text_optional_u64(entry.exit_bytes),
+        text_optional_u64(entry.phpc_only_bytes)
     )
 }
 
 fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar) -> String {
     format!(
-        "orphan sidecar: {} kind={} expected-fixture={}",
-        orphan.path, orphan.kind, orphan.expected_fixture
+        "orphan sidecar: {} kind={} expected-fixture={} bytes={}",
+        orphan.path, orphan.kind, orphan.expected_fixture, orphan.bytes
     )
 }
 
@@ -346,7 +359,7 @@ fn render_fixture_manifest_compatibility_target(
     target: &FixtureManifestCompatibilityTarget,
 ) -> String {
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
         target.target,
         target.path,
         target.summary.total,
@@ -356,7 +369,12 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.stderr_expectations,
         target.summary.exit_expectations,
         target.summary.phpc_only_markers,
-        target.summary.orphan_sidecars
+        target.summary.orphan_sidecars,
+        target.summary.source_bytes,
+        target.summary.stdout_bytes,
+        target.summary.stderr_bytes,
+        target.summary.exit_bytes,
+        target.summary.phpc_only_bytes
     )
 }
 
@@ -711,6 +729,12 @@ fn text_field_value(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn text_optional_u64(value: Option<u64>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
 }
 
 fn read_source(path: &Path) -> CompileResult<String> {

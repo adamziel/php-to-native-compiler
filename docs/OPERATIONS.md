@@ -36,6 +36,8 @@ For fixture audits that should not execute code, use
 manifest of fixtures, recognized expectation files, aggregate sidecar counts,
 recognized orphan sidecars, PHP-comparison eligibility, and `.phpc-only`
 marker text as `phpc-only-reason=<reason>` on skipped-comparison entries.
+The text manifest also reports deterministic source and recognized sidecar byte
+counts for fixtures, summaries, orphan sidecars, and compatibility targets.
 Use `cargo run -p phpc -- test --list-fixtures-json [fixture-dir]` when
 automation needs the same audit-only manifest as deterministic JSON. The JSON
 manifest also reports sibling `.phpc-only` marker text as deterministic

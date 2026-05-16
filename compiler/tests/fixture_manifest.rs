@@ -40,10 +40,10 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
         stdout,
         concat!(
             "fixture manifest: 3 fixtures\n",
-            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 orphan sidecars=0\n",
-            "alpha.php expectations=stdout php-comparison=eligible\n",
-            "nested/beta.php expectations=stderr,exit php-comparison=phpc-only phpc-only-reason=project diagnostic has no system PHP equivalent\n",
-            "zeta.php expectations=none php-comparison=eligible\n",
+            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1 orphan sidecars=0 bytes source=64 stdout=6 stderr=12 exit=2 phpc-only=48\n",
+            "alpha.php expectations=stdout php-comparison=eligible bytes source=20 stdout=6 stderr=- exit=- phpc-only=-\n",
+            "nested/beta.php expectations=stderr,exit php-comparison=phpc-only phpc-only-reason=project diagnostic has no system PHP equivalent bytes source=19 stdout=- stderr=12 exit=2 phpc-only=48\n",
+            "zeta.php expectations=none php-comparison=eligible bytes source=25 stdout=- stderr=- exit=- phpc-only=-\n",
         )
     );
 }
@@ -86,12 +86,12 @@ fn cli_list_fixtures_reports_orphan_sidecars_deterministically() {
         stdout,
         concat!(
             "fixture manifest: 1 fixtures\n",
-            "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=4\n",
-            "live.php expectations=stdout php-comparison=phpc-only phpc-only-reason=\n",
-            "orphan sidecar: alpha.stdout kind=stdout expected-fixture=alpha.php\n",
-            "orphan sidecar: nested/beta.exit kind=exit expected-fixture=nested/beta.php\n",
-            "orphan sidecar: nested/beta.phpc-only kind=phpc-only expected-fixture=nested/beta.php\n",
-            "orphan sidecar: zeta.stderr kind=stderr expected-fixture=zeta.php\n",
+            "summary: php-comparison eligible=0, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=4 bytes source=19 stdout=5 stderr=0 exit=0 phpc-only=0\n",
+            "live.php expectations=stdout php-comparison=phpc-only phpc-only-reason= bytes source=19 stdout=5 stderr=- exit=- phpc-only=0\n",
+            "orphan sidecar: alpha.stdout kind=stdout expected-fixture=alpha.php bytes=6\n",
+            "orphan sidecar: nested/beta.exit kind=exit expected-fixture=nested/beta.php bytes=2\n",
+            "orphan sidecar: nested/beta.phpc-only kind=phpc-only expected-fixture=nested/beta.php bytes=0\n",
+            "orphan sidecar: zeta.stderr kind=stderr expected-fixture=zeta.php bytes=6\n",
         )
     );
 }
@@ -355,6 +355,54 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "    }\n",
             "  ]\n",
             "}\n",
+        )
+    );
+}
+
+#[test]
+fn cli_list_fixtures_reports_compatibility_target_byte_counts() {
+    let temp = TempFixtureDir::new("phpc-fixture-manifest-text-compat-targets");
+    let fixture_dir = temp.path().join("fixtures");
+    let php_dir = fixture_dir.join("compat").join("php");
+    let wordpress_dir = fixture_dir.join("compat").join("wordpress");
+    fs::create_dir_all(&php_dir).unwrap();
+    fs::create_dir_all(&wordpress_dir).unwrap();
+
+    fs::write(php_dir.join("cross_feature.php"), "<?php echo 'ok';\n").unwrap();
+    fs::write(php_dir.join("cross_feature.stdout"), "ok\n").unwrap();
+    fs::write(php_dir.join("skipped.php"), "<?php echo 'skip';\n").unwrap();
+    fs::write(
+        php_dir.join("skipped.phpc-only"),
+        "compat target uses a project-only diagnostic\n",
+    )
+    .unwrap();
+    fs::write(php_dir.join("stale.stderr"), "stale\n").unwrap();
+    fs::write(wordpress_dir.join("source-pin.md"), "operator supplied\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--list-fixtures"])
+        .arg(&fixture_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "fixture manifest: 2 fixtures\n",
+            "summary: php-comparison eligible=1, phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 phpc-only=45\n",
+            "compat/php/cross_feature.php expectations=stdout php-comparison=eligible bytes source=17 stdout=3 stderr=- exit=- phpc-only=-\n",
+            "compat/php/skipped.php expectations=none php-comparison=phpc-only phpc-only-reason=compat target uses a project-only diagnostic bytes source=19 stdout=- stderr=- exit=- phpc-only=45\n",
+            "orphan sidecar: compat/php/stale.stderr kind=stderr expected-fixture=compat/php/stale.php bytes=6\n",
+            "compatibility target: php path=compat/php fixtures=2 php-comparison eligible=1 phpc-only=1 expectations stdout=1, stderr=0, exit=0, phpc-only=1 orphan sidecars=1 bytes source=36 stdout=3 stderr=0 exit=0 phpc-only=45\n",
+            "compatibility target: wordpress path=compat/wordpress fixtures=0 php-comparison eligible=0 phpc-only=0 expectations stdout=0, stderr=0, exit=0, phpc-only=0 orphan sidecars=0 bytes source=0 stdout=0 stderr=0 exit=0 phpc-only=0\n",
         )
     );
 }

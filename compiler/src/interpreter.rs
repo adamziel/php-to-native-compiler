@@ -19,9 +19,9 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
     EnumDecl, Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition,
-    InterfaceDecl, InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart,
-    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, UnaryOp, UnsetTarget,
+    InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
+    InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator,
+    Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -131,9 +131,16 @@ struct Interpreter {
     exit_signal: Option<i32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct MethodSignature {
     required_params: usize,
+    params: Vec<ParameterSignature>,
+}
+
+#[derive(Debug, Clone)]
+struct ParameterSignature {
+    name: String,
+    type_decl: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18859,12 +18866,7 @@ fn register_class_member_runtime_tables(
             }
             ClassMember::Method(method) => {
                 let key = (class_id, method.function.name.to_ascii_lowercase());
-                method_signatures.insert(
-                    key.clone(),
-                    MethodSignature {
-                        required_params: required_param_count(&method.function),
-                    },
-                );
+                method_signatures.insert(key.clone(), method_signature(&method.function));
                 if method.is_abstract {
                     abstract_methods.insert(key);
                 } else {
@@ -19122,6 +19124,22 @@ fn validate_interface_method_implementation(
                     ),
                 ));
             }
+
+            let class_signature = public_method_signature(
+                method_signatures,
+                class,
+                class_id,
+                declaring_class_id,
+                &lookup_name,
+            );
+            validate_interface_parameter_type_compatibility(
+                &class.name,
+                interface,
+                method,
+                declaring_class_name,
+                class_method.name(),
+                class_signature.as_ref(),
+            )?;
         }
     }
 
@@ -19142,6 +19160,68 @@ fn validate_interface_method_implementation(
             class.name
         ),
     ))
+}
+
+fn validate_interface_parameter_type_compatibility(
+    class_name: &str,
+    interface: &InterfaceDecl,
+    interface_method: &InterfaceMethodDecl,
+    declaring_class_name: &str,
+    class_method_name: &str,
+    class_signature: Option<&MethodSignature>,
+) -> RuntimeResult<()> {
+    let Some(class_signature) = class_signature else {
+        return Ok(());
+    };
+
+    for (index, interface_param) in interface_method.function.params.iter().enumerate() {
+        let Some(class_param) = class_signature.params.get(index) else {
+            continue;
+        };
+
+        match (
+            interface_param
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str()),
+            class_param.type_decl.as_deref(),
+        ) {
+            (None, Some(class_type)) => {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "method {}::{}() cannot add parameter type {} for parameter ${} when interface method {}::{}() has no parameter type",
+                        declaring_class_name,
+                        class_method_name,
+                        class_type,
+                        class_param.name,
+                        interface.name,
+                        interface_method.function.name
+                    ),
+                ));
+            }
+            (Some(interface_type), Some(class_type))
+                if !class_type.eq_ignore_ascii_case(interface_type) =>
+            {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "method {}::{}() parameter ${} type {} is incompatible with interface method {}::{}() parameter type {}",
+                        declaring_class_name,
+                        class_method_name,
+                        class_param.name,
+                        class_type,
+                        interface.name,
+                        interface_method.function.name,
+                        interface_type
+                    ),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn public_method_required_param_count(
@@ -19171,6 +19251,45 @@ fn public_method_required_param_count(
     method_signatures
         .get(&(declaring_class_id, method_lookup_name.to_string()))
         .map_or(0, |signature| signature.required_params)
+}
+
+fn public_method_signature(
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class: &ClassDecl,
+    class_id: ClassId,
+    declaring_class_id: ClassId,
+    method_lookup_name: &str,
+) -> Option<MethodSignature> {
+    if declaring_class_id == class_id {
+        return class.members.iter().find_map(|member| {
+            let ClassMember::Method(method) = member else {
+                return None;
+            };
+            method
+                .function
+                .name
+                .eq_ignore_ascii_case(method_lookup_name)
+                .then(|| method_signature(&method.function))
+        });
+    }
+
+    method_signatures
+        .get(&(declaring_class_id, method_lookup_name.to_string()))
+        .cloned()
+}
+
+fn method_signature(function: &FunctionDecl) -> MethodSignature {
+    MethodSignature {
+        required_params: required_param_count(function),
+        params: function
+            .params
+            .iter()
+            .map(|param| ParameterSignature {
+                name: param.name.clone(),
+                type_decl: param.type_decl.as_ref().map(|decl| decl.text.clone()),
+            })
+            .collect(),
+    }
 }
 
 fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Vec<String> {

@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:55:00Z
+
+- Checkpoint before this task:
+  `333d425e runtime: enforce interface parameter boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1161-1165, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: lexer/runtime/codegen/CLI manifest code, focused tests and
+  fixtures for short echo tag lex boundaries, declared-interface
+  parameter-type metadata compatibility enforcement, dedicated native
+  object-metadata rejection, text fixture manifest byte counts, plus
+  `README.md`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: enforce interface parameter types"`
+  passed with `1337` fixture tests, `759` system PHP comparisons, and `578`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: short echo tag expansion/source mapping, full PHP
+  method signature variance and return type compatibility, class/interface
+  type subtyping and type alias/import resolution, union/intersection
+  canonicalization, built-in/internal interface method enforcement, exact PHP
+  diagnostics/error objects, native object metadata tables and handles,
+  branch-specific PHP comparison matrices, real reference/COW containers, real
+  database and filesystem services, and full WordPress request/plugin/theme
+  flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1166-1169 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T20:20:00Z
 
 - Checkpoint before this task:

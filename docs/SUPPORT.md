@@ -4,7 +4,9 @@
 
 - PHP opening tag `<?php`; text between `?>` and the next PHP open tag is
   treated as inline HTML output through the interpreter path, including the
-  current PHP-compatible single-newline consumption immediately after `?>`
+  current PHP-compatible single-newline consumption immediately after `?>`.
+  Short echo tags such as `<?= $value ?>` remain unsupported and stop at a
+  dedicated lex boundary before execution.
 - `echo` statements with one or more comma-separated expressions
 - `print` statements
 - decimal and hexadecimal integer literals in the current signed 64-bit subset
@@ -598,9 +600,13 @@
   that implement declared user interfaces, including through inherited
   `implements` metadata, must expose public methods with the required
   interface method names and must not require more parameters than those
-  interface methods at class registration time. Full PHP method
-  signature variance, parameter type compatibility, return type compatibility,
-  interface parameter type/return compatibility, interface inheritance,
+  interface methods at class registration time. For interface method parameter
+  type metadata, implementations may omit an interface parameter type or use
+  the same type text case-insensitively, but may not add a type where the
+  interface parameter is untyped or change a typed interface parameter to a
+  different type. Full PHP method signature variance, class/interface type
+  subtyping, type aliases, union/intersection canonicalization, return type
+  compatibility, interface inheritance,
   built-in/internal interface method enforcement, named arguments,
   trait composition, exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -2285,13 +2291,18 @@
   including through parent classes. For interfaces declared in the current
   parsed program, concrete classes must expose public methods with the required
   interface method names, current supported non-static method shape, and no
-  more required parameters than the interface method;
+  more required parameters than the interface method, and must pass the current
+  bounded parameter-type metadata check: an implementation may omit an
+  interface parameter type or repeat the same type text case-insensitively, but
+  may not add a type to an untyped interface parameter or substitute a
+  different type for a typed interface parameter;
   abstract classes may defer that requirement until a concrete child is
   registered, and inherited public methods count. Public static methods do not
   satisfy non-static interface method requirements. This is a bounded
-  public-method compatibility check only, not parameter type compatibility,
-  return type compatibility, full signature variance, or exact PHP
-  error-object behavior. Unresolved interface names
+  public-method compatibility check only, not full parameter type
+  compatibility, return type compatibility, full signature variance, class or
+  interface type subtyping, type-alias/import resolution, union/intersection
+  canonicalization, or exact PHP error-object behavior. Unresolved interface names
   and built-in/internal interface names remain relationship metadata only. The
   bounded core interface catalog currently includes `Traversable`,
   `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
@@ -3415,16 +3426,20 @@
   lowering with a specific codegen diagnostic until generated code has native
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
-  Native class declarations, inheritance metadata, and
-  object metadata builtins
+  Native class declarations and inheritance metadata are rejected before body
+  lowering with a specific codegen diagnostic until generated code has native
+  object layout, handles, visibility, method dispatch, inheritance, autoload
+  interaction, and exact native error objects.
+  Native object metadata builtins
   beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
   `method_exists`, and string/string relationship false folding for `is_a` and
-  `is_subclass_of`, are rejected before body, operand, or argument lowering
-  with a specific codegen diagnostic until generated code has native object
-  layout, handles, visibility, method dispatch, class metadata tables,
-  inheritance, autoload interaction, and exact native error objects.
+  `is_subclass_of`, are rejected before operand or argument lowering with a
+  dedicated object-metadata codegen diagnostic until generated code has native
+  class metadata tables, object handles, inheritance/interface/trait/enum
+  registries, property/method tables, autoload interaction,
+  references/copy-on-write, and exact native object-metadata errors.
   Native object-instantiation lowering has a separate rejection for `new`
   expressions and constructor dispatch until generated code has native object
   allocation, object handles, constructor calls, visibility checks,
@@ -5018,8 +5033,13 @@
   eligibility, plus aggregate counts for eligible versus `.phpc-only` fixtures
   and recognized sidecars. `.phpc-only` fixture entries include
   `phpc-only-reason=<reason>` from the marker text, while comparable fixtures
-  omit the field. It also reports recognized orphan sidecars that do not have
-  a matching `.php` fixture. It does not parse, execute, or compare fixtures.
+  omit the field. It also reports deterministic source and recognized sidecar
+  byte counts for fixture entries, summaries, recognized orphan sidecars, and
+  compatibility-target summaries. It also reports recognized orphan sidecars
+  that do not have a matching `.php` fixture. It does not parse, execute, or
+  compare fixtures, hash payloads, validate that `.phpc-only` reason text is
+  non-empty, inspect non-fixture compatibility metadata, or report
+  unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
   fixture manifest as deterministic JSON with `contract_version` 4, aggregate
   counts, sorted fixture entries, recognized expectation metadata,

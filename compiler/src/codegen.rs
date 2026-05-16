@@ -40,6 +40,8 @@ const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation low
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
+const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
+const ASSEMBLY_OBJECT_METADATA_REJECTION: &str = "assembly object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
@@ -712,7 +714,7 @@ impl LlvmGenerator {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
             Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, LLVM_OBJECT_METADATA_REJECTION))
             }
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
@@ -997,7 +999,7 @@ impl LlvmGenerator {
             return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
         }
         if self.ir_value_mentions_builtin_class(&name) {
-            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
         }
 
         if let Some(autoload) = args.get(1) {
@@ -1027,7 +1029,7 @@ impl LlvmGenerator {
             return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
         }
         if self.ir_value_mentions_builtin_class(&object_or_class) {
-            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
         }
 
         Ok(IrValue::Bool(false))
@@ -1052,7 +1054,7 @@ impl LlvmGenerator {
         if self.ir_value_mentions_builtin_class(&object_or_class)
             || self.ir_value_mentions_builtin_class(&class_name)
         {
-            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
         }
 
         if let Some(allow_string) = args.get(2) {
@@ -3550,7 +3552,7 @@ impl CGenerator {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
             Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_METADATA_REJECTION))
             }
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
@@ -3837,7 +3839,7 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
         if self.c_value_mentions_builtin_class(&name) {
-            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
         if let Some(autoload) = args.get(1) {
@@ -3867,7 +3869,7 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
         if self.c_value_mentions_builtin_class(&object_or_class) {
-            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
         Ok(CValue::Bool(false))
@@ -3892,7 +3894,7 @@ impl CGenerator {
         if self.c_value_mentions_builtin_class(&object_or_class)
             || self.c_value_mentions_builtin_class(&class_name)
         {
-            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
         if let Some(allow_string) = args.get(2) {

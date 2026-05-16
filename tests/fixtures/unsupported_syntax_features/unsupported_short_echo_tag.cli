@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+lex error at tests/fixtures/unsupported_syntax_features/unsupported_short_echo_tag.php:1:1: unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset
+--- stderr end ---

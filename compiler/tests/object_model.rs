@@ -2140,6 +2140,87 @@ class Child extends Base {}
 }
 
 #[test]
+fn interface_required_method_parameter_type_compatibility_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {
+    public function log(string $message);
+}
+
+class ExactLogger implements Logger {
+    public function log(string $message) {}
+}
+
+class BroadLogger implements Logger {
+    public function log($message) {}
+}
+
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let added_type_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public function log(string $message) {}
+}
+"#,
+    );
+    assert_eq!(added_type_error.line, 6);
+    assert_eq!(added_type_error.column, 1);
+    assert_eq!(
+        added_type_error.message,
+        "unsupported class inheritance for Service: method Service::log() cannot add parameter type string for parameter $message when interface method Logger::log() has no parameter type"
+    );
+
+    let changed_type_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log(string $message);
+}
+
+class Service implements Logger {
+    public function log(int $message) {}
+}
+"#,
+    );
+    assert_eq!(changed_type_error.line, 6);
+    assert_eq!(changed_type_error.column, 1);
+    assert_eq!(
+        changed_type_error.message,
+        "unsupported class inheritance for Service: method Service::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+    );
+
+    let inherited_changed_type_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log(string $message);
+}
+
+abstract class Base implements Logger {
+    public function log(int $message) {}
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(inherited_changed_type_error.line, 10);
+    assert_eq!(inherited_changed_type_error.column, 1);
+    assert_eq!(
+        inherited_changed_type_error.message,
+        "unsupported class inheritance for Child: method Base::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+    );
+}
+
+#[test]
 fn inherited_interface_required_method_presence_is_enforced_for_concrete_classes() {
     let execution = run_source(
         r#"<?php
@@ -3797,7 +3878,7 @@ fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -3862,7 +3943,7 @@ fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -3877,7 +3958,7 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4012,7 +4093,7 @@ fn emit_ir_rejects_get_class_methods_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4024,7 +4105,7 @@ fn emit_ir_rejects_get_class_vars_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4040,7 +4121,7 @@ fn emit_ir_rejects_get_object_vars_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4057,7 +4138,7 @@ fn emit_ir_rejects_get_mangled_object_vars_until_native_object_lowering_exists()
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4074,7 +4155,7 @@ fn emit_ir_rejects_object_property_empty_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins")
+            || error.message.contains("object-metadata lowering rejects")
             || error.message.contains("object property access"),
         "{}",
         error.message
@@ -4149,7 +4230,7 @@ fn emit_ir_rejects_get_parent_class_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4161,7 +4242,7 @@ fn emit_ir_rejects_get_declared_classes_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4174,7 +4255,7 @@ fn emit_ir_rejects_get_declared_interfaces_until_native_object_lowering_exists()
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4186,7 +4267,7 @@ fn emit_ir_rejects_get_declared_traits_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4198,7 +4279,7 @@ fn emit_ir_rejects_get_called_class_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object metadata builtins"),
+        error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4214,7 +4295,7 @@ fn emit_ir_rejects_spl_object_id_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );
@@ -4230,7 +4311,7 @@ fn emit_ir_rejects_spl_object_hash_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("object metadata builtins"),
+            || error.message.contains("object-metadata lowering rejects"),
         "{}",
         error.message
     );

@@ -83,7 +83,10 @@ the already-consumed character prefix.
 When the lexer sees `?>`, it emits the intervening inline HTML up to the next
 PHP open tag as a token consumed by the parser into an echo statement. The
 current slice consumes one immediate newline after `?>`, matching PHP's common
-close-tag newline behavior for the covered fixtures.
+close-tag newline behavior for the covered fixtures. Short echo open tags
+such as `<?= $value ?>` stop in lexing with a dedicated unsupported diagnostic
+until the lexer/parser can expand them into echo statements with correct source
+mapping, inline-HTML interaction, and native rejection behavior.
 
 Assignment targets are intentionally narrower than expression reads. Direct
 variables, direct array offsets, direct append offsets, direct object
@@ -1401,9 +1404,10 @@ constant reads, top-level `const` declarations, `define()`/`constant()`, and
 unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
-Native lowering rejects class declarations, clone expressions,
-method-call expressions, and object metadata builtins before
-body, operand, receiver, or argument lowering, except for direct static
+Native lowering rejects class declarations, clone expressions, and method-call
+expressions before body, operand, receiver, or argument lowering. Object
+metadata builtins have a dedicated native rejection before operand or argument
+lowering, except for direct static
 false-folding of
 `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists` when
 their name argument is already lowerable as a string and the optional autoload
@@ -1417,7 +1421,8 @@ boolean `allow_string` flags fold to false for the same no-native-class-table
 and no-native-inheritance boundary.
 Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
-metadata access, property-slot cloning, `__clone` dispatch, reference-slot
+metadata tables, property/method tables, inheritance/interface/trait/enum
+registries, property-slot cloning, `__clone` dispatch, reference-slot
 metadata, inheritance, autoload interaction, and exact native error behavior.
 Object instantiation and constructor dispatch have a separate native rejection
 until generated code has native object allocation, object handles, constructor
@@ -1638,11 +1643,16 @@ internal names can participate in relationships without being declared. For
 interfaces declared in the current parsed program, runtime class registration
 checks concrete classes, including concrete children of abstract implementors,
 for public methods with the required interface method names and the current
-supported non-static method shape. Public static methods do not satisfy
+supported non-static method shape. Implementations may omit an interface
+parameter type or repeat the same type text case-insensitively, but may not add
+a parameter type to an untyped interface parameter or substitute a different
+type for a typed interface parameter. Public static methods do not satisfy
 non-static interface method requirements. This is a bounded compatibility
-check only; parameter and return type compatibility, interface inheritance,
-built-in/internal interface method enforcement, exact PHP error objects,
-autoload behavior, and native lowering remain separate work. A bounded
+check only; full parameter variance, return type compatibility, type
+subtyping, alias/import resolution, union/intersection canonicalization,
+interface inheritance, built-in/internal interface method enforcement, exact
+PHP error objects, autoload behavior, and native lowering remain separate
+work. A bounded
 core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at
