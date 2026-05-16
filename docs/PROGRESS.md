@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 972, deterministic `mysqli_ssl_set()` placeholder behavior.
+  The helper is visible through function/callability metadata, accepts the
+  placeholder `mysqli` object plus string or null SSL option arguments, and
+  returns `true`. Native metadata lookup knows the name while direct native
+  lowering remains rejected. This is not TLS configuration, file validation,
+  SSL negotiation during `mysqli_real_connect()`, connection state mutation,
+  host client-library inspection, warning/error fidelity, or native database
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_ssl_set -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone972`.
+
 - Added Milestone 971, `mysqli_set_opt()` and `mysqli_escape_string()` alias
   behavior over the current placeholder MySQLi surface. `mysqli_set_opt()`
   shares the bounded `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` bool/int option path

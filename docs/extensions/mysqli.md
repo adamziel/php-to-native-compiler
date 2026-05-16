@@ -8,6 +8,7 @@ Status: boundary only.
 `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
 `mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`, `mysqli_set_opt`,
+`mysqli_ssl_set`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
 `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
@@ -142,6 +143,12 @@ metadata calls.
 `true`. The option constant is exposed with PHP's integer value `201`. This
 does not negotiate or apply real client options, change result type conversion,
 mutate connection state, or affect later placeholder result rows.
+
+`mysqli_ssl_set($handle, $key, $certificate, $ca_certificate, $ca_path,
+$cipher_algos)` accepts the placeholder object and string or null SSL option
+arguments, returning deterministic `true`. It does not validate files, configure
+TLS, mutate connection state, negotiate SSL during `mysqli_real_connect()`, emit
+warnings/errors, or inspect host client-library state.
 
 `mysqli_connect_errno()` and `mysqli_connect_error()` return deterministic
 clean connect-error state, `0` and `null`. They do not track failed connection

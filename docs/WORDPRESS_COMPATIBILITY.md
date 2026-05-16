@@ -1688,7 +1688,11 @@ historical blockers and remaining full-support gaps include:
   and escaping paths without claiming real client option negotiation, result
   type conversion changes, connection charset-sensitive escaping,
   binary/invalid string fidelity, host database state, warning/error fidelity,
-  or native database lowering. Milestone 965 adds explicit
+  or native database lowering. Milestone 972 adds deterministic
+  `mysqli_ssl_set()` placeholder setup without claiming TLS configuration,
+  file validation, SSL negotiation during `mysqli_real_connect()`, connection
+  state mutation, host client-library inspection, warning/error fidelity, or
+  native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

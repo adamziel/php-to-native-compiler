@@ -518,7 +518,8 @@
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`,
   `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`,
-  `mysqli_options`, `mysqli_set_opt`, `mysqli_connect_errno`, `mysqli_connect_error`,
+  `mysqli_options`, `mysqli_set_opt`, `mysqli_ssl_set`,
+  `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
   `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
@@ -904,6 +905,12 @@
   do not negotiate or apply real client options, change result type
   conversion, mutate connection state, or affect later placeholder result
   rows.
+  `mysqli_ssl_set($handle, $key, $certificate, $ca_certificate, $ca_path,
+  $cipher_algos)` accepts the placeholder object and string or null SSL option
+  arguments, returning deterministic `true` without validating files,
+  configuring TLS, mutating connection state, negotiating SSL during
+  `mysqli_real_connect()`, emitting warnings/errors, or inspecting host
+  client-library state.
   `mysqli_connect_errno()` and `mysqli_connect_error()` expose deterministic
   clean connect-error state, `0` and `null`, without tracking failed connection
   attempts, host extension state, report-mode behavior, or exact PHP warning
@@ -2559,6 +2566,7 @@
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
+  `mysqli_options`, `mysqli_set_opt`, `mysqli_ssl_set`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
   `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
@@ -3172,6 +3180,7 @@
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
+  `mysqli_options`, `mysqli_set_opt`, `mysqli_ssl_set`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
   `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
@@ -3332,7 +3341,7 @@
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
   `mysqli_field_count(...)`/
-  `mysqli_options(...)`/`mysqli_set_opt(...)`/
+  `mysqli_options(...)`/`mysqli_set_opt(...)`/`mysqli_ssl_set(...)`/
   `mysqli_get_connection_stats(...)`/`mysqli_get_links_stats(...)`/
   `mysqli_get_client_stats(...)`/`mysqli_thread_safe(...)`/
   `mysqli_stmt_init(...)`/`mysqli_prepare(...)`/
@@ -5018,7 +5027,7 @@
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
-  `mysqli_options()`/`mysqli_set_opt()`/
+  `mysqli_options()`/`mysqli_set_opt()`/`mysqli_ssl_set()`/
   `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_stmt_prepare()`/`mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/`mysqli_stmt_error_list()`/`mysqli_stmt_bind_param()`/`mysqli_stmt_bind_result()`/`mysqli_stmt_execute()`/`mysqli_stmt_get_result()`/`mysqli_stmt_close()`/`mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`/`mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/`mysqli_stmt_fetch()`/`mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/`mysqli_stmt_free_result()`/`mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()`/`mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()`/`mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/`mysqli_stmt_insert_id()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_savepoint()`/`mysqli_release_savepoint()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/`mysqli_escape_string()`/

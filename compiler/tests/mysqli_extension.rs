@@ -1426,6 +1426,27 @@ echo $alias($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 0) ? "dynamic-alias" : "fa
 }
 
 #[test]
+fn mysqli_ssl_set_accepts_current_placeholder_shape() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_ssl_set";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+echo "|";
+echo mysqli_ssl_set($handle, null, null, null, null, null) ? "nulls" : "failed";
+echo "|";
+echo $call($handle, "key.pem", "cert.pem", "ca.pem", "capath", "cipher") ? "strings" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|nulls|strings");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_connect_error_state_returns_current_clean_placeholders() {
     let execution = run_source(
         r#"<?php
@@ -2316,6 +2337,39 @@ mysqli_set_opt(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
     assert_eq!(
         bad_alias_value.message,
         "unsupported call mysqli_set_opt(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_ssl_set_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_ssl_set("not-a-handle", null, null, null, null, null);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_ssl_set(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_value = run_source(
+        r#"<?php
+mysqli_ssl_set(mysqli_init(), null, false, null, null, null);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_value.phase, Phase::Runtime);
+    assert_eq!(bad_value.line, 2);
+    assert_eq!(bad_value.column, 1);
+    assert_eq!(
+        bad_value.message,
+        "unsupported call mysqli_ssl_set(): third argument must be string or null in the current subset, got bool"
     );
 }
 
@@ -3869,6 +3923,8 @@ echo function_exists("mysqli_options") ? "1" : "0";
 echo is_callable("mysqli_options") ? "1" : "0";
 echo function_exists("mysqli_set_opt") ? "1" : "0";
 echo is_callable("mysqli_set_opt") ? "1" : "0";
+echo function_exists("mysqli_ssl_set") ? "1" : "0";
+echo is_callable("mysqli_ssl_set") ? "1" : "0";
 echo function_exists("mysqli_connect_errno") ? "1" : "0";
 echo is_callable("mysqli_connect_errno") ? "1" : "0";
 echo function_exists("mysqli_connect_error") ? "1" : "0";
@@ -4061,7 +4117,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 224, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 226, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4201,6 +4257,18 @@ mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
     let error = emit_ir_source(
         r#"<?php
 mysqli_set_opt(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_ssl_set(mysqli_init(), null, null, null, null, null);
 "#,
     )
     .unwrap_err();

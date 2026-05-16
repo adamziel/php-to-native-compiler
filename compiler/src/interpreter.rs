@@ -4390,6 +4390,27 @@ impl Interpreter {
         self.call_mysqli_option_setter("mysqli_set_opt", args, span)
     }
 
+    fn call_mysqli_ssl_set(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_ssl_set", args, 6, span)?;
+        expect_mysqli_handle("mysqli_ssl_set()", &args[0], span)?;
+        for (index, value) in args.iter().enumerate().skip(1) {
+            if !matches!(value, Value::String(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_ssl_set()",
+                        format!(
+                            "{} must be string or null in the current subset, got {}",
+                            positional_argument_label(index),
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_option_setter(
         &self,
         function: &str,
@@ -10325,6 +10346,7 @@ impl Interpreter {
             "mysqli_close" => self.call_mysqli_close(&args, span),
             "mysqli_options" => self.call_mysqli_options(&args, span),
             "mysqli_set_opt" => self.call_mysqli_set_opt(&args, span),
+            "mysqli_ssl_set" => self.call_mysqli_ssl_set(&args, span),
             "mysqli_connect_errno" => self.call_mysqli_connect_errno(&args, span),
             "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
             "mysqli_error_list" => self.call_mysqli_error_list(&args, span),
@@ -13336,6 +13358,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_close"
             | "mysqli_options"
             | "mysqli_set_opt"
+            | "mysqli_ssl_set"
             | "mysqli_connect_errno"
             | "mysqli_connect_error"
             | "mysqli_error_list"

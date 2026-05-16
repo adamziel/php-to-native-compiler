@@ -9128,18 +9128,30 @@ handled.
   result type conversion changes, connection charset-sensitive escaping,
   binary/invalid string fidelity, host database state, warning/error fidelity,
   or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as `mysqli_ssl_set()`, broader
   `mysqli_options()` option catalogs, broader escaping charset fidelity, or
   result metadata fields, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
+  Milestone 972 implements deterministic `mysqli_ssl_set()` placeholder
+  behavior for the current `mysqli` object and string/null SSL option
+  arguments. This is not TLS configuration, file validation, SSL negotiation
+  during `mysqli_real_connect()`, connection state mutation, host
+  client-library inspection, warning/error fidelity, or native database
+  lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as broader `mysqli_options()` option
+  catalogs, broader escaping charset fidelity, `mysqli_real_connect()` SSL
+  interaction, or result metadata fields, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e4688c6a runtime: add mysqli savepoint placeholders`, covering
-  Milestone 970 before the current Milestone 971 candidate.
+  `20560b7b runtime: add mysqli alias placeholders`, covering
+  Milestone 971 before the current Milestone 972 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

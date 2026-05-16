@@ -6371,6 +6371,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_close"
             | "mysqli_options"
             | "mysqli_set_opt"
+            | "mysqli_ssl_set"
             | "mysqli_connect_errno"
             | "mysqli_connect_error"
             | "mysqli_error_list"

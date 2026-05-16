@@ -419,6 +419,10 @@ placeholder option-setting and escaping paths without claiming real client
 option negotiation, result type conversion changes, connection
 charset-sensitive escaping, binary/invalid string fidelity, host database
 state, warning/error fidelity, or native lowering,
+plus deterministic `mysqli_ssl_set()` placeholder setup without claiming TLS
+configuration, file validation, SSL negotiation during `mysqli_real_connect()`,
+connection state mutation, host client-library inspection, warning/error
+fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
