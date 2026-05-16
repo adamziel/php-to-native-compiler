@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 1038, bounded MySQL-style escaped single-quoted literals for
+  the current exact direct `wp_options` state island. The exact direct
+  `mysqli_query()` option insert, insert-on-duplicate, update, delete,
+  option-value select, and option-name-list row-read parsers now accept
+  backslash-escaped string parts such as `\'`, `\"`, `\\`, `\n`, and `\r`,
+  plus doubled single quotes, decode them into the recorded option state, and
+  allow later exact escaped-name reads/deletes to find the same option. This is
+  not broad SQL parsing, SQL-mode-aware escaping, character-set/collation
+  fidelity, prepared-statement escaping changes, host database execution, PDO,
+  or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_escaped_wordpress_option_literals -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1038`.
+
 - Added Milestone 1037, bounded MySQLi savepoint snapshots for the current
   per-placeholder-connection `wp_options` state island.
   `mysqli_savepoint($handle, $name)` now records a named option-state snapshot

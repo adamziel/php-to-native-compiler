@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1038/mysqli_wp_options_escaped_literals.php
+exit: 0
+stdout:
+insert|O'Reilly|update|updated owner's value|delete|0
+--- stdout end ---
+stderr:
+--- stderr end ---

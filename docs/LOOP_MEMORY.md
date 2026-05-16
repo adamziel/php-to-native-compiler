@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `c728f4b4 docs: record wp options savepoint gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1038, bounded escaped single-quoted SQL literals
+  for the exact direct `wp_options` MySQLi state island.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1038/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_escaped_wordpress_option_literals -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1038`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1037`
+  passed.
+- Current WordPress frontier: exact direct option insert, upsert, update,
+  delete, option-value select, and option-name-list row-read string-literal
+  parsers can decode bounded MySQL-style backslash escapes and doubled single
+  quotes in single-quoted values.
+- Remaining semantic gaps: broad SQL parsing, SQL-mode-aware escaping,
+  character-set/collation fidelity, host database execution, PDO,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `6613f0c9 docs: record wp options transaction gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1037, bounded savepoint snapshots for the exact

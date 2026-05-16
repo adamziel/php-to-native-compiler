@@ -9993,18 +9993,30 @@ handled.
   `mysqli_release_savepoint()` removes it. This is not real host savepoint
   state, savepoint nesting/release diagnostics, isolation/locking, broad SQL
   execution, PDO, or native lowering.
-- [ ] Runtime/database lane: inspect the next real database-state gap from the
+- [x] Runtime/database lane: inspect the next real database-state gap from the
   audited PHP/WordPress surface, such as broader escaping fidelity,
   host-backed query execution, PDO, real schema/index behavior, nested
   transactions, or the next `wpdb` state consumer, and add the next bounded
   behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
   native rejection coverage where lowering remains unsupported.
+  Milestone 1038 covers bounded MySQL-style escaped single-quoted literals for
+  exact direct `wp_options` option insert/update/delete/readback SQL shapes,
+  including `mysqli_real_escape_string()`-style escaped quotes, double quotes,
+  backslashes, newlines, and carriage returns. This is not broad SQL parsing,
+  SQL-mode-aware escaping, character-set/collation fidelity, host database
+  execution, PDO, or native lowering.
+- [ ] Runtime/database lane: inspect the next real database-state gap from the
+  audited PHP/WordPress surface, such as host-backed query execution, PDO, real
+  schema/index behavior, nested transactions, broader SQL-mode-aware escaping,
+  or the next `wpdb` state consumer, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `6613f0c9 docs: record wp options transaction gate`, covering
-  Milestone 1036 before the current Milestone 1037 candidate.
+  `c728f4b4 docs: record wp options savepoint gate`, covering
+  Milestone 1037 before the current Milestone 1038 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -1199,7 +1199,11 @@ historical blockers and remaining full-support gaps include:
   island: `mysqli_savepoint()` records a named option-state snapshot,
   `mysqli_rollback($handle, 0, $name)` restores it, and
   `mysqli_release_savepoint()` removes it.
-  This is still not broad SQL parsing, ordering/collation fidelity,
+  Milestone 1038 lets the exact direct option SQL string-literal parser accept
+  bounded MySQL-style escaped single-quoted values for escaped option names and
+  values in the current direct insert/update/delete/readback shapes.
+  This is still not broad SQL parsing, SQL-mode-aware escaping,
+  character-set/collation fidelity, ordering/collation fidelity,
   real unique-index enforcement, no-op update affected-row fidelity,
   real transaction isolation/locking/savepoint semantics, host database
   execution, PDO, or native database lowering. The real bootstrap-shim

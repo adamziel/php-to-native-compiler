@@ -16523,15 +16523,50 @@ fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
     let mut rest = input.trim();
     let mut values = Vec::new();
     loop {
-        rest = rest.strip_prefix('\'')?;
-        let end = rest.find('\'')?;
-        values.push(rest[..end].to_string());
-        rest = rest[end + 1..].trim_start();
+        let (value, next) = parse_sql_single_quoted_value(rest)?;
+        values.push(value);
+        rest = next.trim_start();
         if rest.is_empty() {
             return Some(values);
         }
         rest = rest.strip_prefix(',')?.trim_start();
     }
+}
+
+fn parse_sql_single_quoted_value(input: &str) -> Option<(String, &str)> {
+    let rest = input.strip_prefix('\'')?;
+    let mut value = String::new();
+    let mut chars = rest.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if ch == '\'' {
+            if let Some((_, '\'')) = chars.peek().copied() {
+                chars.next();
+                value.push('\'');
+                continue;
+            }
+            return Some((value, &rest[index + ch.len_utf8()..]));
+        }
+        if ch == '\\' {
+            let (_, escaped) = chars.next()?;
+            value.push(match escaped {
+                '0' => '\0',
+                '\'' => '\'',
+                '"' => '"',
+                'b' => '\u{0008}',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'Z' => '\u{001A}',
+                '\\' => '\\',
+                '%' => '%',
+                '_' => '_',
+                other => other,
+            });
+            continue;
+        }
+        value.push(ch);
+    }
+    None
 }
 
 fn mysqli_statement_result_for_query(

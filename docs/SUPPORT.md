@@ -1266,8 +1266,12 @@
   the same placeholder result path. All and autoload-filtered row reads use
   deterministic option-name ordering; explicit `IN (...)` reads preserve the
   requested name order and skip missing names. Missing option names still
-  return an empty placeholder result. This state island is not broad SQL
-  parsing, escaping/quoting fidelity, schema or index behavior,
+  return an empty placeholder result. The exact single-quoted literal parser
+  for those direct option shapes accepts the current MySQL-style backslash
+  escapes used by `mysqli_real_escape_string()` for quotes, double quotes,
+  backslashes, newlines, and carriage returns, plus doubled single quotes.
+  This state island is not broad SQL parsing, SQL-mode-aware escaping,
+  character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
   real unique-index enforcement, no-op update affected-row fidelity, DELETE
   breadth, REPLACE, real transaction isolation/locking/savepoint behavior,

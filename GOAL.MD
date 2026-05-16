@@ -1695,15 +1695,16 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1037 is the active checkpoint candidate: bounded MySQLi savepoint
-  snapshots now cover the current exact per-handle `wp_options` state island.
-  `mysqli_savepoint()` records a named option-state snapshot,
-  `mysqli_rollback($handle, 0, $name)` restores it, and
-  `mysqli_release_savepoint()` removes it, while broad SQL parsing,
-  escaping/quoting fidelity, schema/index behavior, ordering/collation
-  fidelity, real unique-index enforcement, no-op update affected-row fidelity,
-  real transaction isolation/locking/savepoint semantics, host database
-  execution, warning/error fidelity, PDO, and native lowering remain open.
+- Milestone 1038 is the active checkpoint candidate: exact direct
+  `wp_options` SQL literal parsing now accepts bounded MySQL-style escaped
+  single-quoted values for the current insert/update/delete/readback state
+  island, including `mysqli_real_escape_string()`-style escaped quotes,
+  double quotes, backslashes, newlines, and carriage returns. Broad SQL
+  parsing, SQL-mode-aware escaping, character-set/collation fidelity,
+  schema/index behavior, ordering/collation fidelity, real unique-index
+  enforcement, no-op update affected-row fidelity, real transaction
+  isolation/locking/savepoint semantics, host database execution,
+  warning/error fidelity, PDO, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

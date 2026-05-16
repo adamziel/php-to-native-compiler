@@ -1,0 +1,25 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$name = "owner's option";
+$value = "O'Reilly";
+$escaped_name = mysqli_real_escape_string($handle, $name);
+$escaped_value = mysqli_real_escape_string($handle, $value);
+echo mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('$escaped_name', '$escaped_value', 'yes')") ? "insert" : "failed";
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = '$escaped_name' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+echo "|";
+$new_value = "updated owner's value";
+$escaped_new_value = mysqli_real_escape_string($handle, $new_value);
+echo mysqli_query($handle, "UPDATE wp_options SET option_value = '$escaped_new_value' WHERE option_name = '$escaped_name'") ? "update" : "failed";
+echo "|";
+$updated = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = '$escaped_name' LIMIT 1");
+$updated_row = mysqli_fetch_assoc($updated);
+echo $updated_row["option_value"];
+echo "|";
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name = '$escaped_name'") ? "delete" : "failed";
+echo "|";
+$deleted = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = '$escaped_name' LIMIT 1");
+echo mysqli_num_rows($deleted);
