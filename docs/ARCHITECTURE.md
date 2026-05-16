@@ -193,7 +193,8 @@ Implemented now:
   as metadata, with abstract class instantiation, final-parent inheritance,
   final method overrides, method visibility reductions, concrete classes with
   unimplemented abstract methods rejected at runtime, and inherited method
-  static/non-static compatibility enforced at runtime,
+  static/non-static plus non-constructor required-parameter-count compatibility
+  enforced at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,
@@ -474,6 +475,15 @@ requires object handles, ArrayAccess method dispatch, reference/COW semantics,
 and exact PHP diagnostics. Direct `$value[$key]` remains on the generic array
 boundary at codegen time unless later analysis proves `$value` is an
 `ArrayAccess` object.
+Method-call expressions also have a dedicated native rejection boundary for
+instance calls, named static calls, object/static-receiver calls, `self::`,
+`parent::`, and late-static `static::` calls. Both LLVM IR emission and the C
+assembly fallback path reject the method-call AST node before lowering the
+receiver or arguments, so missing native method lookup, receiver/static
+receiver resolution, `$this` and late-static-binding context, argument/arity
+diagnostics, visibility checks, references/copy-on-write, and exact native
+method-call errors stay visible instead of collapsing into the broader
+object/class diagnostic.
 
 Current assembly emission order:
 
@@ -1384,8 +1394,9 @@ unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
 Native lowering rejects class declarations, object instantiation, public
-property reads/writes, clone expressions, and object metadata builtins before
-body, operand, or argument lowering, except for direct static false-folding of
+property reads/writes, clone expressions, method-call expressions, and object
+metadata builtins before body, operand, receiver, or argument lowering, except
+for direct static false-folding of
 `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists` when
 their name argument is already lowerable as a string and the optional autoload
 argument is already lowerable as a boolean. That metadata-exists native slice
@@ -1400,6 +1411,11 @@ Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
 metadata access, property-slot cloning, `__clone` dispatch, reference-slot
 metadata, inheritance, autoload interaction, and exact native error behavior.
+The method-call boundary is more specific: native method support still needs
+method tables and lookup, instance and static receiver resolution, `$this` and
+called-class/late-static-binding context, argument/arity diagnostics,
+visibility enforcement, reference/COW parameter and return behavior, and exact
+native method-call errors.
 Native lowering rejects array literals, array indexing, array assignment,
 `foreach` array iteration, array offset `unset`, and array builtin function
 calls before body, operand, argument, or callback lowering until generated code
@@ -1679,15 +1695,19 @@ static-property unset, and top-level `static::$prop` execution remain
 unsupported.
 Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
-constants, static properties, parent/self method calls, object instantiation,
+constants, static properties, object instantiation,
 object property reads/writes including dynamic property-name and magic-property
-forms, instance method calls, and
-object metadata builtins with a specific object/class codegen diagnostic,
-except for the narrow direct
-string-name metadata-exists false-folding slice and string/string
-`property_exists`/`method_exists` false-folding slice plus string/string
-`is_a`/`is_subclass_of` false-folding slice. See `docs/OBJECT_MODEL.md` for
-the named unsupported edge cases.
+forms, and object metadata builtins with a specific object/class codegen
+diagnostic. The narrow direct string-name metadata-exists false-folding slice,
+string/string `property_exists`/`method_exists` false-folding slice, and
+string/string `is_a`/`is_subclass_of` false-folding slice remain the only
+native object/class metadata exceptions. Native method-call lowering
+separately rejects instance, named static, object/static-receiver, `self::`,
+`parent::`, and late-static `static::` calls until generated code has native
+method lookup, receiver resolution, `$this` and late-static-binding context,
+argument/arity diagnostics, visibility, references/copy-on-write, and exact
+native method-call errors. See `docs/OBJECT_MODEL.md` for the named
+unsupported edge cases.
 
 ## Include/Require Resolution Design
 

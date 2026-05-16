@@ -10,7 +10,7 @@ use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
     fixture_manifest, run_fixture_dir_with_options, FixtureManifestCompatibilityTarget,
     FixtureManifestEntry, FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
-    PhpVersionManifest, PhpVersionManifestEntry,
+    PhpVersionManifest, PhpVersionManifestEntry, TestSummary,
 };
 
 fn main() -> ExitCode {
@@ -123,6 +123,7 @@ fn run_options_from_env() -> CompileResult<RunOptions> {
 
 fn command_test(args: &[String]) -> CompileResult<u8> {
     let mut compare_php = false;
+    let mut compare_php_json = false;
     let mut list_fixtures = false;
     let mut list_fixtures_json = false;
     let mut php_versions_json = false;
@@ -131,6 +132,8 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
     for arg in args {
         if arg == "--compare-php" {
             compare_php = true;
+        } else if arg == "--compare-php-json" {
+            compare_php_json = true;
         } else if arg == "--list-fixtures" {
             list_fixtures = true;
         } else if arg == "--list-fixtures-json" {
@@ -144,11 +147,19 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
                 Phase::Cli,
                 0,
                 0,
-                "usage: phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir] | phpc test --php-versions-json",
+                "usage: phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir] | phpc test --compare-php-json [fixture-dir] | phpc test --php-versions-json",
             ));
         }
     }
 
+    if compare_php && compare_php_json {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "expected at most one PHP comparison output mode",
+        ));
+    }
     if list_fixtures && list_fixtures_json {
         return Err(Diagnostic::new(
             Phase::Cli,
@@ -157,7 +168,21 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
             "expected at most one fixture manifest output mode",
         ));
     }
-    if php_versions_json && (list_fixtures || list_fixtures_json || compare_php || root.is_some()) {
+    if compare_php_json && (list_fixtures || list_fixtures_json) {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "expected PHP comparison JSON without fixture manifest output mode",
+        ));
+    }
+    if php_versions_json
+        && (list_fixtures
+            || list_fixtures_json
+            || compare_php
+            || compare_php_json
+            || root.is_some())
+    {
         return Err(Diagnostic::new(
             Phase::Cli,
             0,
@@ -194,7 +219,17 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         return Ok(0);
     }
 
-    let summary = run_fixture_dir_with_options(&root, FixtureRunOptions { compare_php })?;
+    let summary = run_fixture_dir_with_options(
+        &root,
+        FixtureRunOptions {
+            compare_php: compare_php || compare_php_json,
+        },
+    )?;
+
+    if compare_php_json {
+        print!("{}", render_php_comparison_summary_json(&summary));
+        return Ok(if summary.failed == 0 { 0 } else { 1 });
+    }
 
     for failure in &summary.failures {
         eprintln!("{failure}");
@@ -213,6 +248,43 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         );
     }
     Ok(if summary.failed == 0 { 0 } else { 1 })
+}
+
+fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
+    let mut output = String::new();
+    output.push_str("{\n");
+    output.push_str("  \"contract_version\": 1,\n");
+    output.push_str("  \"summary\": {\n");
+    output.push_str(&format!(
+        "    \"fixtures\": {{ \"passed\": {}, \"failed\": {}, \"total\": {} }},\n",
+        summary.passed,
+        summary.failed,
+        summary.passed + summary.failed
+    ));
+    output.push_str("    \"php_comparison\": {\n");
+    output.push_str(&format!("      \"compared\": {},\n", summary.php_compared));
+    output.push_str(&format!("      \"skipped\": {},\n", summary.php_skipped));
+    output.push_str(&format!(
+        "      \"missing_system_php\": {},\n",
+        summary.php_skipped_missing
+    ));
+    output.push_str(&format!(
+        "      \"phpc_only\": {}\n",
+        summary.php_skipped_by_fixture
+    ));
+    output.push_str("    }\n");
+    output.push_str("  },\n");
+    output.push_str("  \"failures\": [\n");
+    for (index, failure) in summary.failures.iter().enumerate() {
+        output.push_str(&format!("    {}", json_string_literal(failure)));
+        if index + 1 < summary.failures.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ]\n");
+    output.push_str("}\n");
+    output
 }
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
@@ -561,5 +633,6 @@ fn print_help() {
     println!("  phpc compile <input.php> --emit-asm");
     println!("  phpc run <input.php>");
     println!("  phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]");
+    println!("  phpc test --compare-php-json [fixture-dir]");
     println!("  phpc test --php-versions-json");
 }

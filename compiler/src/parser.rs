@@ -849,10 +849,29 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Declare, "expected 'declare'")?
             .span;
-        Err(self.error_at(
-            span,
-            "unsupported declare directive: strict_types is not implemented",
-        ))
+        let message = match (
+            &self.peek().kind,
+            &self.peek_next().kind,
+            &self.peek_n(2).kind,
+        ) {
+            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
+                if name.eq_ignore_ascii_case("strict_types") =>
+            {
+                "unsupported declare directive: strict_types is not implemented"
+            }
+            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
+                if name.eq_ignore_ascii_case("ticks") =>
+            {
+                "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented"
+            }
+            (TokenKind::LParen, TokenKind::Identifier(name), TokenKind::Equal)
+                if name.eq_ignore_ascii_case("encoding") =>
+            {
+                "unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented"
+            }
+            _ => "unsupported declare directive: declare semantics are not implemented",
+        };
+        Err(self.error_at(span, message))
     }
 
     fn parse_namespace(&mut self) -> CompileResult<Stmt> {

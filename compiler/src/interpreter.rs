@@ -80,6 +80,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    method_signatures: HashMap<(ClassId, String), MethodSignature>,
     abstract_classes: HashSet<ClassId>,
     final_classes: HashSet<ClassId>,
     abstract_methods: HashSet<(ClassId, String)>,
@@ -128,6 +129,11 @@ struct Interpreter {
     called_class_context: Vec<ClassId>,
     stdout: String,
     exit_signal: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MethodSignature {
+    required_params: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1812,6 +1818,7 @@ impl Interpreter {
         let mut enums = Vec::new();
         let mut enum_lookup = HashMap::new();
         let mut methods = HashMap::new();
+        let mut method_signatures = HashMap::new();
         let mut abstract_classes = HashSet::new();
         let mut final_classes = HashSet::new();
         let mut abstract_methods = HashSet::new();
@@ -1894,12 +1901,14 @@ impl Interpreter {
                     &final_classes,
                     &abstract_methods,
                     &final_methods,
+                    &method_signatures,
                     class,
                 )?;
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
                     &mut methods,
+                    &mut method_signatures,
                     &mut abstract_methods,
                     class_id,
                     class,
@@ -1913,6 +1922,7 @@ impl Interpreter {
         let mut interpreter = Self {
             functions,
             methods,
+            method_signatures,
             abstract_classes,
             final_classes,
             abstract_methods,
@@ -2137,12 +2147,14 @@ impl Interpreter {
                 &self.final_classes,
                 &self.abstract_methods,
                 &self.final_methods,
+                &self.method_signatures,
                 class,
             )?;
             register_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.method_signatures,
                 &mut self.abstract_methods,
                 class_id,
                 class,
@@ -2176,6 +2188,7 @@ impl Interpreter {
             &self.final_classes,
             &self.abstract_methods,
             &self.final_methods,
+            &self.method_signatures,
             class,
         ) {
             self.abstract_classes.remove(&class_id);
@@ -2188,6 +2201,7 @@ impl Interpreter {
             &mut self.class_constants,
             &mut self.static_properties,
             &mut self.methods,
+            &mut self.method_signatures,
             &mut self.abstract_methods,
             class_id,
             class,
@@ -2197,6 +2211,7 @@ impl Interpreter {
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.method_signatures,
                 &mut self.abstract_methods,
                 class_id,
             );
@@ -2212,6 +2227,7 @@ impl Interpreter {
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.method_signatures,
                 &mut self.abstract_methods,
                 class_id,
             );
@@ -18825,6 +18841,7 @@ fn register_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
     class_id: ClassId,
     class: &ClassDecl,
@@ -18839,6 +18856,12 @@ fn register_class_member_runtime_tables(
             }
             ClassMember::Method(method) => {
                 let key = (class_id, method.function.name.to_ascii_lowercase());
+                method_signatures.insert(
+                    key.clone(),
+                    MethodSignature {
+                        required_params: required_param_count(&method.function),
+                    },
+                );
                 if method.is_abstract {
                     abstract_methods.insert(key);
                 } else {
@@ -18885,12 +18908,14 @@ fn remove_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
     class_id: ClassId,
 ) {
     class_constants.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     static_properties.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     methods.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    method_signatures.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     abstract_methods.retain(|(declaring_class_id, _)| *declaring_class_id != class_id);
 }
 
@@ -18917,6 +18942,7 @@ fn register_class_members(
     final_classes: &HashSet<ClassId>,
     abstract_methods: &HashSet<(ClassId, String)>,
     final_methods: &HashMap<(ClassId, String), String>,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -18982,6 +19008,14 @@ fn register_class_members(
                     .map_err(|error| runtime_error(method.span, error))?;
                 validate_inherited_method_visibility_compatibility(
                     classes,
+                    id,
+                    &class.name,
+                    method,
+                )
+                .map_err(|error| runtime_error(method.span, error))?;
+                validate_inherited_method_signature_compatibility(
+                    classes,
+                    method_signatures,
                     id,
                     &class.name,
                     method,
@@ -19260,6 +19294,63 @@ fn validate_inherited_method_static_compatibility(
                         parent_method.name(),
                         class_name,
                         method.function.name
+                    ),
+                ));
+            }
+
+            return Ok(());
+        }
+
+        current = parent.parent_id();
+    }
+
+    Ok(())
+}
+
+fn validate_inherited_method_signature_compatibility(
+    classes: &PhpClassTable,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class_id: ClassId,
+    class_name: &str,
+    method: &ClassMethodDecl,
+) -> RuntimeResult<()> {
+    let method_lookup_name = method.function.name.to_ascii_lowercase();
+    if method_lookup_name == "__construct" {
+        return Ok(());
+    }
+
+    let child_required = required_param_count(&method.function);
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        if let Some(parent_method) = parent.method(&method_lookup_name) {
+            if parent_method.visibility() == Visibility::Private {
+                current = parent.parent_id();
+                continue;
+            }
+
+            let Some(parent_signature) =
+                method_signatures.get(&(parent_id, method_lookup_name.clone()))
+            else {
+                return Ok(());
+            };
+
+            if child_required > parent_signature.required_params {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "method {}::{}() cannot require more parameters than inherited method {}::{}()",
+                        class_name,
+                        method.function.name,
+                        parent.name(),
+                        parent_method.name()
                     ),
                 ));
             }

@@ -4008,7 +4008,7 @@ fn emit_ir_rejects_parent_method_calls_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error.message.contains("method-call lowering rejects"),
         "{}",
         error.message
     );
@@ -4020,7 +4020,7 @@ fn emit_ir_rejects_self_method_calls_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error.message.contains("method-call lowering rejects"),
         "{}",
         error.message
     );
@@ -4032,7 +4032,7 @@ fn emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error.message.contains("method-call lowering rejects"),
         "{}",
         error.message
     );
@@ -4044,7 +4044,7 @@ fn emit_ir_rejects_late_static_method_calls_until_native_object_lowering_exists(
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error.message.contains("method-call lowering rejects"),
         "{}",
         error.message
     );
@@ -4056,7 +4056,7 @@ fn emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exist
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("object/class lowering rejects"),
+        error.message.contains("method-call lowering rejects"),
         "{}",
         error.message
     );
@@ -6087,6 +6087,103 @@ echo Child::label();
     .unwrap();
 
     assert_eq!(execution.stdout, "child");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn inherited_method_required_parameter_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function label($value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label($value, $suffix = "!") {
+        return "child:" . $value . $suffix;
+    }
+}
+
+$child = new Child();
+echo $child->label("one"), "\n";
+echo $child->label("two", "?");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child:one!\nchild:two?");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Base {
+    public function label($value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label($prefix, $value) {
+        return $prefix . $value;
+    }
+}
+"#,
+    );
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: method Child::label() cannot require more parameters than inherited method Base::label()"
+    );
+
+    let optional_parent_error = runtime_error(
+        r#"<?php
+class Base {
+    public function compute($value = "base") {
+        return $value;
+    }
+}
+
+class Child extends Base {
+    public function compute($value) {
+        return $value;
+    }
+}
+"#,
+    );
+    assert_eq!(optional_parent_error.line, 9);
+    assert_eq!(optional_parent_error.column, 12);
+    assert_eq!(
+        optional_parent_error.message,
+        "unsupported class inheritance for Child: method Child::compute() cannot require more parameters than inherited method Base::compute()"
+    );
+}
+
+#[test]
+fn private_parent_methods_do_not_block_child_required_parameter_compatibility() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private function label($value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label($prefix, $value) {
+        return $prefix . $value;
+    }
+}
+
+$child = new Child();
+echo $child->label("child:", "ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child:ok");
     assert_eq!(execution.exit_code, 0);
 }
 

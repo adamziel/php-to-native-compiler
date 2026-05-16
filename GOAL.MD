@@ -824,11 +824,14 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
 
 Reconciliation into concrete workstreams:
 
-- **PHP conformance harness:** add a committed PHP-version manifest, pin a
-  small imported or mirrored php-src-style behavior subset where licensing and
-  scope allow, and record expected deviations per PHP branch. Current artifact:
-  fixture runner plus optional system PHP comparison. Missing artifact:
-  versioned conformance manifest and suite.
+- **PHP conformance harness:** keep the committed PHP-version manifest useful,
+  pin a small imported or mirrored php-src-style behavior subset where
+  licensing and scope allow, and record expected deviations per PHP branch.
+  Current artifact: fixture runner, optional system PHP comparison, and
+  `phpc test --php-versions-json` for configured comparison-binary coverage.
+  Missing artifact: real PHP 8.2-8.5 binary matrices, version-specific
+  comparison runs, expected-deviation records, and a versioned conformance
+  suite.
 - **Reference/COW value model:** replace the bounded copy/copy-back and
   path-based reference slices with runtime reference cells, alias-aware symbol
   slots, array/object copy-on-write, by-reference foreach semantics, and
@@ -882,9 +885,11 @@ Reconciliation into concrete workstreams:
   against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
-  interface enforcement, enum cases, destructors, reflection, and exact
-  visibility. Current artifact: tested minimal object/class model. Missing
-  artifact: executable object compatibility matrix.
+  interface enforcement, enum cases, destructors, reflection, exact visibility,
+  and full method/property compatibility. Current artifact: tested minimal
+  object/class model with selected visibility, final/abstract/staticness, and
+  property compatibility boundaries. Missing artifact: executable object
+  compatibility matrix.
 - **Error model:** implement PHP-shaped warnings/notices/deprecations,
   exception objects and unwinding, `@` suppression, stack traces, output
   buffers, and partial-output behavior. Current artifact: stable project
@@ -907,7 +912,8 @@ Reconciliation into concrete workstreams:
 - **Native runtime integration:** add linked native executable support with
   boxed values, runtime helper calls, stack frames, heap/lifetime management,
   diagnostics, and explicit fallback/rejection policy for dynamic PHP. Current
-  artifact: LLVM IR/assembly for a narrow scalar subset plus scalar ABI seed.
+  artifact: LLVM IR/assembly for a narrow scalar subset, scalar ABI seed, and
+  dedicated rejection boundaries for many interpreter-only constructs.
   Missing artifact: linked native execution compared against `phpc run` and
   system PHP for a non-trivial program.
 
@@ -1282,12 +1288,13 @@ complete namespace/import forms, attributes with runtime reflection effects,
 differences.
 
 Objects and class-like types:
-Constructor and inheritance compatibility, abstract method implementation
-checks, method signature compatibility, remaining property visibility
-compatibility, interfaces, interface inheritance, traits and conflict
-resolution, enums, typed/readonly properties, reflection, magic methods,
-dynamic members, `__clone`, destructors, late static binding, and exact
-fatal/error behavior.
+Constructor and inheritance compatibility beyond the bounded final,
+abstract-method, visibility, and staticness checks, full method signature
+compatibility, remaining property compatibility, interfaces, interface
+inheritance, traits and conflict resolution, enums, typed/readonly properties,
+reflection, magic methods beyond the current direct slices, dynamic members,
+`__clone`, destructors, late static binding breadth, and exact fatal/error
+behavior.
 
 Error and exception model:
 Warnings, notices, deprecations, recoverable errors, real `@` suppression,
@@ -1314,10 +1321,10 @@ native stdout/stderr/exit behavior, and precise rejection for every construct
 not yet lowered.
 
 Compatibility measurement:
-A pinned PHP-version matrix, imported or mirrored behavioral fixtures where
-appropriate, a committed WordPress core harness, representative plugin/theme
-smoke targets, and machine-readable pass/fail/skip reports with named
-unsupported reasons.
+A populated PHP-version matrix using the committed comparison-binary manifest,
+imported or mirrored behavioral fixtures where appropriate, a committed
+WordPress core harness, representative plugin/theme smoke targets, and
+machine-readable pass/fail/skip reports with named unsupported reasons.
 
 Practical order of attack:
 

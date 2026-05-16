@@ -36,6 +36,8 @@ const LLVM_GLOBAL_DECLARATION_REJECTION: &str = "LLVM global-declaration lowerin
 const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const ASSEMBLY_CLONE_REJECTION: &str = "assembly clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
@@ -652,23 +654,13 @@ impl LlvmGenerator {
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
-            Expr::MethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
-            }
-            Expr::ParentMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
-            }
-            Expr::StaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
-            }
-            Expr::ObjectStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
-            }
-            Expr::SelfMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
-            }
-            Expr::LateStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            Expr::MethodCall { span, .. }
+            | Expr::ParentMethodCall { span, .. }
+            | Expr::StaticMethodCall { span, .. }
+            | Expr::ObjectStaticMethodCall { span, .. }
+            | Expr::SelfMethodCall { span, .. }
+            | Expr::LateStaticMethodCall { span, .. } => {
+                Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
             }
             Expr::Variable(name, span) => self
                 .variables
@@ -3490,23 +3482,13 @@ impl CGenerator {
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
-            Expr::MethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
-            Expr::ParentMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
-            Expr::StaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
-            Expr::ObjectStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
-            Expr::SelfMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
-            }
-            Expr::LateStaticMethodCall { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            Expr::MethodCall { span, .. }
+            | Expr::ParentMethodCall { span, .. }
+            | Expr::StaticMethodCall { span, .. }
+            | Expr::ObjectStaticMethodCall { span, .. }
+            | Expr::SelfMethodCall { span, .. }
+            | Expr::LateStaticMethodCall { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
             }
             Expr::Variable(name, span) => self
                 .variables

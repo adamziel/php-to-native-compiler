@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_declare_ticks.php:2:1: unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented
+--- stderr end ---

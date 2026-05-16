@@ -575,6 +575,11 @@
   child class. Child methods that redeclare inherited non-private methods must
   also keep the inherited staticness; static-to-instance and instance-to-static
   changes report a stable runtime boundary before registering the child class.
+  Child methods other than `__construct` that redeclare inherited non-private
+  methods must not require more parameters than the inherited method; keeping
+  the same required count or adding optional parameters is supported in the
+  current metadata slice. Private parent methods remain separately
+  redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -588,8 +593,11 @@
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
   boundary. Method visibility reduction and static/non-static compatibility
-  violations report stable runtime boundaries. Method signature compatibility
-  enforcement and readonly class semantics are not implemented.
+  violations report stable runtime boundaries. Method required-parameter
+  compatibility violations report stable runtime boundaries. Full PHP method
+  signature variance, parameter type compatibility, return type compatibility,
+  named arguments, trait/interface enforcement, exact PHP `Error` objects, and
+  readonly class semantics are not implemented.
   Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
   is supported in active class/method contexts, including no-argument forms
@@ -1895,8 +1903,12 @@
 - explicit parse diagnostics for unsupported function syntax: variadic argument
   unpacking, reference expressions, function-scope reference parameter
   invocation, reference returns, type declaration enforcement, named arguments,
-  first-class callable syntax such as `strlen(...)` and `$callback(...)`, and
-  `declare(strict_types=1)`
+  first-class callable syntax such as `strlen(...)` and `$callback(...)`,
+  `declare(strict_types=1)`, `declare(ticks=1)`, and
+  `declare(encoding="UTF-8")`. Declare behavior remains unsupported:
+  `strict_types` type-enforcement semantics, tick handlers and execution hooks,
+  and source encoding, lexer decoding, and runtime text handling are not
+  implemented.
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`
 - narrow `require`, `require_once`, `include`, and `include_once` execution
@@ -2864,6 +2876,14 @@
   remains syntax-ambiguous with ordinary array offsets at this layer, so the
   native array boundary still covers it unless a future analysis can prove the
   root is an `ArrayAccess` object.
+  Method-call expressions have a dedicated native codegen boundary:
+  `phpc compile --emit-ir` and `--emit-asm` reject instance calls,
+  named static calls, object/static-receiver calls, `self::`, `parent::`, and
+  late-static `static::` calls before lowering receivers or arguments. Native
+  support still needs method tables and lookup, receiver/static receiver
+  resolution, `$this` and late-static-binding context, argument/arity
+  diagnostics, visibility enforcement, reference/copy-on-write parameter and
+  return behavior, and exact native method-call errors.
   Expression-form `include`, `include_once`, `require`, and `require_once`
   also have a dedicated native codegen boundary instead of falling through to
   the statement-form multi-file diagnostic. Native support still needs source
@@ -4785,7 +4805,8 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  method signature compatibility enforcement, readonly class semantics,
+  full method signature compatibility beyond inherited required-parameter count
+  increases, readonly class semantics,
   readonly properties,
   typed property storage and enforcement,
   asymmetric property set visibility such as `private(set)` and

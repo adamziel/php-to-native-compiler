@@ -142,6 +142,115 @@ fn cli_compare_php_summary_counts_missing_php_skips_with_empty_path() {
 
 #[test]
 #[cfg(unix)]
+fn cli_compare_php_json_reports_deterministic_summary_with_fake_php() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempFixtureDir::new("phpc-compare-json-summary");
+    let bin_dir = temp.path().join("bin");
+    let fixture_dir = temp.path().join("fixtures");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::create_dir_all(&fixture_dir).unwrap();
+
+    let fake_php = bin_dir.join("php");
+    fs::write(
+        &fake_php,
+        "#!/bin/sh\ncase \"$1\" in\n  */matches.php) printf 'same'; exit 0 ;;\n  *) printf 'unexpected php fixture: %s\\n' \"$1\" >&2; exit 1 ;;\nesac\n",
+    )
+    .unwrap();
+    fs::set_permissions(&fake_php, fs::Permissions::from_mode(0o755)).unwrap();
+
+    fs::write(fixture_dir.join("matches.php"), "<?php echo 'same';\n").unwrap();
+    fs::write(fixture_dir.join("matches.stdout"), "same\n").unwrap();
+    fs::write(fixture_dir.join("phpc_only.php"), "<?php echo 'skip';\n").unwrap();
+    fs::write(fixture_dir.join("phpc_only.stdout"), "skip\n").unwrap();
+    fs::write(fixture_dir.join("phpc_only.phpc-only"), "").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--compare-php-json"])
+        .arg(&fixture_dir)
+        .env("PATH", &bin_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  \"contract_version\": 1,\n",
+            "  \"summary\": {\n",
+            "    \"fixtures\": { \"passed\": 2, \"failed\": 0, \"total\": 2 },\n",
+            "    \"php_comparison\": {\n",
+            "      \"compared\": 1,\n",
+            "      \"skipped\": 1,\n",
+            "      \"missing_system_php\": 0,\n",
+            "      \"phpc_only\": 1\n",
+            "    }\n",
+            "  },\n",
+            "  \"failures\": [\n",
+            "  ]\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cli_compare_php_json_reports_missing_php_skips_with_empty_path() {
+    let temp = TempFixtureDir::new("phpc-compare-json-missing-php-summary");
+    let bin_dir = temp.path().join("bin");
+    let fixture_dir = temp.path().join("fixtures");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::create_dir_all(&fixture_dir).unwrap();
+
+    fs::write(fixture_dir.join("runs.php"), "<?php echo 'same';\n").unwrap();
+    fs::write(fixture_dir.join("runs.stdout"), "same\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--compare-php-json"])
+        .arg(&fixture_dir)
+        .env("PATH", &bin_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  \"contract_version\": 1,\n",
+            "  \"summary\": {\n",
+            "    \"fixtures\": { \"passed\": 1, \"failed\": 0, \"total\": 1 },\n",
+            "    \"php_comparison\": {\n",
+            "      \"compared\": 0,\n",
+            "      \"skipped\": 1,\n",
+            "      \"missing_system_php\": 1,\n",
+            "      \"phpc_only\": 0\n",
+            "    }\n",
+            "  },\n",
+            "  \"failures\": [\n",
+            "  ]\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+#[cfg(unix)]
 fn cli_php_versions_json_reports_configured_php_binary_matrix() {
     use std::os::unix::fs::PermissionsExt;
 

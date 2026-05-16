@@ -25,6 +25,12 @@ comparison while remaining covered by committed `phpc` expectations.
 The comparison summary breaks skipped fixtures down by reason so CI logs show
 how many skips came from a missing `php` binary and how many came from
 `.phpc-only` markers.
+Use `cargo run -p phpc -- test --compare-php-json [fixture-dir]` when
+automation needs the same aggregate comparison summary as deterministic JSON.
+The command still executes the existing fixture comparison path and reports
+fixture pass/fail counts plus compared, skipped, missing-system-`php`, and
+`.phpc-only` skip counts; it does not add PHP support or prove branch-specific
+compatibility.
 For fixture audits that should not execute code, use
 `cargo run -p phpc -- test --list-fixtures [fixture-dir]`; it prints a sorted
 manifest of fixtures, recognized expectation files, aggregate sidecar counts,
@@ -74,6 +80,7 @@ export CARGO_INCREMENTAL=0
 cargo test -p phpc --test <affected-test-file> <test-name> -- --test-threads=1
 cargo run -p phpc -- test tests/fixtures/<affected-fixture-dir>
 cargo run -p phpc -- test --compare-php tests/fixtures/<affected-fixture-dir>
+cargo run -p phpc -- test --compare-php-json tests/fixtures/<affected-fixture-dir>
 git diff --check -- <files-touched-by-this-lane>
 ```
 

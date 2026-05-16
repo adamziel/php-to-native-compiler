@@ -30,6 +30,7 @@ cargo run -p phpc -- compile examples/hello.php --emit-asm
 cargo run -p phpc -- test
 cargo run -p phpc -- test --list-fixtures
 cargo run -p phpc -- test --list-fixtures-json
+cargo run -p phpc -- test --compare-php-json
 cargo run -p phpc -- test --php-versions-json
 ```
 
@@ -169,9 +170,10 @@ incorrect native code.
   modifiers as metadata, with abstract class instantiation rejected as a
   runtime boundary, final class inheritance, final method overrides, method
   visibility reductions, and inherited method static/non-static compatibility
-  violations rejected as runtime boundaries, plus concrete classes with
-  unimplemented abstract methods rejected as runtime boundaries, and readonly
-  class declarations kept at a parse boundary,
+  violations rejected as runtime boundaries, plus inherited non-constructor
+  method required-parameter increases rejected as runtime boundaries, concrete
+  classes with unimplemented abstract methods rejected as runtime boundaries,
+  and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,
@@ -241,9 +243,10 @@ bare namespace constant fallback reads, class-constant lookup through
 string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
-method signature compatibility enforcement, visibility enforcement beyond the
-current public and same-declaring-class private-property, protected-property,
-protected-method, constructor, method inheritance visibility/staticness, and
+full method signature compatibility beyond inherited required-parameter count
+increases, visibility enforcement beyond the current public and
+same-declaring-class private-property, protected-property, protected-method,
+constructor, method inheritance visibility/staticness/signature-count, and
 class-constant slice, typed property compatibility and DNF-shaped typed
 property declarations plus property defaults beyond the current untyped
 constant-expression instance property slice, readonly property metadata and
@@ -322,6 +325,11 @@ different diagnostics.
 When `--compare-php` is used, the summary reports compared fixtures and skipped
 fixtures, with skipped fixtures split into missing-`php` and `.phpc-only`
 counts.
+Use `phpc test --compare-php-json [fixture-dir]` for the same comparison path
+as deterministic JSON with `contract_version` 1. It reports aggregate fixture
+pass/fail counts plus compared, skipped, missing-system-`php`, and
+`.phpc-only` comparison counts. It does not add PHP support, normalize
+PHP-version-specific diagnostics, or replace committed fixture expectations.
 Use `phpc test --list-fixtures [fixture-dir]` to print a deterministic fixture
 manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and

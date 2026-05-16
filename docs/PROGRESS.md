@@ -4,6 +4,102 @@
 
 Implemented:
 
+- Added Milestone 1145, a tests/docs queue refresh after the 1141-1144
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1141-1145
+  complete and opens Milestones 1146-1150, `GOAL.MD` now reflects the current
+  comparison-binary manifest, object-compatibility, and native-rejection
+  status without claiming full PHP or WordPress compatibility, and public docs
+  describe declare-directive parse boundaries, inherited method
+  required-parameter runtime boundaries, dedicated native method-call
+  rejection, and JSON PHP-comparison summaries. This does not change runtime
+  behavior, native lowering, fixture execution, or PHP/WordPress compatibility
+  claims beyond the implemented 1141-1144 slices. Full gate passed at
+  checkpoint: `1325` fixture tests, `755` system PHP comparisons, and `570`
+  skipped `phpc-only` fixtures.
+
+- Added Milestone 1144, a deterministic compiler-output JSON contract for
+  aggregate PHP comparison summaries. `phpc test --compare-php-json
+  [fixture-dir]` now runs the same optional system-PHP comparison path as
+  `--compare-php` and emits `contract_version: 1` JSON with fixture pass/fail
+  totals, compared fixture counts, skipped comparison counts,
+  missing-system-`php` skips, `.phpc-only` skips, and deterministic failure
+  messages when failures occur. This does not change existing `phpc test` or
+  `phpc test --compare-php` text behavior, widen fixture execution semantics,
+  normalize PHP-version-specific diagnostics, prove branch-specific
+  compatibility, replace committed expectations, or broaden PHP/WordPress
+  support claims. Verification so far: `cargo test -p phpc --test
+  php_comparison cli_compare_php_json_reports_deterministic_summary_with_fake_php -- --test-threads=1`,
+  `cargo test -p phpc --test php_comparison
+  cli_compare_php_json_reports_missing_php_skips_with_empty_path -- --test-threads=1`,
+  `cargo test -p phpc --test php_comparison -- --test-threads=1`,
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, direct
+  `PATH=<empty-bin-dir> cargo run -q -p phpc -- test --compare-php-json
+  <temp-fixture-dir>`, `cargo fmt --check`, and scoped `git diff --check`
+  passed in the compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1143, a dedicated native method-call rejection for documented
+  interpreter method-call behavior. `phpc compile --emit-ir` and `--emit-asm`
+  now reject instance calls, named static calls, object/static-receiver calls,
+  `self::`, `parent::`, and late-static `static::` calls with a diagnostic
+  naming missing native method lookup, receiver/static receiver resolution,
+  `$this` and late-static-binding context, argument/arity diagnostics,
+  visibility checks, references/copy-on-write, and exact native method-call
+  errors instead of falling through to the broader object/class boundary. This
+  does not implement native method lookup, instance/static receiver
+  resolution, `$this` or called-class context, argument/arity diagnostics,
+  visibility enforcement, reference/COW parameter or return behavior, or exact
+  native method-call errors. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary -- --test-threads=1`, `cargo test -p phpc
+  --test native_function_call_boundary -- --test-threads=1`, `cargo test -p
+  phpc --test object_model method_calls_until_native_object_lowering_exists
+  -- --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1143/native_method_call_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1143/native_method_call_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and scoped `git diff
+  --check` passed in the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1142, a bounded runtime method signature compatibility
+  slice. Child methods other than `__construct` that redeclare inherited
+  non-private methods now report the stable class-registration boundary
+  `unsupported class inheritance for Child: method Child::label() cannot
+  require more parameters than inherited method Base::label()` when the child
+  requires more parameters than the inherited method. Private parent methods
+  remain separately redeclarable, constructors keep the current explicit
+  parent-call behavior, and compatible redeclarations that keep the same
+  required parameter count or add optional parameters continue to execute. This
+  does not implement full PHP signature variance, parameter type
+  compatibility, return type compatibility, named arguments, trait/interface
+  enforcement, exact PHP `Error` objects, declaration-order/autoload fidelity,
+  or native object/class lowering.
+  Verification so far: `cargo test -p phpc --test object_model inherited_method_required_parameter_compatibility_is_enforced -- --test-threads=1`,
+  `cargo test -p phpc --test object_model private_parent_methods_do_not_block_child_required_parameter_compatibility -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1142`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1142`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the runtime
+  lane. Full gate deferred until integration.
+
+- Added Milestone 1141, a parser boundary refinement for unsupported
+  `declare(...)` directives. `declare(ticks=1);` now fails with a stable parse
+  diagnostic naming missing tick handlers and execution hooks, and
+  `declare(encoding="UTF-8");` now names missing source encoding, lexer
+  decoding, and runtime text handling. The existing
+  `declare(strict_types=1);` diagnostic remains unchanged. This does not
+  implement strict-types enforcement, tick handlers, execution hooks, source
+  encoding selection, lexer decoding changes, runtime text handling changes,
+  exact PHP diagnostics, or native lowering. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes declare -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/unsupported_function_features`,
+  direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_function_features/unsupported_declare_ticks.php
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_function_features/unsupported_declare_encoding.php
+  --emit-ir` returning exit `1`, `cargo fmt --check`, and scoped
+  `git diff --check` passed in the parser lane. Full gate deferred until
+  integration.
+
 - Added Milestone 1140, a tests/docs queue refresh after the 1136-1139
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1136-1140
   complete and opens Milestones 1141-1145, the public support docs describe

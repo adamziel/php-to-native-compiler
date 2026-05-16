@@ -3245,3 +3245,30 @@ function identity($value) {
         "unsupported declare directive: strict_types is not implemented"
     );
 }
+
+#[test]
+fn unsupported_declare_directives_have_directive_specific_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+declare(ticks=1);
+echo "unreachable";
+"#,
+            "unsupported declare directive: ticks requires tick handlers and execution hooks, which are not implemented",
+        ),
+        (
+            r#"<?php
+declare(encoding="UTF-8");
+echo "unreachable";
+"#,
+            "unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, 2);
+        assert_eq!(error.column, 1);
+        assert_eq!(error.message, message);
+    }
+}
