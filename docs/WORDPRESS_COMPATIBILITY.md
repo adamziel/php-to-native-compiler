@@ -1469,7 +1469,12 @@ historical blockers and remaining full-support gaps include:
   warning/error fidelity, or native database lowering. Milestone 920 wires
   that placeholder through a synthetic WordPress-shaped `wpdb` connection
   user/database-change bookkeeping smoke without claiming real authentication,
-  selected-database, or session-reset fidelity.
+  selected-database, or session-reset fidelity. Milestone 921 adds
+  deterministic `mysqli_refresh()` placeholder refresh metadata over exposed
+  deprecated `MYSQLI_REFRESH_*` flags without real table/log/cache flush
+  behavior, replication reset, server status reset, connection/session
+  mutation, PHP deprecation/warning fidelity, host database state, or native
+  database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

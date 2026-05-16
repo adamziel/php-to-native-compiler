@@ -273,6 +273,37 @@ echo mysqli_ping($handle) ? "still-open" : "closed";
 }
 
 #[test]
+fn mysqli_refresh_accepts_current_placeholder_flags() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_refresh";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo MYSQLI_REFRESH_GRANT;
+echo "|";
+echo MYSQLI_REFRESH_REPLICA === MYSQLI_REFRESH_SLAVE ? "alias" : "different";
+echo "|";
+echo mysqli_refresh($handle, MYSQLI_REFRESH_LOG | MYSQLI_REFRESH_TABLES) ? "refreshed" : "failed";
+echo "|";
+echo $call($handle, MYSQLI_REFRESH_STATUS | MYSQLI_REFRESH_THREADS | MYSQLI_REFRESH_BACKUP_LOG) ? "dynamic" : "failed";
+echo "|";
+echo mysqli_ping($handle) ? "still-open" : "closed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|1|alias|refreshed|dynamic|still-open"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_connection_stats_return_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -1017,6 +1048,69 @@ mysqli_change_user(mysqli_init(), "user", "pass", false);
     assert_eq!(
         bad_database.message,
         "unsupported call mysqli_change_user(): database argument must be string or null in the current subset, got bool"
+    );
+}
+
+#[test]
+fn mysqli_refresh_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_refresh("not-a-handle", MYSQLI_REFRESH_LOG);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_refresh(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_flags = run_source(
+        r#"<?php
+mysqli_refresh(mysqli_init(), "tables");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_flags.phase, Phase::Runtime);
+    assert_eq!(bad_flags.line, 2);
+    assert_eq!(bad_flags.column, 1);
+    assert_eq!(
+        bad_flags.message,
+        "unsupported call mysqli_refresh(): flags argument must be int in the current subset, got string"
+    );
+
+    let zero_flags = run_source(
+        r#"<?php
+mysqli_refresh(mysqli_init(), 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(zero_flags.phase, Phase::Runtime);
+    assert_eq!(zero_flags.line, 2);
+    assert_eq!(zero_flags.column, 1);
+    assert_eq!(
+        zero_flags.message,
+        "unsupported call mysqli_refresh(): flags argument must include at least one MYSQLI_REFRESH_* flag in the current subset"
+    );
+
+    let unsupported_flags = run_source(
+        r#"<?php
+mysqli_refresh(mysqli_init(), 256);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_flags.phase, Phase::Runtime);
+    assert_eq!(unsupported_flags.line, 2);
+    assert_eq!(unsupported_flags.column, 1);
+    assert_eq!(
+        unsupported_flags.message,
+        "unsupported call mysqli_refresh(): only MYSQLI_REFRESH_* flag combinations are supported in the current subset, unsupported bits 256"
     );
 }
 
@@ -2023,6 +2117,8 @@ echo function_exists("mysqli_kill") ? "1" : "0";
 echo is_callable("mysqli_kill") ? "1" : "0";
 echo function_exists("mysqli_change_user") ? "1" : "0";
 echo is_callable("mysqli_change_user") ? "1" : "0";
+echo function_exists("mysqli_refresh") ? "1" : "0";
+echo is_callable("mysqli_refresh") ? "1" : "0";
 echo function_exists("mysqli_get_charset") ? "1" : "0";
 echo is_callable("mysqli_get_charset") ? "1" : "0";
 echo function_exists("mysqli_character_set_name") ? "1" : "0";
@@ -2110,11 +2206,21 @@ echo defined("MYSQLI_ASSOC") ? "1" : "0";
 echo defined("MYSQLI_NUM") ? "1" : "0";
 echo defined("MYSQLI_BOTH") ? "1" : "0";
 echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_GRANT") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_LOG") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_TABLES") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_HOSTS") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_STATUS") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_THREADS") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_SLAVE") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_REPLICA") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_MASTER") ? "1" : "0";
+echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 109, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 121, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2314,6 +2420,18 @@ mysqli_kill(mysqli_init(), 1);
     let error = emit_ir_source(
         r#"<?php
 mysqli_change_user(mysqli_init(), "user", "pass", "wordpress");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_refresh(mysqli_init(), MYSQLI_REFRESH_LOG);
 "#,
     )
     .unwrap_err();

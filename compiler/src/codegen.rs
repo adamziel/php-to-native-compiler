@@ -6235,7 +6235,17 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         | "MYSQLI_ASSOC"
         | "MYSQLI_NUM"
         | "MYSQLI_BOTH"
-        | "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => true,
+        | "MYSQLI_OPT_INT_AND_FLOAT_NATIVE"
+        | "MYSQLI_REFRESH_GRANT"
+        | "MYSQLI_REFRESH_LOG"
+        | "MYSQLI_REFRESH_TABLES"
+        | "MYSQLI_REFRESH_HOSTS"
+        | "MYSQLI_REFRESH_STATUS"
+        | "MYSQLI_REFRESH_THREADS"
+        | "MYSQLI_REFRESH_SLAVE"
+        | "MYSQLI_REFRESH_REPLICA"
+        | "MYSQLI_REFRESH_MASTER"
+        | "MYSQLI_REFRESH_BACKUP_LOG" => true,
         _ => false,
     }
 }
@@ -6353,6 +6363,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_thread_id"
             | "mysqli_kill"
             | "mysqli_change_user"
+            | "mysqli_refresh"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"

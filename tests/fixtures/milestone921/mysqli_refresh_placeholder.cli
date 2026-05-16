@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone921/mysqli_refresh_placeholder.php
+yes
+callable
+replica-alias
+refreshed
+dynamic
+still-open

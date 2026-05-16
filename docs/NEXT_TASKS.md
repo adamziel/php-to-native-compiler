@@ -8537,16 +8537,29 @@ handled.
   remains open. It is not real authentication, database selection, server
   session reset, transaction rollback, temporary-table cleanup, locked-table
   cleanup, warnings/errors, host database state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi connection/session
+- [x] Runtime/mysqli lane: inspect the next MySQLi connection/session
   lifecycle boundary after placeholder user/database-change bookkeeping, such
   as `mysqli_refresh()` or a sharper unsupported diagnostic, before claiming
   broader connection/session lifecycle fidelity.
+  Milestone 921 implements bounded deterministic `mysqli_refresh($handle,
+  $flags)` support for current placeholder `mysqli` handles and nonzero
+  integer combinations of exposed deprecated `MYSQLI_REFRESH_*` flags. It
+  returns deterministic `true`, rejects unsupported handles/flags with stable
+  diagnostics, exposes `MYSQLI_REFRESH_REPLICA` as an alias of
+  `MYSQLI_REFRESH_SLAVE`, and is visible through runtime and native metadata
+  lookup. This is not real table/log/cache flush behavior, replication reset,
+  server status reset, connection/session mutation, PHP deprecation/warning
+  fidelity, host database state, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_refresh()` placeholder through a WordPress-shaped connection
+  refresh method without claiming real flush, replication reset, status reset,
+  or session mutation fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a59b6c5 runtime: add mysqli change user placeholder`, covering Milestone
-  919 before the current Milestone 920 candidate.
+  `53daed2 tests: add wordpress wpdb change user smoke`, covering Milestone
+  920 before the current Milestone 921 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

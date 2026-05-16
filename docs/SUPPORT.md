@@ -516,7 +516,7 @@
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`,
-  `mysqli_change_user`, `mysqli_get_charset`,
+  `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`,
   `mysqli_options`, `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
@@ -854,6 +854,12 @@
   returning deterministic `true` without authenticating, selecting a real
   database, resetting server session state, rolling back transactions, closing
   temporary tables, unlocking tables, or mutating host connection state.
+  `mysqli_refresh($handle, $flags)` accepts the placeholder object and a
+  nonzero integer combination of exposed deprecated `MYSQLI_REFRESH_*` flags,
+  returning deterministic `true`; `MYSQLI_REFRESH_REPLICA` is exposed as an
+  alias of `MYSQLI_REFRESH_SLAVE`. It does not flush tables, logs, caches,
+  replication state, status counters, host server state, or connection/session
+  state.
   `mysqli_get_charset($handle)` accepts the placeholder object and returns a
   deterministic `stdClass`-shaped metadata object for the current utf8mb4
   placeholder, with `charset`, `collation`, `dir`, `min_length`,
@@ -2459,7 +2465,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-  `mysqli_kill`, `mysqli_change_user`,
+  `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
@@ -2787,7 +2793,7 @@
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`,
-  `mysqli_change_user`, `mysqli_get_charset`,
+  `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
@@ -2936,7 +2942,7 @@
   `mysqli_get_server_info`, `mysqli_get_server_version`,
   `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
-  `mysqli_thread_id`, `mysqli_kill`, `mysqli_change_user`,
+  `mysqli_thread_id`, `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`,
   `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
@@ -3010,7 +3016,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-  `mysqli_kill`, `mysqli_change_user`,
+  `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
@@ -3036,7 +3042,9 @@
   without killing or reconnecting a host connection,
   `mysqli_change_user(...)` returns only deterministic placeholder
   user/database-change acceptance metadata without authentication or server
-  session reset behavior, `mysqli_get_charset(...)` returns only deterministic
+  session reset behavior, `mysqli_refresh(...)` returns only deterministic
+  placeholder refresh-flag acceptance metadata without flushing host server or
+  session state, `mysqli_get_charset(...)` returns only deterministic
   placeholder charset/collation metadata,
   `mysqli_character_set_name(...)` returns only deterministic placeholder
   charset-name metadata, `mysqli_field_count(...)` returns only deterministic
@@ -3073,6 +3081,7 @@
   `mysqli_get_client_info(...)`/`mysqli_get_client_version(...)`/
   `mysqli_get_proto_info(...)`/
   `mysqli_thread_id(...)`/`mysqli_kill(...)`/`mysqli_change_user(...)`/
+  `mysqli_refresh(...)`/
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
   `mysqli_field_count(...)`/
@@ -4732,6 +4741,7 @@
   `mysqli_get_server_version()`/`mysqli_get_host_info()`/`mysqli_get_client_info()`/
   `mysqli_get_client_version()`/`mysqli_get_proto_info()`/
   `mysqli_thread_id()`/`mysqli_kill()`/`mysqli_change_user()`/
+  `mysqli_refresh()`/
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/

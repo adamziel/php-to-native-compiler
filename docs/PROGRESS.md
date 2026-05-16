@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 921, bounded `mysqli_refresh()` support for deterministic
+  placeholder MySQLi connection/session refresh metadata. The runtime accepts
+  current placeholder `mysqli` handles plus nonzero integer combinations of
+  exposed deprecated `MYSQLI_REFRESH_*` flags, returns deterministic `true`,
+  rejects non-`mysqli` handles, non-integer flags, zero flags, and unsupported
+  flag bits with stable diagnostics, exposes `MYSQLI_REFRESH_REPLICA` as an
+  alias of `MYSQLI_REFRESH_SLAVE`, and exposes the function/constants through
+  runtime and native metadata lookup. This is not real table/log/cache flush
+  behavior, replication reset, server status reset, host server state,
+  connection/session mutation, PHP deprecation/warning fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_refresh -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone921`.
+
 - Added Milestone 920, a synthetic WordPress-shaped `wpdb` connection
   user/database-change bookkeeping smoke that calls bounded
   `mysqli_change_user($this->dbh, $user, $password, $database)`,

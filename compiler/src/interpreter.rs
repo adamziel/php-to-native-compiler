@@ -4303,6 +4303,45 @@ impl Interpreter {
         }
     }
 
+    fn call_mysqli_refresh(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_refresh", args, 2, span)?;
+        expect_mysqli_handle("mysqli_refresh()", &args[0], span)?;
+        let Value::Int(flags) = args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_refresh()",
+                    format!(
+                        "flags argument must be int in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        if flags == 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_refresh()",
+                    "flags argument must include at least one MYSQLI_REFRESH_* flag in the current subset",
+                ),
+            ));
+        }
+        let unsupported = flags & !PHP_MYSQLI_REFRESH_ALL_SUPPORTED;
+        if unsupported != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_refresh()",
+                    format!(
+                        "only MYSQLI_REFRESH_* flag combinations are supported in the current subset, unsupported bits {unsupported}"
+                    ),
+                ),
+            ));
+        }
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_get_charset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_charset", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_charset()", &args[0], span)?;
@@ -9443,6 +9482,7 @@ impl Interpreter {
             "mysqli_thread_id" => self.call_mysqli_thread_id(&args, span),
             "mysqli_kill" => self.call_mysqli_kill(&args, span),
             "mysqli_change_user" => self.call_mysqli_change_user(&args, span),
+            "mysqli_refresh" => self.call_mysqli_refresh(&args, span),
             "mysqli_get_charset" => self.call_mysqli_get_charset(&args, span),
             "mysqli_character_set_name" => self.call_mysqli_character_set_name(&args, span),
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
@@ -12402,6 +12442,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_thread_id"
             | "mysqli_kill"
             | "mysqli_change_user"
+            | "mysqli_refresh"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"
@@ -12546,6 +12587,24 @@ const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
 const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
+const PHP_MYSQLI_REFRESH_GRANT: i64 = 1;
+const PHP_MYSQLI_REFRESH_LOG: i64 = 2;
+const PHP_MYSQLI_REFRESH_TABLES: i64 = 4;
+const PHP_MYSQLI_REFRESH_HOSTS: i64 = 8;
+const PHP_MYSQLI_REFRESH_STATUS: i64 = 16;
+const PHP_MYSQLI_REFRESH_THREADS: i64 = 32;
+const PHP_MYSQLI_REFRESH_SLAVE: i64 = 64;
+const PHP_MYSQLI_REFRESH_MASTER: i64 = 128;
+const PHP_MYSQLI_REFRESH_BACKUP_LOG: i64 = 2_097_152;
+const PHP_MYSQLI_REFRESH_ALL_SUPPORTED: i64 = PHP_MYSQLI_REFRESH_GRANT
+    | PHP_MYSQLI_REFRESH_LOG
+    | PHP_MYSQLI_REFRESH_TABLES
+    | PHP_MYSQLI_REFRESH_HOSTS
+    | PHP_MYSQLI_REFRESH_STATUS
+    | PHP_MYSQLI_REFRESH_THREADS
+    | PHP_MYSQLI_REFRESH_SLAVE
+    | PHP_MYSQLI_REFRESH_MASTER
+    | PHP_MYSQLI_REFRESH_BACKUP_LOG;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -12584,6 +12643,16 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
         "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => Some(Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE)),
+        "MYSQLI_REFRESH_GRANT" => Some(Value::Int(PHP_MYSQLI_REFRESH_GRANT)),
+        "MYSQLI_REFRESH_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_LOG)),
+        "MYSQLI_REFRESH_TABLES" => Some(Value::Int(PHP_MYSQLI_REFRESH_TABLES)),
+        "MYSQLI_REFRESH_HOSTS" => Some(Value::Int(PHP_MYSQLI_REFRESH_HOSTS)),
+        "MYSQLI_REFRESH_STATUS" => Some(Value::Int(PHP_MYSQLI_REFRESH_STATUS)),
+        "MYSQLI_REFRESH_THREADS" => Some(Value::Int(PHP_MYSQLI_REFRESH_THREADS)),
+        "MYSQLI_REFRESH_SLAVE" => Some(Value::Int(PHP_MYSQLI_REFRESH_SLAVE)),
+        "MYSQLI_REFRESH_REPLICA" => Some(Value::Int(PHP_MYSQLI_REFRESH_SLAVE)),
+        "MYSQLI_REFRESH_MASTER" => Some(Value::Int(PHP_MYSQLI_REFRESH_MASTER)),
+        "MYSQLI_REFRESH_BACKUP_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_BACKUP_LOG)),
         _ => None,
     }
 }

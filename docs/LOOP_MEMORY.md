@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `53daed2 tests: add wordpress wpdb change user smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 921, bounded deterministic `mysqli_refresh()`
+  placeholder connection/session refresh metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone921/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_refresh -- --test-threads=1`
+  passed with 2 tests,
+  full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed with 59 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone921`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi connection/session lifecycle
+  metadata is being extended from user/database-change acceptance to deprecated
+  refresh-flag acceptance.
+- Remaining semantic gaps: real table/log/cache flush behavior, replication
+  reset, server status reset, connection/session mutation,
+  deprecation/warning fidelity, warnings/errors, host database state, SQL
+  execution, and native database lowering remain missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, add a synthetic WordPress-shaped
+  `wpdb` refresh bookkeeping smoke for `mysqli_refresh()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `a59b6c5 runtime: add mysqli change user placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 920, a synthetic WordPress-shaped `wpdb`

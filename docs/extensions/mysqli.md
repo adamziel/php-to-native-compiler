@@ -5,7 +5,7 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-`mysqli_kill`, `mysqli_change_user`, `mysqli_get_charset`,
+`mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
 `mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
@@ -82,6 +82,16 @@ placeholder object, string credentials, and a string or null database, returning
 deterministic `true`. It does not authenticate, select a real database, reset
 server session state, roll back transactions, close temporary tables, unlock
 tables, or mutate host connection state.
+
+`mysqli_refresh($handle, $flags)` accepts the placeholder object and a nonzero
+integer combination of exposed deprecated `MYSQLI_REFRESH_*` flags, returning
+deterministic `true`. The exposed flags are `MYSQLI_REFRESH_GRANT`,
+`MYSQLI_REFRESH_LOG`, `MYSQLI_REFRESH_TABLES`, `MYSQLI_REFRESH_HOSTS`,
+`MYSQLI_REFRESH_STATUS`, `MYSQLI_REFRESH_THREADS`, `MYSQLI_REFRESH_SLAVE`,
+`MYSQLI_REFRESH_REPLICA` as an alias of `MYSQLI_REFRESH_SLAVE`,
+`MYSQLI_REFRESH_MASTER`, and `MYSQLI_REFRESH_BACKUP_LOG`. It does not flush
+tables, logs, caches, replication state, status counters, host server state,
+or connection/session state.
 
 `mysqli_get_charset($handle)` accepts the placeholder object and returns a
 deterministic `stdClass`-shaped metadata object for the current utf8mb4

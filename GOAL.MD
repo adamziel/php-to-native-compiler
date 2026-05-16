@@ -208,7 +208,11 @@ now wired through a synthetic WordPress-shaped `wpdb` connection
 user/database-change bookkeeping smoke without real authentication, database
 selection, server session reset, transaction rollback, temporary-table cleanup,
 locked-table cleanup, host database state, warning/error fidelity, or native
-lowering, plus deterministic
+lowering, plus bounded deterministic `mysqli_refresh()` placeholder refresh
+metadata over exposed deprecated `MYSQLI_REFRESH_*` flags without real
+table/log/cache flush behavior, replication reset, server status reset, host
+server state, connection/session mutation, PHP deprecation/warning fidelity,
+or native lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
 smoke, plus deterministic
