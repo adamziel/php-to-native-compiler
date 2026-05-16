@@ -105,6 +105,9 @@ struct Interpreter {
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
     mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
     mysqli_options: HashMap<i64, HashMap<i64, Value>>,
+    mysqli_wp_options: HashMap<i64, HashMap<String, String>>,
+    mysqli_affected_rows: HashMap<i64, i64>,
+    mysqli_insert_ids: HashMap<i64, i64>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -604,6 +607,9 @@ impl Interpreter {
             mysqli_pending_results: HashMap::new(),
             mysqli_pending_result_queues: HashMap::new(),
             mysqli_options: HashMap::new(),
+            mysqli_wp_options: HashMap::new(),
+            mysqli_affected_rows: HashMap::new(),
+            mysqli_insert_ids: HashMap::new(),
             mysqli_statements: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -5950,14 +5956,53 @@ impl Interpreter {
 
         if is_wordpress_charset_setup_query(query) || is_wordpress_sql_mode_assignment_query(query)
         {
+            self.mysqli_affected_rows.insert(handle_id, 0);
             return Ok(Value::Bool(true));
         }
 
+        if let Some((option_name, option_value)) = parse_wordpress_option_insert_query(query) {
+            self.mysqli_wp_options
+                .entry(handle_id)
+                .or_default()
+                .insert(option_name, option_value);
+            self.mysqli_affected_rows.insert(handle_id, 1);
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
+        if let Some(option_name) = parse_wordpress_option_value_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(option_value) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .cloned()
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec!["option_value".to_string()],
+                    vec![vec![(
+                        "option_value".to_string(),
+                        Value::String(option_value),
+                    )]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
         if is_wordpress_empty_result_query(query) || is_wordpress_empty_options_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
         if is_wordpress_seed_post_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
             return self.create_mysqli_result_placeholder(
                 span,
                 vec!["ID".to_string(), "post_title".to_string()],
@@ -5972,6 +6017,7 @@ impl Interpreter {
         }
 
         if query == "SELECT @@SESSION.sql_mode" {
+            self.mysqli_affected_rows.insert(handle_id, 0);
             return Ok(Value::Bool(false));
         }
 
@@ -6265,14 +6311,21 @@ impl Interpreter {
 
     fn call_mysqli_affected_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_affected_rows", args, 1, span)?;
-        expect_mysqli_handle("mysqli_affected_rows()", &args[0], span)?;
-        Ok(Value::Int(0))
+        let handle_id = expect_mysqli_handle_id("mysqli_affected_rows()", &args[0], span)?;
+        Ok(Value::Int(
+            self.mysqli_affected_rows
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0),
+        ))
     }
 
     fn call_mysqli_insert_id(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_insert_id", args, 1, span)?;
-        expect_mysqli_handle("mysqli_insert_id()", &args[0], span)?;
-        Ok(Value::Int(0))
+        let handle_id = expect_mysqli_handle_id("mysqli_insert_id()", &args[0], span)?;
+        Ok(Value::Int(
+            self.mysqli_insert_ids.get(&handle_id).copied().unwrap_or(0),
+        ))
     }
 
     fn call_mysqli_ping(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -15847,6 +15900,53 @@ fn mysqli_multi_result_slot_for_query(query: &str) -> Option<MysqliMultiResultSl
     }
 
     mysqli_pending_result_for_query(query).map(MysqliMultiResultSlot::Result)
+}
+
+fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String)> {
+    let query = query.trim();
+    let values = query
+        .strip_prefix("INSERT INTO wp_options (option_name, option_value, autoload) VALUES (")
+        .or_else(|| {
+            query.strip_prefix(
+                "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (",
+            )
+        })?
+        .strip_suffix(')')?;
+    let values = parse_sql_single_quoted_list(values)?;
+    if values.len() != 3 {
+        return None;
+    }
+    Some((values[0].clone(), values[1].clone()))
+}
+
+fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_value FROM wp_options WHERE option_name = ")
+        .or_else(|| {
+            query.strip_prefix("SELECT option_value FROM `wp_options` WHERE option_name = ")
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
+fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
+    let mut rest = input.trim();
+    let mut values = Vec::new();
+    loop {
+        rest = rest.strip_prefix('\'')?;
+        let end = rest.find('\'')?;
+        values.push(rest[..end].to_string());
+        rest = rest[end + 1..].trim_start();
+        if rest.is_empty() {
+            return Some(values);
+        }
+        rest = rest.strip_prefix(',')?.trim_start();
+    }
 }
 
 fn mysqli_statement_result_for_query(

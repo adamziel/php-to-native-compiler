@@ -1270,8 +1270,13 @@ The repository already has a working Rust workspace with:
   cleanup shape. Bounded `mysqli_query()` options-table placeholders plus
   clean `mysqli_errno()` and `mysqli_error()` bookkeeping cover the reached
   `wpdb::_do_query()` empty options query path without claiming real database
-  execution. Bounded WordPress `preg_match()` query classifiers and empty
-  option-name MySQLi reads cover the following `wpdb::query()` path. Bounded
+  execution. A bounded per-placeholder-handle `wp_options` MySQLi state island
+  now covers exact synthetic option `INSERT` plus later exact option-value
+  `SELECT` readback through the existing result/fetch path without claiming
+  broad SQL parsing, UPDATE/DELETE/REPLACE, transactions, host database
+  execution, PDO, prepared-statement mutation state, or native lowering.
+  Bounded WordPress `preg_match()` query classifiers and empty option-name
+  MySQLi reads cover the following `wpdb::query()` path. Bounded
   direct nested array-offset and object-property array-offset `empty(...)`
   paths cover the reached `wpdb::load_col_info()` shape, and deterministic
   empty MySQLi metadata-query placeholders cover reached `SHOW FULL COLUMNS`
@@ -1662,14 +1667,14 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1023 is the active checkpoint candidate: direct object-property
-  `ArrayAccess` pre/post increment and decrement now cover visible
-  property-held `ArrayAccess` objects through `offsetGet($key)` and PHP's
-  current by-value temporary result behavior without dispatching
-  `offsetSet($key, $value)`, while nested chains, append compound assignment,
-  magic-property containers, iteration, by-reference `offsetGet()` mutation,
-  protocol enforcement, exact diagnostics, references/copy-on-write, and
-  native lowering remain open.
+- Milestone 1024 is the active checkpoint candidate: exact direct
+  `wp_options` MySQLi insert/readback now records string option values in
+  per-placeholder-handle state, exposes them through the existing result/fetch
+  path, and updates bounded `mysqli_affected_rows()`/`mysqli_insert_id()`
+  metadata, while broad SQL parsing, escaping/quoting fidelity, schema/index
+  behavior, UPDATE/DELETE/REPLACE, transactions, host database execution,
+  warning/error fidelity, PDO, prepared-statement mutation state, and native
+  lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

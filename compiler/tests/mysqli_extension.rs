@@ -2505,6 +2505,34 @@ echo $error($handle) === "" ? "clean" : "dirty";
 }
 
 #[test]
+fn mysqli_query_records_current_wordpress_option_insert_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_insert_id($handle);
+echo "|";
+echo mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')") ? "inserted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+echo "|";
+$missing = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+echo mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|inserted|1|1|https://example.test|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

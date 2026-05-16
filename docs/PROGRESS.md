@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1024, a bounded per-placeholder-connection `wp_options`
+  state island for exact WordPress-shaped MySQLi option writes and reads.
+  `mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value,
+  autoload) VALUES (...)")` now records the inserted option value for that
+  placeholder handle, sets `mysqli_affected_rows($handle)` to `1`, advances a
+  deterministic `mysqli_insert_id($handle)`, and a later exact
+  `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
+  return the recorded value through the existing `mysqli_result`/fetch path.
+  Missing options still return an empty placeholder result. This is not broad
+  SQL parsing, escaping/quoting fidelity, schema/index behavior, UPDATE/
+  DELETE/REPLACE, transactions, host database execution, warning/error
+  fidelity, PDO, prepared-statement mutation state, or native lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_insert_state -- --test-threads=1`
+  and `cargo run -p phpc -- test tests/fixtures/milestone1024`.
+
 - Added Milestone 1023, bounded direct object-property `ArrayAccess`
   increment/decrement when the visible property value is an object whose
   metadata records `implements ArrayAccess`. Direct

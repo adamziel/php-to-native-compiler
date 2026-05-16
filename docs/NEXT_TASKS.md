@@ -9820,19 +9820,32 @@ handled.
   inaccessible-member magic fidelity, and add the next bounded behavior or
   explicit runtime boundary with tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
-  connection/helper gap from the audited PHP surface, such as real reference
-  aliasing around bound parameters/results, broader escaping charset fidelity,
-  mutation SQL state, transaction state, host-backed query execution, PDO
-  visibility, or the next real database integration gap, and add the next
-  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
-  docs, and native rejection coverage where lowering remains unsupported.
+- [x] Runtime/database lane: add a bounded real-state island for exact
+  WordPress-shaped `wp_options` MySQLi insert/readback.
+  Milestone 1024 covers exact direct
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+  followed by exact direct
+  `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` on the
+  same placeholder handle. The insert records the string option value in
+  per-handle state, sets `mysqli_affected_rows($handle)` to `1`, advances
+  deterministic `mysqli_insert_id($handle)`, and the select exposes the value
+  through the existing placeholder result/fetch path. This is not broad SQL
+  parsing, escaping/quoting fidelity, schema/index behavior, UPDATE/DELETE/
+  REPLACE, transactions, host database execution, warning/error fidelity, PDO,
+  prepared-statement mutation state, or native lowering.
+- [ ] Runtime/database lane: inspect the next real database-state gap from the
+  audited PHP/WordPress surface, such as option UPDATE/readback,
+  prepared-statement mutation state, transaction state, broader escaping
+  fidelity, host-backed query execution, PDO, or the next `wpdb` state
+  consumer, and add the next bounded behavior or explicit runtime boundary
+  with tests, CLI fixtures, docs, and native rejection coverage where lowering
+  remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b1bccda1 runtime: add object property array access compound assignment`,
-  covering Milestone 1022 before the current Milestone 1023 candidate.
+  `6c936b97 runtime: add object property array access increment decrement`,
+  covering Milestone 1023 before the current Milestone 1024 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

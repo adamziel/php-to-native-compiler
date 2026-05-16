@@ -1159,6 +1159,13 @@ historical blockers and remaining full-support gaps include:
   real result resources, row fetching, affected rows, insert ids,
   charset/collation handling, prepared statements, transactions,
   errors/warnings, or native database integration. The real bootstrap-shim
+  probe later gained a bounded per-placeholder-handle `wp_options` state
+  island in Milestone 1024 for exact synthetic option `INSERT` plus exact
+  option-value `SELECT` readback through the existing result/fetch path, with
+  bounded `mysqli_affected_rows()` and `mysqli_insert_id()` metadata. This is
+  still not broad SQL parsing, UPDATE/DELETE/REPLACE, transactions, host
+  database execution, PDO, prepared-statement mutation state, or native
+  database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

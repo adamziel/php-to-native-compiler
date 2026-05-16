@@ -1228,7 +1228,19 @@
   `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
   plus reached empty WordPress metadata probes `SHOW FULL COLUMNS FROM ...`
   and `DESCRIBE ...`, returning deterministic empty `mysqli_result`
-  placeholders with zero rows and zero fields without executing SQL. For the
+  placeholders with zero rows and zero fields without executing SQL. For an
+  exact current synthetic WordPress option write,
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
+  `mysqli_query()` records the string option value in per-placeholder-handle
+  state, sets `mysqli_affected_rows($handle)` to `1`, advances deterministic
+  `mysqli_insert_id($handle)`, and lets a later exact
+  `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
+  return the recorded value through the existing placeholder result/fetch
+  path. Missing option names still return an empty placeholder result. This
+  state island is not broad SQL parsing, escaping/quoting fidelity, schema or
+  index behavior, UPDATE/DELETE/REPLACE, transactions, host database
+  execution, warning/error fidelity, PDO, prepared-statement mutation state,
+  or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -1284,14 +1296,16 @@
   `mysqli_sqlstate($handle)` returns deterministic clean SQLSTATE `00000` and
   `mysqli_warning_count($handle)` returns deterministic `0` without tracking
   real host database SQLSTATE, warnings, or warning-count state.
-  `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return
-  deterministic `0` for the clean placeholder connection state.
+  `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return the
+  current bounded option-write metadata when that exact state island has been
+  used, or deterministic `0` for the clean placeholder connection state.
   `mysqli_ping($handle)` accepts the placeholder handle and returns
   deterministic `true` as a liveness-check boundary without probing a real
   connection or reconnecting.
-  Mutation SQL passed to `mysqli_query()`, currently recognized by leading
-  `INSERT`, `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported
-  diagnostic instead of changing connection or table state.
+  Mutation SQL passed to `mysqli_query()` outside the exact `wp_options`
+  insert state island, currently recognized by leading `INSERT`, `UPDATE`,
+  `DELETE`, or `REPLACE`, reports an explicit unsupported diagnostic instead
+  of changing connection or table state.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.

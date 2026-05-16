@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `6c936b97 runtime: add object property array access increment decrement`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 1024, bounded per-placeholder-handle
+  `wp_options` MySQLi state for exact synthetic option insert plus later exact
+  option-value select readback.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1024/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_insert_state -- --test-threads=1`
+  and `cargo run -p phpc -- test tests/fixtures/milestone1024` passed before
+  documentation updates; rerun formatting/diff/focused checks before
+  checkpointing.
+- Current WordPress frontier: exact direct `wp_options` inserts can record a
+  string option value on the placeholder handle, update bounded affected-row
+  and insert-id metadata, and expose the value through the existing
+  `mysqli_result`/fetch path.
+- Remaining semantic gaps: broad SQL parsing, escaping/quoting fidelity,
+  schema/index behavior, UPDATE/DELETE/REPLACE, transactions, host database
+  execution, warning/error fidelity, PDO, prepared-statement mutation state,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b1bccda1 runtime: add object property array access compound assignment`,
   pushed to `origin/master`.
 - Task attempted: Milestone 1023, bounded direct object-property
