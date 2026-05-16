@@ -1662,7 +1662,12 @@ historical blockers and remaining full-support gaps include:
   statement objects, statement SQLSTATE tracking, statement warning tracking,
   statement diagnostic state, statement execution state, statement insert-id
   metadata, host database state, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 963 adds explicit
+  `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()` statement field
+  metadata fetch boundaries with callable metadata and stable unsupported
+  diagnostics, without statement object allocation, result metadata objects,
+  field metadata arrays/objects, statement field cursor state, host database
+  execution, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

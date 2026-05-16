@@ -23,6 +23,7 @@ Status: boundary only.
 `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
 `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
 `mysqli_stmt_insert_id`,
+`mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
 `mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
@@ -239,6 +240,13 @@ are explicit runtime boundaries. Reached calls report stable unsupported
 diagnostics because statement objects, statement SQLSTATE tracking, statement
 warning tracking, statement diagnostic state, statement execution state, and
 statement insert-id metadata are not implemented.
+
+`mysqli_stmt_fetch_fields($statement)` and
+`mysqli_stmt_fetch_field($statement)` are visible through callable metadata but
+are explicit runtime boundaries. Reached calls report stable unsupported
+diagnostics because statement objects, result metadata objects, field metadata
+arrays, field metadata objects, and statement field cursor state are not
+implemented.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

@@ -382,6 +382,11 @@ diagnostics/insert metadata smokes without claiming statement objects,
 statement SQLSTATE tracking, statement warning tracking, statement diagnostic
 state, statement execution state, statement insert-id metadata, host database
 state, warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_fetch_fields()`/`mysqli_stmt_fetch_field()`
+statement field metadata fetch boundaries that expose callable metadata and
+stable unsupported diagnostics without statement object allocation, result
+metadata objects, field metadata arrays/objects, statement field cursor state,
+host database execution, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -6403,6 +6403,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_stmt_sqlstate"
             | "mysqli_stmt_warning_count"
             | "mysqli_stmt_insert_id"
+            | "mysqli_stmt_fetch_fields"
+            | "mysqli_stmt_fetch_field"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `ade7e0b2 tests: add wordpress wpdb stmt diagnostic metadata smokes`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 963, explicit MySQLi statement field metadata
+  fetch boundaries for `mysqli_stmt_fetch_fields()` and
+  `mysqli_stmt_fetch_field()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone963/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_field_fetch_metadata -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone963`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement field metadata fetch
+  APIs now produce stable diagnostics instead of generic unknown-call
+  behavior.
+- Remaining semantic gaps: statement object allocation, result metadata
+  objects, field metadata arrays/objects, statement field cursor state, host
+  database state, warnings/errors, and native database lowering remain
+  missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb` field
+  metadata fetch smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `394e5c6a runtime: add mysqli stmt diagnostic metadata boundaries`, pushed
   to `origin/master`.
 - Task attempted: Milestone 962, synthetic WordPress-shaped `wpdb`
@@ -49,9 +80,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   tracking, statement warning tracking, statement diagnostic state, statement
   execution state, statement insert-id metadata, host database state,
   warnings/errors, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next prepared-statement result
-  field-fetch boundary such as `mysqli_stmt_fetch_fields()` or
+- Checkpoint result: committed and pushed
+  `ade7e0b2 tests: add wordpress wpdb stmt diagnostic metadata smokes`.
+- Next concrete task: inspect the next prepared-statement result field-fetch
+  boundary such as `mysqli_stmt_fetch_fields()` or
   `mysqli_stmt_fetch_field()`.
 
 ## Loop Event 2026-05-16T00:00:00Z

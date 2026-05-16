@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 963, explicit MySQLi statement result field-fetch
+  boundaries for `mysqli_stmt_fetch_fields()` and
+  `mysqli_stmt_fetch_field()`. The runtime exposes the names through
+  function/callability metadata, validates the one-argument arity, and reports
+  stable unsupported diagnostics when statement result field metadata array or
+  single-field metadata fetch is reached. Native metadata lookup knows the
+  names while direct native lowering remains rejected. This is not statement
+  object allocation, result metadata objects, field metadata arrays, field
+  metadata objects, statement field cursor state, host database execution, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_field_fetch_metadata -- --test-threads=1`
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone963`.
+
 - Added Milestone 962, synthetic WordPress-shaped `wpdb`
   prepared-statement diagnostics/insert metadata smokes that reach the
   explicit `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, and

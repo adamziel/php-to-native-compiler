@@ -4799,6 +4799,28 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_fetch_fields(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_fetch_fields", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_fetch_fields()",
+                "mysqli statement objects, result metadata objects, field metadata arrays, and statement field cursor state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_fetch_field(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_fetch_field", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_fetch_field()",
+                "mysqli statement objects, result metadata objects, field metadata objects, and statement field cursor state are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -10031,6 +10053,8 @@ impl Interpreter {
             "mysqli_stmt_sqlstate" => self.call_mysqli_stmt_sqlstate(&args, span),
             "mysqli_stmt_warning_count" => self.call_mysqli_stmt_warning_count(&args, span),
             "mysqli_stmt_insert_id" => self.call_mysqli_stmt_insert_id(&args, span),
+            "mysqli_stmt_fetch_fields" => self.call_mysqli_stmt_fetch_fields(&args, span),
+            "mysqli_stmt_fetch_field" => self.call_mysqli_stmt_fetch_field(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -13027,6 +13051,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_sqlstate"
             | "mysqli_stmt_warning_count"
             | "mysqli_stmt_insert_id"
+            | "mysqli_stmt_fetch_fields"
+            | "mysqli_stmt_fetch_field"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

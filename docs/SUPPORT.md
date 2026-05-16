@@ -534,6 +534,7 @@
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
   `mysqli_stmt_insert_id`,
+  `mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
@@ -2553,6 +2554,7 @@
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
   `mysqli_stmt_insert_id`,
+  `mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
@@ -2898,6 +2900,7 @@
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
   `mysqli_stmt_insert_id`,
+  `mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_autocommit`,
@@ -3064,6 +3067,7 @@
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
   `mysqli_stmt_insert_id`,
+  `mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_autocommit`,
@@ -3155,6 +3159,7 @@
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
   `mysqli_stmt_insert_id`,
+  `mysqli_stmt_fetch_fields`, `mysqli_stmt_fetch_field`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
@@ -3242,6 +3247,10 @@
   metadata boundaries without statement objects, statement SQLSTATE tracking,
   statement warning tracking, statement diagnostic state, statement execution
   state, or statement insert-id metadata,
+  `mysqli_stmt_fetch_fields(...)`/`mysqli_stmt_fetch_field(...)` are explicit
+  statement field metadata fetch boundaries without statement objects, result
+  metadata objects, field metadata arrays/objects, or statement field cursor
+  state,
   `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success
   without MySQL DBUG trace output, host client-library debug state, socket
   inspection, or host database state, `mysqli_debug(...)` returns only

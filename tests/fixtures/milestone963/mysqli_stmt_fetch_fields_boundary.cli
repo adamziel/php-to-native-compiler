@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone963/mysqli_stmt_fetch_fields_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone963/mysqli_stmt_fetch_fields_boundary.php:3:1: unsupported call mysqli_stmt_fetch_fields(): mysqli statement objects, result metadata objects, field metadata arrays, and statement field cursor state are not implemented in the current subset
+--- stderr end ---
