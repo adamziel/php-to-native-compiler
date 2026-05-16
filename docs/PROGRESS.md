@@ -23,7 +23,9 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`,
   `cargo run -p phpc -- test tests/fixtures/milestone747`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1270 fixture
+  tests, 716 system PHP comparisons, and 554 skipped comparisons, then
+  committed `ed93c7e6 runtime: add foreach lingering reference`.
 
 - Added Milestone 1065, undefined/null root materialization for the bounded
   direct array-offset reference-source slice. Statement-form

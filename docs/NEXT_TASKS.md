@@ -10343,8 +10343,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a4fc20d2 runtime: materialize array offset reference roots`, covering
-  Milestone 1065.
+  `ed93c7e6 runtime: add foreach lingering reference`, covering Milestone
+  1066.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

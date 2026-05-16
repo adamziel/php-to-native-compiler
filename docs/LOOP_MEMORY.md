@@ -26,6 +26,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T13:38:00Z
+
+- Checkpoint before this task:
+  `d246b637 docs: record array offset reference root gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1066, lingering post-loop references for the
+  existing direct-array-variable by-reference `foreach` slice.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/foreach.rs`,
+  `tests/fixtures/milestone1066/by_reference_foreach_lingering_direct_array_reference.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  `cargo test -p phpc --test foreach by_reference -- --test-threads=1` passed
+  with 5 filtered by-reference tests.
+  `cargo test -p phpc --test foreach -- --test-threads=1` passed with 12
+  tests.
+  `cargo run -p phpc -- test tests/fixtures/milestone1066 --compare-php`
+  passed with 1 fixture, 1 PHP comparison, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`
+  passed with 1 fixture, 1 PHP comparison, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/milestone747` passed with 2
+  fixtures. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1270
+  fixture tests, 716 system PHP comparisons, and 554 skipped comparisons, then
+  committed `ed93c7e6 runtime: add foreach lingering reference`.
+- Current WordPress frontier: direct-array by-reference `foreach` now preserves
+  PHP's lingering value-variable reference to the last successfully iterated
+  slot after normal loop completion or a consumed inner `break`; `unset($item)`
+  detaches the lingering name, and empty arrays create no lingering reference.
+- Remaining semantic gaps: mutation-during-iteration fidelity, non-direct
+  iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, full PHP reference
+  containers, copy-on-write, native lowering, nested/object/`ArrayAccess`
+  offset aliases, and direct array-offset reference targets remain missing.
+- Next concrete task: choose the next reference/COW gap, likely nested/object
+  offset aliases, remaining by-reference `foreach` mutation fidelity, COW split
+  behavior, or native lowering boundaries, and add a bounded behavior or
+  explicit diagnostic with PHP comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T13:12:00Z
 
 - Checkpoint before this task:
