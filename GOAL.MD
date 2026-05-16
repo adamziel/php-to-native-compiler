@@ -478,6 +478,11 @@ through direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
 by-reference result binding, output-buffer mutation, `mysqli_stmt_fetch()`,
 real mysqlnd buffering, broad SQL execution, host database rows, PHP
 warning/error fidelity, or native lowering,
+plus deterministic clean `mysqli_stmt_more_results()` and
+`mysqli_stmt_next_result()` state for active placeholder statements through
+direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
+multi-statement execution, pending statement result queues, cursor advancement,
+host database state, PHP warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

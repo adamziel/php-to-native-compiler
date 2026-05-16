@@ -4962,24 +4962,16 @@ impl Interpreter {
 
     fn call_mysqli_stmt_more_results(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_more_results", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_more_results()",
-                "mysqli statement objects, multi-result state, and pending statement result queues are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_more_results()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_more_results()", stmt_id, span)?;
+        Ok(Value::Bool(false))
     }
 
     fn call_mysqli_stmt_next_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_next_result", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_next_result()",
-                "mysqli statement objects, multi-result cursor advancement, and pending statement result queues are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_next_result()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_next_result()", stmt_id, span)?;
+        Ok(Value::Bool(false))
     }
 
     fn call_mysqli_stmt_sqlstate(&self, args: &[Value], span: Span) -> CompileResult<Value> {

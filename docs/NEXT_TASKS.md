@@ -9256,19 +9256,32 @@ handled.
   output-buffer mutation, `mysqli_stmt_fetch()`, real mysqlnd buffering, broad
   SQL execution, host database rows, PHP warning/error fidelity, or native
   database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as
   active-statement binding boundaries, statement fetch boundaries, broader
   escaping charset fidelity, local-infile option effects, or multi-result
   pending queues, and add the next bounded behavior or explicit runtime
   boundary with tests, CLI fixtures, docs, and native rejection coverage where
   lowering remains unsupported.
+  Milestone 982 adds deterministic clean statement multi-result state:
+  `mysqli_stmt_more_results()` and `mysqli_stmt_next_result()` now return
+  `false` for active placeholder statements, including a WordPress-shaped
+  `wpdb` smoke. This is not multi-statement execution, pending statement
+  result queues, cursor advancement, host database state, PHP warning/error
+  fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as
+  active-statement binding boundaries, statement fetch boundaries, broader
+  escaping charset fidelity, local-infile option effects, or connection
+  multi-result pending queues, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d5a51f32 runtime: add mysqli stmt execute result placeholders`, covering
-  Milestone 980 before the current Milestone 981 candidate.
+  `d7a51b17 runtime: add mysqli stmt buffered row counts`, covering
+  Milestone 981 before the current Milestone 982 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

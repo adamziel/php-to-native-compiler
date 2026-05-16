@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic clean multi-result state for
+placeholder `mysqli_stmt` objects. System PHP requires real statement
+multi-result queues and server execution state; phpc only reports no pending
+statement results and does not implement multi-statement execution, pending
+statement result queues, cursor advancement, host database state, PHP
+warning/error fidelity, or native database lowering.

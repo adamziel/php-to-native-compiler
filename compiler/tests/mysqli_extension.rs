@@ -1172,13 +1172,19 @@ echo "|";
 echo mysqli_stmt_reset($stmt) ? "reset" : "failed";
 echo "|";
 echo mysqli_stmt_param_count($stmt);
+$multi = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($multi);
+echo "|";
+echo mysqli_stmt_more_results($multi) ? "more" : "no-more";
+echo "|";
+echo mysqli_stmt_next_result($multi) ? "next" : "no-next";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable|1|reset|0"
+        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable|1|reset|0|no-more|no-next"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -1227,7 +1233,7 @@ mysqli_stmt_more_results($stmt);
     assert_eq!(more_results_error.column, 1);
     assert_eq!(
         more_results_error.message,
-        "unsupported call mysqli_stmt_more_results(): mysqli statement objects, multi-result state, and pending statement result queues are not implemented in the current subset"
+        "unsupported call mysqli_stmt_more_results(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let next_result_error = run_source(
@@ -1243,7 +1249,7 @@ mysqli_stmt_next_result($stmt);
     assert_eq!(next_result_error.column, 1);
     assert_eq!(
         next_result_error.message,
-        "unsupported call mysqli_stmt_next_result(): mysqli statement objects, multi-result cursor advancement, and pending statement result queues are not implemented in the current subset"
+        "unsupported call mysqli_stmt_next_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 }
 

@@ -1746,7 +1746,12 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` smoke, without claiming by-reference result binding,
   output-buffer mutation, `mysqli_stmt_fetch()`, real mysqlnd buffering, broad
   SQL execution, host database rows, PHP warning/error fidelity, or native
-  database lowering. Milestone 965 adds explicit
+  database lowering. Milestone 982 adds deterministic clean
+  `mysqli_stmt_more_results()` and `mysqli_stmt_next_result()` state for
+  active placeholder statements, including a WordPress-shaped `wpdb` smoke,
+  without claiming multi-statement execution, pending statement result queues,
+  cursor advancement, host database state, PHP warning/error fidelity, or
+  native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

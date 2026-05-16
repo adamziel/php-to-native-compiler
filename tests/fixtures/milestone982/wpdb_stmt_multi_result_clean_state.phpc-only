@@ -1,0 +1,5 @@
+This fixture records deterministic clean statement multi-result state through
+a WordPress-shaped `wpdb` object. It covers only the no-pending-results
+placeholder state and does not implement multi-statement execution, pending
+statement result queues, cursor advancement, host database state, PHP
+warning/error fidelity, or native database lowering.

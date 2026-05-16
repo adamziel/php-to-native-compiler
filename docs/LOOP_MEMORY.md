@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `d7a51b17 runtime: add mysqli stmt buffered row counts`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 982, deterministic clean statement multi-result
+  state for active placeholder statements: `mysqli_stmt_more_results()` and
+  `mysqli_stmt_next_result()` return `false`, with direct MySQLi and
+  WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone982/*`,
+  affected legacy statement multi-result fixture snapshots in
+  `tests/fixtures/milestone959` and `tests/fixtures/milestone960`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone982`;
+  and `cargo run -p phpc -- test --compare-php` for `milestone959` and
+  `milestone960`. All passed; the new fixtures are `phpc-only` and skipped
+  for system PHP comparison.
+- Current WordPress frontier: placeholder prepared statements now expose clean
+  no-pending-results state through a WordPress-shaped `wpdb` method.
+- Remaining semantic gaps: multi-statement execution, pending statement result
+  queues, cursor advancement, host database state, PHP warning/error fidelity,
+  and native database lowering remain missing.
+- Next concrete task: run formatting, focused MySQLi statement tests, and the
+  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  active-statement binding boundaries, statement fetch boundaries, broader
+  escaping charset fidelity, local-infile option effects, or connection
+  multi-result pending queues.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d5a51f32 runtime: add mysqli stmt execute result placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 981, deterministic
@@ -56,11 +89,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   mutation, `mysqli_stmt_fetch()`, real mysqlnd buffering, broad SQL
   execution, host database rows, PHP warning/error fidelity, and native
   database lowering remain missing.
-- Next concrete task: run formatting, focused MySQLi statement tests, and the
-  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
-  active-statement binding boundaries, statement fetch boundaries, broader
-  escaping charset fidelity, local-infile option effects, or multi-result
-  pending queues.
+- Checkpoint result: committed and pushed
+  `d7a51b17 runtime: add mysqli stmt buffered row counts`.
+- Next concrete task: inspect active-statement binding boundaries, statement
+  fetch boundaries, broader escaping charset fidelity, local-infile option
+  effects, or multi-result pending queues.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

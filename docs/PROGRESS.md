@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 982, deterministic clean multi-result state for active
+  placeholder `mysqli_stmt` objects. `mysqli_stmt_more_results()` and
+  `mysqli_stmt_next_result()` now validate placeholder statement handles and
+  return `false`, with direct MySQLi and WordPress-shaped `wpdb` smokes. This
+  is not multi-statement execution, pending statement result queues, cursor
+  advancement, host database state, PHP warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone982`, and
+  `cargo run -p phpc -- test --compare-php` for the affected `milestone959`
+  and `milestone960` fixture groups.
+
 - Added Milestone 981, deterministic `mysqli_stmt_store_result()` and
   `mysqli_stmt_num_rows()` behavior for active placeholder statements after
   the current unbound seed-post WordPress SELECT execution path.

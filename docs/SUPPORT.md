@@ -1022,6 +1022,11 @@
   is not prepared binding, statement result rows through bound output buffers,
   real mysqlnd buffering, broad SQL metadata, host database metadata, PHP
   warning/error fidelity, or native statement lowering.
+  `mysqli_stmt_more_results($statement)` and
+  `mysqli_stmt_next_result($statement)` return deterministic `false` for
+  active placeholder statements without modeling multi-statement execution,
+  pending statement result queues, cursor advancement, host database state, or
+  native statement lowering.
   `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
   deterministic `true` without emitting MySQL DBUG trace output, inspecting
   host client-library debug state, inspecting sockets, or reading host
@@ -3347,13 +3352,13 @@
   boundaries without statement objects, buffered result cursor state, offset
   seeking, statement attribute catalogs, option registry state, or option
   mutation,
-  `mysqli_stmt_send_long_data(...)`/`mysqli_stmt_reset(...)`/
-  `mysqli_stmt_more_results(...)`/`mysqli_stmt_next_result(...)` are explicit
-  statement parameter streaming/reset/multi-result boundaries without
-  long-parameter streaming, packet buffering, statement parameter state,
-  buffered result cleanup,
-  parameter/result lifecycle state, multi-result state, or pending statement
-  result queues,
+  `mysqli_stmt_more_results(...)`/`mysqli_stmt_next_result(...)` return only
+  deterministic `false` for active placeholder statements without
+  multi-statement execution, pending statement result queues, cursor
+  advancement, or host database state,
+  `mysqli_stmt_send_long_data(...)` is an explicit statement parameter
+  streaming boundary without long-parameter streaming, packet buffering, or
+  statement parameter state,
   `mysqli_stmt_fetch_fields(...)`/`mysqli_stmt_fetch_field(...)` are not PHP
   mysqli functions and are not exposed by the current function table,
   `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success
