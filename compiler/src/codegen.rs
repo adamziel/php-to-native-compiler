@@ -6376,6 +6376,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_get_connection_stats"
             | "mysqli_get_links_stats"
             | "mysqli_get_client_stats"
+            | "mysqli_thread_safe"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

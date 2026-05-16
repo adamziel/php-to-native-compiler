@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone941/mysqli_thread_safe_placeholder.php
+yes
+callable
+thread-safe
+dynamic

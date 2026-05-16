@@ -278,6 +278,10 @@ fidelity, or native lowering, now wired through a synthetic WordPress-shaped
 `wpdb` diagnostics smoke without claiming real warning/error list tracking,
 SQLSTATE history, host client-library state, socket state, host database
 state, warning/error fidelity, or native lowering,
+plus bounded deterministic `mysqli_thread_safe()` client-library
+thread-safety metadata without host client-library build-flag inspection,
+real thread-safety configuration, host client-library state, socket state,
+host database state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

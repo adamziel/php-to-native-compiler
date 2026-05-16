@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 941, bounded `mysqli_thread_safe()` support for
+  deterministic placeholder MySQLi client-library thread-safety metadata. The
+  runtime accepts the no-argument call, returns deterministic `true`, rejects
+  argument-bearing calls with a stable arity diagnostic, and exposes the name
+  through runtime and native metadata lookup. This is not host client-library
+  build-flag inspection, real thread-safety configuration, host
+  client-library state, socket state, host database state, PHP warning/error
+  fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_thread_safe -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone941`.
+
 - Added Milestone 940, a synthetic WordPress-shaped `wpdb` connection
   diagnostics smoke that records bounded `mysqli_error_list()` clean metadata
   through a `wpdb`-style method, verifies the empty local error list, records

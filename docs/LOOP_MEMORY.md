@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `5399446 tests: add wordpress wpdb error list smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 941, bounded deterministic
+  `mysqli_thread_safe()` client-library thread-safety metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone941/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`;
+  `cargo test -p phpc --test mysqli_extension mysqli_thread_safe -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone941`;
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder MySQLi client-library metadata now
+  includes deterministic `mysqli_thread_safe()` truthy state.
+- Remaining semantic gaps: host client-library build flags, real
+  thread-safety configuration, host client-library state, sockets, host
+  database state, warnings/errors, and native database lowering remain
+  missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, add a synthetic WordPress-shaped `wpdb` diagnostics smoke
+  for `mysqli_thread_safe()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `f102124 runtime: add mysqli error list placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 940, a synthetic WordPress-shaped `wpdb`

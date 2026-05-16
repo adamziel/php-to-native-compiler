@@ -8762,16 +8762,29 @@ handled.
   diagnostics method. It is not real warning/error list tracking, SQLSTATE
   history, host client-library state, sockets, host database state,
   warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement or error-state
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement or error-state
   boundary after clean error-list metadata, such as `mysqli_thread_safe()` or
   an explicit unsupported diagnostic for statement APIs, before claiming
   broader mysqli extension fidelity.
+  Milestone 941 implements bounded deterministic `mysqli_thread_safe()`
+  support for client-library thread-safety metadata. It returns deterministic
+  `true`, rejects argument-bearing calls with a stable arity diagnostic, and
+  is visible through runtime and native metadata lookup. This is not host
+  client-library build-flag inspection, real thread-safety configuration, host
+  client-library state, socket state, host database state, warning/error
+  fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+  records bounded `mysqli_thread_safe()` metadata through a WordPress-shaped
+  connection diagnostics method without claiming host client-library
+  build-flag inspection, real thread-safety configuration, host
+  client-library state, sockets, host database state, warning/error fidelity,
+  or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f102124 runtime: add mysqli error list placeholder`, covering
-  Milestone 939 before the current Milestone 940 candidate.
+  `5399446 tests: add wordpress wpdb error list smoke`, covering
+  Milestone 940 before the current Milestone 941 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
