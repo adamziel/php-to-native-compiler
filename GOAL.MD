@@ -794,7 +794,11 @@ Reconciliation into concrete workstreams:
   appended/new tail entries, observes direct writes to the current slot, and
   detaches the loop variable onto the removed old value when the active slot is
   unset before same-key reinsertion, while preserving lingering post-loop
-  reference behavior for the last iterated slot,
+  reference behavior for the last iterated slot, plus a bounded temporary
+  array-expression by-reference `foreach` path for array literals and direct
+  non-reference-returning function calls returning arrays that routes the loop
+  value variable to an internal temporary slot and preserves post-loop
+  lingering-reference behavior,
   private `ArrayEntry` value accessors backed by an explicit
   clone-by-value `ArraySlot` wrapper with an internal `ArraySlotCell` that
   has stable internal identity and shared-handle groundwork while preserving
@@ -819,9 +823,11 @@ Reconciliation into concrete workstreams:
   object-property offset aliases beyond the documented target slices, full
   runtime reference containers, magic reference-return dispatch and broader
   by-reference returns, remaining exact by-reference `foreach` mutation and
-  target fidelity, non-direct `$GLOBALS` reference sources, recursive
-  `$GLOBALS` materialization, ArrayAccess indirect-modification fidelity, and
-  COW tests that compare against PHP.
+  target fidelity for nested lvalue iterables, object/`Traversable` iteration,
+  offset loop variables, reference-returning call iterables, non-direct
+  `$GLOBALS` reference sources, recursive `$GLOBALS` materialization,
+  ArrayAccess indirect-modification fidelity, and COW tests that compare
+  against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact

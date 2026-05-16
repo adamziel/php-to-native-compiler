@@ -299,9 +299,15 @@ a same-key reinsertion in that body does not retarget the value variable until
 a later iteration reaches the reinserted tail entry. After loop completion, the
 value variable remains routed to the last successfully iterated existing slot
 until `unset($value)` detaches it. Empty array iteration creates no lingering
-route. This intentionally avoids claiming full mutation-during-iteration
-fidelity, broad array reordering/replacement semantics, non-direct iterable
-support, object/`Traversable` iteration, destructuring targets,
+route. Temporary array-producing expressions such as array literals and direct
+non-reference-returning function calls use the same direct-slot loop machinery
+after the evaluated array is stored in an internal hidden array slot; this
+preserves loop-body and post-loop value-variable aliasing to the temporary
+without claiming mutation of a source lvalue. This intentionally avoids
+claiming full mutation-during-iteration fidelity, broad array
+reordering/replacement semantics, nested lvalue iterable support such as
+`$items[0]`, reference-returning call iterables, object/`Traversable`
+iteration, destructuring targets,
 array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
 full reference containers, or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for

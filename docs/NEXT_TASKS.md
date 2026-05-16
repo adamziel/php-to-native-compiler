@@ -10506,6 +10506,21 @@ handled.
   sources, source names already routed through array-offset aliases, recursive
   `$GLOBALS` materialization, full PHP reference containers, copy-on-write,
   exact alias rebinding/mutation ordering, or native lowering.
+
+## Milestone 1078: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded by-reference `foreach`
+  temporary-array expression slice. In the current subset,
+  `foreach ([...] as &$value)` and `foreach (function_returning_array() as
+  &$value)` evaluate array literals or direct non-reference-returning function
+  call results, store the temporary array in an internal hidden array slot,
+  route the loop value variable to each active temporary slot during the body,
+  and preserve PHP's post-loop lingering-reference behavior for the last
+  temporary slot. This is not nested lvalue iterable support such as
+  `$items[0]`, reference-returning call iterables, object/`Traversable`
+  iteration, foreach destructuring, array/object/`ArrayAccess` offset loop
+  variables, full PHP reference containers, copy-on-write, exact mutation
+  ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
@@ -10518,7 +10533,7 @@ handled.
 
 - The latest committed checkpoint is
   `aec28701 runtime: add nested globals reference targets`, covering Milestone
-  1077.
+  1077. Milestone 1078 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

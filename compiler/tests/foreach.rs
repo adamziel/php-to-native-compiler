@@ -271,20 +271,84 @@ echo $items[0], "|", $items[1], "|", $items[2], "|", $item;
 }
 
 #[test]
-fn foreach_by_reference_rejects_non_direct_iterables_as_stable_boundary() {
+fn foreach_by_reference_accepts_temporary_array_literals() {
+    let source = r#"<?php
+foreach (["a", "b"] as &$value) {
+    $value = $value . "!";
+    echo $value, "|";
+}
+
+echo "after=", $value, "|";
+$value = "changed";
+echo $value;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "a!|b!|after=b!|changed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_accepts_temporary_function_return_arrays() {
+    let source = r#"<?php
+function items() {
+    return ["x" => 1, "y" => 2];
+}
+
+foreach (items() as $key => &$value) {
+    $value = $value + 10;
+    echo $key, ":", $value, "|";
+}
+
+echo "after=", $value, "|";
+$value = 99;
+echo $value;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "x:11|y:12|after=12|99");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_rejects_nested_lvalue_iterables_as_stable_boundary() {
     let error = runtime_error(
         r#"<?php
-foreach ([1] as &$item) {
+$items = [[1]];
+foreach ($items[0] as &$item) {
     echo $item;
 }
 "#,
     );
 
-    assert_eq!(error.line, 2);
+    assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable or temporary array expression"
+    );
+}
+
+#[test]
+fn foreach_by_reference_rejects_reference_return_iterables_as_stable_boundary() {
+    let error = runtime_error(
+        r#"<?php
+function &items() {
+    static $items = [1];
+    return $items;
+}
+
+foreach (items() as &$item) {
+    echo $item;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable or temporary array expression"
     );
 }
 

@@ -117,6 +117,7 @@ struct Interpreter {
     call_depth: usize,
     next_object_id: i64,
     next_closure_id: i64,
+    next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
@@ -1336,6 +1337,7 @@ impl Interpreter {
             call_depth: 0,
             next_object_id: 1,
             next_closure_id: 1,
+            next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
             class_context: Vec::new(),
@@ -1347,6 +1349,28 @@ impl Interpreter {
         interpreter.initialize_static_property_defaults(program)?;
         interpreter.initialize_instance_property_defaults(program)?;
         Ok(interpreter)
+    }
+
+    fn next_foreach_temporary_array_name(&mut self) -> String {
+        let id = self.next_foreach_temp_id;
+        self.next_foreach_temp_id += 1;
+        format!("\0foreach_ref_temp_{id}")
+    }
+
+    fn is_temporary_by_reference_foreach_iterable(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Array { .. }
+            | Expr::Include { .. }
+            | Expr::Require { .. }
+            | Expr::Cast { .. }
+            | Expr::Ternary { .. }
+            | Expr::ShortTernary { .. } => true,
+            Expr::Call { name, .. } => match self.lookup_direct_function_call(name) {
+                Some(Callable::User(function)) => !function.returns_by_reference,
+                _ => true,
+            },
+            _ => false,
+        }
     }
 
     fn initialize_superglobals(&mut self) {
@@ -1887,12 +1911,27 @@ impl Interpreter {
                 if *by_reference {
                     let array_name = match iterable {
                         Expr::Variable(name, _) => name.clone(),
+                        expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
+                            let value = self.evaluate(expr, scope)?;
+                            let Value::Array(array) = value else {
+                                return Err(runtime_error(
+                                    *span,
+                                    RuntimeError::invalid_foreach(format!(
+                                        "can only iterate arrays in the current subset, got {}",
+                                        value.type_name()
+                                    )),
+                                ));
+                            };
+                            let temp_name = self.next_foreach_temporary_array_name();
+                            scope.write_static(&temp_name, Value::Array(array));
+                            temp_name
+                        }
                         _ => {
                             return Err(runtime_error(
                                 *span,
                                 RuntimeError::unsupported_call(
                                     "foreach",
-                                    "by-reference iteration currently requires a direct array variable",
+                                    "by-reference iteration currently requires a direct array variable or temporary array expression",
                                 ),
                             ));
                         }

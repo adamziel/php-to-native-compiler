@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone747/foreach_by_reference_reached.php:2:1: unsupported call foreach: by-reference iteration currently requires a direct array variable
+runtime error at tests/fixtures/milestone747/foreach_by_reference_reached.php:3:1: unsupported call foreach: by-reference iteration currently requires a direct array variable or temporary array expression
 --- stderr end ---

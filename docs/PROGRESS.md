@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1078, a bounded by-reference `foreach` temporary-array
+  expression slice. In addition to direct array variables, by-reference value
+  forms now execute when the iterable is a temporary array-producing
+  expression such as an array literal or a direct non-reference-returning
+  function call returning an array. The interpreter stores the evaluated
+  temporary array in an internal hidden array slot, routes the loop value
+  variable to each active temporary slot during the body, writes key variables
+  by value, and preserves PHP's post-loop lingering-reference behavior for the
+  last temporary slot until the loop variable is unset or overwritten. This
+  does not claim nested lvalue iterables such as `$items[0]`,
+  reference-returning call iterables, object/`Traversable` iteration, foreach
+  destructuring, array/object/`ArrayAccess` offset loop variables,
+  full reference containers, copy-on-write, broad mutation-ordering fidelity,
+  or native lowering. Verification so far:
+  `cargo test -p phpc --test foreach -- --test-threads=1` and
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1078 --compare-php`.
+
 - Added Milestone 1077, a bounded nested/append string-keyed `$GLOBALS`
   reference-target slice for direct variable sources. Statement-form
   `$GLOBALS["bag"]["slot"] =& $value;` and `$GLOBALS["list"][] =& $value;`

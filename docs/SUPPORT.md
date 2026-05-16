@@ -349,14 +349,19 @@
   are visible through the loop variable. If the active direct array slot is
   unset during the body, the loop variable detaches onto the removed value; a
   same-key reinsertion in that body does not retarget the loop variable until a
-  later iteration reaches the reinserted tail entry. After loop completion the
-  loop variable remains routed to the last successfully iterated existing slot
-  until `unset($value)` detaches it. Empty array iteration creates no lingering
-  reference. This is still not full PHP by-reference iteration: broad array
-  reordering/replacement semantics, full reference containers, copy-on-write,
-  object/Traversable iteration, non-direct iterables, foreach destructuring,
-  array/object/ArrayAccess offset loop variables, nested-offset loop values,
-  and native lowering remain unsupported.
+  later iteration reaches the reinserted tail entry. By-reference value forms
+  also execute over temporary array expressions such as array literals and
+  direct non-reference-returning function calls returning arrays; those route
+  the loop value variable to an internal temporary array slot and preserve
+  PHP's post-loop lingering reference behavior without mutating a source
+  variable. After loop completion the loop variable remains routed to the last
+  successfully iterated existing slot until `unset($value)` detaches it. Empty
+  array iteration creates no lingering reference. This is still not full PHP
+  by-reference iteration: broad array reordering/replacement semantics, full
+  reference containers, copy-on-write, object/Traversable iteration, nested
+  lvalue iterables such as `$items[0]`, reference-returning call iterables,
+  foreach destructuring, array/object/ArrayAccess offset loop variables,
+  nested-offset loop values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T21:10:00Z
+
+- Checkpoint before this task:
+  `eec73b89 docs: record nested globals reference target gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1078, bounded by-reference `foreach`
+  temporary-array expression iteration for array literals and direct
+  non-reference-returning function calls returning arrays.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/foreach.rs`,
+  `tests/fixtures/milestone747/foreach_by_reference_reached.*`,
+  `tests/fixtures/milestone1078/by_reference_foreach_temporary_arrays.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test foreach -- --test-threads=1` passed with 18
+  tests. `cargo run -q -p phpc -- test tests/fixtures/milestone1078
+  --compare-php` passed with 1 fixture and 1 system PHP comparison.
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass --
+  --test-threads=1` and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone747` passed after retargeting the old
+  non-direct-iterable boundary fixture to a nested lvalue iterable.
+- Current frontier: `foreach ([...] as &$value)` and
+  `foreach (function_returning_array() as &$value)` now evaluate array
+  literals or direct non-reference-returning function call results, route the
+  loop value variable through an internal hidden array slot during the body,
+  and preserve PHP's post-loop lingering-reference behavior for the last
+  temporary slot.
+- Remaining semantic gaps: nested lvalue iterables such as `$items[0]`,
+  reference-returning call iterables, object/`Traversable` iteration,
+  foreach destructuring, array/object/`ArrayAccess` offset loop variables,
+  nested-offset loop values,
+  full PHP reference containers, copy-on-write, non-direct `$GLOBALS`
+  reference sources, recursive `$GLOBALS` materialization, array copies that
+  preserve reference-element identity, native lowering, exact mutation
+  ordering, alias rebinding, and by-reference `ArrayAccess::offsetGet()`
+  indirect-modification fidelity remain missing.
+- Next concrete task: finish formatting/checks, checkpoint Milestone 1078,
+  then consider the array-copy-preserves-reference-element COW slice identified
+  by the read-only COW lane.
+
 ## Loop Event 2026-05-16T20:05:00Z
 
 - Checkpoint before this task:
