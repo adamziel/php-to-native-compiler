@@ -8611,17 +8611,28 @@ handled.
   multi-statement execution, pending result queues, result object creation,
   mutation state, connection charset mutation, warnings/errors, host database
   state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi asynchronous or
+- [x] Runtime/mysqli lane: inspect the next MySQLi asynchronous or
   multi-result execution boundary after placeholder `mysqli_multi_query()`
   bookkeeping, such as `mysqli_reap_async_query()`/`mysqli_poll()` visibility
   or a sharper unsupported diagnostic, before claiming broader async,
   multi-result, or host database execution fidelity.
+  Milestone 927 implements bounded deterministic
+  `mysqli_reap_async_query($handle)` support for current placeholder `mysqli`
+  handles. It returns deterministic `false` for no pending async result,
+  rejects unsupported handles with stable diagnostics, and is visible through
+  runtime and native metadata lookup. This is not `MYSQLI_ASYNC`,
+  `mysqli_poll()`, async socket readiness, pending async result queues, result
+  object creation, host database state, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_reap_async_query()` clean no-async-result placeholder through
+  a WordPress-shaped connection method without claiming real async query,
+  `mysqli_poll()`, socket-readiness, or host database execution fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c381e5e runtime: add mysqli multi query placeholder`, covering
-  Milestone 925 before the current Milestone 926 candidate.
+  `993dba7 tests: add wordpress wpdb multi query smoke`, covering
+  Milestone 926 before the current Milestone 927 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

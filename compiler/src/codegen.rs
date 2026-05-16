@@ -6405,6 +6405,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_next_result"
             | "mysqli_store_result"
             | "mysqli_use_result"
+            | "mysqli_reap_async_query"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

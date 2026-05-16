@@ -20,7 +20,8 @@ Status: boundary only.
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
-`mysqli_use_result`, `mysqli_report`, and `mysqli_init` are currently visible
+`mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_report`, and
+`mysqli_init` are currently visible
 through `function_exists()`, `is_callable()`, dynamic string-valued function
 lookup, and native function-table introspection so WordPress' early database
 startup paths can move to the next real bootstrap blocker.
@@ -208,6 +209,11 @@ For the placeholder connection, `mysqli_store_result($handle)` and
 no-pending-result state. They do not transfer buffered or unbuffered result
 sets from the connection, track pending result state, or expose real result
 resources.
+
+`mysqli_reap_async_query($handle)` returns deterministic `false` for the clean
+placeholder connection, meaning no async result is pending. `MYSQLI_ASYNC`,
+`mysqli_poll()`, async socket readiness, pending async result queues, host
+database state, and result object creation are not implemented.
 
 `mysqli_query($handle, 'SELECT ID, post_title FROM wp_posts WHERE ID = 1')`
 returns a placeholder `mysqli_result` object with deterministic interpreter

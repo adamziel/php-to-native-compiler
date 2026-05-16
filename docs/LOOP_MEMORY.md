@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `993dba7 tests: add wordpress wpdb multi query smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 927, bounded deterministic
+  `mysqli_reap_async_query()` clean no-async-result placeholder metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone927/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_reap_async_query -- --test-threads=1`
+  passed with 2 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone927`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi async-result metadata now has
+  a clean `mysqli_reap_async_query()` boundary for no pending async result.
+- Remaining semantic gaps: `MYSQLI_ASYNC`, `mysqli_poll()`, async socket
+  readiness, pending async result queues, result object creation,
+  warnings/errors, host database state, and native database lowering remain
+  missing.
+- Next concrete task: run the full MySQLi extension test, then the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, add a synthetic
+  WordPress-shaped `wpdb` clean async-result smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `c381e5e runtime: add mysqli multi query placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 926, a synthetic WordPress-shaped `wpdb`

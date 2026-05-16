@@ -1535,6 +1535,28 @@ echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
 }
 
 #[test]
+fn mysqli_reap_async_query_returns_current_clean_placeholder_state() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_reap_async_query";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_reap_async_query($handle) === false ? "no-async" : "async";
+echo "|";
+echo $call($handle) === false ? "dynamic" : "async";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|no-async|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_returns_current_empty_result_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -2068,6 +2090,24 @@ mysqli_multi_query(mysqli_init(), "UPDATE wp_options SET option_value = '1' WHER
 }
 
 #[test]
+fn mysqli_reap_async_query_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_reap_async_query("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_reap_async_query(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
 fn mysqli_select_db_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -2400,6 +2440,8 @@ echo function_exists("mysqli_store_result") ? "1" : "0";
 echo is_callable("mysqli_store_result") ? "1" : "0";
 echo function_exists("mysqli_use_result") ? "1" : "0";
 echo is_callable("mysqli_use_result") ? "1" : "0";
+echo function_exists("mysqli_reap_async_query") ? "1" : "0";
+echo is_callable("mysqli_reap_async_query") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -2423,7 +2465,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 125, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 127, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2875,6 +2917,18 @@ mysqli_use_result(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_ping(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_reap_async_query(mysqli_init());
 "#,
     )
     .unwrap_err();

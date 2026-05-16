@@ -1494,6 +1494,10 @@ historical blockers and remaining full-support gaps include:
   synthetic WordPress-shaped `wpdb` connection query bookkeeping smoke without
   claiming real multi-statement execution, pending result queues, result object
   creation, mutation state, connection charset mutation, host database state,
+  warning/error fidelity, or native database lowering. Milestone 927 adds
+  deterministic `mysqli_reap_async_query()` clean no-async-result placeholder
+  metadata without `MYSQLI_ASYNC`, `mysqli_poll()`, async socket readiness,
+  pending async result queues, result object creation, host database state,
   warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;

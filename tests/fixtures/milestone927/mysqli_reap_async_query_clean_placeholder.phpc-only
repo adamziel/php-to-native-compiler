@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic clean placeholder
+`mysqli_reap_async_query()` boundary after placeholder MySQLi setup. System PHP
+needs a real mysqli connection and async query state; phpc only reports that no
+async result is pending and does not model `MYSQLI_ASYNC`, `mysqli_poll()`,
+pending async result queues, host socket state, or real query execution.

@@ -5222,6 +5222,12 @@ impl Interpreter {
         Ok(Value::Bool(false))
     }
 
+    fn call_mysqli_reap_async_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_reap_async_query", args, 1, span)?;
+        expect_mysqli_handle("mysqli_reap_async_query()", &args[0], span)?;
+        Ok(Value::Bool(false))
+    }
+
     fn mysqli_result_state(
         &self,
         function: &str,
@@ -9646,6 +9652,7 @@ impl Interpreter {
             "mysqli_next_result" => self.call_mysqli_next_result(&args, span),
             "mysqli_store_result" => self.call_mysqli_store_result(&args, span),
             "mysqli_use_result" => self.call_mysqli_use_result(&args, span),
+            "mysqli_reap_async_query" => self.call_mysqli_reap_async_query(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -12608,6 +12615,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_next_result"
             | "mysqli_store_result"
             | "mysqli_use_result"
+            | "mysqli_reap_async_query"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 927, bounded `mysqli_reap_async_query()` support for
+  deterministic clean placeholder MySQLi async-result metadata. The runtime
+  accepts current placeholder `mysqli` handles, returns deterministic `false`
+  for no pending async result, rejects non-`mysqli` handles with a stable
+  diagnostic, and exposes the name through runtime and native metadata lookup.
+  This is not `MYSQLI_ASYNC`, `mysqli_poll()`, async socket readiness, pending
+  async result queues, result object creation, host database state, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_reap_async_query -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone927`.
+
 - Added Milestone 926, a synthetic WordPress-shaped `wpdb` connection query
   bookkeeping smoke that calls bounded
   `mysqli_multi_query($this->dbh, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'")`,
