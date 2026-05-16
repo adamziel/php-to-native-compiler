@@ -1178,7 +1178,12 @@ historical blockers and remaining full-support gaps include:
   probes such as `SHOW FULL COLUMNS FROM ...` and `DESCRIBE ...`. This is not
   arbitrary lvalue support, magic property/ArrayAccess behavior,
   references/copy-on-write, broad SQL parsing, result resources, row fetching,
-  database contents, exact warnings/errors, or native lowering. The real
+  database contents, exact warnings/errors, or native lowering.
+  Milestone 1006 later changes those exact options-table and metadata read
+  placeholders from `false` boundaries into PHP-shaped empty `mysqli_result`
+  objects with zero rows. This is still not host-backed query execution, real
+  table/schema reads, field metadata, warning/error fidelity, mutation SQL,
+  mysqlnd behavior, native lowering, or WordPress support. The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
   Milestone 833 implements bounded dynamic static-receiver property reads and

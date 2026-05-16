@@ -1,6 +1,6 @@
 exit: 0
 stdout:
-autoload-empty|fallback-empty|0|clean
+mysqli_result|0|fallback-result|0|clean
 --- stdout end ---
 stderr:
 --- stderr end ---

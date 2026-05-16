@@ -982,7 +982,12 @@ regexes plus the reached empty option-name cache-priming and single-option
 MySQLi reads. Milestone 832 covers the reached direct nested array-offset and
 direct object-property array-offset `empty(...)` paths plus deterministic empty
 MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
-`DESCRIBE ...`. Milestone 833 covers the reached dynamic static-receiver
+`DESCRIBE ...`. Milestone 1006 later changes those exact options-table and
+metadata read placeholders from `false` boundaries into PHP-shaped empty
+`mysqli_result` objects with zero rows, while still avoiding any claim of host
+database execution, real table/schema reads, field metadata, warning/error
+fidelity, mutation SQL, mysqlnd behavior, or native lowering. Milestone 833
+covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
 writes. Milestone 834 seeds the deterministic CLI

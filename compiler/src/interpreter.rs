@@ -5664,7 +5664,7 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
-        if is_wordpress_empty_result_query(query) {
+        if is_wordpress_empty_result_query(query) || is_wordpress_empty_options_query(query) {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
@@ -5682,7 +5682,7 @@ impl Interpreter {
             );
         }
 
-        if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
+        if query == "SELECT @@SESSION.sql_mode" {
             return Ok(Value::Bool(false));
         }
 

@@ -2469,7 +2469,9 @@ $primed = mysqli_query($handle, "SELECT option_name, option_value FROM wp_option
 $single = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
 $columns = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_options`");
 $describe = mysqli_query($handle, "DESCRIBE wp_users;");
-echo $autoload === false ? "autoload-empty" : "autoload-result";
+echo get_class($autoload);
+echo "|";
+echo mysqli_num_rows($autoload);
 echo "|";
 echo $fallback === false ? "fallback-empty" : "fallback-result";
 echo "|";
@@ -2481,6 +2483,7 @@ echo $columns === false ? "columns-empty" : "columns-result";
 echo "|";
 echo $describe === false ? "describe-empty" : "describe-result";
 echo "|";
+mysqli_free_result($autoload);
 echo mysqli_errno($handle);
 echo "|";
 echo mysqli_error($handle);
@@ -2496,7 +2499,7 @@ echo $error($handle) === "" ? "clean" : "dirty";
 
     assert_eq!(
         execution.stdout,
-        "autoload-empty|fallback-empty|prime-empty|single-empty|columns-empty|describe-empty|0||0|clean"
+        "mysqli_result|0|fallback-result|prime-result|single-result|columns-result|describe-result|0||0|clean"
     );
     assert_eq!(execution.exit_code, 0);
 }

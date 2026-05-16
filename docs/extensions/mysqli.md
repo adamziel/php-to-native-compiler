@@ -475,6 +475,13 @@ connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
 return `false`. This does not execute SQL, store rows, expose real field
 metadata, or model real result resources.
 
+The reached WordPress options-table and metadata read shapes also return
+deterministic empty `mysqli_result` placeholders through `mysqli_query()`:
+autoload/all-options reads, option-name priming reads, single-option reads,
+`SHOW FULL COLUMNS ...`, and `DESCRIBE ...`. These placeholders report zero
+rows and zero fields. They do not read a host database, inspect schema
+metadata, hydrate option rows, or model warning/error fidelity.
+
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean
 no-pending-result state, or transfer the current deterministic

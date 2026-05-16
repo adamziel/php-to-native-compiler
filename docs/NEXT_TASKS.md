@@ -9601,6 +9601,20 @@ handled.
   by-reference parameter aliasing during execution, source/target rebinding
   beyond direct names, full PHP reference containers, copy-on-write, or native
   lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as existing empty
+  WordPress option/metadata query semantics, result-mode arguments, real
+  reference aliasing around bound parameters/results, broader escaping charset
+  fidelity, mutation SQL state, transaction state, host-backed query
+  execution, or the next real database integration gap, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
+  Milestone 1006 makes direct `mysqli_query()` return deterministic empty
+  `mysqli_result` placeholders for the exact reached WordPress options-table
+  and metadata read shapes instead of returning `false`. The SQL-mode probe
+  remains a false no-result boundary. This is not host-backed query execution,
+  real table/schema reads, real field metadata, warning/error fidelity,
+  mutation SQL, mysqlnd behavior, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9612,8 +9626,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2d36be82 runtime: add pdo constants boundary`, covering Milestone 1004
-  before the current Milestone 1005 candidate.
+  `b95e24f6 runtime: add direct reference cells`, covering Milestone 1005
+  before the current Milestone 1006 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

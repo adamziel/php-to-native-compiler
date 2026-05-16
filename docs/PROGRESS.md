@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1006, PHP-shaped empty `mysqli_result` placeholders for
+  exact WordPress options-table and metadata reads through direct
+  `mysqli_query()`. The same known empty-result machinery already used by
+  `mysqli_real_query()`/pending-result paths now applies to
+  `mysqli_query($handle, "SELECT option_name, option_value FROM wp_options ...")`,
+  the reached option-name/single-option reads, `SHOW FULL COLUMNS ...`, and
+  `DESCRIBE ...`, returning placeholder `mysqli_result` objects with zero rows
+  instead of `false`. The exact `SELECT @@SESSION.sql_mode` probe remains the
+  current false no-result boundary, and broad SQL execution remains
+  unsupported. This is not host-backed query execution, real table/schema
+  reads, real field metadata, warning/error fidelity, mutation SQL, mysqlnd
+  behavior, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_accepts_current_wordpress_options_empty_result_placeholders -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone830`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone831`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone832`.
+
 - Added Milestone 1005, bounded direct variable-to-variable reference cells
   for statement-form by-reference assignment. The interpreter symbol table now
   stores variables as mutable cells, and `$alias =& $value;` binds both direct

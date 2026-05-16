@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b95e24f6 runtime: add direct reference cells`, pushed to `origin/master`.
+- Task attempted: Milestone 1006, direct `mysqli_query()` now returns
+  deterministic empty `mysqli_result` placeholders for exact reached
+  WordPress options-table and metadata read shapes instead of `false`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone830/wordpress_mysqli_options_empty_result.*`,
+  `tests/fixtures/milestone831/wordpress_options_prime_empty_result.*`,
+  `tests/fixtures/milestone832/wordpress_show_columns_empty_result.*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_accepts_current_wordpress_options_empty_result_placeholders -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone830`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone831`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone832`
+  passed. The DB fixtures remain `phpc-only` where host PHP would require a
+  real MySQL connection; non-DB fixtures in those directories still compare.
+- Current WordPress frontier: WordPress-shaped empty options and metadata
+  reads now get a PHP-shaped result object lifecycle instead of `false`.
+- Remaining semantic gaps: host-backed query execution, real table/schema
+  reads, real field metadata, warning/error fidelity, mutation SQL, mysqlnd
+  behavior, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `2d36be82 runtime: add pdo constants boundary`, pushed to `origin/master`.
 - Task attempted: Milestone 1005, bounded direct variable-to-variable
   reference cells for statement-form by-reference assignment.

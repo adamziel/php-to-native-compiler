@@ -1,6 +1,6 @@
 exit: 0
 stdout:
-prime-empty|single-empty|0|clean
+mysqli_result|0|single-result|0|clean
 --- stdout end ---
 stderr:
 --- stderr end ---

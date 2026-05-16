@@ -1175,8 +1175,9 @@
   empty option-cache reads using `WHERE option_name IN (...)` and
   `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
   plus reached empty WordPress metadata probes `SHOW FULL COLUMNS FROM ...`
-  and `DESCRIBE ...`, returning deterministic empty boundaries without
-  executing SQL. For the exact synthetic empty result query
+  and `DESCRIBE ...`, returning deterministic empty `mysqli_result`
+  placeholders with zero rows and zero fields without executing SQL. For the
+  exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
   `mysqli_num_rows($result)` returns `0`,
