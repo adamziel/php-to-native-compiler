@@ -246,6 +246,33 @@ echo $kill($handle, 99) ? "unexpected-thread" : "no-thread";
 }
 
 #[test]
+fn mysqli_change_user_accepts_current_placeholder_shape() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_change_user";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_change_user($handle, "user", "pass", "wordpress") ? "changed" : "failed";
+echo "|";
+echo $call($handle, "user", "pass", null) ? "changed-null-db" : "failed";
+echo "|";
+echo mysqli_ping($handle) ? "still-open" : "closed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|changed|changed-null-db|still-open"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_connection_stats_return_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -927,6 +954,69 @@ mysqli_get_connection_stats("not-a-handle");
     assert_eq!(
         bad_handle.message,
         "unsupported call mysqli_get_connection_stats(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_change_user_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_change_user("not-a-handle", "user", "pass", "wordpress");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_change_user(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_username = run_source(
+        r#"<?php
+mysqli_change_user(mysqli_init(), 1, "pass", "wordpress");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_username.phase, Phase::Runtime);
+    assert_eq!(bad_username.line, 2);
+    assert_eq!(bad_username.column, 1);
+    assert_eq!(
+        bad_username.message,
+        "unsupported call mysqli_change_user(): username argument must be string in the current subset, got int"
+    );
+
+    let bad_password = run_source(
+        r#"<?php
+mysqli_change_user(mysqli_init(), "user", null, "wordpress");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_password.phase, Phase::Runtime);
+    assert_eq!(bad_password.line, 2);
+    assert_eq!(bad_password.column, 1);
+    assert_eq!(
+        bad_password.message,
+        "unsupported call mysqli_change_user(): password argument must be string in the current subset, got null"
+    );
+
+    let bad_database = run_source(
+        r#"<?php
+mysqli_change_user(mysqli_init(), "user", "pass", false);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_database.phase, Phase::Runtime);
+    assert_eq!(bad_database.line, 2);
+    assert_eq!(bad_database.column, 1);
+    assert_eq!(
+        bad_database.message,
+        "unsupported call mysqli_change_user(): database argument must be string or null in the current subset, got bool"
     );
 }
 
@@ -1931,6 +2021,8 @@ echo function_exists("mysqli_thread_id") ? "1" : "0";
 echo is_callable("mysqli_thread_id") ? "1" : "0";
 echo function_exists("mysqli_kill") ? "1" : "0";
 echo is_callable("mysqli_kill") ? "1" : "0";
+echo function_exists("mysqli_change_user") ? "1" : "0";
+echo is_callable("mysqli_change_user") ? "1" : "0";
 echo function_exists("mysqli_get_charset") ? "1" : "0";
 echo is_callable("mysqli_get_charset") ? "1" : "0";
 echo function_exists("mysqli_character_set_name") ? "1" : "0";
@@ -2022,7 +2114,7 @@ echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 107, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 109, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2210,6 +2302,18 @@ mysqli_thread_id(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_kill(mysqli_init(), 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_change_user(mysqli_init(), "user", "pass", "wordpress");
 "#,
     )
     .unwrap_err();

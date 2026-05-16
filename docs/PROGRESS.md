@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 919, bounded `mysqli_change_user()` support for
+  deterministic placeholder MySQLi connection lifecycle metadata. The runtime
+  accepts current placeholder `mysqli` handles, string username/password
+  values, and a string or null database, returns deterministic `true`, rejects
+  unsupported handles, credentials, and database values with stable
+  diagnostics, and exposes the name through runtime and native metadata lookup.
+  This is not real authentication, database selection, server session reset,
+  transaction rollback, temporary-table cleanup, locked-table cleanup, host
+  database state, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_change_user -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone919`.
+
 - Added Milestone 918, a synthetic WordPress-shaped `wpdb` connection
   thread-lifecycle bookkeeping smoke that calls bounded
   `mysqli_thread_id($this->dbh)`, `mysqli_kill($this->dbh, $thread_id)`,

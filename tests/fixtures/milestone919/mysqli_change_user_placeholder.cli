@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone919/mysqli_change_user_placeholder.php
+yes
+callable
+changed
+changed-null-db
+still-open

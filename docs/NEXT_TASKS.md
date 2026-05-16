@@ -8514,16 +8514,29 @@ handled.
   connection remains open. It is not real server-thread killing, connection
   invalidation, reconnect behavior, warnings/errors, host database state, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi connection lifecycle or
+- [x] Runtime/mysqli lane: inspect the next MySQLi connection lifecycle or
   metadata boundary after placeholder thread-kill bookkeeping, such as
   `mysqli_refresh()`/`mysqli_change_user()` or a sharper unsupported
   diagnostic, before claiming broader connection lifecycle fidelity.
+  Milestone 919 implements bounded deterministic
+  `mysqli_change_user($handle, $username, $password, $database)` support for
+  current placeholder `mysqli` handles, string credentials, and string or null
+  database names. It returns deterministic `true`, rejects unsupported
+  handles/credentials/database values with stable diagnostics, and is visible
+  through runtime and native metadata lookup. This is not real authentication,
+  database selection, server session reset, transaction rollback,
+  temporary-table cleanup, locked-table cleanup, host database state,
+  warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_change_user()` placeholder through a WordPress-shaped
+  connection user/database lifecycle method without claiming real
+  authentication, selected-database, or session-reset fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8ee1a24 runtime: add mysqli kill placeholder`, covering Milestone 917
-  before the current Milestone 918 candidate.
+  `f919abc tests: add wordpress wpdb thread kill smoke`, covering Milestone
+  918 before the current Milestone 919 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

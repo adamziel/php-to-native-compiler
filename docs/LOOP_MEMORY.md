@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `f919abc tests: add wordpress wpdb thread kill smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 919, bounded deterministic
+  `mysqli_change_user()` placeholder user/database-change metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone919/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_change_user -- --test-threads=1`
+  passed with 2 tests,
+  full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed with 57 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone919`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi connection lifecycle metadata
+  is being extended from thread-id kill acceptance to user/database-change
+  acceptance.
+- Remaining semantic gaps: real authentication, database selection, server
+  session reset, transaction rollback, temporary-table cleanup,
+  locked-table cleanup, warnings/errors, host database state, SQL execution,
+  and native database lowering remain missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, add a synthetic WordPress-shaped
+  `wpdb` user/database lifecycle smoke for `mysqli_change_user()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `8ee1a24 runtime: add mysqli kill placeholder`, pushed to `origin/master`.
 - Task attempted: Milestone 918, a synthetic WordPress-shaped `wpdb`
   connection thread-lifecycle bookkeeping smoke over deterministic

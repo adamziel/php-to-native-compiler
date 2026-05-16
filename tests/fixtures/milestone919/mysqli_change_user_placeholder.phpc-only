@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_change_user()` connection lifecycle boundary after placeholder MySQLi
+setup. System PHP needs a real mysqli connection and host authentication
+state; phpc only accepts string credentials plus a string or null database and
+leaves the placeholder connection open without authenticating or resetting
+server session state.

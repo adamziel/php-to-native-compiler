@@ -5,7 +5,8 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-`mysqli_kill`, `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_stat`,
+`mysqli_kill`, `mysqli_change_user`, `mysqli_get_charset`,
+`mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
@@ -75,6 +76,12 @@ integer process id, returning `true` only for the deterministic placeholder
 thread id `1` and `false` for other ids. It does not kill a host server
 thread, invalidate or reconnect the placeholder connection, emit warnings, or
 touch database state.
+
+`mysqli_change_user($handle, $username, $password, $database)` accepts the
+placeholder object, string credentials, and a string or null database, returning
+deterministic `true`. It does not authenticate, select a real database, reset
+server session state, roll back transactions, close temporary tables, unlock
+tables, or mutate host connection state.
 
 `mysqli_get_charset($handle)` accepts the placeholder object and returns a
 deterministic `stdClass`-shaped metadata object for the current utf8mb4

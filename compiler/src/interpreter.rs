@@ -4261,6 +4261,48 @@ impl Interpreter {
         Ok(Value::Bool(process_id == 1))
     }
 
+    fn call_mysqli_change_user(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_change_user", args, 4, span)?;
+        expect_mysqli_handle("mysqli_change_user()", &args[0], span)?;
+        let Value::String(_) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_change_user()",
+                    format!(
+                        "username argument must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        let Value::String(_) = &args[2] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_change_user()",
+                    format!(
+                        "password argument must be string in the current subset, got {}",
+                        args[2].type_name()
+                    ),
+                ),
+            ));
+        };
+        match &args[3] {
+            Value::Null | Value::String(_) => Ok(Value::Bool(true)),
+            value => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_change_user()",
+                    format!(
+                        "database argument must be string or null in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_mysqli_get_charset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_charset", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_charset()", &args[0], span)?;
@@ -9400,6 +9442,7 @@ impl Interpreter {
             "mysqli_get_proto_info" => self.call_mysqli_get_proto_info(&args, span),
             "mysqli_thread_id" => self.call_mysqli_thread_id(&args, span),
             "mysqli_kill" => self.call_mysqli_kill(&args, span),
+            "mysqli_change_user" => self.call_mysqli_change_user(&args, span),
             "mysqli_get_charset" => self.call_mysqli_get_charset(&args, span),
             "mysqli_character_set_name" => self.call_mysqli_character_set_name(&args, span),
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
@@ -12358,6 +12401,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_proto_info"
             | "mysqli_thread_id"
             | "mysqli_kill"
+            | "mysqli_change_user"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"
