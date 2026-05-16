@@ -1249,7 +1249,13 @@ read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while
 leaving nested/mixed object-property/ArrayAccess paths, compound assignment,
 increment/decrement, iteration, built-in interface enforcement/signature
 validation, typed method invocation, references/copy-on-write, exact
-diagnostics, and native lowering explicit gaps. Milestone 1015 extends
+diagnostics, and native lowering explicit gaps. Milestone 1020 adds bounded
+direct object-property `ArrayAccess` dispatch when a visible property value is
+an `ArrayAccess` object, covering single-key read/write, `isset`, `empty`,
+`??`, and `unset` while leaving nested chains, append offsets, compound
+assignment, increment/decrement, magic-property containers, iteration,
+by-reference `offsetGet()` mutation, protocol enforcement, exact diagnostics,
+references/copy-on-write, and native lowering explicit gaps. Milestone 1015 extends
 direct object-offset `ArrayAccess` to compound assignment by calling
 `offsetGet($key)`, applying the current compound operator helper, and writing
 back with `offsetSet($key, $value)`, while leaving nested/mixed

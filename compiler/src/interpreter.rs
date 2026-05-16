@@ -1903,6 +1903,20 @@ impl Interpreter {
                     )
                     .map_err(|error| runtime_error(span, error))
             }
+            Value::Object(object)
+                if keys.len() == 1
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.call_array_access_method(
+                    object.clone(),
+                    "offsetUnset",
+                    vec![Self::array_key_value(Some(keys[0].clone()))],
+                    span,
+                )?;
+                Ok(())
+            }
             Value::Null => Ok(()),
             other => Err(runtime_error(
                 span,
@@ -3060,6 +3074,27 @@ impl Interpreter {
 
         if matches!(slot, Value::Null) {
             slot = Value::Array(PhpArray::new());
+        }
+
+        if let Value::Object(object) = slot {
+            if keys.len() == 1
+                && self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess")
+            {
+                self.call_array_access_method(
+                    object,
+                    "offsetSet",
+                    vec![Self::array_key_value(Some(keys[0].clone())), value],
+                    span,
+                )?;
+                return Ok(());
+            }
+
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot write offset on object".to_string()),
+            ));
         }
 
         match &mut slot {
@@ -6845,40 +6880,95 @@ impl Interpreter {
         index: &Expr,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
-        let Expr::Variable(name, _) = target else {
-            return Err(runtime_error(
-                target.span(),
-                    RuntimeError::unsupported_call(
-                        "??",
-                        "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
-                ),
-            ));
-        };
-
-        let key = self.evaluate_array_key(index, scope)?;
-        match scope.read_named(name) {
-            Some(Value::Array(array)) => Ok(array
-                .get(key)
-                .cloned()
-                .filter(|value| !matches!(value, Value::Null))),
-            Some(Value::Object(object))
-                if self
-                    .classes
-                    .implements_interface(object.class_id(), "ArrayAccess") =>
-            {
-                if !self.array_access_offset_exists(object.clone(), key.clone(), index.span())? {
-                    return Ok(None);
+        if let Expr::Variable(name, _) = target {
+            let key = self.evaluate_array_key(index, scope)?;
+            return match scope.read_named(name) {
+                Some(Value::Array(array)) => Ok(array
+                    .get(key)
+                    .cloned()
+                    .filter(|value| !matches!(value, Value::Null))),
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    if !self.array_access_offset_exists(
+                        object.clone(),
+                        key.clone(),
+                        index.span(),
+                    )? {
+                        return Ok(None);
+                    }
+                    Ok(Some(self.call_array_access_method(
+                        object,
+                        "offsetGet",
+                        vec![Self::array_key_value(Some(key))],
+                        index.span(),
+                    )?)
+                    .filter(|value| !matches!(value, Value::Null)))
                 }
-                Ok(Some(self.call_array_access_method(
-                    object,
-                    "offsetGet",
-                    vec![Self::array_key_value(Some(key))],
-                    index.span(),
-                )?)
-                .filter(|value| !matches!(value, Value::Null)))
-            }
-            Some(_) | None => Ok(None),
+                Some(_) | None => Ok(None),
+            };
         }
+
+        if let Some((object_name, property, indices)) =
+            Self::collect_direct_object_property_array_index_path(target, index)
+        {
+            let mut keys = Vec::with_capacity(indices.len());
+            for index in indices {
+                keys.push(self.evaluate_array_key(index, scope)?);
+            }
+
+            let Some(Value::Object(object)) = scope.read_named(object_name) else {
+                return Ok(None);
+            };
+
+            let (current_class_id, protected_class_ids) = self.current_property_access_context();
+            let Some(value) = object
+                .read_property_for_isset_from_context(
+                    property,
+                    current_class_id,
+                    &protected_class_ids,
+                )
+                .map_err(|error| runtime_error(target.span(), error))?
+            else {
+                return Ok(None);
+            };
+
+            return match value {
+                Value::Object(object)
+                    if keys.len() == 1
+                        && self
+                            .classes
+                            .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    if !self.array_access_offset_exists(
+                        object.clone(),
+                        keys[0].clone(),
+                        index.span(),
+                    )? {
+                        return Ok(None);
+                    }
+                    Ok(Some(self.call_array_access_method(
+                        object,
+                        "offsetGet",
+                        vec![Self::array_key_value(Some(keys[0].clone()))],
+                        index.span(),
+                    )?)
+                    .filter(|value| !matches!(value, Value::Null)))
+                }
+                value => Ok(Self::array_path_value(&value, &keys)
+                    .filter(|value| !matches!(value, Value::Null))),
+            };
+        }
+
+        Err(runtime_error(
+            target.span(),
+            RuntimeError::unsupported_call(
+                "??",
+                "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
+            ),
+        ))
     }
 
     fn evaluate_direct_object_property_for_null_coalescing(
@@ -13768,6 +13858,14 @@ impl Interpreter {
             .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(target.span(), error))?
         {
+            Some(Value::Object(object))
+                if keys.len() == 1
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.array_access_offset_exists(object, keys[0].clone(), target.span())
+            }
             Some(value) => Ok(Self::array_path_isset(&value, &keys)),
             None => Ok(false),
         }
@@ -13906,6 +14004,19 @@ impl Interpreter {
         !matches!(current, Value::Null)
     }
 
+    fn array_path_value(value: &Value, keys: &[ArrayKey]) -> Option<Value> {
+        let mut current = value;
+
+        for key in keys {
+            let Value::Array(array) = current else {
+                return None;
+            };
+            current = array.get(key.clone())?;
+        }
+
+        Some(current.clone())
+    }
+
     fn array_path_empty(value: &Value, keys: &[ArrayKey]) -> bool {
         let mut current = value;
 
@@ -14032,6 +14143,14 @@ impl Interpreter {
             .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(target.span(), error))?
         {
+            Some(Value::Object(object))
+                if keys.len() == 1
+                    && self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                self.is_array_access_offset_empty(object, keys[0].clone(), target.span())
+            }
             Some(value) => Ok(Self::array_path_empty(&value, &keys)),
             None => Ok(true),
         }

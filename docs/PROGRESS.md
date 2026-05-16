@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1020, bounded direct object-property `ArrayAccess` offset
+  dispatch when the visible property value is itself an object whose metadata
+  records `implements ArrayAccess`. Direct `$holder->bag[$key]` reads already
+  use the general expression path; direct writes now call
+  `offsetSet($key, $value)`, direct `isset(...)` and `??` call
+  `offsetExists($key)` and fetch through `offsetGet($key)` only when needed,
+  direct `empty(...)` calls `offsetExists($key)` and then `offsetGet($key)`
+  for present offsets, and direct `unset(...)` calls `offsetUnset($key)`. This
+  is not nested `ArrayAccess` chains, append offsets, compound assignment,
+  increment/decrement, magic-property-provided containers, ArrayAccess
+  iteration, by-reference `offsetGet()` mutation, protocol/signature
+  enforcement, exact diagnostics, references/copy-on-write, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test object_model object_property_array_access -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1020`.
+
 - Added Milestone 1019, a bounded core interface catalog for the internal
   interface names already reached by WordPress-shaped object metadata:
   `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`,

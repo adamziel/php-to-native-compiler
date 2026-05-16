@@ -120,11 +120,15 @@
   call `offsetExists($key)` and fetch with `offsetGet($key)` only when needed,
   direct `empty($object[$key])` calls `offsetExists($key)` then `offsetGet`
   for present offsets, and direct `unset($object[$key])` calls
-  `offsetUnset($key)`. Nested/mixed object-property/ArrayAccess paths,
-  append compound assignment, ArrayAccess iteration, built-in interface
-  enforcement/signature validation, typed method
-  invocation, references/copy-on-write, exact warning/visibility diagnostics,
-  and native lowering remain unsupported. Direct `$object[$key] op= expr`
+  `offsetUnset($key)`. The same direct single-key read/write/`isset`/`empty`/
+  `??`/`unset` dispatch is supported when a visible direct object property
+  holds an `ArrayAccess` object, such as `$holder->bag[$key]`. Nested
+  `ArrayAccess` chains, append offsets through object-property `ArrayAccess`,
+  compound assignment and increment/decrement through object-property
+  `ArrayAccess`, ArrayAccess iteration, built-in interface enforcement/
+  signature validation, typed method invocation, references/copy-on-write,
+  exact warning/visibility diagnostics, and native lowering remain
+  unsupported. Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back
   through `offsetSet($key, $value)`. Direct `++$object[$key]`,

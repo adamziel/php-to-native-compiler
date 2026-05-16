@@ -70,9 +70,11 @@ the current no-reference/no-copy-on-write model. Direct object-property
 array-offset compound assignment reuses the object-property root plus evaluated
 index path for the current read-modify-write slice. Direct object-property
 array-offset `isset(...)` reuses the same visible property plus evaluated index
-path for the current presence-check slice. Mixed
-object/property/ArrayAccess paths and other nested read-modify-write forms
-remain explicit boundaries.
+path for the current presence-check slice. A visible direct object property
+whose value is an `ArrayAccess` object can dispatch single-key read/write,
+`isset`, `empty`, `??`, and `unset` operations through that contained object;
+deeper mixed object/property/ArrayAccess chains and other nested
+read-modify-write forms remain explicit boundaries.
 Unset targets follow the same conservative pattern: direct variables,
 direct/nested array offsets, selected static-property diagnostics, and
 direct-object-property nested array offsets have explicit targets, while plain
@@ -200,8 +202,8 @@ copy-on-write.
   semantics, magic methods beyond the current direct missing-property
   `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
   direct object-to-string `__toString` including current interpolation,
-  bounded core interface metadata, and direct `ArrayAccess` offset and
-  compound-assignment/increment-decrement slices,
+  bounded core interface metadata, and direct/property-held `ArrayAccess`
+  offset and compound-assignment/increment-decrement slices,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, exact nested declaration timing, and

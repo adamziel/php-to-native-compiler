@@ -401,7 +401,9 @@ method names, dynamic property-name forms beyond existing public slots and
 property assignment targets other than a direct variable, object comparisons,
 object callables, ArrayAccess beyond current direct object-offset
 read/write/append/isset/empty/`??`/unset, compound-assignment, and
-integer/float increment/decrement forms,
+integer/float increment/decrement forms plus the current direct
+object-property `ArrayAccess` single-key read/write/isset/empty/`??`/unset
+slice,
 non-public property `isset` operands outside the current private/protected
 method context, complex object-property `isset` operands, dynamic
 property-name `empty` operands, non-public property

@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `01196b87 runtime: add core interface catalog`, pushed to `origin/master`.
+- Task attempted: Milestone 1020, bounded direct object-property
+  `ArrayAccess` offset dispatch when a visible property value is itself an
+  `ArrayAccess` object.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1020/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model object_property_array_access -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1020`
+  passed after formatting the touched Rust code.
+- Current WordPress frontier: direct visible property-held `ArrayAccess`
+  objects now support single-key read/write, `isset`, `empty`, `??`, and
+  `unset` dispatch through the contained object's offset methods instead of
+  treating the property value as a plain array-only container.
+- Remaining semantic gaps: nested `ArrayAccess` chains, append offsets,
+  compound assignment, increment/decrement, magic-property-provided
+  containers, ArrayAccess iteration, by-reference `offsetGet()` mutation,
+  protocol/signature enforcement, exact diagnostics, references/
+  copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `226001af runtime: add stringable metadata`, pushed to `origin/master`.
 - Task attempted: Milestone 1019, bounded core interface catalog for internal
   interface names already reached by WordPress-shaped object metadata.

@@ -1,0 +1,18 @@
+exit: 0
+stdout:
+set:name:Ada
+get:name
+Ada
+exists:name
+isset
+exists:name
+get:name
+not-empty
+exists:missing
+fallback
+unset:name
+exists:name
+missing
+--- stdout end ---
+stderr:
+--- stderr end ---

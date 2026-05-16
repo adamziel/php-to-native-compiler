@@ -1358,6 +1358,60 @@ echo $bag["n"];
 }
 
 #[test]
+fn object_property_array_access_offsets_dispatch_to_user_methods() {
+    let source = r#"<?php
+class Bag implements ArrayAccess {
+    public $items = [];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        echo "exists:$offset\n";
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        echo "get:$offset\n";
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:$offset:$value\n";
+        $this->items[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        echo "unset:$offset\n";
+        unset($this->items[$offset]);
+    }
+}
+
+class Holder {
+    public $bag;
+}
+
+$holder = new Holder();
+$holder->bag = new Bag();
+$holder->bag["name"] = "Ada";
+echo $holder->bag["name"], "\n";
+echo isset($holder->bag["name"]) ? "isset\n" : "missing\n";
+echo empty($holder->bag["name"]) ? "empty\n" : "not-empty\n";
+echo $holder->bag["missing"] ?? "fallback", "\n";
+unset($holder->bag["name"]);
+echo isset($holder->bag["name"]) ? "isset" : "missing";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "set:name:Ada\nget:name\nAda\nexists:name\nisset\nexists:name\nget:name\nnot-empty\nexists:missing\nfallback\nunset:name\nexists:name\nmissing"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

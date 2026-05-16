@@ -1,0 +1,13 @@
+set:name:Ada
+get:name
+Ada
+exists:name
+isset
+exists:name
+get:name
+not-empty
+exists:missing
+fallback
+unset:name
+exists:name
+missing
