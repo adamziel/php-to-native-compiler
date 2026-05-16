@@ -592,11 +592,23 @@ impl PhpArray {
     }
 
     pub fn get(&self, key: impl Into<ArrayKey>) -> Option<&Value> {
+        self.get_slot(key).map(ArraySlot::value)
+    }
+
+    pub fn get_slot(&self, key: impl Into<ArrayKey>) -> Option<&ArraySlot> {
         let key = key.into().normalized();
         self.entries
             .iter()
             .find(|entry| entry.key == key)
-            .map(ArrayEntry::value)
+            .map(ArrayEntry::slot)
+    }
+
+    pub fn get_slot_mut(&mut self, key: impl Into<ArrayKey>) -> Option<&mut ArraySlot> {
+        let key = key.into().normalized();
+        self.entries
+            .iter_mut()
+            .find(|entry| entry.key == key)
+            .map(ArrayEntry::slot_mut)
     }
 
     pub fn contains_key(&self, key: impl Into<ArrayKey>) -> bool {
@@ -618,8 +630,8 @@ impl PhpArray {
         let key = key.into().normalized();
         self.bump_next_auto_index(&key);
 
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key) {
-            entry.set_value(value);
+        if let Some(slot) = self.get_slot_mut(key.clone()) {
+            slot.set_value(value);
             return key;
         }
 
@@ -1589,6 +1601,14 @@ impl ArrayEntry {
 
     pub fn value(&self) -> &Value {
         self.slot.value()
+    }
+
+    pub fn slot(&self) -> &ArraySlot {
+        &self.slot
+    }
+
+    pub fn slot_mut(&mut self) -> &mut ArraySlot {
+        &mut self.slot
     }
 
     pub fn value_mut(&mut self) -> &mut Value {
@@ -4196,6 +4216,36 @@ mod tests {
         assert_eq!(
             cloned_array.get("name"),
             Some(&Value::String("clone".to_string()))
+        );
+    }
+
+    #[test]
+    fn array_slot_lookup_helpers_expose_entry_storage_without_aliasing() {
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+
+        let slot = array
+            .get_slot("name")
+            .expect("inserted key should have a slot");
+        assert_eq!(slot.value(), &Value::String("Ada".to_string()));
+        assert!(array.get_slot("missing").is_none());
+
+        array
+            .get_slot_mut("name")
+            .expect("inserted key should have a mutable slot")
+            .set_value(Value::String("Grace".to_string()));
+        assert_eq!(array.get("name"), Some(&Value::String("Grace".to_string())));
+
+        let mut cloned = array.clone();
+        cloned
+            .get_slot_mut("name")
+            .expect("cloned key should have an independent mutable slot")
+            .set_value(Value::String("Katherine".to_string()));
+
+        assert_eq!(array.get("name"), Some(&Value::String("Grace".to_string())));
+        assert_eq!(
+            cloned.get("name"),
+            Some(&Value::String("Katherine".to_string()))
         );
     }
 

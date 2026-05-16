@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1058, explicit PHP array slot lookup helpers on top of
+  `ArraySlot`. `PhpArray::get_slot()` and `get_slot_mut()` now expose the
+  storage object for a normalized key, and `ArrayEntry` exposes internal
+  `slot()`/`slot_mut()` accessors used by those helpers. Ordinary
+  `PhpArray::get()` and `insert()` now route through the slot helpers, while a
+  focused runtime test proves mutable slot lookup can update one array and
+  that cloned arrays still keep independent slot values. This is still not
+  shared reference cells, direct array-offset reference assignment,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering; it only creates the slot lookup point future array-offset
+  reference work will need. Verification so far:
+  `cargo test -p php_runtime array_slot_lookup_helpers_expose_entry_storage_without_aliasing -- --test-threads=1`,
+  `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1057, an explicit clone-by-value `ArraySlot` wrapper for
   PHP array entries. `ArrayEntry` now stores an `ArraySlot` rather than a raw
   `Value`, and its existing accessors delegate through the slot wrapper. The

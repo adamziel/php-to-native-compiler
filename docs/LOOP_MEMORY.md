@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `c59eb0af docs: record array slot wrapper gate`, pushed to `origin/master`.
+- Task attempted: Milestone 1058, explicit normalized-key array slot lookup
+  helpers on top of `ArraySlot`.
+- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime array_slot_lookup_helpers_expose_entry_storage_without_aliasing -- --test-threads=1`
+  passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
+  with 109 tests. `cargo check -p php_runtime -p phpc`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Current WordPress frontier: PHP arrays now have an explicit normalized-key
+  slot lookup boundary over `ArraySlot`, so future array-offset reference work
+  can target storage objects instead of searching entries ad hoc.
+- Remaining semantic gaps: slot lookup still returns clone-by-value storage,
+  not shared PHP reference cells; direct `$alias =& $array[$key]`,
+  array/object offset aliases, exact by-reference `foreach`, lingering
+  references, copy-on-write, mutation-during-iteration fidelity, and native
+  lowering remain missing.
+- Next concrete task: use the slot lookup boundary to make direct
+  array-offset reference-assignment sources fail with a more precise
+  slot/reference-cell diagnostic before implementing actual alias cells.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `c309583f docs: record array entry accessor gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1057, explicit clone-by-value array slot wrapper

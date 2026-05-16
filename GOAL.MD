@@ -792,8 +792,8 @@ Reconciliation into concrete workstreams:
   boundary, a bounded direct-array-variable by-reference `foreach` copy-back
   path, private `ArrayEntry` value accessors backed by an explicit
   clone-by-value `ArraySlot` wrapper that preserves eager array cloning while
-  preparing for real slot cells, documented runtime boundaries, and focused
-  reference fixtures.
+  preparing for real slot cells, normalized-key array slot lookup helpers,
+  documented runtime boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
   aliases, magic reference-return dispatch and broader by-reference returns,
   exact by-reference `foreach`, and COW tests that compare against PHP.

@@ -10232,6 +10232,17 @@ handled.
   This is not shared reference cells, direct array-offset references,
   copy-on-write, exact by-reference `foreach`, object-property offsets, or
   native lowering.
+
+## Milestone 1058: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add explicit normalized-key array slot lookup
+  helpers on top of `ArraySlot`. `PhpArray::get_slot()` and `get_slot_mut()`
+  expose the storage object for an existing key, `PhpArray::get()` and
+  `insert()` route through that boundary, and a focused runtime test proves
+  mutable slot lookup updates only the selected array while cloned arrays keep
+  independent slot values. This is not shared reference cells, direct
+  array-offset references, copy-on-write, exact by-reference `foreach`,
+  object-property offsets, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference
