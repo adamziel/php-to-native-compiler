@@ -46,9 +46,10 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: MySQL DBUG trace output, host client-library debug
   state, socket inspection, host database state, warnings/errors, and native
   database lowering remain missing.
-- Next concrete task: run the focused Milestone 934 fixture, then whitespace
-  checks and the serialized checkpoint gate under `umask 0022`; after
-  checkpoint, inspect the next MySQLi host-state or diagnostics boundary.
+- Next concrete task: inspect the next MySQLi host-state or diagnostics
+  boundary, such as a sharper unsupported diagnostic for real debug trace
+  behavior, the next missing WordPress-reached MySQLi function, or a
+  real-state replacement for one of the current placeholders.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

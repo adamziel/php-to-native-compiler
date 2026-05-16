@@ -8706,8 +8706,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `140b2c9 runtime: add mysqli dump debug info placeholder`, covering
-  Milestone 933 before the current Milestone 934 candidate.
+  `1aa1f5b tests: add wordpress wpdb dump debug info smoke`, covering
+  Milestone 934 before the next runtime/mysqli candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
