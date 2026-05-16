@@ -10107,8 +10107,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9d535aa4 runtime: bind constructor reference parameters`, covering
-  Milestone 1046.
+  `0b7146cf runtime: add direct reference return cells`, covering Milestone
+  1047.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

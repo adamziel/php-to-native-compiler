@@ -18,6 +18,9 @@ Implemented:
   copy-on-write, and native lowering remain unsupported. Verification so far:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1047`.
+  The serialized checkpoint gate passed with 1261 fixture tests, 707 system
+  PHP comparisons, and 554 skipped comparisons, then committed
+  `0b7146cf runtime: add direct reference return cells`.
 
 - Added Milestone 1046, direct-variable by-reference constructor parameter
   alias cells for the current public/inherited constructor dispatch subset.
