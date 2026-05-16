@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 977, a deterministic `mysqli_stmt` placeholder lifecycle
+  slice. The core class table now exposes `mysqli_stmt`; `mysqli_stmt_init()`
+  creates an empty placeholder statement object; `mysqli_prepare()` creates a
+  prepared placeholder statement and records a simple `?` placeholder count;
+  `mysqli_stmt_prepare()` updates an existing placeholder statement; and
+  `mysqli_stmt_param_count()` reports the recorded count. `mysqli_stmt_close()`
+  removes placeholder statement state and `mysqli_stmt_reset()` clears the
+  recorded query/count. This is not prepared SQL parsing, real parameter
+  metadata, by-reference binding, execution, result metadata transfer,
+  statement diagnostics, host database state, warning/error fidelity, or
+  native statement lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_lifecycle -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_prepare_param -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_classes -- --test-threads=1`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone977`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone106`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone708`.
+
 - Added Milestone 976, deterministic pending-result state for
   `mysqli_real_query()` plus `mysqli_store_result()`/`mysqli_use_result()`.
   The runtime now queues a placeholder pending result on the connection for

@@ -29,6 +29,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `5eaf6ee0 runtime: add mysqli real query pending results`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 977, deterministic `mysqli_stmt` placeholder
+  object lifecycle for statement init, prepare, param-count, reset, and close.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone977/*`,
+  `tests/fixtures/milestone106/get_declared_classes.*`,
+  `tests/fixtures/milestone708/enum_metadata.*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_lifecycle -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_prepare_param -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset -- --test-threads=1`;
+  `cargo test -p phpc --test object_model get_declared_classes -- --test-threads=1`;
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone977`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone106`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone708`.
+  All passed; the new statement fixture is `phpc-only` and skipped for system
+  PHP comparison.
+- Current WordPress frontier: placeholder MySQLi prepared-statement code can
+  now materialize `mysqli_stmt` objects, record simple `?` placeholder counts,
+  reset them, and close their placeholder state.
+- Remaining semantic gaps: prepared SQL parsing, real parameter metadata,
+  by-reference binding, execution, result metadata transfer, statement
+  diagnostics, host database state, warning/error fidelity, and native
+  statement lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
+  local-infile option effects, statement binding/execution boundaries, or
+  multi-result pending queues.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `cef610f0 runtime: broaden mysqli field metadata placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 976, deterministic `mysqli_real_query()` pending
@@ -54,10 +93,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   result transfer, host connection pending-result queues, multi-result state,
   mutation state, warning/error fidelity, and native database lowering remain
   missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
-  local-infile option effects, prepared-statement object lifecycle, or
-  multi-result pending queues.
+- Checkpoint result: committed and pushed
+  `5eaf6ee0 runtime: add mysqli real query pending results`.
+- Next concrete task: inspect broader escaping charset fidelity, local-infile
+  option effects, prepared-statement object lifecycle, or multi-result pending
+  queues.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

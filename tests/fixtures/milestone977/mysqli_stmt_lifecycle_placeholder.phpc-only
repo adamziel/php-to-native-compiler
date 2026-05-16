@@ -1,0 +1,1 @@
+Current MySQLi statement support is a deterministic placeholder without binding or execution.

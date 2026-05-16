@@ -206,20 +206,23 @@ read host database state.
 It does not inspect host client-library build flags, real thread-safety
 configuration, host client-library state, sockets, or database state.
 
-`mysqli_stmt_init($handle)` and `mysqli_prepare($handle, $query)` are visible
-through callable metadata but are explicit runtime boundaries. Reached calls
-report stable unsupported diagnostics because statement objects, prepared SQL
-parsing, parameter/result binding, statement execution, and result metadata are
-not implemented.
+`mysqli_stmt_init($handle)` creates a deterministic placeholder `mysqli_stmt`
+object with no prepared query. `mysqli_prepare($handle, $query)` creates a
+deterministic placeholder `mysqli_stmt` object and records a simple count of
+`?` characters in the query. `mysqli_stmt_close($statement)` removes the
+placeholder statement state and returns `true`.
 
-`mysqli_stmt_prepare($statement, $query)`,
-`mysqli_stmt_param_count($statement)`,
-`mysqli_stmt_get_warnings($statement)`, and
-`mysqli_stmt_error_list($statement)` are visible through callable metadata but
-are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, prepared SQL parsing, parameter
-metadata, warning-chain objects, error-list arrays, and statement diagnostic
-state are not implemented.
+`mysqli_stmt_prepare($statement, $query)` records the query and simple `?`
+placeholder count on an existing placeholder statement and returns `true`.
+`mysqli_stmt_param_count($statement)` reports that recorded count.
+`mysqli_stmt_reset($statement)` clears the recorded query/count and returns
+`true`. These helpers do not parse SQL, understand placeholders inside strings
+or comments, expose real parameter metadata, bind values, execute statements,
+transfer result metadata, track statement diagnostics, touch host database
+state, or support native lowering. `mysqli_stmt_get_warnings($statement)` and
+`mysqli_stmt_error_list($statement)` remain explicit runtime boundaries because
+warning-chain objects, error-list arrays, and statement diagnostic state are
+not implemented.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)`,
 `mysqli_stmt_bind_result($statement, &...$vars)`, and

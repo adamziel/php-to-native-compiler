@@ -3,5 +3,6 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone948/wpdb_stmt_close_boundary.php:12:16: unsupported call mysqli_stmt_close(): mysqli statement objects, statement resource cleanup, and statement lifecycle state are not implemented in the current subset
+runtime error at tests/fixtures/milestone948/wpdb_stmt_close_boundary.php:12:16: unsupported call mysqli_stmt_close(): first argument must be mysqli_stmt object in the current subset, got mysqli object
+
 --- stderr end ---

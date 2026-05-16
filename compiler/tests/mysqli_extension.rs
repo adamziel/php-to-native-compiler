@@ -428,46 +428,55 @@ echo "|";
 echo function_exists($prepare) ? "prepare-exists" : "prepare-missing";
 echo "|";
 echo is_callable($prepare) ? "prepare-callable" : "prepare-missing";
+$handle = mysqli_init();
+$stmt = mysqli_stmt_init($handle);
+echo "|";
+echo get_class($stmt);
+echo "|";
+$prepared = mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name = ?");
+echo get_class($prepared);
+echo "|";
+echo mysqli_stmt_param_count($prepared);
+echo "|";
+echo mysqli_stmt_close($stmt) ? "closed" : "open";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|stmt-callable|prepare-exists|prepare-callable"
+        "yes|stmt-callable|prepare-exists|prepare-callable|mysqli_stmt|mysqli_stmt|1|closed"
     );
     assert_eq!(execution.exit_code, 0);
 
     let stmt_error = run_source(
         r#"<?php
-$handle = mysqli_init();
-mysqli_stmt_init($handle);
+mysqli_stmt_init("not-a-handle");
 "#,
     )
     .unwrap_err();
 
     assert_eq!(stmt_error.phase, Phase::Runtime);
-    assert_eq!(stmt_error.line, 3);
+    assert_eq!(stmt_error.line, 2);
     assert_eq!(stmt_error.column, 1);
     assert_eq!(
         stmt_error.message,
-        "unsupported call mysqli_stmt_init(): mysqli statement objects and prepared statement lifecycle are not implemented in the current subset"
+        "unsupported call mysqli_stmt_init(): first argument must be mysqli object in the current subset, got string"
     );
 
     let prepare_error = run_source(
         r#"<?php
-$handle = mysqli_init();
-mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name = ?");
+mysqli_prepare("not-a-handle", "SELECT option_value FROM wp_options WHERE option_name = ?");
 "#,
     )
     .unwrap_err();
 
     assert_eq!(prepare_error.phase, Phase::Runtime);
-    assert_eq!(prepare_error.line, 3);
+    assert_eq!(prepare_error.line, 2);
     assert_eq!(prepare_error.column, 1);
     assert_eq!(
         prepare_error.message,
-        "unsupported call mysqli_prepare(): mysqli prepared statement parsing, statement objects, binding, execution, and result metadata are not implemented in the current subset"
+        "unsupported call mysqli_prepare(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -494,13 +503,22 @@ echo "|";
 echo function_exists($error_list) ? "error-list-exists" : "error-list-missing";
 echo "|";
 echo is_callable($error_list) ? "error-list-callable" : "error-list-missing";
+$handle = mysqli_init();
+$stmt = mysqli_stmt_init($handle);
+echo "|";
+echo mysqli_stmt_prepare($stmt, "SELECT option_value FROM wp_options WHERE option_name = ?") ? "prepared" : "failed";
+echo "|";
+echo mysqli_stmt_param_count($stmt);
+echo "|";
+mysqli_stmt_prepare($stmt, "SELECT option_name FROM wp_options");
+echo mysqli_stmt_param_count($stmt);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|prepare-callable|param-count-exists|param-count-callable|warnings-exists|warnings-callable|error-list-exists|error-list-callable"
+        "yes|prepare-callable|param-count-exists|param-count-callable|warnings-exists|warnings-callable|error-list-exists|error-list-callable|prepared|1|0"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -517,7 +535,7 @@ mysqli_stmt_prepare($stmt, "SELECT option_value FROM wp_options WHERE option_nam
     assert_eq!(prepare_error.column, 1);
     assert_eq!(
         prepare_error.message,
-        "unsupported call mysqli_stmt_prepare(): mysqli statement objects, prepared SQL parsing, prepared statement state, and host database execution are not implemented in the current subset"
+        "unsupported call mysqli_stmt_prepare(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let param_count_error = run_source(
@@ -533,7 +551,7 @@ mysqli_stmt_param_count($stmt);
     assert_eq!(param_count_error.column, 1);
     assert_eq!(
         param_count_error.message,
-        "unsupported call mysqli_stmt_param_count(): mysqli statement objects, prepared SQL parsing, parameter metadata, and statement lifecycle state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_param_count(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let warnings_error = run_source(
@@ -687,13 +705,16 @@ echo "|";
 echo function_exists($close) ? "close-exists" : "close-missing";
 echo "|";
 echo is_callable($close) ? "close-callable" : "close-missing";
+$stmt = mysqli_stmt_init(mysqli_init());
+echo "|";
+echo mysqli_stmt_close($stmt) ? "closed" : "open";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|result-callable|close-exists|close-callable"
+        "yes|result-callable|close-exists|close-callable|closed"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -726,7 +747,7 @@ mysqli_stmt_close($stmt);
     assert_eq!(close_error.column, 1);
     assert_eq!(
         close_error.message,
-        "unsupported call mysqli_stmt_close(): mysqli statement objects, statement resource cleanup, and statement lifecycle state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_close(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 }
 
@@ -1061,13 +1082,20 @@ echo "|";
 echo function_exists($next_result) ? "next-result-exists" : "next-result-missing";
 echo "|";
 echo is_callable($next_result) ? "next-result-callable" : "next-result-missing";
+$stmt = mysqli_prepare(mysqli_init(), "SELECT option_value FROM wp_options WHERE option_name = ?");
+echo "|";
+echo mysqli_stmt_param_count($stmt);
+echo "|";
+echo mysqli_stmt_reset($stmt) ? "reset" : "failed";
+echo "|";
+echo mysqli_stmt_param_count($stmt);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable"
+        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable|1|reset|0"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -1100,7 +1128,7 @@ mysqli_stmt_reset($stmt);
     assert_eq!(reset_error.column, 1);
     assert_eq!(
         reset_error.message,
-        "unsupported call mysqli_stmt_reset(): mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_reset(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let more_results_error = run_source(

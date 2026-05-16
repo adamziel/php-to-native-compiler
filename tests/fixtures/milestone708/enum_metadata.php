@@ -12,4 +12,4 @@ echo enum_exists('App\\State\\Status') ? "yes" : "no", "\n";
 echo class_exists('App\\State\\Mode') ? "class-like" : "not-class", "\n";
 echo interface_exists('App\\State\\Mode') ? "interface" : "not-interface", "\n";
 echo trait_exists('App\\State\\Mode') ? "trait" : "not-trait", "\n";
-print_r(get_declared_classes());
+echo rtrim(print_r(get_declared_classes(), true), "\n");

@@ -1,2 +1,0 @@
-runtime error at 14:16: unsupported call mysqli_prepare(): mysqli prepared statement parsing, statement objects, binding, execution, and result metadata are not implemented in the current subset
-

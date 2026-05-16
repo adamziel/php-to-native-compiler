@@ -972,21 +972,28 @@
   `true`, without inspecting host client-library build flags, real
   thread-safety configuration, host client-library state, sockets, or host
   database state.
-  `mysqli_stmt_init($handle)` and `mysqli_prepare($handle, $query)` are
-  visible through callable metadata but reached calls report stable
-  unsupported diagnostics because statement objects, prepared SQL parsing,
-  binding, execution, and result metadata are not implemented.
+  `mysqli_stmt_init($handle)` creates a deterministic placeholder
+  `mysqli_stmt` object with no prepared query.
+  `mysqli_prepare($handle, $query)` creates a deterministic placeholder
+  `mysqli_stmt` object and records a simple count of `?` characters in the
+  query. `mysqli_stmt_prepare($statement, $query)` records the query and
+  simple placeholder count on an existing placeholder statement.
+  `mysqli_stmt_param_count($statement)` reports that recorded count.
+  `mysqli_stmt_reset($statement)` clears the recorded query/count, and
+  `mysqli_stmt_close($statement)` removes placeholder statement state. This is
+  not prepared SQL parsing, real parameter metadata, by-reference binding,
+  execution, result metadata transfer, statement diagnostics, host database
+  state, warning/error fidelity, or native statement lowering.
   `mysqli_stmt_bind_param($statement, $types, &...$vars)` and
   `mysqli_stmt_execute($statement, $params = null)` are visible through
   callable metadata but reached calls report stable unsupported diagnostics
   because statement objects, by-reference parameter binding, type strings,
   array-parameter execution, result state, and host database execution are not
   implemented.
-  `mysqli_stmt_get_result($statement)` and `mysqli_stmt_close($statement)` are
-  visible through callable metadata but reached calls report stable
-  unsupported diagnostics because statement objects, mysqlnd result transfer,
-  result metadata, resource cleanup, and statement lifecycle state are not
-  implemented.
+  `mysqli_stmt_get_result($statement)` is visible through callable metadata
+  but reached calls report stable unsupported diagnostics because mysqlnd
+  result transfer, result metadata, execution state, and host database rows
+  are not implemented.
   `mysqli_stmt_errno($statement)`, `mysqli_stmt_error($statement)`, and
   `mysqli_stmt_affected_rows($statement)` are visible through callable
   metadata but reached calls report stable unsupported diagnostics because
@@ -3278,15 +3285,16 @@
   `mysqli_thread_safe(...)` returns only deterministic client-library
   thread-safety metadata without host client-library build-flag inspection,
   real thread-safety configuration, sockets, or host database state,
-  `mysqli_stmt_init(...)`/`mysqli_prepare(...)` are explicit prepared-statement
-  lifecycle boundaries without statement objects, prepared SQL parsing,
-  parameter/result binding, statement execution, or result metadata,
+  `mysqli_stmt_init(...)`/`mysqli_prepare(...)`/
   `mysqli_stmt_prepare(...)`/`mysqli_stmt_param_count(...)`/
+  `mysqli_stmt_reset(...)`/`mysqli_stmt_close(...)` are deterministic
+  placeholder statement lifecycle helpers without prepared SQL parsing, real
+  parameter metadata, by-reference binding, execution, result metadata
+  transfer, statement diagnostics, host database state, warning/error
+  fidelity, or native lowering,
   `mysqli_stmt_get_warnings(...)`/`mysqli_stmt_error_list(...)` are explicit
-  statement prepare/parameter-count and diagnostic-list boundaries without
-  statement objects, prepared SQL parsing, parameter metadata, warning-chain
-  objects, error-list arrays, statement diagnostic state, or host database
-  execution,
+  diagnostic-list boundaries without warning-chain objects, error-list arrays,
+  statement diagnostic state, or host database execution,
   `mysqli_stmt_bind_param(...)`/`mysqli_stmt_bind_result(...)`/
   `mysqli_stmt_execute(...)` are explicit statement binding/execution
   boundaries without statement objects, by-reference parameter/result binding,

@@ -103,6 +103,7 @@ struct Interpreter {
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
+    mysqli_statements: HashMap<i64, MysqliStatementState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -130,6 +131,12 @@ struct MysqliResultState {
 struct MysqliPendingResultState {
     fields: Vec<String>,
     rows: Vec<Vec<(String, Value)>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct MysqliStatementState {
+    query: Option<String>,
+    param_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -519,6 +526,7 @@ impl Interpreter {
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
+            mysqli_statements: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -4023,6 +4031,37 @@ impl Interpreter {
         )))
     }
 
+    fn create_mysqli_stmt_placeholder(
+        &mut self,
+        span: Span,
+        query: Option<String>,
+    ) -> CompileResult<Value> {
+        let class_id = self.classes.lookup_class_id("mysqli_stmt").ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class("mysqli_stmt core placeholder"),
+            )
+        })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core mysqli_stmt class id should resolve");
+        self.mysqli_statements.insert(
+            object_id,
+            MysqliStatementState {
+                param_count: query
+                    .as_deref()
+                    .map(mysqli_placeholder_param_count)
+                    .unwrap_or(0),
+                query,
+            },
+        );
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
     fn create_stdclass_with_properties(
         &mut self,
         properties: Vec<(String, Value)>,
@@ -4584,52 +4623,34 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_stmt_init(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_init(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_init", args, 1, span)?;
         expect_mysqli_handle("mysqli_stmt_init()", &args[0], span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_init()",
-                "mysqli statement objects and prepared statement lifecycle are not implemented in the current subset",
-            ),
-        ))
+        self.create_mysqli_stmt_placeholder(span, None)
     }
 
-    fn call_mysqli_prepare(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_prepare(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_prepare", args, 2, span)?;
         expect_mysqli_handle("mysqli_prepare()", &args[0], span)?;
-        let _query = string_builtin_argument("mysqli_prepare()", "query", &args[1], span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_prepare()",
-                "mysqli prepared statement parsing, statement objects, binding, execution, and result metadata are not implemented in the current subset",
-            ),
-        ))
+        let query = string_builtin_argument("mysqli_prepare()", "query", &args[1], span)?;
+        self.create_mysqli_stmt_placeholder(span, Some(query))
     }
 
-    fn call_mysqli_stmt_prepare(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_prepare(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_prepare", args, 2, span)?;
-        let _query = string_builtin_argument("mysqli_stmt_prepare()", "query", &args[1], span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_prepare()",
-                "mysqli statement objects, prepared SQL parsing, prepared statement state, and host database execution are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_prepare()", &args[0], span)?;
+        let query = string_builtin_argument("mysqli_stmt_prepare()", "query", &args[1], span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_prepare()", stmt_id, span)?;
+        state.param_count = mysqli_placeholder_param_count(&query);
+        state.query = Some(query);
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_param_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_param_count", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_param_count()",
-                "mysqli statement objects, prepared SQL parsing, parameter metadata, and statement lifecycle state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_param_count()", &args[0], span)?;
+        let state = self.mysqli_statement_state("mysqli_stmt_param_count()", stmt_id, span)?;
+        Ok(Value::Int(state.param_count as i64))
     }
 
     fn call_mysqli_stmt_get_warnings(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4725,15 +4746,11 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_stmt_close(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_close(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_close", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_close()",
-                "mysqli statement objects, statement resource cleanup, and statement lifecycle state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_close()", &args[0], span)?;
+        self.mysqli_statements.remove(&stmt_id);
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_errno(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4879,15 +4896,13 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_stmt_reset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_reset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_reset", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_reset()",
-                "mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_reset()", &args[0], span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_reset()", stmt_id, span)?;
+        state.query = None;
+        state.param_count = 0;
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_more_results(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -6058,6 +6073,40 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     function,
                     "placeholder result state is not available in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn mysqli_statement_state(
+        &self,
+        function: &str,
+        stmt_id: i64,
+        span: Span,
+    ) -> CompileResult<&MysqliStatementState> {
+        self.mysqli_statements.get(&stmt_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "placeholder statement state is not available in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn mysqli_statement_state_mut(
+        &mut self,
+        function: &str,
+        stmt_id: i64,
+        span: Span,
+    ) -> CompileResult<&mut MysqliStatementState> {
+        self.mysqli_statements.get_mut(&stmt_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "placeholder statement state is not available in the current subset",
                 ),
             )
         })
@@ -13881,6 +13930,10 @@ fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultSta
     None
 }
 
+fn mysqli_placeholder_param_count(query: &str) -> usize {
+    query.chars().filter(|ch| *ch == '?').count()
+}
+
 fn is_wordpress_empty_options_query(query: &str) -> bool {
     let query = query.trim();
     if query.starts_with("SHOW FULL COLUMNS FROM ") || query.starts_with("DESCRIBE ") {
@@ -14003,6 +14056,35 @@ fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> Com
                 function,
                 format!(
                     "first argument must be mysqli_result object in the current subset, got {} object",
+                    handle.class_name()
+                ),
+            ),
+        ));
+    }
+
+    Ok(handle.id())
+}
+
+fn expect_mysqli_stmt_handle(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
+    let Value::Object(handle) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli_stmt object in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if !handle.class_name().eq_ignore_ascii_case("mysqli_stmt") {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli_stmt object in the current subset, got {} object",
                     handle.class_name()
                 ),
             ),

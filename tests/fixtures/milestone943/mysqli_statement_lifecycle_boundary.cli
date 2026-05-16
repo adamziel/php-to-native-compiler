@@ -1,7 +1,7 @@
 $ phpc run tests/fixtures/milestone943/mysqli_statement_lifecycle_boundary.php
-exit: 1
+exit: 0
 stdout:
+yes|stmt-callable|prepare-callable
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone943/mysqli_statement_lifecycle_boundary.php:13:1: unsupported call mysqli_stmt_init(): mysqli statement objects and prepared statement lifecycle are not implemented in the current subset
 --- stderr end ---

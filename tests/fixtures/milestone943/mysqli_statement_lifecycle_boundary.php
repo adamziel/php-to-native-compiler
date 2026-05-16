@@ -7,7 +7,6 @@ echo "|";
 echo is_callable($stmt_init) ? "stmt-callable" : "stmt-missing";
 echo "|";
 echo is_callable($prepare) ? "prepare-callable" : "prepare-missing";
-echo "\n";
 
 $handle = mysqli_init();
 mysqli_stmt_init($handle);

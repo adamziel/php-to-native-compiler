@@ -1820,6 +1820,9 @@ impl PhpClassTable {
             .declare_class("mysqli_result")
             .expect("core class table should contain mysqli before mysqli_result");
         classes
+            .declare_class("mysqli_stmt")
+            .expect("core class table should contain mysqli_result before mysqli_stmt");
+        classes
     }
 
     pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
@@ -7111,6 +7114,13 @@ mod tests {
         assert!(mysqli_result.parent_id().is_none());
         assert!(mysqli_result.properties().is_empty());
         assert!(mysqli_result.methods().is_empty());
+
+        let mysqli_stmt = classes.lookup_class("mysqli_stmt").unwrap();
+        assert_eq!(mysqli_stmt.name(), "mysqli_stmt");
+        assert_eq!(mysqli_stmt.id().index(), 4);
+        assert!(mysqli_stmt.parent_id().is_none());
+        assert!(mysqli_stmt.properties().is_empty());
+        assert!(mysqli_stmt.methods().is_empty());
     }
 
     #[test]

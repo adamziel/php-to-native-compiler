@@ -445,6 +445,13 @@ seed-post and empty-result SQL placeholders, consumable through
 execution, real buffered or unbuffered result transfer, host connection
 pending-result queues, multi-result state, mutation state, warning/error
 fidelity, or native lowering,
+plus deterministic `mysqli_stmt` placeholder object lifecycle for
+`mysqli_stmt_init()`, `mysqli_prepare()`, `mysqli_stmt_prepare()`,
+`mysqli_stmt_param_count()`, `mysqli_stmt_reset()`, and
+`mysqli_stmt_close()` without claiming prepared SQL parsing, real parameter
+metadata, by-reference binding, execution, result metadata transfer,
+statement diagnostics, host database state, warning/error fidelity, or native
+lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

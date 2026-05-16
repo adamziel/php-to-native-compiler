@@ -3,5 +3,6 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone959/mysqli_stmt_reset_boundary.php:3:1: unsupported call mysqli_stmt_reset(): mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset
+runtime error at tests/fixtures/milestone959/mysqli_stmt_reset_boundary.php:3:1: unsupported call mysqli_stmt_reset(): first argument must be mysqli_stmt object in the current subset, got mysqli object
+
 --- stderr end ---
