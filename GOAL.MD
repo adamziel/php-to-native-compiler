@@ -299,7 +299,10 @@ binding/execution boundaries that expose callable metadata and stable
 unsupported diagnostics without statement object allocation, by-reference
 parameter binding, type-string validation, prepared statement execution,
 result state, host database execution, warning/error fidelity, or native
-lowering,
+lowering, now wired through synthetic WordPress-shaped `wpdb` bind/execute
+smokes without claiming statement objects, by-reference binding, type-string
+validation, statement execution, result state, host database state,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

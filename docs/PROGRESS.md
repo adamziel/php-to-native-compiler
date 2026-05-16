@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 946, synthetic WordPress-shaped `wpdb` prepared-statement
+  smokes that reach the explicit `mysqli_stmt_bind_param()` and
+  `mysqli_stmt_execute()` boundaries through `wpdb`-style methods. These are
+  harness smokes only; they do not add statement object allocation,
+  by-reference parameter binding, type-string validation, prepared statement
+  execution, result state, host database execution, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone946`.
+
 - Added Milestone 945, explicit MySQLi statement binding/execution
   boundaries for `mysqli_stmt_bind_param()` and `mysqli_stmt_execute()`. The
   runtime exposes both names through function/callability metadata, validates

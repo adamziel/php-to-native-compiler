@@ -1572,6 +1572,11 @@ historical blockers and remaining full-support gaps include:
   diagnostics, without statement object allocation, by-reference parameter
   binding, type-string validation, prepared statement execution, result state,
   host database execution, warning/error fidelity, or native database lowering.
+  Milestone 946 wires those boundaries through synthetic WordPress-shaped
+  `wpdb` bind/execute methods without claiming statement objects,
+  by-reference binding, type-string validation, statement execution, result
+  state, host database state, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

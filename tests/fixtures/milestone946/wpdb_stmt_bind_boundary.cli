@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone946/wpdb_stmt_bind_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone946/wpdb_stmt_bind_boundary.php:15:16: unsupported call mysqli_stmt_bind_param(): mysqli statement objects, by-reference parameter binding, type strings, and prepared statement execution are not implemented in the current subset
+--- stderr end ---
