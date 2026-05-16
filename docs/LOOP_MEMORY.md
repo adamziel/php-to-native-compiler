@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `f102124 runtime: add mysqli error list placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 940, a synthetic WordPress-shaped `wpdb`
+  diagnostics smoke over deterministic `mysqli_error_list()` clean error-list
+  metadata.
+- Files changed so far: `tests/fixtures/milestone940/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone940`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped diagnostics method now records
+  empty `mysqli_error_list()` clean metadata alongside clean errno/error state.
+- Remaining semantic gaps: real warning/error list tracking, SQLSTATE history,
+  host client-library state, socket state, host database state,
+  warnings/errors, and native database lowering remain missing.
+- Next concrete task: run the focused Milestone 940 fixture, then whitespace
+  checks and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, inspect the next MySQLi statement or error-state boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `296f68e tests: add wordpress wpdb client stats smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 939, bounded deterministic `mysqli_error_list()`

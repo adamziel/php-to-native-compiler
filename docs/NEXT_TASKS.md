@@ -8752,17 +8752,26 @@ handled.
   warning/error list tracking, SQLSTATE history, host client-library state,
   socket state, host database state, warning/error fidelity, or native
   lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+- [x] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
   records bounded `mysqli_error_list()` clean metadata through a
   WordPress-shaped connection diagnostics method without claiming real
   warning/error list tracking, SQLSTATE history, host client-library state,
   sockets, host database state, warning/error fidelity, or native lowering.
+  Milestone 940 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  empty local `mysqli_error_list()` clean metadata through a WordPress-shaped
+  diagnostics method. It is not real warning/error list tracking, SQLSTATE
+  history, host client-library state, sockets, host database state,
+  warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi statement or error-state
+  boundary after clean error-list metadata, such as `mysqli_thread_safe()` or
+  an explicit unsupported diagnostic for statement APIs, before claiming
+  broader mysqli extension fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `296f68e tests: add wordpress wpdb client stats smoke`, covering
-  Milestone 938 before the current Milestone 939 candidate.
+  `f102124 runtime: add mysqli error list placeholder`, covering
+  Milestone 939 before the current Milestone 940 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

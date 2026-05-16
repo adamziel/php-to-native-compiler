@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 940, a synthetic WordPress-shaped `wpdb` connection
+  diagnostics smoke that records bounded `mysqli_error_list()` clean metadata
+  through a `wpdb`-style method, verifies the empty local error list, records
+  clean `mysqli_errno()`/`mysqli_error()` state, and verifies that the
+  diagnostics path ran. This is a harness smoke only; it does not add real
+  warning/error list tracking, SQLSTATE history, host client-library state,
+  socket state, host database state, PHP warning/error fidelity, or native
+  database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone940`.
+
 - Added Milestone 939, bounded `mysqli_error_list()` support for deterministic
   clean MySQLi error-list metadata. The runtime accepts current placeholder
   `mysqli` handles, returns an empty array for clean local error-list state,

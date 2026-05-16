@@ -1545,7 +1545,11 @@ historical blockers and remaining full-support gaps include:
   lowering. Milestone 939 adds deterministic empty `mysqli_error_list()` clean
   error-list metadata without real warning/error list tracking, SQLSTATE
   history, host client-library state, socket state, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 940 wires
+  that metadata through a synthetic WordPress-shaped `wpdb` diagnostics smoke
+  without claiming real warning/error list tracking, SQLSTATE history, host
+  client-library state, socket state, host database state, warning/error
+  fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

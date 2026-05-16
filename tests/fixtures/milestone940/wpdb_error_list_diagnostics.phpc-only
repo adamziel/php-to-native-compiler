@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_error_list()`
+clean error-list metadata through a WordPress-shaped `wpdb` connection
+diagnostics method. System PHP reports host client-library and connection
+error entries; phpc returns an empty local list without tracking real
+warning/error entries, SQLSTATE history, host client-library state, sockets,
+or database state.
