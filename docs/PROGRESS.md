@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1008, bounded direct missing-property `__set($name, $value)`
+  dispatch for ordinary direct object-property writes. Direct
+  `$object->name = expr` still mutates an existing visible slot when one is
+  present; when the visible slot is missing and a visible non-static
+  `__set()` method is declared or inherited, the interpreter calls it with the
+  property name and assigned value, ignores the magic method return value, and
+  preserves the PHP assignment expression result as the assigned value. This
+  is not dynamic property-name magic, inaccessible-property `__set` fidelity,
+  nested object-property array writes through magic, compound assignment,
+  `??=`, increment/decrement, `__unset`, `__call`, ArrayAccess,
+  typed/uninitialized property behavior, exact PHP warning/visibility
+  diagnostics, references/copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test object_model magic_set_runs_for_missing_direct_property_writes -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1008`.
+
 - Added Milestone 1007, bounded magic property reads and `isset`/`empty`
   checks for missing direct object properties. Ordinary `$object->name` reads
   now call a visible non-static `__get($name)` when the visible slot is

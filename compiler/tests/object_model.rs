@@ -970,6 +970,40 @@ echo empty($bag->missing) ? "missing:empty" : "missing:not-empty";
 }
 
 #[test]
+fn magic_set_runs_for_missing_direct_property_writes() {
+    let source = r#"<?php
+class Bag {
+    public $name = "declared";
+    public $log = [];
+
+    public function __set($property, $value) {
+        echo "set:$property=$value\n";
+        $this->log[$property] = $value;
+        return "ignored";
+    }
+
+    public function __get($property) {
+        return $this->log[$property];
+    }
+}
+
+$bag = new Bag();
+$bag->name = "direct";
+echo $bag->name, "\n";
+$result = ($bag->title = "Hello");
+echo "result:$result\n";
+echo $bag->title;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "direct\nset:title=Hello\nresult:Hello\nHello"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

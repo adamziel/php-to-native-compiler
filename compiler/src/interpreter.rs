@@ -2837,15 +2837,26 @@ impl Interpreter {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
-                    Value::Object(object) => object
-                        .write_property_from_context(
-                            property,
-                            value.clone(),
-                            current_class_id,
-                            &protected_class_ids,
-                        )
-                        .map(|()| value)
-                        .map_err(|error| runtime_error(*span, error)),
+                    Value::Object(object) => match object.write_property_from_context(
+                        property,
+                        value.clone(),
+                        current_class_id,
+                        &protected_class_ids,
+                    ) {
+                        Ok(()) => Ok(value),
+                        Err(error) if Self::is_undefined_property_error(&error) => {
+                            match self.call_magic_property_method_with_values(
+                                object,
+                                "__set",
+                                vec![Value::String(property.clone()), value.clone()],
+                                *span,
+                            )? {
+                                Some(_) => Ok(value),
+                                None => Err(runtime_error(*span, error)),
+                            }
+                        }
+                        Err(error) => Err(runtime_error(*span, error)),
+                    },
                     other => Err(runtime_error(
                         *span,
                         RuntimeError::invalid_property_access(format!(
@@ -6897,6 +6908,21 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<Option<Value>> {
+        self.call_magic_property_method_with_values(
+            object,
+            method_name,
+            vec![Value::String(property.to_string())],
+            span,
+        )
+    }
+
+    fn call_magic_property_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         else {
@@ -6917,15 +6943,15 @@ impl Interpreter {
 
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, 1, span)?;
-        ensure_supported_function_signature(function, 1, span)?;
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
         self.call_user_function_with_this(
             function,
             object,
-            vec![Value::String(property.to_string())],
+            args,
             Some(class_id),
             Some(called_class_id),
         )

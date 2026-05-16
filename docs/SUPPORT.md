@@ -338,7 +338,10 @@
   property slots owned by the active class or an ancestor are also supported,
   including inherited parent-declared protected slots on child objects.
   Missing direct-property reads call a visible non-static `__get($name)` method
-  when one is declared or inherited.
+  when one is declared or inherited. Missing direct-property writes call a
+  visible non-static `__set($name, $value)` method when one is declared or
+  inherited, ignore its return value, and preserve the assignment expression
+  result as the assigned value.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -4273,7 +4276,8 @@
   multi-property declarations, typed/multiple/final/interface/trait/enum class
   constants, typed static properties, static property storage removal, late
   static binding beyond the current `static::` method/property/constant and
-  `new static` slices, magic methods, namespaces,
+  `new static` slices, magic methods beyond the current direct
+  missing-property `__get`/`__isset`/`__set` slice, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties
   beyond `stdClass` public slot materialization, dynamic property-name forms
   beyond existing public slots and `stdClass` including complex assignment
@@ -4604,10 +4608,13 @@
   variables as arrays, and reject existing non-array targets with a stable
   runtime diagnostic; append offsets are not supported inside chained
   assignment expressions.
-  Direct object-property assignment expressions evaluate the right-hand expression
-  before validating/writing the direct object-variable target, reject
-  undefined or non-object targets and missing/non-public properties with stable
-  runtime diagnostics, and do not materialize missing properties. Direct
+  Direct object-property assignment expressions evaluate the right-hand
+  expression before validating/writing the direct object-variable target,
+  reject undefined or non-object targets and non-public properties with stable
+  runtime diagnostics, and call visible non-static `__set($name, $value)` for
+  missing direct properties when available instead of materializing them.
+  Missing direct properties without `__set` still fail with the existing
+  undefined-property diagnostic. Direct
   null coalescing assignment expressions use the same lazy evaluation and
   materialization behavior as the supported statement forms. The supported
   assignment-expression values are executable in ordinary expression positions

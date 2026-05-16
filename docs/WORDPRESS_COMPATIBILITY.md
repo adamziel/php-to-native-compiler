@@ -1189,7 +1189,13 @@ historical blockers and remaining full-support gaps include:
   `empty($object->name)`. This is not dynamic property-name magic,
   object-dimension magic, `__set`, `__unset`, `__call`, ArrayAccess,
   typed/uninitialized properties, exact warning behavior,
-  references/copy-on-write, or native lowering.
+  references/copy-on-write, or native lowering. Milestone 1008 adds bounded
+  direct missing-property `__set($name, $value)` for ordinary direct
+  object-property writes while leaving dynamic property-name magic,
+  inaccessible-property `__set` fidelity, nested/compound/null-coalescing
+  writes through magic, `__unset`, `__call`, ArrayAccess,
+  typed/uninitialized properties, exact warning behavior,
+  references/copy-on-write, and native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

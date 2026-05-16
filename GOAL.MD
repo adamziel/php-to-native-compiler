@@ -991,7 +991,13 @@ adds bounded direct missing-property `__get`/`__isset` dispatch for ordinary
 reads, `isset($object->name)`, and `empty($object->name)`, while leaving
 dynamic property-name magic, object-dimension magic, `__set`, `__unset`,
 `__call`, ArrayAccess, typed/uninitialized properties, exact warning behavior,
-references/copy-on-write, and native lowering explicit gaps. Milestone 833
+references/copy-on-write, and native lowering explicit gaps. Milestone 1008
+adds bounded direct missing-property `__set($name, $value)` for ordinary
+direct object-property writes while leaving dynamic property-name magic,
+inaccessible-property `__set` fidelity, nested/compound/null-coalescing writes
+through magic, `__unset`, `__call`, ArrayAccess, typed/uninitialized
+properties, exact warning behavior, references/copy-on-write, and native
+lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct

@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `3623a408 runtime: add magic property access`, pushed to `origin/master`.
+- Task attempted: Milestone 1008, bounded direct missing-property
+  `__set($name, $value)` for ordinary direct object-property writes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1008/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model magic_set_runs_for_missing_direct_property_writes -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1008`
+  passed.
+- Current WordPress frontier: direct writes to missing object properties can
+  now use visible non-static `__set` under the current instance-method model
+  instead of always failing with undefined-property diagnostics.
+- Remaining semantic gaps: dynamic property-name magic, inaccessible-property
+  `__set` fidelity, nested object-property array writes through magic,
+  compound assignment, `??=`, increment/decrement, `__unset`, `__call`,
+  ArrayAccess, typed/uninitialized property behavior, exact PHP
+  warning/visibility diagnostics, references/copy-on-write, and native
+  lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b74c6906 runtime: return mysqli empty results`, pushed to `origin/master`.
 - Task attempted: Milestone 1007, bounded direct missing-property magic for
   ordinary object-property reads, `isset($object->name)`, and

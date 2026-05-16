@@ -9629,6 +9629,20 @@ handled.
   object-dimension magic, `__set`, `__unset`, `__call`, ArrayAccess,
   typed/uninitialized property behavior, exact warning/visibility diagnostics,
   recursion edge-case fidelity, references/copy-on-write, or native lowering.
+- [x] Object semantics lane: inspect the adjacent missing-property write magic
+  gap and add bounded direct `__set($name, $value)` behavior or an explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
+  Milestone 1008 adds bounded direct missing-property `__set($name, $value)`
+  dispatch for ordinary direct `$object->name = expr` writes. Existing visible
+  slots still write directly; missing slots call visible non-static `__set`
+  when declared or inherited, ignore its return value, and keep assignment
+  expressions returning the assigned value. This is not dynamic property-name
+  magic, inaccessible-property `__set` fidelity, nested object-property array
+  writes through magic, compound assignment, `??=`, increment/decrement,
+  `__unset`, `__call`, ArrayAccess, typed/uninitialized property behavior,
+  exact warning/visibility diagnostics, references/copy-on-write, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9640,8 +9654,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b74c6906 runtime: return mysqli empty results`, covering Milestone 1006
-  before the current Milestone 1007 candidate.
+  `3623a408 runtime: add magic property access`, covering Milestone 1007
+  before the current Milestone 1008 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
