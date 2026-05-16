@@ -703,6 +703,25 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_existing_object_property(
+        &mut self,
+        target: &str,
+        object_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            keys: Vec::new(),
+        };
+        self.read_alias_root_value(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
         self.bind_static_to_array_offset_aliases(target, vec![alias]);
     }
@@ -832,7 +851,9 @@ impl SymbolTable {
                     !matches!(
                         &alias.root,
                         ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
-                            if object == object_name && alias_property == property
+                            if object == object_name
+                                && alias_property == property
+                                && !alias.keys.is_empty()
                     )
                 })
                 .collect();
@@ -1357,6 +1378,13 @@ impl SymbolTable {
         alias: &ArrayOffsetAlias,
         span: Span,
     ) -> CompileResult<()> {
+        if alias.keys.is_empty() {
+            if self.read_alias_root_value(alias, span)?.is_none() {
+                self.write_alias_root_value(alias, Value::Null, span)?;
+            }
+            return Ok(());
+        }
+
         let mut array = match self.read_alias_root_value(alias, span)? {
             Some(Value::Array(array)) => array,
             Some(Value::Null) | None => PhpArray::new(),
@@ -1375,6 +1403,10 @@ impl SymbolTable {
     }
 
     fn read_array_offset_alias(&self, alias: &ArrayOffsetAlias) -> Option<Value> {
+        if alias.keys.is_empty() {
+            return self.read_alias_root_value(alias, Span::new(0, 0)).ok()?;
+        }
+
         match self.read_alias_root_value(alias, Span::new(0, 0)).ok()? {
             Some(Value::Array(array)) => Self::read_nested_array_offset_alias(&array, &alias.keys),
             _ => None,
@@ -1382,6 +1414,12 @@ impl SymbolTable {
     }
 
     fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
+        if alias.keys.is_empty() {
+            return self
+                .write_alias_root_value(alias, value, Span::new(0, 0))
+                .is_ok();
+        }
+
         let Ok(Some(Value::Array(mut array))) = self.read_alias_root_value(alias, Span::new(0, 0))
         else {
             return false;
@@ -4165,6 +4203,23 @@ impl Interpreter {
                     scope.bind_static_to_appended_object_property_array_offset(
                         name, object, property, keys, span,
                     )?;
+                } else if let ReferenceSource::Property {
+                    expr:
+                        Expr::Property {
+                            target, property, ..
+                        },
+                    ..
+                } = source
+                {
+                    if let Expr::Variable(object, _) = target.as_ref() {
+                        scope.bind_static_to_existing_object_property(
+                            name, object, property, span,
+                        )?;
+                    } else {
+                        let value = self
+                            .evaluate_direct_variable_reference_source_value(source, span, scope)?;
+                        scope.write_static(name, value);
+                    }
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
                     scope.bind_static_to_cell(name, cell);

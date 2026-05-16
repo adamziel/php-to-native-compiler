@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1089/public_object_property_reference_sources.php
+value-alias
+value-property
+array-alias
+array-property

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T15:58:34Z
+
+- Checkpoint before this task:
+  `a698fc00 docs: record globals append reference source gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1089, bounded direct public object-property
+  reference-source aliases. `$alias =& $object->property;` now binds a direct
+  variable alias target to a named declared public property on a direct object
+  variable for scalar and array values.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1089/public_object_property_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_public_object_property -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_source_copies_current_container_value
+  -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_offset_source --
+  --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1089 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+- Remaining semantic gaps: dynamic property source aliases, magic `__get`
+  by-reference behavior, non-public property source aliases, non-direct object
+  expressions, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, and native lowering remain missing.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: add public property reference sources"` if
+  the working tree still matches the focused checks.
+
 ## Loop Event 2026-05-16T15:49:49Z
 
 - Checkpoint before this task:

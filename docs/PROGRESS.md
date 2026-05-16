@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 1089, a bounded direct public object-property reference-source
+  alias slice. Statement-form `$alias =& $object->property;` now aliases a
+  direct variable target to the named declared public property on a direct
+  object variable. Writes through the alias or the direct property path observe
+  the same scalar or array value, and whole-property assignment keeps the
+  whole-property alias while still detaching narrower array-offset aliases into
+  the previous property array as PHP does. This does not implement dynamic
+  property source aliases, magic `__get` by-reference behavior, non-public
+  property source aliases, non-direct object expressions, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering. Verification so far: `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_public_object_property -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_source_copies_current_container_value --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_offset_source -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1089 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+
 - Added Milestone 1088, a bounded `$GLOBALS` append array-offset
   reference-source slice. Statement-form `$alias =& $GLOBALS["bag"][];` and
   `$alias =& $GLOBALS["bag"]["outer"][];` now parse and execute when the

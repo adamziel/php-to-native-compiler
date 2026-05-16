@@ -10522,17 +10522,16 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1088: `$GLOBALS` Append Reference Sources
+## Milestone 1089: Public Object-Property Reference Sources
 
-- [x] Runtime/value-model lane: add bounded string-keyed `$GLOBALS` append
-  array-offset reference sources. `$alias =& $GLOBALS["bag"][];` and
-  `$alias =& $GLOBALS["bag"]["outer"][];` parse and execute when the alias
-  target is a direct variable and the root global key is a string. Missing
-  root globals and parent containers materialize as arrays, the selected
-  appended slot starts as `null`, and writes through the alias, direct global
-  variable path, or supported `$GLOBALS` path observe the same value. This is
-  not `$GLOBALS[]` append-source support, non-string root key support,
-  recursive `$GLOBALS` materialization, dynamic global names, non-variable
+- [x] Runtime/value-model lane: add bounded direct public object-property
+  reference-source aliases. `$alias =& $object->property;` now aliases a
+  direct variable target to a named declared public property on a direct
+  object variable, including scalar and array property values. Whole-property
+  assignment preserves whole-property aliases while still detaching narrower
+  array-offset aliases into the previous property array. This is not dynamic
+  property source aliasing, magic `__get` by-reference behavior, non-public
+  property source aliasing, non-direct object expressions, non-variable
   reference targets, ArrayAccess reference sources, full PHP reference
   containers, copy-on-write containers, exact alias destruction ordering, or
   native lowering.
@@ -10548,6 +10547,21 @@ handled.
   cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
   probe documented as an external measurement unless a normalized fixture is
   added.
+
+## Milestone 1088: `$GLOBALS` Append Reference Sources
+
+- [x] Runtime/value-model lane: add bounded string-keyed `$GLOBALS` append
+  array-offset reference sources. `$alias =& $GLOBALS["bag"][];` and
+  `$alias =& $GLOBALS["bag"]["outer"][];` parse and execute when the alias
+  target is a direct variable and the root global key is a string. Missing
+  root globals and parent containers materialize as arrays, the selected
+  appended slot starts as `null`, and writes through the alias, direct global
+  variable path, or supported `$GLOBALS` path observe the same value. This is
+  not `$GLOBALS[]` append-source support, non-string root key support,
+  recursive `$GLOBALS` materialization, dynamic global names, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
 
 ## Milestone 1087: Append Reference Sources
 

@@ -147,11 +147,21 @@
   static variable, the copied slot also joins the same bounded alias group:
   writes through the source variable, the original object-property slot, or the
   copied static-array slot update the same selected value. Whole-property
-  assignment and whole-object-variable reassignment remove stale property-root
-  alias metadata before later copies. Arbitrary nested copied reference slots,
+  assignment preserves whole-property aliases but detaches narrower
+  array-offset aliases into the previous property array before storing the
+  replacement value; whole-object-variable reassignment still removes stale
+  property-root alias metadata before later copies. Arbitrary nested copied reference slots,
   reference array literals, ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
-  containers, and native lowering remain unsupported. Direct
+  containers, and native lowering remain unsupported. Direct public
+  object-property reference sources such as `$alias =& $object->property;`
+  alias a direct variable target to the named declared public property on a
+  direct object variable. Writes through the alias or direct property path
+  observe the same scalar or array value. Dynamic property source aliases,
+  magic `__get` by-reference behavior, non-public property source aliases,
+  non-direct object expressions, non-variable reference targets, ArrayAccess
+  sources, full reference containers, copy-on-write, exact alias destruction
+  ordering, and native lowering remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

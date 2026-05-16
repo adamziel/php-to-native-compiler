@@ -2108,6 +2108,52 @@ echo "|", $GLOBALS["posts"][0];
 }
 
 #[test]
+fn reference_assignment_public_object_property_source_aliases_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $value = "initial";
+}
+
+$box = new Box();
+$alias =& $box->value;
+$alias = "from-alias";
+echo $box->value;
+echo "|";
+$box->value = "from-property";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-property");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_public_object_property_array_source_aliases_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items = ["first"];
+}
+
+$box = new Box();
+$alias =& $box->items;
+$alias[0] = "from-alias";
+echo $box->items[0];
+echo "|";
+$box->items = ["from-property"];
+echo $alias[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-property");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_array_offset_source_aliases_direct_slot() {
     let execution = run_source(
         r#"<?php

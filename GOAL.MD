@@ -90,7 +90,9 @@ values without aliasing, and bounded direct/dynamic object-property
 `unset(...)` operands that currently null visible property slots instead of
 modeling true property uninitialization, plus bounded copied reference-slot
 metadata for direct arrays and declared public object-property arrays copied
-into direct variables, and bounded direct object-property array-offset
+into direct variables, and bounded direct public object-property reference
+sources such as `$alias =& $object->property`, and bounded direct
+object-property array-offset
 reference sources such as `$alias =& $object->items[$key]`, plus bounded
 nested direct-array and object-property array-offset reference sources, plus
 bounded append direct-array, object-property, and string-keyed `$GLOBALS`

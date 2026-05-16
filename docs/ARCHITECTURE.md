@@ -293,8 +293,12 @@ routes for direct variable targets. `$alias =& $array[$key];` and
 direct-array slot, materializing missing containers and selected slots as
 needed. `$alias =& $array[];` and `$alias =& $array[$outer][];` append a
 `null` slot through the runtime append cursor and bind the target name to that
-selected slot. Direct public object-property array-offset sources follow the
-same bounded root route for named declared public properties:
+selected slot. Direct public object-property sources such as
+`$alias =& $object->property;` bind the target name to the named declared
+public property root. Whole-property writes preserve those root aliases, while
+property array-offset aliases detach to the previous property array when the
+whole property is replaced. Direct public object-property array-offset sources
+follow the same bounded root route for named declared public properties:
 `$alias =& $object->items[$key];`,
 `$alias =& $object->items[$outer][$inner];`,
 `$alias =& $object->items[];`, and
