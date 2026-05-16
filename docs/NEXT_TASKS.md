@@ -8943,17 +8943,31 @@ handled.
   metadata objects, field metadata transfer, field-count state, result
   buffers, statement result cleanup state, host database state, warning/error
   fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   positioning/attribute boundary after result metadata visibility, such as
   `mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/
   `mysqli_stmt_attr_set()` callable metadata and explicit unsupported
   diagnostics, before claiming broader prepared statement fidelity.
+  Milestone 957 exposes `mysqli_stmt_data_seek()`,
+  `mysqli_stmt_attr_get()`, and `mysqli_stmt_attr_set()` through callable
+  metadata and turns reached statement positioning/attribute calls into
+  stable unsupported diagnostics. This is not statement object allocation,
+  buffered result cursor state, offset seeking, statement attribute catalogs,
+  option registry state, option mutation, host database execution,
+  warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+  positioning/attribute smokes that reach the explicit
+  `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, or
+  `mysqli_stmt_attr_set()` boundary through WordPress-shaped methods without
+  claiming statement objects, buffered result cursor state, offset seeking,
+  statement attribute catalogs, option registry state, option mutation, host
+  database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `11e18eb runtime: add mysqli stmt metadata cleanup boundaries`, covering
-  Milestone 955 before the current Milestone 956 candidate.
+  `10a0fd3 tests: add wordpress wpdb stmt metadata cleanup smokes`, covering
+  Milestone 956 before the current Milestone 957 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

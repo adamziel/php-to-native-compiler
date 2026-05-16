@@ -1,0 +1,2 @@
+runtime error at 3:1: unsupported call mysqli_stmt_data_seek(): mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset
+

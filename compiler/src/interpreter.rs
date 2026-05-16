@@ -4689,6 +4689,39 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_data_seek(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_data_seek", args, 2, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_data_seek()",
+                "mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_attr_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_attr_get", args, 2, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_attr_get()",
+                "mysqli statement objects, statement attributes, and option registry state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_attr_set(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_attr_set", args, 3, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_attr_set()",
+                "mysqli statement objects, statement attributes, option mutation, and option registry state are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9911,6 +9944,9 @@ impl Interpreter {
             "mysqli_stmt_result_metadata" => self.call_mysqli_stmt_result_metadata(&args, span),
             "mysqli_stmt_field_count" => self.call_mysqli_stmt_field_count(&args, span),
             "mysqli_stmt_free_result" => self.call_mysqli_stmt_free_result(&args, span),
+            "mysqli_stmt_data_seek" => self.call_mysqli_stmt_data_seek(&args, span),
+            "mysqli_stmt_attr_get" => self.call_mysqli_stmt_attr_get(&args, span),
+            "mysqli_stmt_attr_set" => self.call_mysqli_stmt_attr_set(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12897,6 +12933,9 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_result_metadata"
             | "mysqli_stmt_field_count"
             | "mysqli_stmt_free_result"
+            | "mysqli_stmt_data_seek"
+            | "mysqli_stmt_attr_get"
+            | "mysqli_stmt_attr_set"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

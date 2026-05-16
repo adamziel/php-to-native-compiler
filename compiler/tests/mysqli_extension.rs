@@ -855,6 +855,83 @@ mysqli_stmt_free_result($stmt);
 }
 
 #[test]
+fn mysqli_statement_positioning_and_attributes_are_visible_but_explicit_boundary() {
+    let execution = run_source(
+        r#"<?php
+$data_seek = "mysqli_stmt_data_seek";
+$attr_get = "mysqli_stmt_attr_get";
+$attr_set = "mysqli_stmt_attr_set";
+echo function_exists($data_seek) ? "yes" : "no";
+echo "|";
+echo is_callable($data_seek) ? "data-seek-callable" : "data-seek-missing";
+echo "|";
+echo function_exists($attr_get) ? "attr-get-exists" : "attr-get-missing";
+echo "|";
+echo is_callable($attr_get) ? "attr-get-callable" : "attr-get-missing";
+echo "|";
+echo function_exists($attr_set) ? "attr-set-exists" : "attr-set-missing";
+echo "|";
+echo is_callable($attr_set) ? "attr-set-callable" : "attr-set-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|data-seek-callable|attr-get-exists|attr-get-callable|attr-set-exists|attr-set-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let data_seek_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_data_seek($stmt, 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(data_seek_error.phase, Phase::Runtime);
+    assert_eq!(data_seek_error.line, 3);
+    assert_eq!(data_seek_error.column, 1);
+    assert_eq!(
+        data_seek_error.message,
+        "unsupported call mysqli_stmt_data_seek(): mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset"
+    );
+
+    let attr_get_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_attr_get($stmt, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(attr_get_error.phase, Phase::Runtime);
+    assert_eq!(attr_get_error.line, 3);
+    assert_eq!(attr_get_error.column, 1);
+    assert_eq!(
+        attr_get_error.message,
+        "unsupported call mysqli_stmt_attr_get(): mysqli statement objects, statement attributes, and option registry state are not implemented in the current subset"
+    );
+
+    let attr_set_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_attr_set($stmt, 1, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(attr_set_error.phase, Phase::Runtime);
+    assert_eq!(attr_set_error.line, 3);
+    assert_eq!(attr_set_error.column, 1);
+    assert_eq!(
+        attr_set_error.message,
+        "unsupported call mysqli_stmt_attr_set(): mysqli statement objects, statement attributes, option mutation, and option registry state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -3123,6 +3200,12 @@ echo function_exists("mysqli_stmt_field_count") ? "1" : "0";
 echo is_callable("mysqli_stmt_field_count") ? "1" : "0";
 echo function_exists("mysqli_stmt_free_result") ? "1" : "0";
 echo is_callable("mysqli_stmt_free_result") ? "1" : "0";
+echo function_exists("mysqli_stmt_data_seek") ? "1" : "0";
+echo is_callable("mysqli_stmt_data_seek") ? "1" : "0";
+echo function_exists("mysqli_stmt_attr_get") ? "1" : "0";
+echo is_callable("mysqli_stmt_attr_get") ? "1" : "0";
+echo function_exists("mysqli_stmt_attr_set") ? "1" : "0";
+echo is_callable("mysqli_stmt_attr_set") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3221,7 +3304,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 174, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 180, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3673,6 +3756,42 @@ mysqli_stmt_field_count(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_free_result(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_data_seek(mysqli_init(), 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_attr_get(mysqli_init(), 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_attr_set(mysqli_init(), 1, 1);
 "#,
     )
     .unwrap_err();

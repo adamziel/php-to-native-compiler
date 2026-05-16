@@ -17,7 +17,8 @@ Status: boundary only.
 `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
 `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
 `mysqli_stmt_result_metadata`, `mysqli_stmt_field_count`,
-`mysqli_stmt_free_result`,
+`mysqli_stmt_free_result`, `mysqli_stmt_data_seek`,
+`mysqli_stmt_attr_get`, `mysqli_stmt_attr_set`,
 `mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
@@ -209,6 +210,14 @@ are explicit runtime boundaries. Reached calls report stable unsupported
 diagnostics because statement objects, statement result metadata objects,
 field metadata transfer, field-count state, result buffers, and statement
 result cleanup state are not implemented.
+
+`mysqli_stmt_data_seek($statement, $offset)`,
+`mysqli_stmt_attr_get($statement, $attribute)`, and
+`mysqli_stmt_attr_set($statement, $attribute, $value)` are visible through
+callable metadata but are explicit runtime boundaries. Reached calls report
+stable unsupported diagnostics because statement objects, buffered result
+cursors, offset seeking, statement attributes, option registry state, and
+option mutation are not implemented.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

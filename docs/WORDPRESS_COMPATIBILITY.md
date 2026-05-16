@@ -1625,7 +1625,13 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` result metadata/cleanup methods without claiming
   statement objects, statement result metadata, field metadata transfer,
   field-count state, result buffers, result cleanup state, host database
-  state, warning/error fidelity, or native database lowering.
+  state, warning/error fidelity, or native database lowering. Milestone 957
+  adds explicit `mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/
+  `mysqli_stmt_attr_set()` statement positioning/attribute boundaries with
+  callable metadata and stable unsupported diagnostics, without statement
+  object allocation, buffered result cursor state, offset seeking, statement
+  attribute catalogs, option registry state, option mutation, host database
+  execution, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

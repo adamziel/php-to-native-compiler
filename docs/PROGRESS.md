@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 957, explicit MySQLi statement positioning/attribute
+  boundaries for `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and
+  `mysqli_stmt_attr_set()`. The runtime exposes the names through
+  function/callability metadata, validates the current arities, and reports
+  stable unsupported diagnostics when statement cursor seeking or statement
+  attribute access/mutation is reached. Native metadata lookup knows the names
+  while direct native lowering remains rejected. This is not statement object
+  allocation, buffered result cursor state, offset seeking, statement
+  attribute catalogs, option registry state, option mutation, host database
+  execution, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_positioning_and_attributes -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone957`.
+
 - Added Milestone 956, synthetic WordPress-shaped `wpdb`
   prepared-statement result metadata/cleanup smokes that reach the explicit
   `mysqli_stmt_result_metadata()`, `mysqli_stmt_field_count()`, and

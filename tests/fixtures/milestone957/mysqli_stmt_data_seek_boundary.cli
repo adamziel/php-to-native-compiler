@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone957/mysqli_stmt_data_seek_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone957/mysqli_stmt_data_seek_boundary.php:3:1: unsupported call mysqli_stmt_data_seek(): mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset
+--- stderr end ---

@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `10a0fd3 tests: add wordpress wpdb stmt metadata cleanup smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 957, explicit MySQLi statement
+  positioning/attribute boundaries for `mysqli_stmt_data_seek()`,
+  `mysqli_stmt_attr_get()`, and `mysqli_stmt_attr_set()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone957/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_positioning_and_attributes -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone957`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement cursor seeking and
+  statement attribute APIs now produce stable diagnostics instead of generic
+  unknown-call behavior.
+- Remaining semantic gaps: statement object allocation, buffered result cursor
+  state, offset seeking, statement attribute catalogs, option registry state,
+  option mutation, host database state, warnings/errors, and native database
+  lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+  positioning/attribute smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `11e18eb runtime: add mysqli stmt metadata cleanup boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 956, synthetic WordPress-shaped `wpdb`
@@ -49,8 +79,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   metadata objects, field metadata transfer, field-count state, result
   buffers, statement result cleanup state, host database state,
   warnings/errors, and native database lowering remain missing.
-- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
-  after checkpoint, inspect the next MySQLi prepared-statement
+- Checkpoint result: committed and pushed
+  `10a0fd3 tests: add wordpress wpdb stmt metadata cleanup smokes`.
+- Next concrete task: inspect the next MySQLi prepared-statement
   positioning/attribute boundary such as `mysqli_stmt_data_seek()`,
   `mysqli_stmt_attr_get()`, or `mysqli_stmt_attr_set()`.
 
