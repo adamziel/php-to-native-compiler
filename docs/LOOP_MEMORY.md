@@ -33,14 +33,16 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1056, array-entry accessor groundwork for future
   array slot/reference cells.
-- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `GOAL.MD`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime -- --test-threads=1` passed with 108 tests.
   `cargo test -p phpc --test foreach -- --test-threads=1` passed with 9
   tests. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check` passed.
+  `git diff --check` passed. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `8c4d3b38 runtime: add array entry value accessor boundary`.
 - Current WordPress frontier: array entries no longer expose their value field
   directly; all callers use accessor/mutator methods while eager cloned-array
   behavior remains pinned. This creates a controlled field boundary for the
@@ -50,10 +52,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   offset aliases, exact by-reference `foreach`, lingering references,
   copy-on-write, mutation-during-iteration fidelity, and native lowering remain
   missing.
-- Next concrete task: run the serialized checkpoint gate, then replace the
-  private `ArrayEntry` value storage with an explicit clone-by-value slot type
-  and preserve the same runtime test surface before enabling any reference
-  sharing.
+- Next concrete task: replace the private `ArrayEntry` value storage with an
+  explicit clone-by-value slot type and preserve the same runtime test surface
+  before enabling any reference sharing.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

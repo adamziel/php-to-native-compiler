@@ -16,10 +16,12 @@ Implemented:
   aliasing. This is groundwork only: direct array-offset reference assignment,
   true array slot/reference cells, copy-on-write, exact by-reference
   `foreach`, object-property offsets, and native lowering remain unsupported.
-  Verification so far: `cargo test -p php_runtime -- --test-threads=1`,
+  Verification: `cargo test -p php_runtime -- --test-threads=1`,
   `cargo test -p phpc --test foreach -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `8c4d3b38 runtime: add array entry value accessor boundary`.
 
 - Added Milestone 1055, a bounded direct-array-variable by-reference
   `foreach` copy-back execution slice. In the current subset,

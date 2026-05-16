@@ -10231,8 +10231,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f81adc95 runtime: add direct array foreach reference copyback`, covering
-  Milestone 1055.
+  `8c4d3b38 runtime: add array entry value accessor boundary`, covering
+  Milestone 1056.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
