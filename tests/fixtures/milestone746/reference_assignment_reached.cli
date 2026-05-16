@@ -1,6 +1,2 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/milestone746/reference_assignment_reached.php:4:5: unsupported call reference assignment: references and aliasing are not implemented
---- stderr end ---
+before
+2

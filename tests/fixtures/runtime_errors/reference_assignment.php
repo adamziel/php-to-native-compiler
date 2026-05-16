@@ -1,3 +1,3 @@
 <?php
-$value = 1;
-$alias =& $value;
+$items = [1];
+$alias =& $items[0];

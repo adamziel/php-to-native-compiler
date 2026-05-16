@@ -44,15 +44,19 @@
   object-property array-offset targets such as `$object->items[$key] =& $value`
   parses in statement position for direct variable, direct array-offset, and
   method-call sources plus the documented direct object-property array-offset
-  target shape. The executing subset is direct variable sources holding a
-  current object or array value assigned into a direct variable; direct
-  variable sources holding current object values may also be assigned into
-  direct array offsets. These cases store the current value/object handle under
-  the current value model. Scalar sources, array-offset and method-call
+  target shape. The executing subset includes direct variable-to-variable
+  sources and targets in the current scope/global-routing model:
+  `$alias =& $value;` binds both names to the same mutable cell, so assignment
+  through either direct name updates the other, and `unset($alias)` or
+  `unset($value)` detaches only that name without deleting the shared cell
+  while another alias still points at it. Direct variable sources holding
+  current object values may also be assigned into direct array offsets under
+  the existing object-handle value model. Array-offset and method-call
   sources, direct array-offset targets for array values, object-property array
-  targets, source/target rebinding aliases, PHP reference containers,
-  copy-on-write, mutation ordering beyond the stored value, and native lowering
-  remain unsupported and report
+  targets, by-reference `foreach`, reference returns, by-reference parameter
+  aliasing during execution, source/target rebinding beyond direct names, PHP
+  reference-container edge cases, copy-on-write, and native lowering remain
+  unsupported and report
   `unsupported call reference assignment: references and aliasing are not
   implemented` when reached.
 - assignment statements, plus expression-position direct static-variable

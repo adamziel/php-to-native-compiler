@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1005, bounded direct variable-to-variable reference cells
+  for statement-form by-reference assignment. The interpreter symbol table now
+  stores variables as mutable cells, and `$alias =& $value;` binds both direct
+  variable names to the same cell in the current scope/global-routing model.
+  Assigning through either name updates the other, and `unset($alias)` detaches
+  that name without deleting the source cell. The previous direct-variable
+  reference-assignment runtime error fixture now remains focused on the still
+  unsupported array-offset source boundary. This is not array-offset
+  references, object-property references, by-reference `foreach`, reference
+  returns, by-reference parameter aliasing during execution, source/target
+  rebinding beyond direct names, PHP reference-container edge cases,
+  copy-on-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1005`,
+  `cargo run -p phpc -- test tests/fixtures/milestone746`, and
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`.
+
 - Added Milestone 1004, bounded PDO core class constants over the current
   visibility boundary. The metadata-only `PDO` seed now exposes a small
   public integer constant catalog for current error-mode, fetch-mode, and

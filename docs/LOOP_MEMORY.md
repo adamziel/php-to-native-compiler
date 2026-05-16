@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `2d36be82 runtime: add pdo constants boundary`, pushed to `origin/master`.
+- Task attempted: Milestone 1005, bounded direct variable-to-variable
+  reference cells for statement-form by-reference assignment.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1005/*`,
+  `tests/fixtures/milestone746/reference_assignment_reached.*`,
+  `tests/fixtures/runtime_errors/reference_assignment.*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1005`,
+  `cargo run -p phpc -- test tests/fixtures/milestone746`, and
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed. The new
+  direct-variable reference fixture compared against system PHP.
+- Current WordPress frontier: `$alias =& $value` over direct variables now has
+  an actual shared mutable-cell behavior instead of a copy-only scalar
+  boundary.
+- Remaining semantic gaps: array-offset references, object-property
+  references, by-reference `foreach`, reference returns, by-reference
+  parameter aliasing during execution, source/target rebinding beyond direct
+  names, PHP reference-container edge cases, copy-on-write, and native
+  lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d9435803 runtime: add pdo visibility boundary`, pushed to `origin/master`.
 - Task attempted: Milestone 1004, bounded public integer `PDO` core class
   constants for the current PDO visibility boundary.

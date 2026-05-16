@@ -192,7 +192,8 @@ incorrect native code.
   debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
-references, copy-on-write, namespace forms beyond the current class-name/import,
+references beyond the current direct variable-to-variable assignment cell
+slice, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
 include/require breadth beyond the current narrow local string-path statement
 and expression slice, eval,

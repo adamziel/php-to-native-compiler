@@ -96,7 +96,7 @@ struct Interpreter {
     required_once: HashSet<PathBuf>,
     static_locals: HashMap<(String, String), Value>,
     active_static_locals: Vec<Vec<String>>,
-    global_symbols: Rc<RefCell<HashMap<String, Value>>>,
+    global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
@@ -256,17 +256,20 @@ enum CompoundAssignmentPlace {
 struct SymbolTable {
     // Static variables and future dynamic variable names share the same
     // materialized storage path; current syntax only calls the static methods.
-    symbols: Rc<RefCell<HashMap<String, Value>>>,
-    global_symbols: Option<Rc<RefCell<HashMap<String, Value>>>>,
+    symbols: SymbolStorage,
+    global_symbols: Option<SymbolStorage>,
     imported_globals: HashSet<String>,
 }
+
+type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
+type VariableCell = Rc<RefCell<Value>>;
 
 impl SymbolTable {
     fn new() -> Self {
         Self::default()
     }
 
-    fn new_child(global_symbols: Rc<RefCell<HashMap<String, Value>>>) -> Self {
+    fn new_child(global_symbols: SymbolStorage) -> Self {
         Self {
             symbols: Rc::new(RefCell::new(HashMap::new())),
             global_symbols: Some(global_symbols),
@@ -274,7 +277,7 @@ impl SymbolTable {
         }
     }
 
-    fn from_root(symbols: Rc<RefCell<HashMap<String, Value>>>) -> Self {
+    fn from_root(symbols: SymbolStorage) -> Self {
         Self {
             symbols,
             global_symbols: None,
@@ -284,12 +287,11 @@ impl SymbolTable {
 
     fn import_global(&mut self, name: &str) {
         if let Some(global_symbols) = &self.global_symbols {
-            let value = global_symbols
-                .borrow()
-                .get(name)
-                .cloned()
-                .unwrap_or(Value::Null);
-            global_symbols.borrow_mut().insert(name.to_string(), value);
+            if global_symbols.borrow().get(name).is_none() {
+                global_symbols
+                    .borrow_mut()
+                    .insert(name.to_string(), value_cell(Value::Null));
+            }
             self.imported_globals.insert(name.to_string());
         }
     }
@@ -323,46 +325,76 @@ impl SymbolTable {
     }
 
     fn read_named(&self, name: &str) -> Option<Value> {
-        if self.imported_globals.contains(name)
-            || (is_auto_global_name(name) && self.global_symbols.is_some())
-        {
-            return self
-                .global_symbols
-                .as_ref()
-                .and_then(|symbols| symbols.borrow().get(name).cloned());
-        }
-        self.symbols.borrow().get(name).cloned()
+        self.read_cell(name).map(|cell| cell.borrow().clone())
     }
 
     fn read_global_name(&self, name: &str) -> Option<Value> {
-        match &self.global_symbols {
-            Some(global_symbols) => global_symbols.borrow().get(name).cloned(),
-            None => self.symbols.borrow().get(name).cloned(),
-        }
+        self.global_storage()
+            .borrow()
+            .get(name)
+            .map(|cell| cell.borrow().clone())
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
-        if self.imported_globals.contains(name)
-            || (is_auto_global_name(name) && self.global_symbols.is_some())
-        {
-            if let Some(global_symbols) = &self.global_symbols {
-                global_symbols.borrow_mut().insert(name.to_string(), value);
-                return;
-            }
+        let storage = self.routed_storage(name).clone();
+        let cell = storage.borrow().get(name).cloned();
+        if let Some(cell) = cell {
+            *cell.borrow_mut() = value;
+        } else {
+            storage
+                .borrow_mut()
+                .insert(name.to_string(), value_cell(value));
         }
-        self.symbols.borrow_mut().insert(name.to_string(), value);
     }
 
     fn write_global_name(&mut self, name: &str, value: Value) {
-        match &self.global_symbols {
-            Some(global_symbols) => {
-                global_symbols.borrow_mut().insert(name.to_string(), value);
-            }
-            None => {
-                self.symbols.borrow_mut().insert(name.to_string(), value);
-            }
+        let storage = self.global_storage().clone();
+        let cell = storage.borrow().get(name).cloned();
+        if let Some(cell) = cell {
+            *cell.borrow_mut() = value;
+        } else {
+            storage
+                .borrow_mut()
+                .insert(name.to_string(), value_cell(value));
         }
     }
+
+    fn bind_static_to_static(
+        &mut self,
+        target: &str,
+        source: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let source_cell = self
+            .read_cell(source)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
+        self.routed_storage(target)
+            .borrow_mut()
+            .insert(target.to_string(), source_cell);
+        Ok(())
+    }
+
+    fn read_cell(&self, name: &str) -> Option<VariableCell> {
+        self.routed_storage(name).borrow().get(name).cloned()
+    }
+
+    fn routed_storage(&self, name: &str) -> &SymbolStorage {
+        if self.imported_globals.contains(name)
+            || (is_auto_global_name(name) && self.global_symbols.is_some())
+        {
+            self.global_symbols.as_ref().unwrap_or(&self.symbols)
+        } else {
+            &self.symbols
+        }
+    }
+
+    fn global_storage(&self) -> &SymbolStorage {
+        self.global_symbols.as_ref().unwrap_or(&self.symbols)
+    }
+}
+
+fn value_cell(value: Value) -> VariableCell {
+    Rc::new(RefCell::new(value))
 }
 
 #[derive(Debug, Clone)]
@@ -578,7 +610,7 @@ impl Interpreter {
 
         self.global_symbols
             .borrow_mut()
-            .insert("_SERVER".to_string(), Value::Array(server));
+            .insert("_SERVER".to_string(), value_cell(Value::Array(server)));
     }
 
     fn initialize_static_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
@@ -2571,9 +2603,16 @@ impl Interpreter {
 
         match target {
             AssignTarget::Variable { name, .. } => {
-                let value =
-                    self.evaluate_direct_variable_reference_source_value(source, span, scope)?;
-                scope.write_static(name, value);
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    scope.bind_static_to_static(name, source_name, span)?;
+                } else {
+                    let value =
+                        self.evaluate_direct_variable_reference_source_value(source, span, scope)?;
+                    scope.write_static(name, value);
+                }
                 Ok(())
             }
             AssignTarget::ArrayIndex {

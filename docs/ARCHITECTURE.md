@@ -171,15 +171,17 @@ Planned runtime values and semantics:
 - copy-on-write containers
 
 By-reference assignment has bounded execution slices for statement-form direct
-variable sources. Direct variable sources holding object or array values can be
-assigned into direct variables, and direct variable sources holding object
-values can also be assigned into direct array offsets. These paths store the
-current value/object handle and deliberately do not add a `Reference` runtime
-value or alias-backed symbol-table slots. Scalar references, source or target
-rebinding, by-reference array-offset and method-call sources, direct
-array-offset targets for array values, object-property array targets, PHP
-reference containers, mutation-ordering guarantees, and copy-on-write remain
-future runtime work.
+variable sources. The interpreter symbol table stores direct variables as
+mutable cells, so `$alias =& $value;` can bind both direct names to the same
+cell in the current scope/global-routing model. Assignment through either name
+updates the other, and `unset($alias)` or `unset($value)` removes only that
+name binding while the cell remains alive through any remaining alias. Direct
+variable sources holding object values can also be assigned into direct array
+offsets under the existing object-handle value model. Array-offset and
+method-call sources, direct array-offset targets for array values,
+object-property array targets, source/target rebinding beyond direct names,
+full PHP reference containers, by-reference `foreach`, mutation-ordering
+guarantees, and copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register, but invoking such
 a function or method reports a stable runtime boundary before any return value

@@ -597,6 +597,13 @@ historical blockers and remaining full-support gaps include:
   This is not scalar/array reference aliasing, source/target rebinding,
   by-reference array-offset or method-call sources, object-property array
   targets, copy-on-write, native lowering, or WordPress bootstrap support.
+  Milestone 1005 later adds bounded direct variable-to-variable reference
+  assignment cells for `$alias =& $value`, so scalar, array, and object values
+  assigned through either direct name are visible through the other. This is
+  still not array-offset references, object-property references, by-reference
+  `foreach`, reference returns, by-reference parameter aliasing during
+  execution, PHP reference-container edge cases, copy-on-write, native
+  lowering, or WordPress bootstrap support.
   Milestone 763 implements bounded three-argument `str_replace()` for
   scalar/null string-convertible arguments and advances the real
   bootstrap-shim probe to

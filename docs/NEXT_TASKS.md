@@ -9586,6 +9586,21 @@ handled.
   constant catalog, `PDOException`, PDO attributes, error-mode behavior, DSN
   parsing, host database connections, statement execution, transactions,
   warning/error fidelity, or native database lowering.
+- [x] PHP semantics lane: inspect the next difficult reference/copy-on-write
+  gap, such as direct variable reference cells, by-reference `foreach`,
+  reference returns, array-offset/object-property references, or alias-aware
+  parameter passing, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
+  Milestone 1005 adds bounded direct variable-to-variable reference cells for
+  statement-form `$alias =& $value;`. Both direct names share one mutable cell
+  in the current scope/global-routing model, writes through either name are
+  visible through the other, and `unset($alias)` detaches that name without
+  deleting the source cell. This is not array-offset references,
+  object-property references, by-reference `foreach`, reference returns,
+  by-reference parameter aliasing during execution, source/target rebinding
+  beyond direct names, full PHP reference containers, copy-on-write, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9597,8 +9612,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d9435803 runtime: add pdo visibility boundary`, covering Milestone 1003
-  before the current Milestone 1004 candidate.
+  `2d36be82 runtime: add pdo constants boundary`, covering Milestone 1004
+  before the current Milestone 1005 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -1,1 +1,1 @@
-phpc parses statement-form by-reference assignment as a runtime boundary; it does not implement PHP reference aliases or copy-on-write.
+phpc supports bounded direct variable-to-variable reference assignment cells; this is not full PHP references or copy-on-write.

@@ -946,7 +946,12 @@ by-reference parameters with defaults, which moves past `wp_cache_get()`'s
 omitted `$found` parameter in `get_option()` but not the later provided
 `$found` output variable. Milestone 817 covers direct-variable by-reference
 parameter copy-back for the reached `WP_Object_Cache::get(..., $found)` output
-shape. Milestone 818 covers bounded `mysqli_real_escape_string()` for the
+shape. Milestone 1005 later adds bounded direct variable-to-variable reference
+assignment cells for `$alias =& $value`, so writes through either direct name
+are visible through the other while array-offset references, object-property
+references, by-reference `foreach`, reference returns, by-reference parameter
+aliasing during execution, copy-on-write, and native lowering remain missing.
+Milestone 818 covers bounded `mysqli_real_escape_string()` for the
 reached `wpdb::_real_escape()` option lookup path over the existing
 placeholder `mysqli` object. The current frontier is now missing bounded
 `rand()` support in the reached `wpdb::placeholder_escape()` path at
@@ -1352,7 +1357,8 @@ syntax too far.
 
 Scope:
 
-- reference cells and aliasing boundaries;
+- direct variable-to-variable reference cells are now bounded; continue with
+  array-offset/object-property reference cells and aliasing boundaries;
 - array/object copy-on-write behavior;
 - function parameter and return interactions with references;
 - mutation behavior for arrays, objects, foreach, and builtins;

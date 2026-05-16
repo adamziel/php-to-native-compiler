@@ -906,20 +906,31 @@ echo $factory->make();
 }
 
 #[test]
-fn reference_assignment_executes_as_stable_runtime_boundary() {
-    let error = runtime_error(
+fn reference_assignment_direct_variable_sources_create_current_alias_cells() {
+    let execution = run_source(
         r#"<?php
 $value = 1;
 $alias =& $value;
+$alias = 2;
+echo $value;
+echo "|";
+$value = 3;
+echo $alias;
+unset($alias);
+$value = 4;
+echo "|";
+echo $value;
+$left = 5;
+$right =& $left;
+unset($left);
+echo "|";
+echo $right;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: references and aliasing are not implemented"
-    );
+    assert_eq!(execution.stdout, "2|3|4|5");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
