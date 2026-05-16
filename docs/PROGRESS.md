@@ -14,7 +14,10 @@ Implemented:
   resources, references/copy-on-write, stack frames, diagnostics, and
   WordPress host/runtime state remain unsupported in native lowering.
   Verification so far:
-  `cargo test -p phpc --test native_runtime_abi -- --test-threads=1`.
+  `cargo test -p phpc --test native_runtime_abi -- --test-threads=1`. The
+  serialized checkpoint gate passed with 1258 fixture tests, 704 system PHP
+  comparisons, and 554 skipped comparisons, then committed
+  `df45ac16 native: render helper signatures by pointer width`.
 
 - Added Milestone 1043, bounded `is_iterable($object)` metadata support for
   objects whose class metadata records `implements Traversable`,

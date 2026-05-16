@@ -40,18 +40,22 @@ injects this file into every prompt. Each Codex pass should update it with:
   `docs/PROGRESS.md`, `docs/NATIVE_RUNTIME_ABI.md`, `docs/NEXT_TASKS.md`,
   `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `GOAL.MD`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check` passed.
   `cargo test -p phpc --test native_runtime_abi -- --test-threads=1` first
   found a one-newline snapshot mismatch, then passed after fixing the fixture.
+  `git diff --check` passed. The serialized checkpoint gate passed with 1258
+  fixture tests, 704 system PHP comparisons, and 554 skipped comparisons, then
+  committed `df45ac16 native: render helper signatures by pointer width`.
 - Current WordPress frontier: this is a native-runtime integration prerequisite,
   not a WordPress runtime behavior slice.
 - Remaining semantic gaps: normal generated LLVM still does not emit runtime
   helper calls; linked native execution, boxed strings, arrays, objects,
   resources, references/copy-on-write, stack frames, diagnostics, and
   WordPress host/runtime state remain missing in native lowering.
-- Next concrete task: run `git diff --check`, then checkpoint the Milestone
-  1044 batch through `tools/checkpoint.sh` if the serialized gate passes.
+- Next concrete task: push the checkpoint, then continue with one of the next
+  hard compatibility lanes: runtime helper call emission, the next object
+  protocol gap, or the next real database-state boundary.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

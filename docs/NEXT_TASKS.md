@@ -10066,9 +10066,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `6582b4e1 runtime: add iterable object metadata`, covering
-  Milestone 1043. A Milestone 1044 native runtime helper signature slice is
-  implemented in the working tree and awaiting checkpoint.
+  `df45ac16 native: render helper signatures by pointer width`, covering
+  Milestone 1044.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
