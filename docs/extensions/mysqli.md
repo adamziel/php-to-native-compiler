@@ -259,12 +259,14 @@ statement execution, statement result rows, mysqlnd result transfer, broad SQL
 metadata, host database metadata, PHP warning/error fidelity, or native
 lowering.
 
-`mysqli_stmt_store_result($statement)`, `mysqli_stmt_num_rows($statement)`,
-and `mysqli_stmt_fetch($statement)` are visible through callable metadata but
-are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, buffered result storage, statement
-row-count metadata, cursor advancement, bound result buffers, and host
-database rows are not implemented.
+`mysqli_stmt_store_result($statement)` buffers the deterministic rows recorded
+by the current placeholder execution path and returns `true`, or returns
+`false` when no placeholder statement result is available.
+`mysqli_stmt_num_rows($statement)` reports the buffered placeholder row count,
+or `0` before buffering and after `mysqli_stmt_free_result($statement)`.
+`mysqli_stmt_fetch($statement)` remains an explicit runtime boundary because
+by-reference result binding, output buffer mutation, cursor advancement over
+bound buffers, and host database rows are not implemented.
 
 `mysqli_stmt_data_seek($statement, $offset)`,
 `mysqli_stmt_attr_get($statement, $attribute)`, and

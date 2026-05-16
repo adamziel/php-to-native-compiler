@@ -138,6 +138,7 @@ struct MysqliStatementState {
     query: Option<String>,
     param_count: usize,
     executed_result: Option<MysqliPendingResultState>,
+    buffered_result: Option<MysqliPendingResultState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4057,6 +4058,7 @@ impl Interpreter {
                     .unwrap_or(0),
                 query,
                 executed_result: None,
+                buffered_result: None,
             },
         );
         Ok(Value::Object(PhpObject::from_class_with_id(
@@ -4646,6 +4648,7 @@ impl Interpreter {
         state.param_count = mysqli_placeholder_param_count(&query);
         state.query = Some(query);
         state.executed_result = None;
+        state.buffered_result = None;
         Ok(Value::Bool(true))
     }
 
@@ -4769,6 +4772,7 @@ impl Interpreter {
         let result = mysqli_statement_result_for_query("mysqli_stmt_execute()", &query, span)?;
         let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
         state.executed_result = result;
+        state.buffered_result = None;
         Ok(Value::Bool(true))
     }
 
@@ -4813,25 +4817,32 @@ impl Interpreter {
         Ok(Value::Int(0))
     }
 
-    fn call_mysqli_stmt_store_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_store_result(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_store_result", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_store_result()",
-                "mysqli statement objects, result buffering, and statement result state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_store_result()", &args[0], span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_store_result()", stmt_id, span)?;
+        let Some(result) = state.executed_result.clone() else {
+            state.buffered_result = None;
+            return Ok(Value::Bool(false));
+        };
+        state.buffered_result = Some(result);
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_num_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_num_rows", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_num_rows()",
-                "mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset",
-            ),
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_num_rows()", &args[0], span)?;
+        let state = self.mysqli_statement_state("mysqli_stmt_num_rows()", stmt_id, span)?;
+        Ok(Value::Int(
+            state
+                .buffered_result
+                .as_ref()
+                .map(|result| result.rows.len() as i64)
+                .unwrap_or(0),
         ))
     }
 
@@ -4886,10 +4897,11 @@ impl Interpreter {
         Ok(Value::Int(result.fields.len() as i64))
     }
 
-    fn call_mysqli_stmt_free_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_free_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_free_result", args, 1, span)?;
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_free_result()", &args[0], span)?;
-        self.mysqli_statement_state("mysqli_stmt_free_result()", stmt_id, span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_free_result()", stmt_id, span)?;
+        state.buffered_result = None;
         Ok(Value::Null)
     }
 
@@ -4944,6 +4956,7 @@ impl Interpreter {
         state.query = None;
         state.param_count = 0;
         state.executed_result = None;
+        state.buffered_result = None;
         Ok(Value::Bool(true))
     }
 

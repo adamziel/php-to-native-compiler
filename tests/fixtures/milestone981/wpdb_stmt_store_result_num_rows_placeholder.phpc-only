@@ -1,0 +1,6 @@
+This fixture records deterministic placeholder statement row-count metadata
+through a WordPress-shaped `wpdb` object after `mysqli_stmt_store_result()`.
+It covers only the current unbound seed-post SELECT shape and does not
+implement bound-result fetching, by-reference output buffers, mysqlnd
+fidelity, host database state, PHP warning/error fidelity, or native database
+lowering.

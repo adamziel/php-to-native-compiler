@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_store_result()` and `mysqli_stmt_num_rows()` behavior after
+unbound prepared-statement execution for the current seed-post WordPress
+SELECT shape. System PHP requires a real initialized MySQLi connection and
+buffered statement result state; phpc only buffers the known placeholder rows
+and does not implement bound-result fetching, by-reference output buffers,
+mysqlnd fidelity, host database state, PHP warning/error fidelity, or native
+database lowering.

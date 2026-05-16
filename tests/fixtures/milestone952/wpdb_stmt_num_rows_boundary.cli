@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone952/wpdb_stmt_num_rows_boundary.php:12:16: unsupported call mysqli_stmt_num_rows(): mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset
+runtime error at tests/fixtures/milestone952/wpdb_stmt_num_rows_boundary.php:12:16: unsupported call mysqli_stmt_num_rows(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 --- stderr end ---

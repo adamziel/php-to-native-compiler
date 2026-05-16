@@ -1740,6 +1740,12 @@ historical blockers and remaining full-support gaps include:
   `wpdb` smoke, without claiming bound-parameter execution, array parameter
   execution, mutation execution, unknown SELECT metadata, real mysqlnd
   transfer, host database state, PHP warning/error fidelity, or native
+  database lowering. Milestone 981 adds deterministic
+  `mysqli_stmt_store_result()` and `mysqli_stmt_num_rows()` behavior for the
+  current unbound seed-post WordPress SELECT execution path, including a
+  WordPress-shaped `wpdb` smoke, without claiming by-reference result binding,
+  output-buffer mutation, `mysqli_stmt_fetch()`, real mysqlnd buffering, broad
+  SQL execution, host database rows, PHP warning/error fidelity, or native
   database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

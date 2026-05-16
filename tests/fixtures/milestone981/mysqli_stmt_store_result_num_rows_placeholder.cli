@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone981/mysqli_stmt_store_result_num_rows_placeholder.php
+exit: 0
+stdout:
+0|stored|1|0
+--- stdout end ---
+stderr:
+--- stderr end ---

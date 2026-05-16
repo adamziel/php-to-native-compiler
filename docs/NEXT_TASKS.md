@@ -9242,19 +9242,33 @@ handled.
   execution, mutation execution, unknown SELECT metadata, real mysqlnd
   transfer, host database state, PHP warning/error fidelity, or native
   database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as statement result
   buffering/fetching, active-statement binding boundaries, broader escaping
   charset fidelity, local-infile option effects, or multi-result pending
   queues, and add the next bounded behavior or explicit runtime boundary with
   tests, CLI fixtures, docs, and native rejection coverage where lowering
   remains unsupported.
+  Milestone 981 adds deterministic `mysqli_stmt_store_result()` and
+  `mysqli_stmt_num_rows()` behavior for active placeholder statements after
+  the current unbound seed-post WordPress SELECT execution path, including a
+  WordPress-shaped `wpdb` smoke. This is not by-reference result binding,
+  output-buffer mutation, `mysqli_stmt_fetch()`, real mysqlnd buffering, broad
+  SQL execution, host database rows, PHP warning/error fidelity, or native
+  database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as
+  active-statement binding boundaries, statement fetch boundaries, broader
+  escaping charset fidelity, local-infile option effects, or multi-result
+  pending queues, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d85deeab runtime: add mysqli stmt result metadata placeholders`, covering
-  Milestone 979 before the current Milestone 980 candidate.
+  `d5a51f32 runtime: add mysqli stmt execute result placeholders`, covering
+  Milestone 980 before the current Milestone 981 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

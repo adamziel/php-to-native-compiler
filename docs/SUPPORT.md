@@ -1013,10 +1013,15 @@
   shape, returns `false` for statements without result fields, and rejects
   unknown SELECT metadata with a stable unsupported diagnostic.
   `mysqli_stmt_free_result($statement)` validates the active placeholder
-  statement and returns `null`. This is not prepared binding, statement
-  execution, statement result rows, mysqlnd result transfer, broad SQL
-  metadata, host database metadata, PHP warning/error fidelity, or native
-  statement lowering.
+  statement, clears any buffered placeholder rows, and returns `null`.
+  `mysqli_stmt_store_result($statement)` buffers the deterministic rows
+  recorded by the current placeholder execution path and returns `true`, or
+  returns `false` when no placeholder statement result is available.
+  `mysqli_stmt_num_rows($statement)` reports the buffered placeholder row
+  count, or `0` before buffering and after `mysqli_stmt_free_result()`. This
+  is not prepared binding, statement result rows through bound output buffers,
+  real mysqlnd buffering, broad SQL metadata, host database metadata, PHP
+  warning/error fidelity, or native statement lowering.
   `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
   deterministic `true` without emitting MySQL DBUG trace output, inspecting
   host client-library debug state, inspecting sockets, or reading host
@@ -3330,10 +3335,13 @@
   metadata and cleanup for current known statement SELECT shapes without
   prepared binding, statement execution, statement result rows, mysqlnd result
   transfer, broad SQL metadata, or host database metadata,
-  `mysqli_stmt_store_result(...)`/`mysqli_stmt_num_rows(...)`/
-  `mysqli_stmt_fetch(...)` are explicit statement result/cursor boundaries
-  without statement objects, buffered result storage, statement row-count
-  metadata, cursor advancement, bound result buffers, or host database rows,
+  `mysqli_stmt_store_result(...)`/`mysqli_stmt_num_rows(...)` expose only
+  deterministic placeholder buffering and row-count metadata for current
+  executed statement result shapes without real buffered result storage,
+  mysqlnd fidelity, host database rows, or native lowering,
+  `mysqli_stmt_fetch(...)` is an explicit statement cursor boundary without
+  by-reference result binding, output buffer mutation, cursor advancement over
+  bound buffers, or host database rows,
   `mysqli_stmt_data_seek(...)`/`mysqli_stmt_attr_get(...)`/
   `mysqli_stmt_attr_set(...)` are explicit statement positioning/attribute
   boundaries without statement objects, buffered result cursor state, offset

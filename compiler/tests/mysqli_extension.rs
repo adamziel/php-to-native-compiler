@@ -891,13 +891,24 @@ echo "|";
 echo function_exists($fetch) ? "fetch-exists" : "fetch-missing";
 echo "|";
 echo is_callable($fetch) ? "fetch-callable" : "fetch-missing";
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_stmt_num_rows($stmt);
+echo "|";
+mysqli_stmt_execute($stmt);
+echo mysqli_stmt_store_result($stmt) ? "stored" : "not-stored";
+echo "|";
+echo mysqli_stmt_num_rows($stmt);
+echo "|";
+mysqli_stmt_free_result($stmt);
+echo mysqli_stmt_num_rows($stmt);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|store-callable|num-rows-exists|num-rows-callable|fetch-exists|fetch-callable"
+        "yes|store-callable|num-rows-exists|num-rows-callable|fetch-exists|fetch-callable|0|stored|1|0"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -914,7 +925,7 @@ mysqli_stmt_store_result($stmt);
     assert_eq!(store_error.column, 1);
     assert_eq!(
         store_error.message,
-        "unsupported call mysqli_stmt_store_result(): mysqli statement objects, result buffering, and statement result state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_store_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let num_rows_error = run_source(
@@ -930,7 +941,7 @@ mysqli_stmt_num_rows($stmt);
     assert_eq!(num_rows_error.column, 1);
     assert_eq!(
         num_rows_error.message,
-        "unsupported call mysqli_stmt_num_rows(): mysqli statement objects, buffered statement result state, and statement row-count metadata are not implemented in the current subset"
+        "unsupported call mysqli_stmt_num_rows(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let fetch_error = run_source(

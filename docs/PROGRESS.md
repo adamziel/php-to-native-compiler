@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 981, deterministic `mysqli_stmt_store_result()` and
+  `mysqli_stmt_num_rows()` behavior for active placeholder statements after
+  the current unbound seed-post WordPress SELECT execution path.
+  `mysqli_stmt_store_result()` buffers the deterministic executed rows and
+  returns `true`, `mysqli_stmt_num_rows()` reports the buffered count, and
+  `mysqli_stmt_free_result()` clears that buffered count. The new fixtures
+  include direct MySQLi and WordPress-shaped `wpdb` smokes. This is not
+  by-reference result binding, output-buffer mutation, `mysqli_stmt_fetch()`,
+  real mysqlnd buffering, broad SQL execution, host database rows, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_cursor -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone981`, and
+  `cargo run -p phpc -- test --compare-php` for the affected `milestone951`
+  and `milestone952` fixture groups.
+
 - Added Milestone 980, deterministic unbound `mysqli_stmt_execute()` plus
   `mysqli_stmt_get_result()` behavior for active placeholder statements over
   the current seed-post WordPress SELECT shape. Executing that prepared
