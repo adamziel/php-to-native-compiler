@@ -33,19 +33,21 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1075, bounded direct-array by-reference `foreach`
   current-slot unset/reinsert detachment.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/foreach.rs`,
   `tests/fixtures/milestone1075/by_reference_foreach_unset_current_slot_detaches_loop_variable.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   local PHP 8.2.29 probes compared unset/reinsert current-slot behavior and
   break-after-unset behavior. `cargo test -p phpc --test foreach --
   --test-threads=1` passed with 15 tests.
   `cargo run -p phpc -- test tests/fixtures/milestone1075 --compare-php` and
   `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`
   passed. `cargo check -p php_runtime -p phpc` and `cargo fmt --check`
-  passed.
+  passed. The serialized checkpoint gate passed with 1280 fixture tests, 725
+  system PHP comparisons, and 555 skipped comparisons, then committed
+  `9051cb76 runtime: detach foreach reference on current slot unset`.
 - Current WordPress frontier: when the active direct array slot is unset inside
   a supported by-reference foreach body, the loop value variable detaches onto
   the removed old value. Same-key reinsertion during that body no longer
@@ -59,9 +61,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   dynamic/magic/non-public properties, nested/object offset aliases, native
   lowering, exact mutation ordering, alias rebinding, and by-reference
   `ArrayAccess::offsetGet()` indirect-modification fidelity remain missing.
-- Next concrete task: finish verification, checkpoint Milestone 1075, then
-  choose the next reference/COW gap or native-lowering boundary with PHP
-  comparison coverage where applicable.
+- Next concrete task: choose the next reference/COW gap or native-lowering
+  boundary with PHP comparison coverage where applicable.
 
 ## Loop Event 2026-05-16T18:20:00Z
 

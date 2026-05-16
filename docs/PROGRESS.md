@@ -23,7 +23,10 @@ Implemented:
   `cargo test -p phpc --test foreach -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone1075 --compare-php`,
   `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`,
-  `cargo check -p php_runtime -p phpc`, and `cargo fmt --check`.
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1280 fixture
+  tests, 725 system PHP comparisons, and 555 skipped comparisons, then
+  committed `9051cb76 runtime: detach foreach reference on current slot unset`.
 
 - Added Milestone 1074, a bounded direct-array by-reference `foreach`
   mutation-fidelity slice. The interpreter no longer snapshots the initial key

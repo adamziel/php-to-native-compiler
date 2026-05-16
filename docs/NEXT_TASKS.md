@@ -10489,8 +10489,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4ccd4cbb runtime: advance foreach reference slot iteration`, covering
-  Milestone 1074. Milestone 1075 is in progress and not checkpointed yet.
+  `9051cb76 runtime: detach foreach reference on current slot unset`, covering
+  Milestone 1075.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
