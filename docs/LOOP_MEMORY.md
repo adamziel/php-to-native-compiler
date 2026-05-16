@@ -33,15 +33,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1057, explicit clone-by-value array slot wrapper
   for future array reference cells.
-- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+- Files changed: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
   `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime array_entry_slots_preserve_clone_by_value_boundary_for_future_references -- --test-threads=1`
   passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
   with 108 tests. `cargo test -p phpc --test foreach -- --test-threads=1`
   passed with 9 tests. `cargo check -p php_runtime -p phpc`,
-  `cargo fmt --check`, and `git diff --check` passed.
+  `cargo fmt --check`, and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1269 fixture tests, 714 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `bcd5f929 runtime: add array slot value wrapper`.
 - Current WordPress frontier: array entries now hold an explicit `ArraySlot`
   wrapper instead of a raw `Value`, while slot cloning still eagerly clones the
   value so current PHP array behavior does not become accidental aliasing.

@@ -13,13 +13,14 @@ Implemented:
   This still does not implement shared reference cells, direct array-offset
   reference assignment, copy-on-write, exact by-reference `foreach`,
   object-property offsets, or native lowering; it only creates the next
-  internal boundary where those semantics can be introduced. Verification so
-  far:
+  internal boundary where those semantics can be introduced. Verification:
   `cargo test -p php_runtime array_entry_slots_preserve_clone_by_value_boundary_for_future_references -- --test-threads=1`,
   `cargo test -p php_runtime -- --test-threads=1`,
   `cargo test -p phpc --test foreach -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `bcd5f929 runtime: add array slot value wrapper`.
 
 - Added Milestone 1056, runtime array-entry accessor groundwork for the future
   array slot/reference-cell migration. `ArrayEntry.value` is now private and

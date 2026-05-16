@@ -10242,8 +10242,7 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8c4d3b38 runtime: add array entry value accessor boundary`, covering
-  Milestone 1056.
+  `bcd5f929 runtime: add array slot value wrapper`, covering Milestone 1057.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
