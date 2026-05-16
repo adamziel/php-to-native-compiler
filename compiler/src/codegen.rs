@@ -14,6 +14,8 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_STR_STARTS_WITH_REJECTION: &str = "LLVM str_starts_with lowering rejects direct string-prefix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_starts_with diagnostics exist; phpc run handles current bounded str_starts_with behavior";
+const ASSEMBLY_STR_STARTS_WITH_REJECTION: &str = "assembly str_starts_with lowering rejects direct string-prefix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_starts_with diagnostics exist; phpc run handles current bounded str_starts_with behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
@@ -712,6 +714,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
+                Err(self.unsupported(*span, LLVM_STR_STARTS_WITH_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -3551,6 +3556,9 @@ impl CGenerator {
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("str_starts_with") => {
+                Err(self.unsupported(*span, ASSEMBLY_STR_STARTS_WITH_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -6775,6 +6783,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "file_exists"
             | "file_get_contents"
             | "is_dir"
+            | "is_file"
             | "is_readable"
             | "register_shutdown_function"
             | "set_error_handler"

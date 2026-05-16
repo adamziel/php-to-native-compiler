@@ -118,6 +118,10 @@ specific unsupported syntax diagnostic before creating any AST node. Faithful
 support still needs null-aware property/method chain evaluation,
 short-circuiting, call argument ordering, assignment-target restrictions, and
 native lowering.
+PHP 8 `match` expressions remain a parser boundary rather than an AST node
+until the expression model has strict arm matching, default/exhaustiveness
+handling, throw-arm behavior, value evaluation ordering, reference/COW
+interactions, and native lowering.
 Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
 a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
@@ -1240,7 +1244,10 @@ result, and leaves binary string edge cases and native lowering out of scope.
 the same scalar/null string-convertible haystack and needle subset. It keeps
 PHP's empty-needle `true` result for represented runtime strings, and leaves
 binary string edge cases, object/resource coercions, exact diagnostics, and
-native lowering out of scope.
+native lowering out of scope. Direct native `str_starts_with(...)` calls stop
+at a dedicated string-prefix codegen boundary before argument lowering or
+backend selection, while native function-table introspection can still see the
+known builtin name.
 `str_ends_with()` is an interpreter-only bounded string-suffix builtin for the
 same scalar/null string-convertible haystack and needle subset. It keeps PHP's
 empty-needle `true` result for represented runtime strings, and leaves binary
@@ -1395,6 +1402,12 @@ validates that this existing folded LLVM IR is handed to the chosen backend
 through stdin without changing production lowering behavior. Non-string
 coercions, arrays, objects, resources, references/copy-on-write, dynamic
 calls, and exact native PHP diagnostics remain outside this slice.
+Direct `str_starts_with(...)` calls reject through a dedicated native
+string-prefix boundary before argument lowering or backend selection. Native
+function-table introspection still recognizes `str_starts_with`, but native
+call execution still lacks PHP string conversion, empty-needle handling,
+binary byte semantics, argument diagnostics, references/copy-on-write, and
+exact native diagnostics.
 Direct `defined($name)` calls fold only when `$name` is an already-lowerable
 string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.

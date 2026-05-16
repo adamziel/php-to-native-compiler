@@ -1,0 +1,2 @@
+<?php
+echo str_starts_with("wp-admin/admin-ajax.php", "wp-admin");

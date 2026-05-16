@@ -296,7 +296,7 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
@@ -310,7 +310,8 @@ fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
         summary.stderr_bytes,
         summary.exit_bytes,
         summary.cli_bytes,
-        summary.phpc_only_bytes
+        summary.phpc_only_bytes,
+        summary.orphan_sidecar_bytes
     )
 }
 
@@ -361,8 +362,8 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
 
 fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar) -> String {
     format!(
-        "orphan sidecar: {} kind={} expected-fixture={} bytes={}",
-        orphan.path, orphan.kind, orphan.expected_fixture, orphan.bytes
+        "orphan sidecar: {} kind={} expected-fixture={} bytes={} sha256={}",
+        orphan.path, orphan.kind, orphan.expected_fixture, orphan.bytes, orphan.sha256
     )
 }
 
@@ -386,7 +387,7 @@ fn render_fixture_manifest_compatibility_target(
         .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} probe expectations={} bytes={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -404,6 +405,7 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.exit_bytes,
         target.summary.cli_bytes,
         target.summary.phpc_only_bytes,
+        target.summary.orphan_sidecar_bytes,
         target.probe_expectations.len(),
         probe_expectation_bytes,
         source_pin
@@ -422,7 +424,7 @@ fn render_fixture_manifest_compatibility_probe_expectation(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 8,\n");
+    output.push_str("  \"contract_version\": 9,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -485,7 +487,11 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         "      \"phpc_only\": {}\n",
         manifest.summary.phpc_only_bytes
     ));
-    output.push_str("    }\n");
+    output.push_str("    },\n");
+    output.push_str(&format!(
+        "    \"orphan_sidecar_bytes\": {}\n",
+        manifest.summary.orphan_sidecar_bytes
+    ));
     output.push_str("  },\n");
     output.push_str("  \"fixtures\": [\n");
     for (index, entry) in manifest.entries.iter().enumerate() {
@@ -646,7 +652,11 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             "          \"phpc_only\": {}\n",
             target.summary.phpc_only_bytes
         ));
-        output.push_str("        }\n");
+        output.push_str("        },\n");
+        output.push_str(&format!(
+            "        \"orphan_sidecar_bytes\": {}\n",
+            target.summary.orphan_sidecar_bytes
+        ));
         output.push_str("      },\n");
         output.push_str("      \"source_pin\": ");
         match &target.source_pin {

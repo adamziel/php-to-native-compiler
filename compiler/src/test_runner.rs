@@ -45,6 +45,7 @@ pub struct FixtureManifestSummary {
     pub exit_bytes: u64,
     pub cli_bytes: u64,
     pub phpc_only_bytes: u64,
+    pub orphan_sidecar_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +187,7 @@ impl FixtureManifestSummary {
         let mut summary = Self {
             total: entries.len(),
             orphan_sidecars: orphan_sidecars.len(),
+            orphan_sidecar_bytes: orphan_sidecars.iter().map(|sidecar| sidecar.bytes).sum(),
             ..Self::default()
         };
 

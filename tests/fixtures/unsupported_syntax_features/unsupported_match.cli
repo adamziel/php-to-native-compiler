@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_match.php:3:10: unsupported match expression: expression-form branching is not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_match.php:3:10: unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented
 --- stderr end ---

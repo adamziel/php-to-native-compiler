@@ -371,7 +371,7 @@ fn unsupported_match_expression_has_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported match expression: expression-form branching is not implemented"
+            "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
         );
     }
 }
@@ -386,7 +386,7 @@ fn emit_ir_rejects_match_expression_at_parse_boundary() {
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(
         error.message,
-        "unsupported match expression: expression-form branching is not implemented"
+        "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
     );
 }
 

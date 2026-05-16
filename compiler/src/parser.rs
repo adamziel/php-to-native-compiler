@@ -5961,7 +5961,7 @@ fn unsupported_yield_from_message() -> &'static str {
 }
 
 fn unsupported_match_expression_message() -> &'static str {
-    "unsupported match expression: expression-form branching is not implemented"
+    "unsupported match expression: strict arm matching, default/exhaustiveness handling, throw arms, value evaluation order, references/copy-on-write, and native lowering are not implemented"
 }
 
 fn unsupported_goto_message() -> &'static str {

@@ -817,7 +817,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`, `file_get_contents`,
-  `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -1753,6 +1753,13 @@
   canonicalization/symlink policy, portable permissions, warning behavior,
   non-string coercions, stat-cache behavior, open_basedir, partial-output
   behavior, and native lowering remain unsupported.
+  `is_file($path)` accepts one string local path, rejects stream-wrapper paths,
+  returns `true` for host regular files, and returns `false` for missing paths
+  or non-file paths such as directories. It shares the same current relative
+  path policy as `file_exists`. Include-path lookup, stream wrappers,
+  canonicalization/symlink policy, portable file-type details, permission
+  warnings, non-string coercions, stat-cache behavior, open_basedir,
+  partial-output behavior, and native lowering remain unsupported.
   `is_readable($path)` accepts one string local path, rejects stream-wrapper
   paths, returns `false` for missing paths, and checks host readability for
   files with `File::open` and directories with `read_dir`. It shares the same
@@ -2011,7 +2018,9 @@
   `Traversable` iteration, yielded key/value forwarding, send/throw
   propagation, generator return values, references/copy-on-write, and native
   lowering
-- explicit parse diagnostics for unsupported PHP 8 `match` expressions
+- explicit parse diagnostics for unsupported PHP 8 `match` expressions,
+  naming missing strict arm matching, default/exhaustiveness handling, throw
+  arms, value evaluation order, references/copy-on-write, and native lowering
 - bounded `goto target;` statements and `target:` labels in the current
   statement runtime; labels in the active statement list can be reached from
   nested statements that propagate the jump outward
@@ -3361,7 +3370,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`, `file_get_contents`,
-  `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -3423,6 +3432,12 @@
   assembly snapshot validates that the deterministic folded LLVM IR for this
   existing slice is handed to the chosen backend through stdin without
   widening production lowering behavior.
+  Direct `str_starts_with(...)` calls reject through a dedicated native
+  string-prefix boundary before argument lowering or backend selection. Native
+  function-table introspection still recognizes `str_starts_with`, but native
+  call execution still lacks PHP string conversion, empty-needle handling,
+  binary byte semantics, argument diagnostics, references/copy-on-write, and
+  exact native diagnostics.
   Direct `defined($name)` calls fold in native output when `$name` is an
   already-lowerable known string operand whose possible values are supported
   unqualified constant names with a uniform answer against the current exact
@@ -3726,7 +3741,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_dir`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_dir`, `is_file`, `is_readable`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -3896,7 +3911,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4299,8 +4314,11 @@
   while native function-table introspection recognizes the name.
   `str_starts_with` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
-  `str_starts_with(...)` calls still reject under the function-call boundary,
-  while native function-table introspection recognizes the name.
+  `str_starts_with(...)` calls reject under a dedicated string-prefix
+  boundary until native PHP string conversion, empty-needle handling, binary
+  string byte semantics, argument diagnostics, references/copy-on-write, and
+  exact native diagnostics exist, while native function-table introspection
+  recognizes the name.
   `str_ends_with` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
   `str_ends_with(...)` calls still reject under the function-call boundary,
@@ -5292,7 +5310,8 @@
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
-  order, exact native error objects, and native lowering are not implemented.
+  order, references/copy-on-write, exact native error objects, and native
+  lowering are not implemented.
 - `goto` support is bounded to the current statement-list runtime slice.
   Broader PHP behavior such as exact compile-time target validation, duplicate
   label diagnostics, jumps into nested blocks, cross-function jumps, included
@@ -6147,6 +6166,11 @@
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission/open_basedir behavior, non-string coercions, stat-cache behavior,
   exact diagnostics, and native lowering beyond function-table introspection
+- `is_file()` behavior beyond the current one-string local path metadata slice:
+  include-path lookup, stream wrappers, symlink/canonicalization policy,
+  portable file-type details, permission/open_basedir behavior, non-string
+  coercions, stat-cache behavior, exact diagnostics, and native lowering beyond
+  function-table introspection
 - `header()` behavior beyond accepting current string/bool/int arguments as a
   no-op returning `null`: response header storage, status-code parsing/state,
   replacement/removal behavior, output-sent warnings, SAPI/web-server
