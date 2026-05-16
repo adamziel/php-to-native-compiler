@@ -6219,6 +6219,28 @@ impl Interpreter {
         }
 
         if let Some((option_name, option_value, autoload)) =
+            parse_wordpress_option_insert_on_duplicate_query(query)
+        {
+            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                option_name,
+                WordPressOptionState {
+                    value: option_value,
+                    autoload,
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
+        if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_insert_query(query)
         {
             self.mysqli_wp_options.entry(handle_id).or_default().insert(
@@ -16222,6 +16244,45 @@ fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, S
             )
         })?
         .strip_suffix(')')?;
+    let values = parse_sql_single_quoted_list(values)?;
+    if values.len() != 3 {
+        return None;
+    }
+    Some((values[0].clone(), values[1].clone(), values[2].clone()))
+}
+
+fn parse_wordpress_option_insert_on_duplicate_query(
+    query: &str,
+) -> Option<(String, String, String)> {
+    let query = query.trim();
+    let values = query
+        .strip_prefix("INSERT INTO wp_options (option_name, option_value, autoload) VALUES (")
+        .and_then(|rest| {
+            rest.strip_suffix(
+                ") ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = VALUES(autoload)",
+            )
+            .or_else(|| {
+                rest.strip_suffix(
+                    ") ON DUPLICATE KEY UPDATE option_name = VALUES(option_name), option_value = VALUES(option_value), autoload = VALUES(autoload)",
+                )
+            })
+        })
+        .or_else(|| {
+            query
+                .strip_prefix(
+                    "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (",
+                )
+                .and_then(|rest| {
+                    rest.strip_suffix(
+                        ") ON DUPLICATE KEY UPDATE `option_value` = VALUES(`option_value`), `autoload` = VALUES(`autoload`)",
+                    )
+                    .or_else(|| {
+                        rest.strip_suffix(
+                            ") ON DUPLICATE KEY UPDATE `option_name` = VALUES(`option_name`), `option_value` = VALUES(`option_value`), `autoload` = VALUES(`autoload`)",
+                        )
+                    })
+                })
+        })?;
     let values = parse_sql_single_quoted_list(values)?;
     if values.len() != 3 {
         return None;

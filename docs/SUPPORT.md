@@ -1233,6 +1233,11 @@
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records the string option value in per-placeholder-handle
   state, sets `mysqli_affected_rows($handle)` to `1`, advances deterministic
+  `mysqli_insert_id($handle)`, accepts exact
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
+  ON DUPLICATE KEY UPDATE ...` option upserts that update existing recorded
+  options with `mysqli_affected_rows($handle) === 2`, insert missing options
+  with `mysqli_affected_rows($handle) === 1`, advance deterministic
   `mysqli_insert_id($handle)`, accepts a later exact
   `UPDATE wp_options SET option_value = ... WHERE option_name = ...` for
   existing recorded options with `mysqli_affected_rows($handle) === 1`,
@@ -1254,10 +1259,10 @@
   return an empty placeholder result. This state island is not broad SQL
   parsing, escaping/quoting fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
-  database execution, warning/error fidelity, PDO, broad prepared-statement
-  mutation state, or native lowering. Prepared statement execution over the
-  same state island supports the exact
+  real unique-index enforcement, no-op update affected-row fidelity, DELETE
+  breadth, REPLACE, transactions, host database execution, warning/error
+  fidelity, PDO, broad prepared-statement mutation state, or native lowering.
+  Prepared statement execution over the same state island supports the exact
   `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
   option-name parameters on the same placeholder handle through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

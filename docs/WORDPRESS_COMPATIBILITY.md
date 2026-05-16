@@ -1168,9 +1168,13 @@ historical blockers and remaining full-support gaps include:
   exact option `DELETE` plus later empty readback for removed option names.
   Milestone 1027 extends it to exact option-name/option-value row reads for
   all options, autoloaded options, and explicit option-name lists. Milestone
-  1028 extends the same state to exact prepared option-value reads for string
-  option-name parameters through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()`
-  and `mysqli_execute_query()`. Milestone 1029 extends that prepared readback
+  1035 extends direct `mysqli_query()` state to exact option
+  insert-on-duplicate shapes with affected rows `2` for existing recorded
+  options, affected rows `1` for missing options, and deterministic insert-id
+  metadata. Milestone 1028 extends the same state to exact prepared
+  option-value reads for string option-name parameters through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query()`. Milestone 1029 extends that prepared readback
   to exact option-name/option-value row reads for the same string option-name
   parameter shape. Milestone 1030 extends the state island to exact prepared
   option updates for string value/name parameters and affected-row metadata.

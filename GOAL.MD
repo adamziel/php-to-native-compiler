@@ -1285,13 +1285,15 @@ The repository already has a working Rust workspace with:
   option-value, and autoload parameters and expose affected-row/insert-id
   metadata. Exact prepared option replaces now replace existing recorded
   options with affected rows `2`, insert missing options with affected rows
-  `1`, and expose deterministic insert IDs. Exact prepared option updates now
+  `1`, and expose deterministic insert IDs. Exact direct-query option
+  insert-on-duplicate shapes now update existing recorded options with
+  affected rows `2`, insert missing options with affected rows `1`, and expose
+  deterministic insert IDs. Exact prepared option updates now
   mutate existing recorded option values for string value/name parameters and
   expose affected-row metadata. Exact prepared option insert-on-duplicate
   shapes now update existing recorded options with affected rows `2`, insert
   missing options with affected rows `1`, and expose deterministic insert
-  IDs,
-  and exact prepared option deletes now remove existing recorded option values
+  IDs, and exact prepared option deletes now remove existing recorded option values
   for string option-name parameters and expose affected-row metadata,
   without claiming broad SQL parsing, ordering/collation fidelity,
   real unique-index enforcement, no-op update affected-row fidelity,
@@ -1688,16 +1690,15 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1034 is the active checkpoint candidate: exact prepared
-  `wp_options` MySQLi insert-on-duplicate state now records string
-  option-name, option-value, and autoload parameters on the same placeholder
+- Milestone 1035 is the active checkpoint candidate: exact direct
+  `wp_options` MySQLi insert-on-duplicate state now records single-quoted
+  string option-name, option-value, and autoload values on the same placeholder
   handle, updates existing recorded options with affected rows `2`, inserts
   missing options with affected rows `1`, and records deterministic insert
-  IDs, while broad SQL parsing,
-  escaping/quoting fidelity, schema/index behavior, ordering/collation
-  fidelity, real unique-index enforcement, no-op update affected-row fidelity,
-  transactions, host database execution, warning/error fidelity, PDO, and
-  native lowering remain open.
+  IDs, while broad SQL parsing, escaping/quoting fidelity, schema/index
+  behavior, ordering/collation fidelity, real unique-index enforcement, no-op
+  update affected-row fidelity, transactions, host database execution,
+  warning/error fidelity, PDO, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

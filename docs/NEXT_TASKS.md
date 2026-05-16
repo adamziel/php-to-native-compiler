@@ -9955,19 +9955,31 @@ handled.
   reads. This is not broad prepared SQL execution, real unique-index
   enforcement, no-op update affected-row fidelity, non-string parameter
   coercion, transactions, host database execution, PDO, or native lowering.
+- [x] Runtime/database lane: add bounded direct `wp_options` MySQLi
+  insert-on-duplicate state over the current per-handle state island.
+  Milestone 1035 covers exact WordPress-style
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
+  ON DUPLICATE KEY UPDATE ...` execution through `mysqli_query()` for
+  single-quoted string option-name, option-value, and autoload values on the
+  same placeholder handle. Existing recorded options update with connection
+  affected rows set to `2`; missing options insert with affected rows set to
+  `1`. Both paths advance deterministic `mysqli_insert_id($handle)` and are
+  visible to later exact option-value reads. This is not broad SQL parsing,
+  real unique-index enforcement, no-op update affected-row fidelity, escaped
+  quote handling, transactions, host database execution, PDO, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as direct-query insert-on-duplicate
-  state, transaction state, broader escaping fidelity, host-backed query
-  execution, PDO, real schema/index behavior, or the next `wpdb` state
-  consumer, and add the next bounded behavior or explicit runtime boundary
-  with tests, CLI fixtures, docs, and native rejection coverage where lowering
-  remains unsupported.
+  audited PHP/WordPress surface, such as transaction state, broader escaping
+  fidelity, host-backed query execution, PDO, real schema/index behavior, or
+  the next `wpdb` state consumer, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a7c62654 docs: record wp options prepared replace gate`, covering
-  Milestone 1033 before the current Milestone 1034 candidate.
+  `0e8a3969 docs: record wp options prepared upsert gate`, covering
+  Milestone 1034 before the current Milestone 1035 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

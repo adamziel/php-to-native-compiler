@@ -2898,6 +2898,43 @@ echo mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_query_records_current_wordpress_option_upsert_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://upserted.test', 'no') ON DUPLICATE KEY UPDATE option_name = VALUES(option_name), option_value = VALUES(option_value), autoload = VALUES(autoload)") ? "updated" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+echo "|";
+echo mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = VALUES(autoload)") ? "inserted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+$home_row = mysqli_fetch_assoc($home);
+echo $home_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "updated|2|2|https://upserted.test|inserted|1|3|https://home.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_records_current_wordpress_option_update_state() {
     let execution = run_source(
         r#"<?php

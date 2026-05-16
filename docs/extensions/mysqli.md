@@ -292,7 +292,12 @@ For direct `mysqli_query()`, the runtime has one bounded per-placeholder-handle
 state island for exact WordPress-shaped option writes and reads:
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
 records the string option value, sets `mysqli_affected_rows($handle)` to `1`,
-and advances deterministic `mysqli_insert_id($handle)`. A later exact
+and advances deterministic `mysqli_insert_id($handle)`. Exact
+`INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
+ON DUPLICATE KEY UPDATE ...` option upserts update existing recorded options
+with `mysqli_affected_rows($handle) === 2`, insert missing options with
+`mysqli_affected_rows($handle) === 1`, and advance deterministic
+`mysqli_insert_id($handle)`. A later exact
 `UPDATE wp_options SET option_value = ... WHERE option_name = ...` updates an
 existing recorded option with `mysqli_affected_rows($handle) === 1`; missing
 option names are successful zero-row updates. A later exact
@@ -310,10 +315,10 @@ reads use deterministic option-name ordering; explicit `IN (...)` reads
 preserve the requested name order and skip missing names. Missing option names
 still return an empty placeholder result. This is not broad SQL parsing,
 escaping/quoting fidelity, schema/index behavior, ordering/collation fidelity,
-autoload mutation beyond exact inserts, INSERT-on-duplicate behavior, DELETE
-breadth, REPLACE support, transactions, host database execution, PDO,
-broad prepared-statement mutation state, warning/error fidelity, or native
-lowering.
+autoload mutation beyond exact inserts, real unique-index enforcement, no-op
+update affected-row fidelity, DELETE breadth, REPLACE support, transactions,
+host database execution, PDO, broad prepared-statement mutation state,
+warning/error fidelity, or native lowering.
 
 Prepared statement execution over the same state island supports the exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
