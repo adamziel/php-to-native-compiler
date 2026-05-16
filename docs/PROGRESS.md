@@ -21,6 +21,9 @@ Implemented:
   remain unsupported. Verification so far:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1049`.
+  The serialized checkpoint gate passed with 1263 fixture tests, 709 system
+  PHP comparisons, and 554 skipped comparisons, then committed
+  `60f95d08 runtime: add static reference return cells`.
 
 - Added Milestone 1048, bounded direct-variable reference-return cells for
   statement-form reference assignment from direct object method calls. In the
