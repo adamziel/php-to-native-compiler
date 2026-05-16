@@ -4244,6 +4244,71 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_connect()",
+                    ArityExpectation::Between { min: 0, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        for (index, label) in ["hostname", "username", "password", "database"]
+            .iter()
+            .enumerate()
+        {
+            if let Some(value) = args.get(index) {
+                if !matches!(value, Value::String(_) | Value::Null) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_connect()",
+                            format!(
+                                "{label} argument must be string or null in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        if let Some(port) = args.get(4) {
+            if !matches!(port, Value::Int(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_connect()",
+                        format!(
+                            "port argument must be int or null in the current subset, got {}",
+                            port.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        if let Some(socket) = args.get(5) {
+            if !matches!(socket, Value::String(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_connect()",
+                        format!(
+                            "socket argument must be string or null in the current subset, got {}",
+                            socket.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        self.create_mysqli_placeholder(span)
+    }
+
     fn call_mysqli_get_server_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_server_info", args, 1, span)?;
         let Value::Object(handle) = &args[0] else {
@@ -11368,13 +11433,7 @@ impl Interpreter {
                     )),
                 }
             }
-            "mysqli_connect" => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_connect()",
-                    "mysqli/database connections are not implemented in the current subset",
-                ),
-            )),
+            "mysqli_connect" => self.call_mysqli_connect(&args, span),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_get_server_version" => self.call_mysqli_get_server_version(&args, span),

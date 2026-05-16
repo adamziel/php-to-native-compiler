@@ -832,11 +832,13 @@
   builtins. Conditional/nested user-function declarations become visible only
   after their declaration statement executes. Non-string names are rejected in
   the current subset.
-  `mysqli_connect(...)` is currently a database-extension boundary only: the
-  name is visible through function/callability metadata and dynamic
-  string-valued calls, but any attempted connection call reports a stable
-  unsupported runtime diagnostic. `mysqli_real_connect($handle, ...)` accepts
-  the current WordPress startup shape for a placeholder `mysqli` object,
+  `mysqli_connect(...)` accepts zero to six current connection arguments and
+  returns a placeholder `mysqli` object with clean `connect_errno` and
+  `connect_error` state. Direct and dynamic string-valued calls use the same
+  placeholder constructor. This does not open a host socket, authenticate,
+  select a real database, run init commands, populate server state, or prove
+  database liveness. `mysqli_real_connect($handle, ...)` accepts the current
+  WordPress startup shape for a placeholder `mysqli` object,
   string/null hostname, username, password, and database arguments, int/null
   port, string/null socket, and `0` or a combination of the exposed
   `MYSQLI_CLIENT_*` flags. The current client-flag catalog is
@@ -3488,8 +3490,7 @@
   returns only deterministic success for the placeholder handle;
   `mysqli_real_escape_string(...)`/`mysqli_escape_string(...)` return
   only deterministic escaping over the placeholder handle and current
-  scalar/null string-convertible values; direct `mysqli_connect(...)` calls
-  are still a stable unsupported runtime boundary, and direct native
+  scalar/null string-convertible values; direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
   `mysqli_get_server_info(...)`/`mysqli_get_server_version(...)`/
   `mysqli_get_host_info(...)`/

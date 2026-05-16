@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1002/wpdb_mysqli_connect_placeholder.php
+exit: 0
+stdout:
+mysqli|Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

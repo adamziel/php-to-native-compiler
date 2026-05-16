@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `985a586f runtime: add mysqli execute alias boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1002, bounded `mysqli_connect()` placeholder handle
+  construction for direct and dynamic string-valued calls, with direct MySQLi
+  and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1002/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_connect -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1002`
+  passed. The new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: procedural `mysqli_connect()` code can now
+  obtain a placeholder `mysqli` object and feed it into existing deterministic
+  MySQLi query and metadata boundaries.
+- Remaining semantic gaps: host socket connections, authentication, real
+  database selection, init-command execution, server-state population, liveness
+  proof, PHP warning/error fidelity, mysqlnd behavior, and native database
+  lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `95360df0 runtime: add mysqli execute query boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1001, bounded `mysqli_execute()` procedural alias

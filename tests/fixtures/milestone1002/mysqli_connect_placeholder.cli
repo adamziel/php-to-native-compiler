@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1002/mysqli_connect_placeholder.php
+exit: 0
+stdout:
+mysqli|8.0.0-phpc-placeholder|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

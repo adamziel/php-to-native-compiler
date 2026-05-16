@@ -9539,6 +9539,23 @@ handled.
   named params-array support, true by-reference aliasing, mutation SQL, host
   database state, PHP warning/error fidelity, mysqlnd behavior, or native
   database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as procedural
+  connection helpers, real reference aliasing around bound parameters/results,
+  broader escaping charset fidelity, mutation SQL state, transaction state,
+  host-backed query execution, PDO visibility, or the next real database
+  integration gap, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
+  Milestone 1002 adds bounded `mysqli_connect()` placeholder handle
+  construction for direct and dynamic string-valued calls. It accepts zero to
+  six current connection arguments, validates the current scalar/null argument
+  subset, and returns a clean placeholder `mysqli` object that can flow into
+  existing deterministic query and metadata boundaries, including direct MySQLi
+  and WordPress-shaped `wpdb` smokes. This is not host socket connections,
+  authentication, real database selection, init-command execution, server-state
+  population, liveness proof, PHP warning/error fidelity, mysqlnd behavior, or
+  native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9550,8 +9567,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `95360df0 runtime: add mysqli execute query boundary`, covering Milestone
-  1000 before the current Milestone 1001 candidate.
+  `985a586f runtime: add mysqli execute alias boundary`, covering Milestone
+  1001 before the current Milestone 1002 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

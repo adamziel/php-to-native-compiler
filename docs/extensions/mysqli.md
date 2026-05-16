@@ -568,14 +568,16 @@ Mutation SQL passed to `mysqli_query()`, currently recognized by leading
 diagnostic. It does not change placeholder table state, affected-row metadata,
 insert IDs, transactions, errors, or warnings.
 
-Calling `mysqli_connect(...)` is still a stable unsupported runtime boundary:
-
-```text
-unsupported call mysqli_connect(): mysqli/database connections are not implemented in the current subset
-```
+`mysqli_connect(...)` accepts zero to six current connection arguments and
+returns a placeholder `mysqli` object with deterministic clean connect-error
+state. Direct and dynamic string-valued calls use the same constructor, so
+WordPress-shaped procedural connection code can pass the placeholder handle
+into the existing deterministic query and metadata boundaries. This is not a
+host connection, authentication, database selection, init-command execution,
+server-state population, or liveness proof.
 
 No real mysqli extension behavior is implemented yet: no host connections, no
-real resources or connected objects beyond the placeholder shapes, no real
+real resources beyond the placeholder objects, no real
 server, host/transport, client/protocol, connection-statistics, or server-status metadata, no query execution beyond the documented deterministic
 queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no

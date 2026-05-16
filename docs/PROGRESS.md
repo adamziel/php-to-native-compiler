@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 1002, bounded `mysqli_connect()` placeholder handle
+  construction. Direct and dynamic string-valued calls now accept zero to six
+  current connection arguments, validate string/null host/user/password/database
+  values plus int/null port and string/null socket, and return a placeholder
+  `mysqli` object with deterministic clean connect-error state. The new
+  fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes that feed
+  the handle into existing deterministic query boundaries. This is not a host
+  socket connection, authentication, real database selection, init-command
+  execution, server-state population, liveness proof, PHP warning/error
+  fidelity, mysqlnd behavior, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_connect -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1002`.
+
 - Added Milestone 1001, bounded `mysqli_execute()` alias support over the
   current `mysqli_stmt_execute()` placeholder execution subset. The runtime now
   exposes the procedural alias through direct calls, function/callability

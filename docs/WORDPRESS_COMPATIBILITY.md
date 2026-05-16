@@ -1438,7 +1438,13 @@ historical blockers and remaining full-support gaps include:
   report-mode behavior, PHP warning/error/exception fidelity, or native
   database lowering. Milestone 910 wires that placeholder through a synthetic
   WordPress-shaped `wpdb` connection error-state bookkeeping smoke without
-  claiming real connection failure fidelity. Milestone 911 adds deterministic
+  claiming real connection failure fidelity. Milestone 1002 adds bounded
+  `mysqli_connect()` placeholder handle construction for direct and dynamic
+  calls, including a WordPress-shaped `wpdb` smoke that feeds the handle into
+  deterministic query boundaries, without claiming host socket connections,
+  authentication, real database selection, init-command execution, server-state
+  population, liveness proof, PHP warning/error fidelity, mysqlnd behavior, or
+  native database lowering. Milestone 911 adds deterministic
   `mysqli_info()` clean statement-information metadata without real SQL
   statement-info tracking, mutation summaries, host database state,
   warning/error fidelity, or native database lowering. Milestone 912 wires

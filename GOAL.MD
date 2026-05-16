@@ -597,7 +597,13 @@ plus deterministic `mysqli_options()` client-option metadata for the reached
 synthetic WordPress-shaped `wpdb` options bookkeeping smoke, plus
 deterministic `mysqli_connect_errno()`/`mysqli_connect_error()` clean
 connect-error metadata, now wired through a synthetic WordPress-shaped `wpdb`
-connect-error bookkeeping smoke, plus deterministic `mysqli_info()` clean
+connect-error bookkeeping smoke, plus bounded `mysqli_connect()` placeholder
+handle construction for direct and dynamic calls, including direct MySQLi and
+WordPress-shaped `wpdb` smokes that feed the handle into deterministic query
+boundaries, without claiming host socket connections, authentication, real
+database selection, init-command execution, server-state population, liveness
+proof, PHP warning/error fidelity, mysqlnd behavior, or native lowering, plus
+deterministic `mysqli_info()` clean
 statement-information metadata, now wired through a synthetic
 WordPress-shaped `wpdb` query-info bookkeeping smoke, plus deterministic
 `mysqli_get_warnings()` clean warning-chain metadata for the next

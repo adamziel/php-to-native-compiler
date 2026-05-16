@@ -5,18 +5,29 @@ use php_compiler::run_source;
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 #[test]
-fn mysqli_connect_is_visible_but_connections_are_an_explicit_boundary() {
+fn mysqli_connect_returns_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
 $call = "mysqli_connect";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_connect("localhost", "user", "password", "database", 3306, null);
+echo "|";
+echo get_class($handle);
+echo "|";
+echo mysqli_get_server_info($handle);
+$implicit = $call();
+echo "|";
+echo get_class($implicit);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable");
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|mysqli|8.0.0-phpc-placeholder|mysqli"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -119,20 +130,35 @@ mysqli_execute_query($handle, "SELECT 1");
 }
 
 #[test]
-fn mysqli_connect_rejects_current_connection_boundary() {
-    let error = run_source(
+fn mysqli_connect_rejects_forms_outside_current_placeholder_boundary() {
+    let username_error = run_source(
         r#"<?php
-mysqli_connect("localhost", "user", "password", "database");
+mysqli_connect("localhost", array(), "password", "database");
 "#,
     )
     .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
+    assert_eq!(username_error.phase, Phase::Runtime);
+    assert_eq!(username_error.line, 2);
+    assert_eq!(username_error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call mysqli_connect(): mysqli/database connections are not implemented in the current subset"
+        username_error.message,
+        "unsupported call mysqli_connect(): username argument must be string or null in the current subset, got array"
+    );
+
+    let port_error = run_source(
+        r#"<?php
+mysqli_connect("localhost", "user", "password", "database", "3306");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(port_error.phase, Phase::Runtime);
+    assert_eq!(port_error.line, 2);
+    assert_eq!(port_error.column, 1);
+    assert_eq!(
+        port_error.message,
+        "unsupported call mysqli_connect(): port argument must be int or null in the current subset, got string"
     );
 }
 
@@ -4917,22 +4943,23 @@ mysqli_ping("not-a-handle");
 }
 
 #[test]
-fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
-    let error = run_source(
+fn dynamic_mysqli_connect_calls_return_placeholder_handles() {
+    let execution = run_source(
         r#"<?php
 $call = "mysqli_connect";
-$call("localhost");
+$handle = $call("localhost");
+echo get_class($handle);
+echo "|";
+echo mysqli_get_host_info($handle);
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call mysqli_connect(): mysqli/database connections are not implemented in the current subset"
+        execution.stdout,
+        "mysqli|localhost via TCP/IP (phpc-placeholder)"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
