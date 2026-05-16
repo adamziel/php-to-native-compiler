@@ -10477,8 +10477,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `07bddde3 runtime: add ArrayAccess reference target boundaries`, covering
-  Milestone 1073. Milestone 1074 is in progress and not checkpointed yet.
+  `4ccd4cbb runtime: advance foreach reference slot iteration`, covering
+  Milestone 1074.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

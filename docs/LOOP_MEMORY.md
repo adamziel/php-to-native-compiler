@@ -34,12 +34,12 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Task attempted: Milestone 1074, bounded direct-array by-reference `foreach`
   dynamic slot iteration for appended/new tail entries and current-slot direct
   writes.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/foreach.rs`,
   `tests/fixtures/milestone1074/by_reference_foreach_dynamic_direct_array_slots.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   local PHP 8.2.29 probes compared append-during-by-reference-foreach,
   unset-current/next/previous cases, string-key tail insertion, and
   remove/reinsert current-key behavior. `cargo test -p phpc --test foreach --
@@ -47,7 +47,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   tests/fixtures/milestone1074 --compare-php`,
   `cargo run -p phpc -- test tests/fixtures/milestone1066 --compare-php`, and
   `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`
-  passed.
+  passed. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1279
+  fixture tests, 724 system PHP comparisons, and 555 skipped comparisons, then
+  committed `4ccd4cbb runtime: advance foreach reference slot iteration`.
 - Current WordPress frontier: direct-array by-reference `foreach` no longer
   uses an initial key snapshot for the tested slice. The loop value variable is
   routed to the active direct array slot during the body, appended/new tail
@@ -62,9 +65,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   nested/object offset aliases, native lowering, exact mutation ordering, alias
   rebinding, and by-reference `ArrayAccess::offsetGet()` indirect-modification
   fidelity remain missing.
-- Next concrete task: finish verification, checkpoint Milestone 1074, then
-  choose the next reference/COW gap or native-lowering boundary with PHP
-  comparison coverage where applicable.
+- Next concrete task: choose the next reference/COW gap or native-lowering
+  boundary with PHP comparison coverage where applicable.
 
 ## Loop Event 2026-05-16T17:45:00Z
 

@@ -23,7 +23,11 @@ Implemented:
   `cargo test -p phpc --test foreach -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`,
   `cargo run -p phpc -- test tests/fixtures/milestone1066 --compare-php`,
-  and `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`.
+  `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1279 fixture
+  tests, 724 system PHP comparisons, and 555 skipped comparisons, then
+  committed `4ccd4cbb runtime: advance foreach reference slot iteration`.
 
 - Added Milestone 1073, a stable ArrayAccess reference-target boundary for
   direct variable sources. Statement-form `$bag[$key] =& $value;` and
