@@ -9740,12 +9740,22 @@ handled.
   built-in interface enforcement/signature validation, typed method
   invocation, string increment/decrement semantics, exact diagnostics,
   references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded object string conversion through
+  visible non-static `__toString()` for current double-quoted string and
+  heredoc interpolation.
+  Milestone 1017 covers simple `$object`, array-offset object values, direct
+  object-property values, and supported braced interpolation chains by reusing
+  the same echo-string conversion path as `echo` and binary concatenation.
+  This is not `Stringable` metadata, `${...}` interpolation, dynamic/static
+  property interpolation, arbitrary expression interpolation, exact
+  non-string-return `TypeError` objects, recursion edge-case fidelity,
+  references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess paths,
-  ArrayAccess iteration, object interpolation, `__clone` dispatch, destructors,
-  or inaccessible-member magic fidelity, and add the next bounded behavior or
-  explicit runtime boundary with tests, CLI fixtures, docs, and native
-  rejection coverage where lowering remains unsupported.
+  ArrayAccess iteration, `Stringable` metadata, `__clone` dispatch,
+  destructors, or inaccessible-member magic fidelity, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9757,8 +9767,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e63134a3 runtime: add array access compound assignment`, covering
-  Milestone 1015 before the current Milestone 1016 candidate.
+  `1b5f65a9 runtime: add array access increment decrement`, covering
+  Milestone 1016 before the current Milestone 1017 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

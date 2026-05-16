@@ -7581,7 +7581,7 @@ impl Interpreter {
     }
 
     fn evaluate_interpolated_string(
-        &self,
+        &mut self,
         parts: &[InterpolatedStringPart],
         span: Span,
         scope: &SymbolTable,
@@ -7592,33 +7592,25 @@ impl Interpreter {
                 InterpolatedStringPart::Literal(value) => output.push_str(value),
                 InterpolatedStringPart::Variable(name) => {
                     let value = scope.read_static(name, span)?;
-                    let text = value
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(span, error))?;
+                    let text = self.value_to_echo_string(value, span)?;
                     output.push_str(&text);
                 }
                 InterpolatedStringPart::ArrayOffset { variable, key } => {
                     let value =
                         self.evaluate_interpolated_array_offset(variable, key, span, scope)?;
-                    let text = value
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(span, error))?;
+                    let text = self.value_to_echo_string(value, span)?;
                     output.push_str(&text);
                 }
                 InterpolatedStringPart::ObjectProperty { variable, property } => {
                     let value = self
                         .evaluate_interpolated_object_property(variable, property, span, scope)?;
-                    let text = value
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(span, error))?;
+                    let text = self.value_to_echo_string(value, span)?;
                     output.push_str(&text);
                 }
                 InterpolatedStringPart::AccessChain { variable, segments } => {
                     let value =
                         self.evaluate_interpolated_access_chain(variable, segments, span, scope)?;
-                    let text = value
-                        .try_echo_string()
-                        .map_err(|error| runtime_error(span, error))?;
+                    let text = self.value_to_echo_string(value, span)?;
                     output.push_str(&text);
                 }
             }

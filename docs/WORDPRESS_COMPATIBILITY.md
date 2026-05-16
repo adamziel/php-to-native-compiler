@@ -1224,6 +1224,12 @@ concat compound assignment `.=` over current supported compound-assignment
 targets while leaving `Stringable` metadata, object interpolation, heredoc
 conversion, exact non-string-return `TypeError` objects, references/
 copy-on-write aliasing during read-modify-write, and native lowering explicit
+gaps. Milestone 1017 extends the same object string conversion to the current
+double-quoted string and heredoc interpolation evaluator for simple variables,
+array offsets, direct object properties, and supported braced chains while
+leaving `Stringable` metadata, `${...}` interpolation, dynamic/static property
+interpolation, arbitrary expression interpolation, exact non-string-return
+`TypeError` objects, references/copy-on-write, and native lowering explicit
 gaps. Milestone 1014 adds bounded direct object-offset `ArrayAccess` dispatch
 for classes that declare `implements ArrayAccess`, covering direct
 read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while

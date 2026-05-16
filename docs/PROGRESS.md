@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1017, bounded object string conversion through visible
+  non-static `__toString()` for the current interpolation evaluator. Simple
+  `$object`, array-offset object values, direct object-property values, and
+  supported chained interpolation values in double-quoted strings and current
+  heredoc syntax now reuse the same echo-string conversion path as `echo` and
+  binary concatenation. The new fixture covers direct variable, array offset,
+  object property, braced chain, and heredoc interpolation against system PHP.
+  This is not `Stringable` interface metadata, `${...}` interpolation,
+  dynamic/static property interpolation, arbitrary expression interpolation,
+  exact non-string-return `TypeError` objects, recursion edge-case fidelity,
+  references/copy-on-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model magic_to_string_runs_for_interpolated_strings -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1017`.
+
 - Added Milestone 1016, bounded direct object-offset `ArrayAccess`
   increment/decrement. Direct `++$object[$key]`, `$object[$key]++`,
   `--$object[$key]`, and `$object[$key]--` now read the current value through

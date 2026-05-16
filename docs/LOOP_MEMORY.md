@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1b5f65a9 runtime: add array access increment decrement`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1017, bounded object string conversion through
+  visible non-static `__toString()` for the current double-quoted string and
+  heredoc interpolation evaluator.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1017/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `README.md`, `docs/ARCHITECTURE.md`, and `docs/LOOP_MEMORY.md`.
+- Tests planned: focused object-model test,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1017`,
+  formatting, diff checks, and the serialized checkpoint gate.
+- Current WordPress frontier: simple variable, array-offset, object-property,
+  braced-chain, and heredoc interpolation paths can reuse the existing
+  `__toString()` magic conversion instead of failing with generic object
+  string-conversion diagnostics.
+- Remaining semantic gaps: `Stringable` metadata, `${...}` interpolation,
+  dynamic/static property interpolation, arbitrary expression interpolation,
+  exact non-string-return `TypeError` objects, references/copy-on-write,
+  recursion edge-case fidelity, and native lowering remain missing.
+- Next concrete task: run focused verification, then checkpoint only if the
+  full gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `e63134a3 runtime: add array access compound assignment`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1016, bounded direct object-offset `ArrayAccess`

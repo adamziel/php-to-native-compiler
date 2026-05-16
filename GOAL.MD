@@ -1024,7 +1024,14 @@ extends that object string conversion to concat compound assignment `.=` over
 current supported compound-assignment targets while leaving `Stringable`
 metadata, object interpolation, heredoc conversion, exact non-string-return
 `TypeError` objects, references/copy-on-write aliasing during
-read-modify-write, and native lowering explicit gaps. Milestone 833
+read-modify-write, and native lowering explicit gaps. Milestone 1017 extends
+object string conversion through visible non-static `__toString()` to the
+current double-quoted string and heredoc interpolation evaluator for simple
+variables, array offsets, direct object properties, and supported braced
+chains while leaving `Stringable` metadata, `${...}` interpolation,
+dynamic/static property interpolation, arbitrary expression interpolation,
+exact non-string-return `TypeError` objects, references/copy-on-write, and
+native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
@@ -1435,8 +1442,8 @@ Scope:
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - object conversion beyond the current direct `__toString()` echo/print/cast/
-  concat/`.=` slice, including `Stringable` metadata, interpolation, heredoc,
-  and exact PHP error behavior;
+  concat/`.=` and current interpolation slice, including `Stringable`
+  metadata, unsupported interpolation forms, and exact PHP error behavior;
 - object protocol behavior beyond the current direct `ArrayAccess`
   read/write/append/isset/empty/`??`/unset, compound-assignment, and
   integer/float by-value temporary increment/decrement slice, including
@@ -1618,15 +1625,14 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1016 is the active checkpoint candidate: direct object-offset
-  `ArrayAccess` increment/decrement now covers direct `++$object[$key]`,
-  `$object[$key]++`, `--$object[$key]`, and `$object[$key]--` for current
-  integer/float values by reading through `offsetGet` and applying the update
-  to PHP's by-value temporary result without `offsetSet`; by-reference
-  `offsetGet()` mutation, indirect-modification notice fidelity, nested/mixed
-  paths, append compound assignment, iteration, string increment/decrement
-  semantics, exact diagnostics, references/copy-on-write, and native lowering
-  remain open.
+- Milestone 1017 is the active checkpoint candidate: object string conversion
+  through visible non-static `__toString()` now covers the current
+  double-quoted string and heredoc interpolation evaluator for simple
+  variables, array offsets, direct object properties, and supported braced
+  chains while `Stringable` metadata, `${...}` interpolation, dynamic/static
+  property interpolation, arbitrary expression interpolation, exact
+  non-string-return `TypeError` objects, references/copy-on-write, and native
+  lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

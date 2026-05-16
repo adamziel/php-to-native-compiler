@@ -4335,10 +4335,12 @@
   broader `self`/`parent`/`static` behavior, object comparisons, full
   `instanceof` interface/class relationship metadata, object callables, and
   native lowering are unsupported. Object string conversion is supported only
-  for the documented direct `__toString()` echo/print/cast/concat/`.=` slice;
-  object interpolation, heredoc conversion, `Stringable` metadata, exact
-  non-string-return `TypeError` objects, recursion edge cases, and native
-  lowering remain unsupported.
+  for the documented direct `__toString()` echo/print/cast/concat/`.=` slice
+  plus the current double-quoted string and heredoc interpolation evaluator;
+  `Stringable` metadata, `${...}` interpolation, dynamic/static property
+  interpolation, arbitrary expression interpolation, exact non-string-return
+  `TypeError` objects, recursion edge cases, and native lowering remain
+  unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in

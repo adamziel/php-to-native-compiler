@@ -1175,6 +1175,43 @@ echo $box->text;
 }
 
 #[test]
+fn magic_to_string_runs_for_interpolated_strings() {
+    let source = r#"<?php
+class Label {
+    public $value = "core";
+
+    public function __toString() {
+        echo "toString:$this->value\n";
+        return "label:$this->value";
+    }
+}
+
+class Holder {
+    public $label;
+}
+
+$label = new Label();
+$items = ["label" => $label];
+$box = new Holder();
+$box->label = $label;
+echo "plain:$label\n";
+echo "array:{$items['label']}\n";
+echo "property:$box->label\n";
+echo "chain:{$box->label}\n";
+echo <<<TEXT
+heredoc:$label
+TEXT;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "toString:core\nplain:label:core\ntoString:core\narray:label:core\ntoString:core\nproperty:label:core\ntoString:core\nchain:label:core\ntoString:core\nheredoc:label:core"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_access_offsets_dispatch_to_user_methods() {
     let source = r#"<?php
 class Bag implements ArrayAccess {
