@@ -11,7 +11,9 @@ Status: boundary only.
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
 `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
-`mysqli_prepare`, `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
+`mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
+`mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
+`mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
 `mysqli_stmt_execute`,
 `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
 `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
@@ -178,6 +180,15 @@ through callable metadata but are explicit runtime boundaries. Reached calls
 report stable unsupported diagnostics because statement objects, prepared SQL
 parsing, parameter/result binding, statement execution, and result metadata are
 not implemented.
+
+`mysqli_stmt_prepare($statement, $query)`,
+`mysqli_stmt_param_count($statement)`,
+`mysqli_stmt_get_warnings($statement)`, and
+`mysqli_stmt_error_list($statement)` are visible through callable metadata but
+are explicit runtime boundaries. Reached calls report stable unsupported
+diagnostics because statement objects, prepared SQL parsing, parameter
+metadata, warning-chain objects, error-list arrays, and statement diagnostic
+state are not implemented.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)`,
 `mysqli_stmt_bind_result($statement, &...$vars)`, and

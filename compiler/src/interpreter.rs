@@ -4508,6 +4508,51 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_prepare(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_prepare", args, 2, span)?;
+        let _query = string_builtin_argument("mysqli_stmt_prepare()", "query", &args[1], span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_prepare()",
+                "mysqli statement objects, prepared SQL parsing, prepared statement state, and host database execution are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_param_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_param_count", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_param_count()",
+                "mysqli statement objects, prepared SQL parsing, parameter metadata, and statement lifecycle state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_get_warnings(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_get_warnings", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_get_warnings()",
+                "mysqli statement objects, statement warning chains, and statement diagnostic state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_error_list(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_error_list", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_error_list()",
+                "mysqli statement objects, statement error-list tracking, and statement diagnostic state are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_stmt_bind_param(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() < 2 {
             return Err(runtime_error(
@@ -10029,6 +10074,10 @@ impl Interpreter {
             "mysqli_thread_safe" => self.call_mysqli_thread_safe(&args, span),
             "mysqli_stmt_init" => self.call_mysqli_stmt_init(&args, span),
             "mysqli_prepare" => self.call_mysqli_prepare(&args, span),
+            "mysqli_stmt_prepare" => self.call_mysqli_stmt_prepare(&args, span),
+            "mysqli_stmt_param_count" => self.call_mysqli_stmt_param_count(&args, span),
+            "mysqli_stmt_get_warnings" => self.call_mysqli_stmt_get_warnings(&args, span),
+            "mysqli_stmt_error_list" => self.call_mysqli_stmt_error_list(&args, span),
             "mysqli_stmt_bind_param" => self.call_mysqli_stmt_bind_param(&args, span),
             "mysqli_stmt_bind_result" => self.call_mysqli_stmt_bind_result(&args, span),
             "mysqli_stmt_execute" => self.call_mysqli_stmt_execute(&args, span),
@@ -13027,6 +13076,10 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_thread_safe"
             | "mysqli_stmt_init"
             | "mysqli_prepare"
+            | "mysqli_stmt_prepare"
+            | "mysqli_stmt_param_count"
+            | "mysqli_stmt_get_warnings"
+            | "mysqli_stmt_error_list"
             | "mysqli_stmt_bind_param"
             | "mysqli_stmt_bind_result"
             | "mysqli_stmt_execute"

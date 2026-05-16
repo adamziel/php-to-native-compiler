@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone965/mysqli_stmt_get_warnings_boundary.php

@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `2e1112fc tests: add wordpress wpdb stmt field metadata smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 965, explicit MySQLi statement
+  prepare/parameter-count and diagnostic-list boundaries for
+  `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
+  `mysqli_stmt_get_warnings()`, and `mysqli_stmt_error_list()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone965/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_prepare_param_and_diagnostic_lists -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone965`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement prepare,
+  parameter-count, warning-chain, and error-list APIs now produce stable
+  diagnostics instead of generic unknown-call behavior.
+- Remaining semantic gaps: statement object allocation, prepared SQL parsing,
+  parameter metadata, warning-chain objects, error-list arrays, statement
+  diagnostic state, host database state, warnings/errors, and native database
+  lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+  prepare/parameter-count and diagnostic-list smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `c3a8fb51 runtime: add mysqli stmt field metadata boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 964, synthetic WordPress-shaped `wpdb`
@@ -47,8 +79,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   objects, field metadata arrays/objects, statement field cursor state, host
   database state, warnings/errors, and native database lowering remain
   missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next prepared-statement
+- Checkpoint result: committed and pushed
+  `2e1112fc tests: add wordpress wpdb stmt field metadata smokes`.
+- Next concrete task: inspect the next prepared-statement
   lifecycle/diagnostic metadata boundary such as `mysqli_stmt_prepare()`,
   `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, or
   `mysqli_stmt_error_list()`.

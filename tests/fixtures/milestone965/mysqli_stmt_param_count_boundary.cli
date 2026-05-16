@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone965/mysqli_stmt_param_count_boundary.php

@@ -463,6 +463,104 @@ mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name =
 }
 
 #[test]
+fn mysqli_statement_prepare_param_and_diagnostic_lists_are_visible_but_explicit_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$prepare = "mysqli_stmt_prepare";
+$param_count = "mysqli_stmt_param_count";
+$get_warnings = "mysqli_stmt_get_warnings";
+$error_list = "mysqli_stmt_error_list";
+echo function_exists($prepare) ? "yes" : "no";
+echo "|";
+echo is_callable($prepare) ? "prepare-callable" : "prepare-missing";
+echo "|";
+echo function_exists($param_count) ? "param-count-exists" : "param-count-missing";
+echo "|";
+echo is_callable($param_count) ? "param-count-callable" : "param-count-missing";
+echo "|";
+echo function_exists($get_warnings) ? "warnings-exists" : "warnings-missing";
+echo "|";
+echo is_callable($get_warnings) ? "warnings-callable" : "warnings-missing";
+echo "|";
+echo function_exists($error_list) ? "error-list-exists" : "error-list-missing";
+echo "|";
+echo is_callable($error_list) ? "error-list-callable" : "error-list-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|prepare-callable|param-count-exists|param-count-callable|warnings-exists|warnings-callable|error-list-exists|error-list-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let prepare_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_prepare($stmt, "SELECT option_value FROM wp_options WHERE option_name = ?");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(prepare_error.phase, Phase::Runtime);
+    assert_eq!(prepare_error.line, 3);
+    assert_eq!(prepare_error.column, 1);
+    assert_eq!(
+        prepare_error.message,
+        "unsupported call mysqli_stmt_prepare(): mysqli statement objects, prepared SQL parsing, prepared statement state, and host database execution are not implemented in the current subset"
+    );
+
+    let param_count_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_param_count($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(param_count_error.phase, Phase::Runtime);
+    assert_eq!(param_count_error.line, 3);
+    assert_eq!(param_count_error.column, 1);
+    assert_eq!(
+        param_count_error.message,
+        "unsupported call mysqli_stmt_param_count(): mysqli statement objects, prepared SQL parsing, parameter metadata, and statement lifecycle state are not implemented in the current subset"
+    );
+
+    let warnings_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_get_warnings($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(warnings_error.phase, Phase::Runtime);
+    assert_eq!(warnings_error.line, 3);
+    assert_eq!(warnings_error.column, 1);
+    assert_eq!(
+        warnings_error.message,
+        "unsupported call mysqli_stmt_get_warnings(): mysqli statement objects, statement warning chains, and statement diagnostic state are not implemented in the current subset"
+    );
+
+    let error_list_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_error_list($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error_list_error.phase, Phase::Runtime);
+    assert_eq!(error_list_error.line, 3);
+    assert_eq!(error_list_error.column, 1);
+    assert_eq!(
+        error_list_error.message,
+        "unsupported call mysqli_stmt_error_list(): mysqli statement objects, statement error-list tracking, and statement diagnostic state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_bind_and_execute_are_visible_but_explicit_boundaries() {
     let execution = run_source(
         r#"<?php
@@ -3403,6 +3501,14 @@ echo function_exists("mysqli_stmt_init") ? "1" : "0";
 echo is_callable("mysqli_stmt_init") ? "1" : "0";
 echo function_exists("mysqli_prepare") ? "1" : "0";
 echo is_callable("mysqli_prepare") ? "1" : "0";
+echo function_exists("mysqli_stmt_prepare") ? "1" : "0";
+echo is_callable("mysqli_stmt_prepare") ? "1" : "0";
+echo function_exists("mysqli_stmt_param_count") ? "1" : "0";
+echo is_callable("mysqli_stmt_param_count") ? "1" : "0";
+echo function_exists("mysqli_stmt_get_warnings") ? "1" : "0";
+echo is_callable("mysqli_stmt_get_warnings") ? "1" : "0";
+echo function_exists("mysqli_stmt_error_list") ? "1" : "0";
+echo is_callable("mysqli_stmt_error_list") ? "1" : "0";
 echo function_exists("mysqli_stmt_bind_param") ? "1" : "0";
 echo is_callable("mysqli_stmt_bind_param") ? "1" : "0";
 echo function_exists("mysqli_stmt_bind_result") ? "1" : "0";
@@ -3553,7 +3659,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 198, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 206, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3837,6 +3943,54 @@ mysqli_stmt_init(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_prepare(mysqli_init(), "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_prepare(mysqli_init(), "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_param_count(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_get_warnings(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_error_list(mysqli_init());
 "#,
     )
     .unwrap_err();

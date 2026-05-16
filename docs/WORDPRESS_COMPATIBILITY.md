@@ -1672,6 +1672,14 @@ historical blockers and remaining full-support gaps include:
   metadata fetch methods without claiming statement objects, result metadata
   objects, field metadata arrays/objects, statement field cursor state, host
   database state, warning/error fidelity, or native database lowering.
+  Milestone 965 adds explicit `mysqli_stmt_prepare()`/
+  `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
+  `mysqli_stmt_error_list()` statement prepare/parameter-count and
+  diagnostic-list boundaries with callable metadata and stable unsupported
+  diagnostics, without statement object allocation, prepared SQL parsing,
+  parameter metadata, warning-chain objects, error-list arrays, statement
+  diagnostic state, host database execution, warning/error fidelity, or native
+  database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

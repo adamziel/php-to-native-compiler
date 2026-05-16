@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 965, explicit MySQLi statement prepare/parameter-count and
+  diagnostic-list boundaries for `mysqli_stmt_prepare()`,
+  `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, and
+  `mysqli_stmt_error_list()`. The runtime exposes the names through
+  function/callability metadata, validates the current arities, and reports
+  stable unsupported diagnostics when reached. Native metadata lookup knows
+  the names while direct native lowering remains rejected. This is not
+  statement object allocation, prepared SQL parsing, parameter metadata,
+  warning-chain objects, error-list arrays, statement diagnostic state, host
+  database execution, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_prepare_param_and_diagnostic_lists -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone965`.
+
 - Added Milestone 964, synthetic WordPress-shaped `wpdb`
   prepared-statement field metadata fetch smokes that reach the explicit
   `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` boundaries

@@ -9051,17 +9051,32 @@ handled.
   statement object allocation, result metadata objects, field metadata
   arrays/objects, statement field cursor state, host database state,
   warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   lifecycle/diagnostic metadata boundary, such as `mysqli_stmt_prepare()`,
   `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, or
   `mysqli_stmt_error_list()` callable metadata and explicit unsupported
   diagnostics, before claiming broader prepared statement fidelity.
+  Milestone 965 exposes `mysqli_stmt_prepare()`,
+  `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, and
+  `mysqli_stmt_error_list()` through callable metadata and turns reached
+  statement prepare/parameter-count and diagnostic-list calls into stable
+  unsupported diagnostics. This is not statement object allocation, prepared
+  SQL parsing, parameter metadata, warning-chain objects, error-list arrays,
+  statement diagnostic state, host database execution, warning/error fidelity,
+  or native lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+  prepare/parameter-count and diagnostic-list smokes that reach the explicit
+  `mysqli_stmt_prepare()`, `mysqli_stmt_param_count()`,
+  `mysqli_stmt_get_warnings()`, or `mysqli_stmt_error_list()` boundary through
+  WordPress-shaped methods without claiming statement objects, prepared SQL
+  parsing, parameter metadata, warning-chain objects, error-list arrays, host
+  database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c3a8fb51 runtime: add mysqli stmt field metadata boundaries`, covering
-  Milestone 963 before the current Milestone 964 candidate.
+  `2e1112fc tests: add wordpress wpdb stmt field metadata smokes`, covering
+  Milestone 964 before the current Milestone 965 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
