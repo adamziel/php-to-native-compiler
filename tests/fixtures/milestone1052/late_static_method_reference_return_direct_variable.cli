@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1052/late_static_method_reference_return_direct_variable.php
+exit: 0
+stdout:
+base|inside=2|baseValue=2|child|inside=2|childValue=2
+--- stdout end ---
+stderr:
+--- stderr end ---

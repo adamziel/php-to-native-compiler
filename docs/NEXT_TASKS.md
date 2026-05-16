@@ -10154,12 +10154,28 @@ handled.
   reference-return method sources, non-direct return expressions,
   nested-control-flow returns, array/object offset aliases, by-reference
   `foreach`, full PHP reference containers, copy-on-write, or native lowering.
+
+## Milestone 1052: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: extend the bounded direct-variable
+  reference-return assignment path to `static::` late-static method calls in
+  an active class/method context. In the current subset,
+  `$alias =& static::identity($value);` can bind the alias name to the direct
+  variable cell returned by a visible late-bound static
+  `public static function &identity(&$value) { return $value; }`, including
+  base and child called-class contexts, and `unset($alias)` detaches only the
+  alias name. This is not normal reference-return invocation,
+  `static::` sources outside class/method context, non-static `static::`
+  sources, dynamic static receiver, or magic `__callStatic` reference-return
+  method sources, non-direct return expressions, nested-control-flow returns,
+  array/object offset aliases, by-reference `foreach`, full PHP reference
+  containers, copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
-  late-static/dynamic/magic reference-return method sources, by-reference
-  `foreach`, object-property references, source/target rebinding, or array
-  copy-on-write, and add the next bounded behavior or explicit runtime boundary
-  with PHP comparison fixtures.
+  dynamic/magic reference-return method sources, by-reference `foreach`,
+  object-property references, source/target rebinding, or array copy-on-write,
+  and add the next bounded behavior or explicit runtime boundary with PHP
+  comparison fixtures.
 
 ## Latest Completed Checkpoint
 

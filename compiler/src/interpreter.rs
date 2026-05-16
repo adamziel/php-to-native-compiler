@@ -2778,11 +2778,16 @@ impl Interpreter {
                 args,
                 span: call_span,
             } => self.call_reference_return_parent_method(method, args, *call_span, scope),
+            Expr::LateStaticMethodCall {
+                method,
+                args,
+                span: call_span,
+            } => self.call_reference_return_late_static_method(method, args, *call_span, scope),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call, object method-call, named static method-call, self:: static method-call, and parent:: static method-call reference-return sources are implemented in the current subset",
+                    "only direct function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, and static:: late-static method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -11387,6 +11392,77 @@ impl Interpreter {
             .last()
             .copied()
             .unwrap_or(current_class_id);
+        self.call_reference_return_function_with_checked_values(
+            function,
+            values,
+            None,
+            Some(class_id),
+            Some(called_class_id),
+            reference_bindings,
+        )
+    }
+
+    fn call_reference_return_late_static_method(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let Some(called_class_id) = self.called_class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("static::{method_name}()"),
+                    "static method calls require method or static class context",
+                ),
+            ));
+        };
+
+        let called_class = self
+            .classes
+            .get(called_class_id)
+            .expect("called class context should resolve to class metadata");
+        let called_class_name = called_class.name().to_string();
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(called_class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{called_class_name}::{method_name}()")),
+            ));
+        };
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "non-static static:: reference-return method sources are not implemented",
+                ),
+            ));
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+
         self.call_reference_return_function_with_checked_values(
             function,
             values,
