@@ -1566,7 +1566,12 @@ historical blockers and remaining full-support gaps include:
   Milestone 944 wires that boundary through a synthetic WordPress-shaped
   `wpdb` option lookup method without claiming statement objects, binding,
   execution, result metadata, host database state, warning/error fidelity, or
-  native database lowering.
+  native database lowering. Milestone 945 adds explicit
+  `mysqli_stmt_bind_param()`/`mysqli_stmt_execute()` statement
+  binding/execution boundaries with callable metadata and stable unsupported
+  diagnostics, without statement object allocation, by-reference parameter
+  binding, type-string validation, prepared statement execution, result state,
+  host database execution, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

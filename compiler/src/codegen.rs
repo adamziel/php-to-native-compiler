@@ -6379,6 +6379,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_thread_safe"
             | "mysqli_stmt_init"
             | "mysqli_prepare"
+            | "mysqli_stmt_bind_param"
+            | "mysqli_stmt_execute"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

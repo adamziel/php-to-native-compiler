@@ -8804,17 +8804,28 @@ handled.
   option lookup method. It is not statement object allocation, prepared SQL
   parsing, parameter/result binding, statement execution, result metadata,
   host database state, warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement API boundary
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement API boundary
   after prepared-statement lifecycle visibility, such as
   `mysqli_stmt_bind_param()`/`mysqli_stmt_execute()` callable metadata and
   explicit unsupported diagnostics, before claiming broader prepared statement
   fidelity.
+  Milestone 945 exposes `mysqli_stmt_bind_param()` and
+  `mysqli_stmt_execute()` through callable metadata and turns reached binding
+  or execution calls into stable unsupported diagnostics. This is not
+  statement object allocation, by-reference parameter binding, type-string
+  validation, prepared statement execution, result state, host database
+  execution, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement smoke
+  that reaches the explicit bind/execute boundary through a WordPress-shaped
+  method without claiming statement objects, by-reference binding, type-string
+  validation, statement execution, result state, host database state,
+  warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `fad8f58 runtime: add mysqli statement lifecycle boundary`, covering
-  Milestone 943 before the current Milestone 944 candidate.
+  `fa39c8d tests: add wordpress wpdb prepare boundary smoke`, covering
+  Milestone 944 before the current Milestone 945 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

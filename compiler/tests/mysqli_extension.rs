@@ -463,6 +463,63 @@ mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name =
 }
 
 #[test]
+fn mysqli_statement_bind_and_execute_are_visible_but_explicit_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$bind = "mysqli_stmt_bind_param";
+$execute = "mysqli_stmt_execute";
+echo function_exists($bind) ? "yes" : "no";
+echo "|";
+echo is_callable($bind) ? "bind-callable" : "bind-missing";
+echo "|";
+echo function_exists($execute) ? "execute-exists" : "execute-missing";
+echo "|";
+echo is_callable($execute) ? "execute-callable" : "execute-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|bind-callable|execute-exists|execute-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let bind_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+$value = "home";
+mysqli_stmt_bind_param($stmt, "s", $value);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bind_error.phase, Phase::Runtime);
+    assert_eq!(bind_error.line, 4);
+    assert_eq!(bind_error.column, 1);
+    assert_eq!(
+        bind_error.message,
+        "unsupported call mysqli_stmt_bind_param(): mysqli statement objects, by-reference parameter binding, type strings, and prepared statement execution are not implemented in the current subset"
+    );
+
+    let execute_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_execute($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(execute_error.phase, Phase::Runtime);
+    assert_eq!(execute_error.line, 3);
+    assert_eq!(execute_error.column, 1);
+    assert_eq!(
+        execute_error.message,
+        "unsupported call mysqli_stmt_execute(): mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -2703,6 +2760,10 @@ echo function_exists("mysqli_stmt_init") ? "1" : "0";
 echo is_callable("mysqli_stmt_init") ? "1" : "0";
 echo function_exists("mysqli_prepare") ? "1" : "0";
 echo is_callable("mysqli_prepare") ? "1" : "0";
+echo function_exists("mysqli_stmt_bind_param") ? "1" : "0";
+echo is_callable("mysqli_stmt_bind_param") ? "1" : "0";
+echo function_exists("mysqli_stmt_execute") ? "1" : "0";
+echo is_callable("mysqli_stmt_execute") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -2801,7 +2862,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 146, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 150, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3085,6 +3146,30 @@ mysqli_stmt_init(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_prepare(mysqli_init(), "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_bind_param(mysqli_init(), "s", $value);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_execute(mysqli_init());
 "#,
     )
     .unwrap_err();

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone945/mysqli_stmt_execute_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone945/mysqli_stmt_execute_boundary.php:3:1: unsupported call mysqli_stmt_execute(): mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset
+--- stderr end ---

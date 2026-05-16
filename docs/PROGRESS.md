@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 945, explicit MySQLi statement binding/execution
+  boundaries for `mysqli_stmt_bind_param()` and `mysqli_stmt_execute()`. The
+  runtime exposes both names through function/callability metadata, validates
+  arity for the current signatures, and reports stable unsupported diagnostics
+  when binding or execution is reached. Native metadata lookup knows the names
+  while direct native lowering remains rejected. This is not statement object
+  allocation, by-reference parameter binding, type-string validation, prepared
+  statement execution, result state, host database execution, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_and_execute -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone945`.
+
 - Added Milestone 944, a synthetic WordPress-shaped `wpdb` prepared-statement
   smoke that reaches the explicit `mysqli_prepare()` boundary through a
   `wpdb`-style option lookup method. This is a harness smoke only; it does

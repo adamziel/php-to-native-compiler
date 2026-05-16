@@ -4508,6 +4508,46 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_bind_param(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_bind_param()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_bind_param()",
+                "mysqli statement objects, by-reference parameter binding, type strings, and prepared statement execution are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_execute(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_execute()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_execute()",
+                "mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9716,6 +9756,8 @@ impl Interpreter {
             "mysqli_thread_safe" => self.call_mysqli_thread_safe(&args, span),
             "mysqli_stmt_init" => self.call_mysqli_stmt_init(&args, span),
             "mysqli_prepare" => self.call_mysqli_prepare(&args, span),
+            "mysqli_stmt_bind_param" => self.call_mysqli_stmt_bind_param(&args, span),
+            "mysqli_stmt_execute" => self.call_mysqli_stmt_execute(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12688,6 +12730,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_thread_safe"
             | "mysqli_stmt_init"
             | "mysqli_prepare"
+            | "mysqli_stmt_bind_param"
+            | "mysqli_stmt_execute"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

@@ -294,6 +294,12 @@ state, warning/error fidelity, or native lowering, now wired through a
 synthetic WordPress-shaped `wpdb` prepared-statement smoke without claiming
 statement objects, binding, execution, result metadata, host database state,
 warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_bind_param()`/`mysqli_stmt_execute()` statement
+binding/execution boundaries that expose callable metadata and stable
+unsupported diagnostics without statement object allocation, by-reference
+parameter binding, type-string validation, prepared statement execution,
+result state, host database execution, warning/error fidelity, or native
+lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

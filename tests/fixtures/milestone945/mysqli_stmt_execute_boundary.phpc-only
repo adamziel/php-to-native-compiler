@@ -1,0 +1,4 @@
+This fixture exercises phpc's explicit MySQLi statement execution boundary.
+System PHP would require a real mysqli statement object and host database
+execution; phpc only exposes `mysqli_stmt_execute()` through callable metadata
+and reports a stable unsupported diagnostic when execution is reached.
