@@ -1945,6 +1945,51 @@ mysqli_multi_query($handle, "LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE 
 }
 
 #[test]
+fn mysqli_options_init_command_affects_real_connect_boundary() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+echo mysqli_options($handle, MYSQLI_INIT_COMMAND, "SET NAMES utf8mb4") ? "init-set" : "failed";
+echo "|";
+echo mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0) ? "connected" : "failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
+
+$handle2 = mysqli_init();
+mysqli_set_opt($handle2, MYSQLI_INIT_COMMAND, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
+echo "|";
+echo mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0) ? "alias-connected" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "init-set|connected|0|no-pending|alias-connected"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let unsupported = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_options($handle, MYSQLI_INIT_COMMAND, "SELECT 1");
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported.phase, Phase::Runtime);
+    assert_eq!(unsupported.line, 4);
+    assert_eq!(unsupported.column, 1);
+    assert_eq!(
+        unsupported.message,
+        "unsupported call mysqli_real_connect(): MYSQLI_INIT_COMMAND execution is not implemented for arbitrary SQL; only deterministic no-result init commands are supported in the current subset, got SELECT 1"
+    );
+}
+
+#[test]
 fn mysqli_ssl_set_accepts_current_placeholder_shape() {
     let execution = run_source(
         r#"<?php

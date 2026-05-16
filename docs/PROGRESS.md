@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 997, bounded `MYSQLI_INIT_COMMAND` placeholder behavior on
+  `mysqli_real_connect()`. Accepted `mysqli_options()`/`mysqli_set_opt()`
+  init-command strings are now consulted at placeholder connect time: exact
+  deterministic no-result init commands such as `SET NAMES utf8mb4` and the
+  current charset setup shape succeed without pending result state, while
+  arbitrary init-command SQL fails with a stable unsupported diagnostic. The
+  new fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes. This
+  is not real client option negotiation, server-side init-command execution,
+  broad SQL execution, mutation state, connection charset mutation, host
+  database state, PHP warning/error fidelity, mysqlnd behavior, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options_init_command_affects_real_connect_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_options_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone997`.
+
 - Added Milestone 996, placeholder MySQLi option storage for accepted
   `mysqli_options()`/`mysqli_set_opt()` values plus a bounded
   `MYSQLI_OPT_LOCAL_INFILE` effect on `LOAD DATA LOCAL INFILE` boundaries.

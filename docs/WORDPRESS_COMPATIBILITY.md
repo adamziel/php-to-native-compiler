@@ -1831,7 +1831,13 @@ historical blockers and remaining full-support gaps include:
   boundaries, including a WordPress-shaped `wpdb` smoke, without claiming real
   client option negotiation, local file loading, `LOAD DATA` execution,
   mutation state, path validation, host database state, PHP warning/error
-  fidelity, mysqlnd behavior, or native database lowering.
+  fidelity, mysqlnd behavior, or native database lowering. Milestone 997 adds
+  bounded `MYSQLI_INIT_COMMAND` handling at `mysqli_real_connect()` for exact
+  deterministic no-result init commands, including a WordPress-shaped `wpdb`
+  smoke, without claiming real client option negotiation, server-side
+  init-command execution, broad SQL execution, mutation state, connection
+  charset mutation, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering.
   Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

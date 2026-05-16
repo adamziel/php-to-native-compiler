@@ -4139,18 +4139,7 @@ impl Interpreter {
                 ),
             ));
         };
-        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_real_connect()",
-                    format!(
-                        "first argument must be mysqli object in the current subset, got {} object",
-                        handle.class_name()
-                    ),
-                ),
-            ));
-        }
+        let handle_id = expect_mysqli_handle_id("mysqli_real_connect()", &args[0], span)?;
 
         for (index, label) in ["hostname", "username", "password", "database"]
             .iter()
@@ -4229,6 +4218,22 @@ impl Interpreter {
                 ));
             }
         }
+
+        if let Some(init_command) = self.mysqli_init_command(handle_id) {
+            if !is_mysqli_init_command_placeholder_query(init_command) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_connect()",
+                        format!(
+                            "MYSQLI_INIT_COMMAND execution is not implemented for arbitrary SQL; only deterministic no-result init commands are supported in the current subset, got {init_command}"
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        self.clear_mysqli_pending_results(handle_id);
 
         handle
             .write_public_property("connect_errno", Value::Int(0))
@@ -4763,6 +4768,16 @@ impl Interpreter {
             .insert(option_id, value);
     }
 
+    fn mysqli_init_command(&self, handle_id: i64) -> Option<&str> {
+        self.mysqli_options
+            .get(&handle_id)
+            .and_then(|options| options.get(&PHP_MYSQLI_INIT_COMMAND))
+            .and_then(|value| match value {
+                Value::String(command) => Some(command.as_str()),
+                _ => None,
+            })
+    }
+
     fn mysqli_local_infile_enabled(&self, handle_id: i64) -> bool {
         self.mysqli_options
             .get(&handle_id)
@@ -4772,6 +4787,11 @@ impl Interpreter {
                 Value::Int(enabled) => *enabled != 0,
                 _ => false,
             })
+    }
+
+    fn clear_mysqli_pending_results(&mut self, handle_id: i64) {
+        self.mysqli_pending_results.remove(&handle_id);
+        self.mysqli_pending_result_queues.remove(&handle_id);
     }
 
     fn call_mysqli_stmt_bind_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -14950,6 +14970,10 @@ fn is_wordpress_charset_setup_query(query: &str) -> bool {
 
 fn is_mysqli_no_result_placeholder_query(query: &str) -> bool {
     is_wordpress_charset_setup_query(query) || query == "SELECT @@SESSION.sql_mode"
+}
+
+fn is_mysqli_init_command_placeholder_query(query: &str) -> bool {
+    is_mysqli_no_result_placeholder_query(query) || query.eq_ignore_ascii_case("SET NAMES utf8mb4")
 }
 
 fn is_wordpress_empty_result_query(query: &str) -> bool {

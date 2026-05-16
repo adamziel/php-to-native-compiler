@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone997/wpdb_init_command_unsupported_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone997/wpdb_init_command_unsupported_boundary.php:11:16: unsupported call mysqli_real_connect(): MYSQLI_INIT_COMMAND execution is not implemented for arbitrary SQL; only deterministic no-result init commands are supported in the current subset, got SELECT 1
+--- stderr end ---

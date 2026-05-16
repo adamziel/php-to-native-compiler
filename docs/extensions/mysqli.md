@@ -167,9 +167,12 @@ deterministic `true` and record placeholder option values per connection.
 `LOAD DATA LOCAL INFILE` boundary: disabled or unset connections report a
 disabled local-infile boundary, while enabled connections report that host file
 loading and mutation SQL are still unimplemented. Other accepted options are
-recorded without affecting connect/query/result behavior, validating paths,
-running init commands, changing timeout/network behavior, or negotiating real
-client-library options.
+recorded without negotiating real client-library options, validating paths,
+changing timeout/network behavior, or affecting result rows.
+`MYSQLI_INIT_COMMAND` is consulted only by `mysqli_real_connect($handle, ...)`:
+exact deterministic no-result init commands such as `SET NAMES utf8mb4` and
+the current charset setup shape are accepted without pending result state,
+while arbitrary init-command SQL remains an explicit unsupported boundary.
 
 `mysqli_ssl_set($handle, $key, $certificate, $ca_certificate, $ca_path,
 $cipher_algos)` accepts the placeholder object and string or null SSL option

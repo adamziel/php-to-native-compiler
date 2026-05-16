@@ -1,0 +1,2 @@
+runtime error at 11:16: unsupported call mysqli_real_connect(): MYSQLI_INIT_COMMAND execution is not implemented for arbitrary SQL; only deterministic no-result init commands are supported in the current subset, got SELECT 1
+

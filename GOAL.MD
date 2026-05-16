@@ -244,10 +244,14 @@ execution, host database state, mysqlnd fidelity, or native lowering, plus
 placeholder MySQLi option storage with a bounded `MYSQLI_OPT_LOCAL_INFILE`
 effect on `LOAD DATA LOCAL INFILE` boundaries without real client option
 negotiation, local file loading, `LOAD DATA` execution, mutation state, path
-validation, host database state, mysqlnd fidelity, or native lowering, now
-wired through synthetic WordPress-shaped `wpdb` connection query bookkeeping
-smokes without claiming real SQL execution, broad multi-statement behavior,
-mutation state, connection charset mutation, host database state,
+validation, host database state, mysqlnd fidelity, or native lowering, plus
+bounded `MYSQLI_INIT_COMMAND` handling at `mysqli_real_connect()` for exact
+deterministic no-result init commands without real client option negotiation,
+server-side init-command execution, broad SQL execution, mutation state,
+connection charset mutation, host database state, mysqlnd fidelity, or native
+lowering, now wired through synthetic WordPress-shaped `wpdb` connection query
+bookkeeping smokes without claiming real SQL execution, broad multi-statement
+behavior, mutation state, connection charset mutation, host database state,
 warning/error fidelity, or native lowering, plus bounded deterministic
 `mysqli_reap_async_query()` clean
 no-async-result placeholder metadata without `MYSQLI_ASYNC`, `mysqli_poll()`,

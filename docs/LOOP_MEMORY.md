@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `95adbc63 runtime: add mysqli local infile option boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 997, bounded `MYSQLI_INIT_COMMAND` handling at
+  `mysqli_real_connect()` for exact deterministic no-result init commands,
+  with direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone997/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options_init_command_affects_real_connect_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_options_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone997`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder `MYSQLI_INIT_COMMAND` values are
+  consulted at `mysqli_real_connect()` time for exact deterministic no-result
+  init-command strings.
+- Remaining semantic gaps: real client option negotiation, server-side
+  init-command execution, broad SQL execution, mutation state, connection
+  charset mutation, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect additional
+  exact no-result statements, true reference aliasing, named params-array
+  behavior, mutation SQL, or the next real database integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `32fe0eef runtime: add mysqli sql mode no result queues`, pushed to
   `origin/master`.
 - Task attempted: Milestone 996, placeholder MySQLi option storage with a

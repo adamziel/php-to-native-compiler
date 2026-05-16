@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone997/mysqli_init_command_placeholder_success.php
+exit: 0
+stdout:
+init-set|connected|0|no-pending
+--- stdout end ---
+stderr:
+--- stderr end ---
