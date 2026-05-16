@@ -1,0 +1,2 @@
+runtime error at 3:1: unsupported call mysqli_stmt_field_count(): mysqli statement objects, statement result metadata, and statement field-count state are not implemented in the current subset
+

@@ -1614,7 +1614,14 @@ historical blockers and remaining full-support gaps include:
   that boundary through a synthetic WordPress-shaped `wpdb` result-binding
   method without claiming statement objects, by-reference result binding,
   result buffer mutation, fetch integration, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 955 adds
+  explicit `mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/
+  `mysqli_stmt_free_result()` statement result metadata/cleanup boundaries
+  with callable metadata and stable unsupported diagnostics, without statement
+  object allocation, statement result metadata objects, field metadata
+  transfer, field-count state, result buffers, statement result cleanup state,
+  host database execution, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

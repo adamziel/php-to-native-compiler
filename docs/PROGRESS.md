@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 955, explicit MySQLi statement result metadata/cleanup
+  boundaries for `mysqli_stmt_result_metadata()`,
+  `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()`. The runtime
+  exposes the names through function/callability metadata, validates the
+  one-argument arity, and reports stable unsupported diagnostics when
+  statement result metadata, field-count state, or result cleanup is reached.
+  Native metadata lookup knows the names while direct native lowering remains
+  rejected. This is not statement object allocation, statement result
+  metadata objects, field metadata transfer, field-count state, result
+  buffers, statement result cleanup state, host database execution, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_metadata -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone955`.
+
 - Added Milestone 954, a synthetic WordPress-shaped `wpdb`
   prepared-statement result-binding smoke that reaches the explicit
   `mysqli_stmt_bind_result()` boundary through a `wpdb`-style method. This is

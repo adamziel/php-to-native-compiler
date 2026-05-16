@@ -778,6 +778,83 @@ mysqli_stmt_fetch($stmt);
 }
 
 #[test]
+fn mysqli_statement_result_metadata_is_visible_but_explicit_boundary() {
+    let execution = run_source(
+        r#"<?php
+$metadata = "mysqli_stmt_result_metadata";
+$field_count = "mysqli_stmt_field_count";
+$free_result = "mysqli_stmt_free_result";
+echo function_exists($metadata) ? "yes" : "no";
+echo "|";
+echo is_callable($metadata) ? "metadata-callable" : "metadata-missing";
+echo "|";
+echo function_exists($field_count) ? "field-count-exists" : "field-count-missing";
+echo "|";
+echo is_callable($field_count) ? "field-count-callable" : "field-count-missing";
+echo "|";
+echo function_exists($free_result) ? "free-result-exists" : "free-result-missing";
+echo "|";
+echo is_callable($free_result) ? "free-result-callable" : "free-result-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|metadata-callable|field-count-exists|field-count-callable|free-result-exists|free-result-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let metadata_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_result_metadata($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(metadata_error.phase, Phase::Runtime);
+    assert_eq!(metadata_error.line, 3);
+    assert_eq!(metadata_error.column, 1);
+    assert_eq!(
+        metadata_error.message,
+        "unsupported call mysqli_stmt_result_metadata(): mysqli statement objects, statement result metadata objects, and field metadata transfer are not implemented in the current subset"
+    );
+
+    let field_count_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_field_count($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(field_count_error.phase, Phase::Runtime);
+    assert_eq!(field_count_error.line, 3);
+    assert_eq!(field_count_error.column, 1);
+    assert_eq!(
+        field_count_error.message,
+        "unsupported call mysqli_stmt_field_count(): mysqli statement objects, statement result metadata, and statement field-count state are not implemented in the current subset"
+    );
+
+    let free_result_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_free_result($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(free_result_error.phase, Phase::Runtime);
+    assert_eq!(free_result_error.line, 3);
+    assert_eq!(free_result_error.column, 1);
+    assert_eq!(
+        free_result_error.message,
+        "unsupported call mysqli_stmt_free_result(): mysqli statement objects, statement result buffers, and statement result cleanup state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -3040,6 +3117,12 @@ echo function_exists("mysqli_stmt_num_rows") ? "1" : "0";
 echo is_callable("mysqli_stmt_num_rows") ? "1" : "0";
 echo function_exists("mysqli_stmt_fetch") ? "1" : "0";
 echo is_callable("mysqli_stmt_fetch") ? "1" : "0";
+echo function_exists("mysqli_stmt_result_metadata") ? "1" : "0";
+echo is_callable("mysqli_stmt_result_metadata") ? "1" : "0";
+echo function_exists("mysqli_stmt_field_count") ? "1" : "0";
+echo is_callable("mysqli_stmt_field_count") ? "1" : "0";
+echo function_exists("mysqli_stmt_free_result") ? "1" : "0";
+echo is_callable("mysqli_stmt_free_result") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3138,7 +3221,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 168, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 174, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3554,6 +3637,42 @@ mysqli_stmt_num_rows(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_fetch(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_result_metadata(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_field_count(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_free_result(mysqli_init());
 "#,
     )
     .unwrap_err();

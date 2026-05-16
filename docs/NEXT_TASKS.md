@@ -8917,17 +8917,31 @@ handled.
   WordPress-shaped method. This is not statement object allocation,
   by-reference result binding, result buffer mutation, fetch integration, host
   database state, warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement result
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement result
   metadata/cleanup boundary after result-binding visibility, such as
   `mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/
   `mysqli_stmt_free_result()` callable metadata and explicit unsupported
   diagnostics, before claiming broader prepared statement fidelity.
+  Milestone 955 exposes `mysqli_stmt_result_metadata()`,
+  `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()` through
+  callable metadata and turns reached result metadata/cleanup calls into
+  stable unsupported diagnostics. This is not statement object allocation,
+  statement result metadata objects, field metadata transfer, field-count
+  state, result buffers, statement result cleanup state, host database
+  execution, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement result
+  metadata/cleanup smokes that reach the explicit
+  `mysqli_stmt_result_metadata()`, `mysqli_stmt_field_count()`, or
+  `mysqli_stmt_free_result()` boundary through WordPress-shaped methods
+  without claiming statement objects, statement result metadata, field
+  metadata transfer, field-count state, result buffers, result cleanup state,
+  host database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c15462e runtime: add mysqli stmt bind result boundary`, covering
-  Milestone 953 before the current Milestone 954 candidate.
+  `51ee919 tests: add wordpress wpdb stmt bind result smoke`, covering
+  Milestone 954 before the current Milestone 955 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

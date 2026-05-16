@@ -338,6 +338,12 @@ or native lowering, now wired through a synthetic WordPress-shaped `wpdb`
 result-binding smoke without claiming statement objects, by-reference result
 binding, result buffer mutation, fetch integration, host database state,
 warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/
+`mysqli_stmt_free_result()` statement result metadata/cleanup boundaries that
+expose callable metadata and stable unsupported diagnostics without statement
+object allocation, statement result metadata objects, field metadata transfer,
+field-count state, result buffers, statement result cleanup state, host
+database execution, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

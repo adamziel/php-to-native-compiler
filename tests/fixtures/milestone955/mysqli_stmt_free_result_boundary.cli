@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone955/mysqli_stmt_free_result_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone955/mysqli_stmt_free_result_boundary.php:3:1: unsupported call mysqli_stmt_free_result(): mysqli statement objects, statement result buffers, and statement result cleanup state are not implemented in the current subset
+--- stderr end ---
