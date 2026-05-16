@@ -1,2 +1,2 @@
-runtime error at 4:1: unsupported call mysqli_stmt_bind_result(): mysqli statement objects, by-reference result binding, result buffer mutation, and fetch integration are not implemented in the current subset
+runtime error at 4:1: unsupported call mysqli_stmt_bind_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 

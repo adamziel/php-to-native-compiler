@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 985, deterministic direct-variable
+  `mysqli_stmt_bind_result()` plus buffered `mysqli_stmt_fetch()` placeholder
+  row copying for active statements. The runtime now special-cases direct and
+  string-valued calls so direct variable result bindings are recorded on the
+  placeholder statement, and `mysqli_stmt_fetch()` copies the current
+  buffered seed-post row into those variables while advancing the placeholder
+  statement cursor. The new fixtures include direct MySQLi and
+  WordPress-shaped `wpdb` smokes; affected legacy `milestone951` through
+  `milestone954` boundary fixtures now record narrower handle-validation
+  diagnostics. This is not true by-reference aliasing, unbuffered statement
+  fetching, bound-parameter execution, real mysqlnd cursor behavior, host
+  database state, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_result_has_direct_variable_placeholder_state -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_cursor_is_visible_but_explicit_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone985`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone951`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone952`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone953`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone954`.
+
 - Added Milestone 984, bounded `mysqli_stmt_data_seek()` placeholder cursor
   state for active buffered `mysqli_stmt` results. After the current unbound
   seed-post statement execution path is buffered with

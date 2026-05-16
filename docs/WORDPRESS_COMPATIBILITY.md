@@ -1762,6 +1762,12 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` smoke, without claiming `mysqli_stmt_fetch()`,
   bound-result fetching, by-reference output-buffer mutation, real mysqlnd
   cursor behavior, host database rows, PHP warning/error fidelity, or native
+  database lowering. Milestone 985 adds deterministic direct-variable
+  `mysqli_stmt_bind_result()` and buffered `mysqli_stmt_fetch()` placeholder
+  row copying for the current seed-post statement result, including a
+  WordPress-shaped `wpdb` smoke, without claiming true by-reference aliasing,
+  unbuffered statement fetching, bound-parameter execution, real mysqlnd
+  cursor behavior, host database state, PHP warning/error fidelity, or native
   database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

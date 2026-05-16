@@ -1004,8 +1004,15 @@
   host database state, PHP warning/error fidelity, and native statement
   lowering remain unsupported.
   `mysqli_stmt_bind_param($statement, $types, &...$vars)` remains an explicit
-  runtime boundary because by-reference parameter binding and type strings are
-  not implemented.
+  runtime boundary because by-reference parameter binding, bound-parameter
+  execution, and type-string behavior are not implemented.
+  `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
+  names for the current known placeholder statement result shape, and
+  `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
+  those variables while advancing the placeholder cursor. This is not true
+  by-reference aliasing, unbuffered statement fetching, bound-parameter
+  execution, real mysqlnd cursor behavior, host database state, PHP
+  warning/error fidelity, or native statement lowering.
   `mysqli_stmt_field_count($statement)` reports deterministic field counts for
   the current placeholder statement result metadata shapes.
   `mysqli_stmt_result_metadata($statement)` returns placeholder
@@ -1019,9 +1026,9 @@
   returns `false` when no placeholder statement result is available.
   `mysqli_stmt_num_rows($statement)` reports the buffered placeholder row
   count, or `0` before buffering and after `mysqli_stmt_free_result()`. This
-  is not prepared binding, statement result rows through bound output buffers,
-  real mysqlnd buffering, broad SQL metadata, host database metadata, PHP
-  warning/error fidelity, or native statement lowering.
+  is not true references/copy-on-write for result bindings, unbuffered
+  statement fetching, real mysqlnd buffering, broad SQL metadata, host
+  database metadata, PHP warning/error fidelity, or native statement lowering.
   `mysqli_stmt_more_results($statement)` and
   `mysqli_stmt_next_result($statement)` return deterministic `false` for
   active placeholder statements without modeling multi-statement execution,
@@ -3331,10 +3338,14 @@
   current known statement shapes without bound parameters, array parameter
   execution, mutations, real mysqlnd transfer, host database state, or broad
   SQL execution,
-  `mysqli_stmt_bind_param(...)`/`mysqli_stmt_bind_result(...)` are explicit
-  statement binding boundaries without by-reference parameter/result binding,
-  type strings, result buffer mutation, fetch integration, or host database
-  execution,
+  `mysqli_stmt_bind_param(...)` is an explicit parameter-binding boundary
+  without by-reference parameter binding, type strings, bound-parameter
+  execution, or host database execution,
+  `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
+  variable placeholder result binding and buffered row copying for current
+  known statement result shapes without true by-reference aliasing, unbuffered
+  statement fetching, bound-parameter execution, real mysqlnd cursor behavior,
+  or host database rows,
   `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
   `mysqli_stmt_free_result(...)` expose only deterministic placeholder field
   metadata and cleanup for current known statement SELECT shapes without
@@ -3344,13 +3355,10 @@
   deterministic placeholder buffering and row-count metadata for current
   executed statement result shapes without real buffered result storage,
   mysqlnd fidelity, host database rows, or native lowering,
-  `mysqli_stmt_fetch(...)` is an explicit statement cursor boundary without
-  by-reference result binding, output buffer mutation, cursor advancement over
-  bound buffers, or host database rows,
   `mysqli_stmt_data_seek(...)` records only deterministic in-range placeholder
   cursor offsets for active buffered statement results without
-  `mysqli_stmt_fetch(...)`, bound-result fetching, by-reference output-buffer
-  mutation, real mysqlnd cursor behavior, or host database rows,
+  unbuffered statement fetching, true by-reference result aliases, real
+  mysqlnd cursor behavior, or host database rows,
   `mysqli_stmt_attr_get(...)`/`mysqli_stmt_attr_set(...)` expose only
   deterministic placeholder statement-attribute state for active statements
   and the supported `MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH`,

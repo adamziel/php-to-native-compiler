@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone985/mysqli_stmt_bind_fetch_placeholder_row.php
+exit: 0
+stdout:
+bound|1:Hello world placeholder|done
+--- stdout end ---
+stderr:
+--- stderr end ---

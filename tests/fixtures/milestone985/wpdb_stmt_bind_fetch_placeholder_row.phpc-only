@@ -1,0 +1,6 @@
+This fixture records deterministic placeholder statement result binding and
+fetching through a WordPress-shaped `wpdb` object. It covers only direct
+variable bindings over the current buffered seed-post placeholder row and
+does not implement true by-reference aliasing, unbuffered statement fetching,
+bound-parameter execution, real mysqlnd cursor behavior, host database state,
+PHP warning/error fidelity, or native database lowering.

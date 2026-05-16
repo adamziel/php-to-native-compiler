@@ -9294,9 +9294,23 @@ handled.
   `wpdb` smoke. This is not `mysqli_stmt_fetch()`, bound-result fetching,
   by-reference output-buffer mutation, real mysqlnd cursor behavior, host
   database rows, PHP warning/error fidelity, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as
+  direct-variable result binding/fetching, active-statement parameter
+  binding, broader escaping charset fidelity, local-infile option effects, or
+  connection multi-result pending queues, and add the next bounded behavior
+  or explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
+  Milestone 985 adds deterministic direct-variable
+  `mysqli_stmt_bind_result()` plus buffered `mysqli_stmt_fetch()` placeholder
+  row copying for the current seed-post statement result, including a
+  WordPress-shaped `wpdb` smoke. This is not true by-reference aliasing,
+  unbuffered statement fetching, bound-parameter execution, real mysqlnd
+  cursor behavior, host database state, PHP warning/error fidelity, or native
+  database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as
-  active-statement binding boundaries, statement fetch boundaries, broader
+  active-statement parameter binding boundaries, broader
   escaping charset fidelity, local-infile option effects, or connection
   multi-result pending queues, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
@@ -9305,8 +9319,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `31346762 runtime: add mysqli stmt attr placeholders`, covering
-  Milestone 983 before the current Milestone 984 candidate.
+  `964e290b runtime: add mysqli stmt data seek placeholder`, covering
+  Milestone 984 before the current Milestone 985 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

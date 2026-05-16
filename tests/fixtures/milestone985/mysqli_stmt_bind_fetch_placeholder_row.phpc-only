@@ -1,0 +1,9 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_bind_result()` plus `mysqli_stmt_fetch()` path for active
+buffered `mysqli_stmt` objects. System PHP requires a real initialized
+MySQLi connection and mysqlnd statement result buffers; phpc only binds
+direct variable names and copies the current deterministic seed-post row into
+those variables. It does not implement true by-reference aliasing,
+unbuffered statement fetching, bound-parameter execution, real mysqlnd cursor
+behavior, host database state, PHP warning/error fidelity, or native database
+lowering.

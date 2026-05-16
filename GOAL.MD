@@ -494,6 +494,12 @@ buffered statement results, including direct MySQLi and WordPress-shaped
 `wpdb` smokes, without claiming `mysqli_stmt_fetch()`, bound-result fetching,
 by-reference output-buffer mutation, real mysqlnd cursor behavior, host
 database rows, PHP warning/error fidelity, or native lowering,
+plus deterministic direct-variable `mysqli_stmt_bind_result()` and buffered
+`mysqli_stmt_fetch()` placeholder row copying for the current seed-post
+statement result, including direct MySQLi and WordPress-shaped `wpdb` smokes,
+without claiming true by-reference aliasing, unbuffered statement fetching,
+bound-parameter execution, real mysqlnd cursor behavior, host database state,
+PHP warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

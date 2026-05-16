@@ -1,5 +1,7 @@
-This fixture exercises phpc's explicit MySQLi statement cursor-fetch
-boundary. System PHP would require a real mysqli statement object, bound
+This fixture exercises phpc's MySQLi statement cursor-fetch handle
+validation. System PHP would require a real mysqli statement object, bound
 result buffers, cursor advancement, and host database rows; phpc only records
-the reached `mysqli_stmt_fetch()` boundary with a stable unsupported
-diagnostic and does not implement result-row materialization.
+the reached non-statement-object diagnostic here. Supported placeholder
+statement result fetching is covered in later fixtures and does not implement
+true by-reference aliasing, unbuffered statement fetching, bound-parameter
+execution, real mysqlnd cursor behavior, or host database rows.

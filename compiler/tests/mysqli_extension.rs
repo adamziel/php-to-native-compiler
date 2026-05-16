@@ -668,18 +668,23 @@ mysqli_stmt_execute($stmt);
 }
 
 #[test]
-fn mysqli_statement_bind_result_is_visible_but_explicit_boundary() {
+fn mysqli_statement_bind_result_has_direct_variable_placeholder_state() {
     let execution = run_source(
         r#"<?php
 $bind_result = "mysqli_stmt_bind_result";
 echo function_exists($bind_result) ? "yes" : "no";
 echo "|";
 echo is_callable($bind_result) ? "callable" : "missing";
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$id = null;
+$title = null;
+echo "|";
+echo mysqli_stmt_bind_result($stmt, $id, $title) ? "bound" : "failed";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable");
+    assert_eq!(execution.stdout, "yes|callable|bound");
     assert_eq!(execution.exit_code, 0);
 
     let arity_error = run_source(
@@ -711,7 +716,39 @@ mysqli_stmt_bind_result($stmt, $title);
     assert_eq!(bind_error.column, 1);
     assert_eq!(
         bind_error.message,
-        "unsupported call mysqli_stmt_bind_result(): mysqli statement objects, by-reference result binding, result buffer mutation, and fetch integration are not implemented in the current subset"
+        "unsupported call mysqli_stmt_bind_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let variable_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_bind_result($stmt, $id, "title");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(variable_error.phase, Phase::Runtime);
+    assert_eq!(variable_error.line, 3);
+    assert_eq!(variable_error.column, 37);
+    assert_eq!(
+        variable_error.message,
+        "unsupported call mysqli_stmt_bind_result(): result bindings must be direct variables in the current subset"
+    );
+
+    let count_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_bind_result($stmt, $id);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(count_error.phase, Phase::Runtime);
+    assert_eq!(count_error.line, 3);
+    assert_eq!(count_error.column, 1);
+    assert_eq!(
+        count_error.message,
+        "unsupported call mysqli_stmt_bind_result(): bound result variable count must match current placeholder field count 2, got 1"
     );
 }
 
@@ -900,6 +937,14 @@ echo mysqli_stmt_store_result($stmt) ? "stored" : "not-stored";
 echo "|";
 echo mysqli_stmt_num_rows($stmt);
 echo "|";
+$id = null;
+$title = null;
+echo mysqli_stmt_bind_result($stmt, $id, $title) ? "bound" : "not-bound";
+echo "|";
+echo mysqli_stmt_fetch($stmt) ? $id . ":" . $title : "no-row";
+echo "|";
+echo mysqli_stmt_fetch($stmt) ? "again" : "done";
+echo "|";
 mysqli_stmt_free_result($stmt);
 echo mysqli_stmt_num_rows($stmt);
 "#,
@@ -908,7 +953,7 @@ echo mysqli_stmt_num_rows($stmt);
 
     assert_eq!(
         execution.stdout,
-        "yes|store-callable|num-rows-exists|num-rows-callable|fetch-exists|fetch-callable|0|stored|1|0"
+        "yes|store-callable|num-rows-exists|num-rows-callable|fetch-exists|fetch-callable|0|stored|1|bound|1:Hello world placeholder|done|0"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -957,7 +1002,25 @@ mysqli_stmt_fetch($stmt);
     assert_eq!(fetch_error.column, 1);
     assert_eq!(
         fetch_error.message,
-        "unsupported call mysqli_stmt_fetch(): mysqli statement objects, bound result buffers, cursor advancement, and host database rows are not implemented in the current subset"
+        "unsupported call mysqli_stmt_fetch(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let fetch_unbound_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($stmt);
+mysqli_stmt_store_result($stmt);
+mysqli_stmt_fetch($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(fetch_unbound_error.phase, Phase::Runtime);
+    assert_eq!(fetch_unbound_error.line, 5);
+    assert_eq!(fetch_unbound_error.column, 1);
+    assert_eq!(
+        fetch_unbound_error.message,
+        "unsupported call mysqli_stmt_fetch(): bound result variables are not available in the current subset"
     );
 }
 

@@ -240,12 +240,19 @@ bound parameters, array parameter execution, mutations, unknown SELECT
 metadata, real mysqlnd result transfer, host database state, PHP warning/error
 fidelity, and native lowering remain unsupported.
 
-`mysqli_stmt_bind_param($statement, $types, &...$vars)` and
-`mysqli_stmt_bind_result($statement, &...$vars)` are visible through callable
-metadata but are explicit runtime boundaries. Reached calls report stable
-unsupported diagnostics because by-reference parameter/result binding, type
-strings, result buffer mutation, fetch integration, and host database execution
-are not implemented.
+`mysqli_stmt_bind_param($statement, $types, &...$vars)` is visible through
+callable metadata but remains an explicit runtime boundary because
+by-reference parameter binding, type strings, bound-parameter execution, and
+host database execution are not implemented.
+
+`mysqli_stmt_bind_result($statement, &...$vars)` records direct variable names
+for the current known placeholder statement result shapes.
+`mysqli_stmt_fetch($statement)` then copies buffered placeholder row values
+into those variables and advances the placeholder cursor. The current bounded
+path requires the deterministic statement execution result to be buffered with
+`mysqli_stmt_store_result()` first. This is not true by-reference aliasing,
+unbuffered statement fetching, bound-parameter execution, real mysqlnd cursor
+behavior, host database state, PHP warning/error fidelity, or native lowering.
 
 `mysqli_stmt_field_count($statement)` reports deterministic field counts for
 the current placeholder statement result metadata shapes, including the
@@ -264,9 +271,6 @@ by the current placeholder execution path and returns `true`, or returns
 `false` when no placeholder statement result is available.
 `mysqli_stmt_num_rows($statement)` reports the buffered placeholder row count,
 or `0` before buffering and after `mysqli_stmt_free_result($statement)`.
-`mysqli_stmt_fetch($statement)` remains an explicit runtime boundary because
-by-reference result binding, output buffer mutation, cursor advancement over
-bound buffers, and host database rows are not implemented.
 
 `mysqli_stmt_data_seek($statement, $offset)` records an in-range placeholder
 cursor offset for active statements after the current deterministic

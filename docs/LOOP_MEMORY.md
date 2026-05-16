@@ -29,6 +29,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `964e290b runtime: add mysqli stmt data seek placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 985, deterministic direct-variable
+  `mysqli_stmt_bind_result()` plus buffered `mysqli_stmt_fetch()` placeholder
+  row copying for the current seed-post statement result, with direct MySQLi
+  and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone985/*`,
+  affected legacy statement binding/fetch fixture snapshots in
+  `tests/fixtures/milestone951`, `milestone952`, `milestone953`, and
+  `milestone954`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_result_has_direct_variable_placeholder_state -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_cursor_is_visible_but_explicit_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone985`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone951`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone952`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone953`;
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone954`.
+  All passed; the new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder prepared statements can now bind
+  direct result variables and fetch the deterministic seed-post row through a
+  WordPress-shaped `wpdb` method.
+- Remaining semantic gaps: true by-reference aliasing,
+  unbuffered statement fetching, bound-parameter execution, real mysqlnd
+  cursor behavior, host database state, PHP warning/error fidelity, and native
+  database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect
+  active-statement parameter binding/execution or the next real database
+  integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `31346762 runtime: add mysqli stmt attr placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 984, bounded `mysqli_stmt_data_seek()`

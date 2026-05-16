@@ -140,6 +140,7 @@ struct MysqliStatementState {
     executed_result: Option<MysqliPendingResultState>,
     buffered_result: Option<MysqliPendingResultState>,
     buffered_result_cursor: usize,
+    bound_result_variables: Vec<String>,
     attributes: HashMap<i64, Value>,
 }
 
@@ -4062,6 +4063,7 @@ impl Interpreter {
                 executed_result: None,
                 buffered_result: None,
                 buffered_result_cursor: 0,
+                bound_result_variables: Vec::new(),
                 attributes: HashMap::new(),
             },
         );
@@ -4653,6 +4655,8 @@ impl Interpreter {
         state.query = Some(query);
         state.executed_result = None;
         state.buffered_result = None;
+        state.buffered_result_cursor = 0;
+        state.bound_result_variables.clear();
         Ok(Value::Bool(true))
     }
 
@@ -4987,6 +4991,7 @@ impl Interpreter {
         state.executed_result = None;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
+        state.bound_result_variables.clear();
         state.attributes.clear();
         Ok(Value::Bool(true))
     }
@@ -8169,6 +8174,12 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "mysqli_stmt_bind_result" {
+                    return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
+                }
+                if key == "mysqli_stmt_fetch" {
+                    return self.call_mysqli_stmt_fetch_direct(args, span, caller_scope);
+                }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
@@ -8224,6 +8235,12 @@ impl Interpreter {
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                }
+                if key == "mysqli_stmt_bind_result" {
+                    return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
+                }
+                if key == "mysqli_stmt_fetch" {
+                    return self.call_mysqli_stmt_fetch_direct(args, span, caller_scope);
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
@@ -8418,6 +8435,135 @@ impl Interpreter {
         }
 
         Ok(Value::String(result))
+    }
+
+    fn call_mysqli_stmt_bind_result_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_bind_result()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let statement = self.evaluate(&args[0], caller_scope)?;
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_bind_result()", &statement, span)?;
+        let mut variable_names = Vec::with_capacity(args.len() - 1);
+        for arg in &args[1..] {
+            let Expr::Variable(name, _) = arg else {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_bind_result()",
+                        "result bindings must be direct variables in the current subset",
+                    ),
+                ));
+            };
+            variable_names.push(name.clone());
+        }
+
+        let field_count = {
+            let state = self.mysqli_statement_state("mysqli_stmt_bind_result()", stmt_id, span)?;
+            let Some(query) = state.query.as_deref() else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_bind_result()",
+                        "statement result metadata is not available in the current subset",
+                    ),
+                ));
+            };
+            let Some(result) =
+                mysqli_statement_result_for_query("mysqli_stmt_bind_result()", query, span)?
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_bind_result()",
+                        "statements without result fields cannot bind result variables in the current subset",
+                    ),
+                ));
+            };
+            result.fields.len()
+        };
+
+        if variable_names.len() != field_count {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_bind_result()",
+                    format!(
+                        "bound result variable count must match current placeholder field count {field_count}, got {}",
+                        variable_names.len()
+                    ),
+                ),
+            ));
+        }
+
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_bind_result()", stmt_id, span)?;
+        state.bound_result_variables = variable_names;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_mysqli_stmt_fetch_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_fetch()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+        let statement = self.evaluate(&args[0], caller_scope)?;
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_fetch()", &statement, span)?;
+        let (bindings, row) = {
+            let state = self.mysqli_statement_state_mut("mysqli_stmt_fetch()", stmt_id, span)?;
+            if state.bound_result_variables.is_empty() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_fetch()",
+                        "bound result variables are not available in the current subset",
+                    ),
+                ));
+            }
+            let Some(result) = state.buffered_result.as_ref() else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_fetch()",
+                        "buffered statement result state is not available in the current subset",
+                    ),
+                ));
+            };
+            if state.buffered_result_cursor >= result.rows.len() {
+                return Ok(Value::Null);
+            }
+            let bindings = state.bound_result_variables.clone();
+            let row = result.rows[state.buffered_result_cursor].clone();
+            state.buffered_result_cursor += 1;
+            (bindings, row)
+        };
+
+        for (name, (_, value)) in bindings.iter().zip(row.into_iter()) {
+            caller_scope.write_static(name, value);
+        }
+        Ok(Value::Bool(true))
     }
 
     fn call_compact(
