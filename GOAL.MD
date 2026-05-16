@@ -784,10 +784,11 @@ Reconciliation into concrete workstreams:
   direct-variable by-reference parameter alias cells during function, method,
   and constructor calls, a bounded direct-variable reference-return assignment
   path for direct free-function, direct object method, and direct named static
-  method calls, documented runtime boundaries, and focused reference fixtures.
+  method calls plus `self::` static method calls in active class/method
+  context, documented runtime boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
-  aliases, self/parent/late-static/dynamic/magic and broader by-reference
-  returns, by-reference `foreach`, and COW tests that compare against PHP.
+  aliases, parent/late-static/dynamic/magic and broader by-reference returns,
+  by-reference `foreach`, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
@@ -1251,7 +1252,8 @@ The repository already has a working Rust workspace with:
   variable returns, plus a bounded direct object method reference-return
   assignment path for direct variable returns, plus a bounded direct named
   static method reference-return assignment path for direct variable returns,
-  plus
+  plus a bounded `self::` static method reference-return assignment path for
+  direct variable returns, plus
   `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
   modifiers as metadata, and `new self`/`new parent`/`new static` magic
   class-name instantiation in active class/method contexts, and bounded

@@ -981,6 +981,33 @@ echo "alias=", $alias;
 }
 
 #[test]
+fn self_static_method_reference_return_assignment_binds_returned_cell() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public static function &identity(&$value) {
+        return $value;
+    }
+
+    public function run(&$value) {
+        $alias =& self::identity($value);
+        $alias = 2;
+    }
+}
+
+$box = new Box();
+$value = 1;
+$box->run($value);
+echo "value=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "value=2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_return_invocation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php

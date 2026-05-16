@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1050, bounded direct-variable reference-return cells for
+  statement-form reference assignment from `self::` static method calls inside
+  an active class/method context. In the current subset,
+  `$alias =& self::identity($value);` can bind `$alias` to the same caller
+  cell returned by
+  `public static function &identity(&$value) { return $value; }` when the
+  active class context resolves a visible static method, the return expression
+  is a direct variable, and the argument is a direct variable already covered
+  by the by-reference parameter path. Normal reference-return invocation still
+  reports the existing runtime boundary, and non-static `self::` sources,
+  `parent::`, `static::`, dynamic static receiver, magic `__callStatic`,
+  non-direct return expressions, nested-control-flow returns, array/object
+  offset aliases, by-reference `foreach`, full PHP reference containers,
+  copy-on-write, and native lowering remain unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1050`.
+
 - Added Milestone 1049, bounded direct-variable reference-return cells for
   statement-form reference assignment from direct named static method calls. In
   the current subset, `$alias =& Box::identity($value);` can bind `$alias` to
