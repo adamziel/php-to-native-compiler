@@ -19,7 +19,9 @@ Implemented:
   `cargo test -p php_runtime array_slot_cell -- --test-threads=1`,
   `cargo test -p php_runtime -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `b40d817d runtime: add array slot cell identity`.
 
 - Added Milestone 1060, a private `ArraySlotCell` layer under `ArraySlot`.
   `ArraySlot` now owns an internal cell object and delegates all value access,

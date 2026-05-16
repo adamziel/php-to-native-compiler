@@ -10286,7 +10286,7 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `73168c23 runtime: add array slot cell boundary`, covering Milestone 1060.
+  `b40d817d runtime: add array slot cell identity`, covering Milestone 1061.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

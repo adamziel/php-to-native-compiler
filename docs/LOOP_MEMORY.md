@@ -32,14 +32,16 @@ injects this file into every prompt. Each Codex pass should update it with:
   `df53b807 docs: record array slot cell gate`, pushed to `origin/master`.
 - Task attempted: Milestone 1061, stable internal identity for array slot
   cells without changing value equality or clone-by-value behavior.
-- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+- Files changed: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
   `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime array_slot_cell -- --test-threads=1` passed with
   2 tests. `cargo test -p php_runtime -- --test-threads=1` passed with 111
   tests. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check` passed.
+  `git diff --check` passed. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `b40d817d runtime: add array slot cell identity`.
 - Current WordPress frontier: array slot cells now have stable internal
   identities that future reference/rebinding work can target, while
   same-value slots still compare by value and slot cloning still creates a
