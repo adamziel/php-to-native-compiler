@@ -790,8 +790,9 @@ Reconciliation into concrete workstreams:
   context and dynamic static receiver method calls for object/class-string
   receivers, an explicit magic `__callStatic` reference-return runtime
   boundary, a bounded direct-array-variable by-reference `foreach` copy-back
-  path, private `ArrayEntry` value accessors that preserve eager array cloning
-  while preparing for slot cells, documented runtime boundaries, and focused
+  path, private `ArrayEntry` value accessors backed by an explicit
+  clone-by-value `ArraySlot` wrapper that preserves eager array cloning while
+  preparing for real slot cells, documented runtime boundaries, and focused
   reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
   aliases, magic reference-return dispatch and broader by-reference returns,

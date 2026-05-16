@@ -166,10 +166,11 @@ Implemented now:
 - PHP-ish truthiness for the implemented value types
 - basic arithmetic, comparison, and concatenation helpers
 - key normalization for array strings that are valid decimal integers
-- private `ArrayEntry` value accessors (`value()`, `value_cloned()`,
-  `value_mut()`, `set_value()`, and `into_value()`) that preserve the current
-  eager array value semantics while isolating the field that future
-  slot/reference-cell work must replace
+- private `ArrayEntry` slot storage with value accessors (`value()`,
+  `value_cloned()`, `value_mut()`, `set_value()`, and `into_value()`) that
+  delegate through an explicit clone-by-value `ArraySlot`, preserving the
+  current eager array value semantics while isolating the storage object that
+  future slot/reference-cell work must replace
 
 Planned runtime values and semantics:
 

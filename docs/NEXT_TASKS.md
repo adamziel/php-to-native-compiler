@@ -10221,6 +10221,17 @@ handled.
   entry values when overwritten. This is not direct array-offset references,
   real slot cells, copy-on-write, exact by-reference `foreach`, object-property
   offsets, or native lowering.
+
+## Milestone 1057: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: replace raw `ArrayEntry` value storage with an
+  explicit clone-by-value `ArraySlot` wrapper while preserving observable array
+  behavior. `ArrayEntry` now stores a slot, its value accessors delegate
+  through that slot, and a focused runtime test proves that cloned slots holding
+  nested PHP arrays still have independent values when the clone is mutated.
+  This is not shared reference cells, direct array-offset references,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference

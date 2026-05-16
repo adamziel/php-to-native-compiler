@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1057, an explicit clone-by-value `ArraySlot` wrapper for
+  PHP array entries. `ArrayEntry` now stores an `ArraySlot` rather than a raw
+  `Value`, and its existing accessors delegate through the slot wrapper. The
+  `ArraySlot` clone path remains deliberately eager/value-cloning for now, and
+  the focused runtime test now proves that cloning a slot containing a PHP
+  array keeps the nested array values independent when the clone is mutated.
+  This still does not implement shared reference cells, direct array-offset
+  reference assignment, copy-on-write, exact by-reference `foreach`,
+  object-property offsets, or native lowering; it only creates the next
+  internal boundary where those semantics can be introduced. Verification so
+  far:
+  `cargo test -p php_runtime array_entry_slots_preserve_clone_by_value_boundary_for_future_references -- --test-threads=1`,
+  `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo test -p phpc --test foreach -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1056, runtime array-entry accessor groundwork for the future
   array slot/reference-cell migration. `ArrayEntry.value` is now private and
   all runtime/compiler users go through `ArrayEntry::value()`,

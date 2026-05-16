@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `c309583f docs: record array entry accessor gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1057, explicit clone-by-value array slot wrapper
+  for future array reference cells.
+- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime array_entry_slots_preserve_clone_by_value_boundary_for_future_references -- --test-threads=1`
+  passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
+  with 108 tests. `cargo test -p phpc --test foreach -- --test-threads=1`
+  passed with 9 tests. `cargo check -p php_runtime -p phpc`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Current WordPress frontier: array entries now hold an explicit `ArraySlot`
+  wrapper instead of a raw `Value`, while slot cloning still eagerly clones the
+  value so current PHP array behavior does not become accidental aliasing.
+- Remaining semantic gaps: `ArraySlot` is still a clone-by-value wrapper, not a
+  shared PHP reference cell; direct `$alias =& $array[$key]`, array/object
+  offset aliases, exact by-reference `foreach`, lingering references,
+  copy-on-write, mutation-during-iteration fidelity, and native lowering remain
+  missing.
+- Next concrete task: add the first explicit array-offset reference-cell
+  boundary or slot identity operation on top of `ArraySlot` without changing
+  by-value array behavior.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1763c6d7 docs: record direct array foreach reference gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1056, array-entry accessor groundwork for future

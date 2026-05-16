@@ -760,7 +760,7 @@ impl PhpArray {
             if left.key != right.key {
                 return Ok(false);
             }
-            if !left.value.php_identical_checked(&right.value)? {
+            if !left.value().php_identical_checked(right.value())? {
                 return Ok(false);
             }
         }
@@ -1576,12 +1576,52 @@ fn value_from_number(number: Number) -> Value {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayEntry {
     pub key: ArrayKey,
-    value: Value,
+    slot: ArraySlot,
 }
 
 impl ArrayEntry {
     pub fn new(key: ArrayKey, value: Value) -> Self {
-        Self { key, value }
+        Self {
+            key,
+            slot: ArraySlot::new(value),
+        }
+    }
+
+    pub fn value(&self) -> &Value {
+        self.slot.value()
+    }
+
+    pub fn value_mut(&mut self) -> &mut Value {
+        self.slot.value_mut()
+    }
+
+    pub fn value_cloned(&self) -> Value {
+        self.slot.value_cloned()
+    }
+
+    pub fn set_value(&mut self, value: Value) {
+        self.slot.set_value(value);
+    }
+
+    pub fn into_value(self) -> Value {
+        self.slot.into_value()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ArraySlot {
+    value: Value,
+}
+
+impl Clone for ArraySlot {
+    fn clone(&self) -> Self {
+        Self::new(self.value.clone())
+    }
+}
+
+impl ArraySlot {
+    pub fn new(value: Value) -> Self {
+        Self { value }
     }
 
     pub fn value(&self) -> &Value {
@@ -4116,7 +4156,7 @@ mod tests {
     }
 
     #[test]
-    fn array_entry_accessors_preserve_clone_by_value_boundary_for_future_slots() {
+    fn array_entry_slots_preserve_clone_by_value_boundary_for_future_references() {
         let mut array = PhpArray::new();
         array.insert(0, Value::String("original".to_string()));
 
@@ -4132,6 +4172,31 @@ mod tests {
         assert_eq!(entry.value_cloned(), Value::Int(2));
         entry.set_value(Value::String("slot".to_string()));
         assert_eq!(entry.into_value(), Value::String("slot".to_string()));
+
+        let mut nested = PhpArray::new();
+        nested.insert("name", Value::String("original".to_string()));
+        let slot = ArraySlot::new(Value::Array(nested));
+        let mut cloned_slot = slot.clone();
+
+        let Value::Array(cloned_array) = cloned_slot.value_mut() else {
+            panic!("array slot clone should still contain an array");
+        };
+        cloned_array.insert("name", Value::String("clone".to_string()));
+
+        let Value::Array(original_array) = slot.value() else {
+            panic!("original slot should still contain an array");
+        };
+        assert_eq!(
+            original_array.get("name"),
+            Some(&Value::String("original".to_string()))
+        );
+        let Value::Array(cloned_array) = cloned_slot.value() else {
+            panic!("cloned slot should still contain an array");
+        };
+        assert_eq!(
+            cloned_array.get("name"),
+            Some(&Value::String("clone".to_string()))
+        );
     }
 
     #[test]
