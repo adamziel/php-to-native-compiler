@@ -140,6 +140,126 @@ fn cli_compare_php_summary_counts_missing_php_skips_with_empty_path() {
     );
 }
 
+#[test]
+#[cfg(unix)]
+fn cli_php_versions_json_reports_configured_php_binary_matrix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempFixtureDir::new("phpc-php-version-manifest");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    let php82 = bin_dir.join("php8.2");
+    fs::write(&php82, "#!/bin/sh\nprintf '8.2.99'\n").unwrap();
+    fs::set_permissions(&php82, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let php84 = bin_dir.join("php8.4");
+    fs::write(&php84, "#!/bin/sh\nprintf '8.4.1'\n").unwrap();
+    fs::set_permissions(&php84, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--php-versions-json"])
+        .env("PATH", &bin_dir)
+        .env("PHPC_PHP_BINARIES", "php8.4, missing-php, php8.2, php8.4")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  \"contract_version\": 1,\n",
+            "  \"tracked_php_branches\": [\"8.2\", \"8.3\", \"8.4\", \"8.5\"],\n",
+            "  \"summary\": {\n",
+            "    \"requested\": 3,\n",
+            "    \"available\": 2,\n",
+            "    \"tracked_available\": 2,\n",
+            "    \"missing_tracked_branches\": [\"8.3\", \"8.5\"]\n",
+            "  },\n",
+            "  \"php_binaries\": [\n",
+            "    {\n",
+            "      \"command\": \"missing-php\",\n",
+            "      \"available\": false,\n",
+            "      \"version\": null,\n",
+            "      \"branch\": null,\n",
+            "      \"tracked\": false\n",
+            "    },\n",
+            "    {\n",
+            "      \"command\": \"php8.2\",\n",
+            "      \"available\": true,\n",
+            "      \"version\": \"8.2.99\",\n",
+            "      \"branch\": \"8.2\",\n",
+            "      \"tracked\": true\n",
+            "    },\n",
+            "    {\n",
+            "      \"command\": \"php8.4\",\n",
+            "      \"available\": true,\n",
+            "      \"version\": \"8.4.1\",\n",
+            "      \"branch\": \"8.4\",\n",
+            "      \"tracked\": true\n",
+            "    }\n",
+            "  ]\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cli_php_versions_json_uses_default_php_command_when_env_is_unset() {
+    let temp = TempFixtureDir::new("phpc-php-version-manifest-default");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--php-versions-json"])
+        .env("PATH", &bin_dir)
+        .env_remove("PHPC_PHP_BINARIES")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  \"contract_version\": 1,\n",
+            "  \"tracked_php_branches\": [\"8.2\", \"8.3\", \"8.4\", \"8.5\"],\n",
+            "  \"summary\": {\n",
+            "    \"requested\": 1,\n",
+            "    \"available\": 0,\n",
+            "    \"tracked_available\": 0,\n",
+            "    \"missing_tracked_branches\": [\"8.2\", \"8.3\", \"8.4\", \"8.5\"]\n",
+            "  },\n",
+            "  \"php_binaries\": [\n",
+            "    {\n",
+            "      \"command\": \"php\",\n",
+            "      \"available\": false,\n",
+            "      \"version\": null,\n",
+            "      \"branch\": null,\n",
+            "      \"tracked\": false\n",
+            "    }\n",
+            "  ]\n",
+            "}\n",
+        )
+    );
+}
+
 struct TempFixtureDir {
     path: PathBuf,
 }

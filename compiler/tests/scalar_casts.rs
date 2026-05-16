@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn string_casts_execute_for_current_scalar_and_null_subset() {
@@ -215,32 +215,32 @@ fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
     let error = emit_ir_source("<?php\necho (string) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 
     let error = emit_ir_source("<?php\necho (int) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 
     let error = emit_ir_source("<?php\necho (bool) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 
     let error = emit_ir_source("<?php\necho (float) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 
     let error = emit_ir_source("<?php\necho (double) \"2.25\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 
     let error = emit_ir_source("<?php\necho (array) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 }
 
 #[test]
@@ -248,5 +248,5 @@ fn emit_asm_rejects_float_cast_until_native_cast_lowering_exists() {
     let error = emit_asm_source("<?php\necho (float) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 }

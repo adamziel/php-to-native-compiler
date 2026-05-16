@@ -572,7 +572,9 @@
   Child methods that redeclare inherited non-private methods may keep or widen
   visibility, while reductions such as public-to-protected and
   protected-to-private report a stable runtime boundary before registering the
-  child class.
+  child class. Child methods that redeclare inherited non-private methods must
+  also keep the inherited staticness; static-to-instance and instance-to-static
+  changes report a stable runtime boundary before registering the child class.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -585,9 +587,9 @@
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
-  boundary. Method visibility reduction reports a stable runtime boundary.
-  Method signature compatibility enforcement, static/non-static method
-  compatibility enforcement, and readonly class semantics are not implemented.
+  boundary. Method visibility reduction and static/non-static compatibility
+  violations report stable runtime boundaries. Method signature compatibility
+  enforcement and readonly class semantics are not implemented.
   Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
   is supported in active class/method contexts, including no-argument forms
@@ -1989,8 +1991,11 @@
   and `protected(set)` before property visibility metadata, typed-property
   storage/enforcement, reflection behavior, and native lowering exist,
   typed instance property declarations, typed static property declarations
-  before typed metadata/uninitialized state/write enforcement exist, instance
-  property default values, multiple property declarations, unsupported class
+  before typed metadata/uninitialized state/write enforcement exist,
+  PHP property hook declarations such as `public string $name { get => ...; }`
+  before hook metadata, backing/virtual property behavior, typed-property
+  storage/enforcement, references, reflection, and native lowering exist,
+  instance property default values, multiple property declarations, unsupported class
   constant declaration forms such as typed, static, or multi-declarator class constants,
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
@@ -4780,8 +4785,8 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  method signature compatibility enforcement, static/non-static method
-  compatibility enforcement, readonly class semantics, readonly properties,
+  method signature compatibility enforcement, readonly class semantics,
+  readonly properties,
   typed property storage and enforcement,
   asymmetric property set visibility such as `private(set)` and
   `protected(set)`,
@@ -5083,7 +5088,8 @@
   and `continue`; generated code currently rejects those forms before lowering
   conditions, bodies, cases, jumps, or loop-control flow
 - native lowering for cast expressions; generated code currently rejects casts
-  before implying PHP scalar conversion, diagnostics, allocation behavior,
+  with a dedicated diagnostic before implying PHP scalar conversion, array
+  materialization, warning/recovery behavior, object/resource handling,
   references/copy-on-write, or exact native error behavior
 - PHP 8 nullsafe object access `?->` currently fails with a stable parse
   diagnostic before null-aware object-property or method-call chaining exists.

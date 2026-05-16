@@ -44,6 +44,7 @@ cargo run -p phpc -- test
 cargo run -p phpc -- test --compare-php
 cargo run -p phpc -- test tests/fixtures/compat/php
 cargo run -p phpc -- test --compare-php tests/fixtures/compat/php
+cargo run -p phpc -- test --php-versions-json
 cargo run -p phpc -- compile examples/hello.php --emit-ir
 cargo run -p phpc -- compile examples/hello.php --emit-asm
 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
@@ -61,6 +62,7 @@ tools/run-tests.sh
 | --- | --- | --- | --- |
 | Current fixture suite through `phpc run` | `cargo run -p phpc -- test` | `pass` | Measures the documented subset only. |
 | Optional system PHP comparison | `cargo run -p phpc -- test --compare-php` | `pass`/`skipped-unsupported` | Compares supported fixtures when system PHP is available; `.phpc-only` fixtures are skipped intentionally. |
+| Local PHP comparison binary manifest | `cargo run -p phpc -- test --php-versions-json` | `pass` | Reports configured comparison binaries from `PHPC_PHP_BINARIES` or default `php`, parsed versions, project-tracked 8.2-8.5 branch coverage, and missing tracked branches without running fixtures. |
 | Cross-feature PHP smoke fixture | `cargo run -p phpc -- test --compare-php tests/fixtures/compat/php` | `pass` | One committed smoke fixture spans constants, functions, arrays, callback builtin use, class metadata, public properties, conditionals, foreach, and system PHP comparison. |
 | Current supported PHP branches 8.2-8.5 | Branch-specific comparison matrix | `not-covered` | The suite does not yet run against a matrix of PHP binaries or branch-specific expected behavior. |
 | php-src-style language compatibility | Imported or mirrored behavioral tests | `not-covered` | No committed php-src compatibility subset exists yet. |
@@ -73,8 +75,9 @@ tools/run-tests.sh
 
 ## First Blockers To Convert Into Work
 
-- Add a PHP branch/version manifest that records which local or CI PHP binaries
-  are available for comparison.
+- Populate local or CI `PHPC_PHP_BINARIES` matrices with real PHP 8.2, 8.3,
+  8.4, and 8.5 binaries so `phpc test --php-versions-json` can expose missing
+  branch coverage as data.
 - Keep `phpc test --list-fixtures-json` compatibility-target counts in step
   with `tests/fixtures/compat/<target>` so PHP and WordPress coverage gaps are
   visible as fixture data, including targets with no executable fixtures yet.

@@ -1,0 +1,2 @@
+runtime error at 9:19: unsupported class inheritance for Child: cannot redeclare non static method Base::label() as static Child::label()
+

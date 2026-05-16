@@ -11113,13 +11113,61 @@ handled.
 
 ## Milestone 1136: Next Parser Boundary
 
+- [x] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed full-compatibility gap map.
+  Prefer a PHP/WordPress surface that still falls through to a broad or
+  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
+  where applicable, and keep runtime/native support claims unchanged.
+  Milestone 1136 adds a PHP property-hook parse boundary for
+  `public string $name { get => ...; }` and related get/set hook shapes,
+  naming the missing hook metadata, backing/virtual property behavior,
+  typed-property storage/enforcement, references, reflection, and native
+  lowering.
+
+## Milestone 1137: Next Runtime Value/Object Slice
+
+- [x] Runtime lane: add bounded inherited method static/non-static
+  compatibility enforcement. Child methods that redeclare inherited
+  non-private methods must keep the inherited staticness, while static-to-
+  instance and instance-to-static changes report a stable runtime boundary
+  during class registration. Method signature compatibility, trait/interface
+  enforcement, exact PHP diagnostics, and native object/class lowering remain
+  unsupported.
+
+## Milestone 1138: Next Native Boundary
+
+- [x] IR/lowering lane: choose one precise native rejection or tiny lowering
+  refinement from interpreter behavior that is already documented. `phpc
+  compile --emit-ir` and `--emit-asm` must either lower the exact supported
+  slice or reject it before misleading backend output.
+  Milestone 1138 adds a dedicated native cast-expression rejection for
+  interpreter-supported cast syntax until native scalar conversion, array
+  materialization, warning/recovery behavior, object/resource handling,
+  references/copy-on-write, and exact diagnostics exist.
+
+## Milestone 1139: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: add an audit-only `phpc test --php-versions-json`
+  contract that reports configured PHP comparison binaries from
+  `PHPC_PHP_BINARIES` or default `php`, parsed versions, project-tracked PHP
+  8.2-8.5 branch coverage, and missing tracked branches without running
+  fixtures or broadening PHP support claims.
+
+## Milestone 1140: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1136-1139 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1141: Next Parser Boundary
+
 - [ ] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
   misleading diagnostic. Add stable focused coverage, CLI fixture evidence
   where applicable, and keep runtime/native support claims unchanged.
 
-## Milestone 1137: Next Runtime Value/Object Slice
+## Milestone 1142: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
@@ -11127,22 +11175,22 @@ handled.
   or external probes. Prove it with focused tests, CLI coverage, system PHP
   comparison where applicable, and named unsupported edges.
 
-## Milestone 1138: Next Native Boundary
+## Milestone 1143: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1139: Next Compiler-Output Contract
+## Milestone 1144: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1140: Next Tests/Docs Queue Refresh
+## Milestone 1145: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1136-1139 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1141-1144 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

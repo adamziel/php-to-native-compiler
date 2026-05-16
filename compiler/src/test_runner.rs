@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -59,6 +60,30 @@ pub struct FixtureManifestCompatibilityTarget {
     pub target: String,
     pub path: String,
     pub summary: FixtureManifestSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpVersionManifest {
+    pub tracked_php_branches: Vec<String>,
+    pub php_binaries: Vec<PhpVersionManifestEntry>,
+    pub summary: PhpVersionManifestSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpVersionManifestEntry {
+    pub command: String,
+    pub available: bool,
+    pub version: Option<String>,
+    pub branch: Option<String>,
+    pub tracked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpVersionManifestSummary {
+    pub requested: usize,
+    pub available: usize,
+    pub tracked_available: usize,
+    pub missing_tracked_branches: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -191,6 +216,62 @@ pub fn run_fixture_dir_with_options(
 
 pub fn system_php_available() -> bool {
     Command::new("php").arg("-v").output().is_ok()
+}
+
+pub fn php_version_manifest_from_env() -> PhpVersionManifest {
+    let commands = configured_php_binary_commands();
+    php_version_manifest_for_commands(commands)
+}
+
+pub fn php_version_manifest_for_commands(commands: Vec<String>) -> PhpVersionManifest {
+    let tracked_php_branches = tracked_php_branches();
+    let tracked_branch_set = tracked_php_branches
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let php_binaries = commands
+        .into_iter()
+        .map(|command| {
+            let version = php_binary_version(&command);
+            let branch = version.as_deref().and_then(php_branch_from_version);
+            let tracked = branch
+                .as_ref()
+                .map_or(false, |branch| tracked_branch_set.contains(branch));
+
+            PhpVersionManifestEntry {
+                command,
+                available: version.is_some(),
+                version,
+                branch,
+                tracked,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let available_tracked_branches = php_binaries
+        .iter()
+        .filter(|entry| entry.available && entry.tracked)
+        .filter_map(|entry| entry.branch.clone())
+        .collect::<BTreeSet<_>>();
+    let missing_tracked_branches = tracked_php_branches
+        .iter()
+        .filter(|branch| !available_tracked_branches.contains(*branch))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let summary = PhpVersionManifestSummary {
+        requested: php_binaries.len(),
+        available: php_binaries.iter().filter(|entry| entry.available).count(),
+        tracked_available: available_tracked_branches.len(),
+        missing_tracked_branches,
+    };
+
+    PhpVersionManifest {
+        tracked_php_branches,
+        php_binaries,
+        summary,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -391,6 +472,64 @@ fn collect_php_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {
     }
 
     Ok(())
+}
+
+fn configured_php_binary_commands() -> Vec<String> {
+    let commands = env::var("PHPC_PHP_BINARIES")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|command| !command.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|commands| !commands.is_empty())
+        .unwrap_or_else(|| vec!["php".to_string()]);
+
+    commands
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn tracked_php_branches() -> Vec<String> {
+    ["8.2", "8.3", "8.4", "8.5"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn php_binary_version(command: &str) -> Option<String> {
+    let output = Command::new(command)
+        .args(["-r", "echo PHP_VERSION;"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    }
+}
+
+fn php_branch_from_version(version: &str) -> Option<String> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    if major.chars().all(|character| character.is_ascii_digit())
+        && minor.chars().all(|character| character.is_ascii_digit())
+    {
+        Some(format!("{major}.{minor}"))
+    } else {
+        None
+    }
 }
 
 fn collect_orphan_sidecars(root: &Path) -> CompileResult<Vec<FixtureManifestOrphanSidecar>> {

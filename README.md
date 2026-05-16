@@ -30,6 +30,7 @@ cargo run -p phpc -- compile examples/hello.php --emit-asm
 cargo run -p phpc -- test
 cargo run -p phpc -- test --list-fixtures
 cargo run -p phpc -- test --list-fixtures-json
+cargo run -p phpc -- test --php-versions-json
 ```
 
 The installed binary name is `phpc`.
@@ -166,10 +167,11 @@ incorrect native code.
   the `class` statement,
   parsed `abstract`/`final` class modifiers and `abstract`/`final` method
   modifiers as metadata, with abstract class instantiation rejected as a
-  runtime boundary, final class inheritance, final method overrides, and
-  method visibility reductions, plus concrete classes with unimplemented
-  abstract methods rejected as runtime boundaries, and readonly class
-  declarations kept at a parse boundary,
+  runtime boundary, final class inheritance, final method overrides, method
+  visibility reductions, and inherited method static/non-static compatibility
+  violations rejected as runtime boundaries, plus concrete classes with
+  unimplemented abstract methods rejected as runtime boundaries, and readonly
+  class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,
@@ -241,7 +243,7 @@ complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
 method signature compatibility enforcement, visibility enforcement beyond the
 current public and same-declaring-class private-property, protected-property,
-protected-method, constructor, method inheritance visibility, and
+protected-method, constructor, method inheritance visibility/staticness, and
 class-constant slice, typed property compatibility and DNF-shaped typed
 property declarations plus property defaults beyond the current untyped
 constant-expression instance property slice, readonly property metadata and

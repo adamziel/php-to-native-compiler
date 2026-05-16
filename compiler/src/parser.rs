@@ -689,6 +689,9 @@ impl Parser {
                     unsupported_abstract_final_property_message(),
                 ));
             }
+            if let Some(hook_span) = self.property_hook_span_before_member_end() {
+                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
+            }
             if matches!(self.peek().kind, TokenKind::LParen)
                 || (matches!(self.peek().kind, TokenKind::Question)
                     && matches!(self.peek_next().kind, TokenKind::LParen))
@@ -729,6 +732,9 @@ impl Parser {
                     self.previous().span,
                     unsupported_multiple_properties_message(),
                 ));
+            }
+            if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+                return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
             }
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -5827,6 +5833,10 @@ fn unsupported_multiple_properties_message() -> &'static str {
     "unsupported property declaration: multiple properties in one declaration are not implemented"
 }
 
+fn unsupported_property_hook_message() -> &'static str {
+    "unsupported property hook declaration: PHP property get/set hooks require hook metadata, backing/virtual property behavior, typed-property storage and enforcement, references, reflection, and native lowering"
+}
+
 fn magic_constant_name(name: &str) -> Option<&'static str> {
     match name.to_ascii_uppercase().as_str() {
         "__LINE__" => Some("__LINE__"),
@@ -6191,5 +6201,20 @@ impl Parser {
             .iter()
             .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
             .any(|token| matches!(token.kind, TokenKind::Variable(_)))
+    }
+
+    fn property_hook_span_before_member_end(&self) -> Option<Span> {
+        let mut saw_variable = false;
+        for token in self.tokens[self.current..]
+            .iter()
+            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
+        {
+            match &token.kind {
+                TokenKind::Variable(_) => saw_variable = true,
+                TokenKind::LBrace if saw_variable => return Some(token.span),
+                _ => {}
+            }
+        }
+        None
     }
 }

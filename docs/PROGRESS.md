@@ -4,6 +4,93 @@
 
 Implemented:
 
+- Added Milestone 1140, a tests/docs queue refresh after the 1136-1139
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1136-1140
+  complete and opens Milestones 1141-1145, the public support docs describe
+  property-hook parse boundaries, inherited method static/non-static runtime
+  boundaries, dedicated native cast rejection, and the PHP comparison binary
+  manifest, and compatibility docs now point automation at
+  `phpc test --php-versions-json`. This does not change runtime behavior,
+  native lowering, fixture execution, or PHP/WordPress compatibility claims
+  beyond the implemented 1136-1139 slices. Full gate passed at checkpoint:
+  `1320` fixture tests, `753` system PHP comparisons, and `567` skipped
+  `phpc-only` fixtures.
+
+- Added Milestone 1139, an audit-only PHP comparison binary manifest. `phpc
+  test --php-versions-json` now emits deterministic JSON for configured PHP
+  comparison binaries from `PHPC_PHP_BINARIES` or the default `php` command,
+  including availability, parsed `PHP_VERSION`, project-tracked branch
+  membership for PHP 8.2-8.5, and missing tracked branches. This helps expose
+  local/CI PHP branch comparison gaps as data without running fixtures,
+  changing `phpc test`, `--compare-php`, parser/runtime behavior, native
+  lowering, or PHP/WordPress support claims. Unsupported/remaining gaps: the
+  manifest records local command availability only; it does not download PHP
+  binaries, execute fixture comparisons per branch, model PHP-version-specific
+  expected diagnostics, validate WordPress host requirements, or prove PHP or
+  WordPress compatibility. Verification so far: `cargo test -p phpc --test
+  php_comparison cli_php_versions_json -- --test-threads=1`, `cargo test -p
+  phpc --test php_comparison -- --test-threads=1`, `cargo test -p phpc --test
+  fixture_manifest -- --test-threads=1`, direct
+  `PHPC_PHP_BINARIES=phpc-missing-1139 cargo run -q -p phpc -- test --php-versions-json`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the
+  compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1138, a dedicated native cast rejection for documented
+  interpreter cast behavior. `phpc compile --emit-ir` and `--emit-asm` now
+  reject `(string)`, `(int)/(integer)`, `(bool)/(boolean)`,
+  `(float)/(double)`, and `(array)` casts with a diagnostic naming PHP scalar
+  conversion, array materialization, warning/recovery behavior,
+  object/resource handling, references/copy-on-write, and exact native
+  diagnostics instead of falling through to the broader unary boundary. This
+  does not implement native scalar conversion, array materialization,
+  warning/recovery behavior, object/resource cast handling, references,
+  copy-on-write, or exact PHP diagnostics. Verification so far: `cargo test
+  -p phpc --test native_cast_boundary -- --test-threads=1`, `cargo test -p
+  phpc --test scalar_casts -- --test-threads=1`, `cargo test -p phpc --test
+  native_unary_boundary -- --test-threads=1`, direct `cargo run -q -p phpc
+  -- compile tests/fixtures/milestone1138/native_cast_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1138/native_cast_boundary.phpc-source --emit-asm`
+  returning exit `1`, `cargo fmt --check`, and scoped `git diff --check`
+  passed in the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1137, bounded runtime enforcement for inherited method
+  static/non-static compatibility. Child methods that redeclare inherited
+  non-private methods must keep the inherited staticness, while changes such as
+  `public function label()` to `public static function label()` now report the
+  stable runtime boundary `unsupported class inheritance for Child: cannot
+  redeclare non static method Base::label() as static Child::label()` during
+  class registration. Private parent methods remain separately redeclarable in
+  this slice, and compatible static overrides continue to execute. This does
+  not implement method signature compatibility, trait/interface enforcement,
+  exact PHP `Error` objects/diagnostics/exit parity, declaration-order/autoload
+  fidelity, or native object/class lowering. Verification so far:
+  `cargo test -p phpc --test object_model inherited_method_static_compatibility_is_enforced -- --test-threads=1`,
+  `cargo test -p phpc --test object_model private_parent_methods_do_not_block_child_static_compatibility -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1137`, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1137`
+  passed in the runtime lane. Full gate deferred until integration.
+
+- Added Milestone 1136, a parser/syntax-boundary diagnostic for unsupported
+  PHP property hook declarations. Forms such as
+  `public string $title { get => $this->title; }`, untyped hook-like property
+  declarations, and set-hook blocks now fail with the stable parse diagnostic
+  `unsupported property hook declaration: PHP property get/set hooks require
+  hook metadata, backing/virtual property behavior, typed-property storage and
+  enforcement, references, reflection, and native lowering` instead of falling
+  through to the generic typed-property boundary or `expected ';' after
+  property declaration`. This does not implement property hooks, hook metadata,
+  backing or virtual property behavior, typed-property storage/enforcement,
+  references, reflection, exact PHP diagnostics, or native lowering.
+  Verification so far: `cargo test -p phpc --test syntax_boundaries property_hook -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  direct `cargo run -q -p phpc -- test tests/fixtures/unsupported_object_features`,
+  direct `cargo run -q -p phpc -- compile tests/fixtures/unsupported_object_features/unsupported_property_hook.php --emit-ir`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the parser
+  lane. Full gate deferred until integration.
+
 - Added Milestone 1135, a tests/docs queue refresh after the 1131-1134
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1131-1135
   complete and opens Milestones 1136-1140, `docs/LANE_WORKERS.md` points the

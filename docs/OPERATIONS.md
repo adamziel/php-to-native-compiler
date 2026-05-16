@@ -34,6 +34,12 @@ automation needs the same audit-only manifest as deterministic JSON. The JSON
 manifest also reports per-target counts for `compat/<target>` directories so
 PHP and WordPress compatibility fixture coverage can be audited without
 executing code.
+Use `cargo run -p phpc -- test --php-versions-json` when automation needs a
+machine-readable manifest of configured local PHP comparison binaries. By
+default it probes `php`; set `PHPC_PHP_BINARIES=php8.2,php8.3,php8.4,php8.5`
+or an equivalent comma-separated command list to record a local or CI PHP
+branch matrix. This command does not run fixtures and does not change PHP
+support claims.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

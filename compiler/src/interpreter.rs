@@ -18978,6 +18978,8 @@ fn register_class_members(
                 let visibility = runtime_visibility(method.visibility);
                 validate_final_method_override(classes, id, &class.name, method, final_methods)
                     .map_err(|error| runtime_error(method.span, error))?;
+                validate_inherited_method_static_compatibility(classes, id, &class.name, method)
+                    .map_err(|error| runtime_error(method.span, error))?;
                 validate_inherited_method_visibility_compatibility(
                     classes,
                     id,
@@ -19203,6 +19205,61 @@ fn validate_inherited_method_visibility_compatibility(
                         visibility_name(parent_method.visibility()),
                         parent.name(),
                         parent_method.name()
+                    ),
+                ));
+            }
+
+            return Ok(());
+        }
+
+        current = parent.parent_id();
+    }
+
+    Ok(())
+}
+
+fn validate_inherited_method_static_compatibility(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    class_name: &str,
+    method: &ClassMethodDecl,
+) -> RuntimeResult<()> {
+    let method_lookup_name = method.function.name.to_ascii_lowercase();
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        if let Some(parent_method) = parent.method(&method_lookup_name) {
+            if parent_method.visibility() == Visibility::Private {
+                current = parent.parent_id();
+                continue;
+            }
+
+            if parent_method.is_static() != method.is_static {
+                let parent_static = if parent_method.is_static() {
+                    "static"
+                } else {
+                    "non static"
+                };
+                let child_static = if method.is_static {
+                    "static"
+                } else {
+                    "non static"
+                };
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "cannot redeclare {parent_static} method {}::{}() as {child_static} {}::{}()",
+                        parent.name(),
+                        parent_method.name(),
+                        class_name,
+                        method.function.name
                     ),
                 ));
             }

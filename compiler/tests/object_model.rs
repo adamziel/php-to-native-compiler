@@ -5997,6 +5997,100 @@ echo $child->label();
 }
 
 #[test]
+fn inherited_method_static_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public static function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public static function label() {
+        return "child";
+    }
+}
+
+echo Child::label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child");
+    assert_eq!(execution.exit_code, 0);
+
+    let static_child_error = runtime_error(
+        r#"<?php
+class Base {
+    public function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public static function label() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(static_child_error.line, 9);
+    assert_eq!(static_child_error.column, 19);
+    assert_eq!(
+        static_child_error.message,
+        "unsupported class inheritance for Child: cannot redeclare non static method Base::label() as static Child::label()"
+    );
+
+    let instance_child_error = runtime_error(
+        r#"<?php
+class Base {
+    public static function compute() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function compute() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(instance_child_error.line, 9);
+    assert_eq!(instance_child_error.column, 12);
+    assert_eq!(
+        instance_child_error.message,
+        "unsupported class inheritance for Child: cannot redeclare static method Base::compute() as non static Child::compute()"
+    );
+}
+
+#[test]
+fn private_parent_methods_do_not_block_child_static_compatibility() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public static function label() {
+        return "child";
+    }
+}
+
+echo Child::label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn nested_method_visibility_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php

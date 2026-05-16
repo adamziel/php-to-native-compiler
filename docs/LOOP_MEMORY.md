@@ -26,6 +26,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T02:20:00Z
+
+- Checkpoint before this task:
+  `70524ac0 runtime: enforce method visibility boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1136-1140, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI test-runner code, focused tests
+  and fixtures for PHP property-hook parse boundaries, inherited method
+  static/non-static compatibility enforcement, native cast rejection, PHP
+  comparison binary manifests, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`, and
+  this memory file.
+- Tests run and result: focused lane checks passed, then
+  `tools/checkpoint.sh "runtime: enforce method staticness boundary"` passed
+  with `1320` fixture tests, `753` system PHP comparisons, and `567` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: property hooks remain a parser boundary, typed
+  property storage/enforcement and references/copy-on-write remain incomplete,
+  method signature compatibility, trait/interface enforcement, exact PHP
+  diagnostics/error objects, native object/class lowering, real PHP branch
+  comparison matrices, WordPress host requirements, and full WordPress request
+  flows remain implementation work.
+- Next concrete task: push the checkpoint, then start Milestones 1141-1144 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-17T01:15:00Z
 
 - Checkpoint before this task:

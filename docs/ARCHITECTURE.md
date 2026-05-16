@@ -160,8 +160,9 @@ covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
 `(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion
 for the current scalar/null/array subset and keeps warning-producing or
 object/resource-heavy cast behavior as runtime or parse boundaries. Native
-lowering rejects all cast expressions until generated code has scalar
-conversion, warning/recovery, allocation, and exact diagnostic behavior.
+lowering rejects all cast expressions with a dedicated diagnostic until
+generated code has scalar conversion, array materialization, warning/recovery,
+object/resource handling, and exact diagnostic behavior.
 
 ## Runtime Crate
 
@@ -190,8 +191,9 @@ Implemented now:
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
   parsed abstract/final class modifiers plus abstract/final method modifiers
   as metadata, with abstract class instantiation, final-parent inheritance,
-  final method overrides, method visibility reductions, and concrete classes
-  with unimplemented abstract methods rejected at runtime,
+  final method overrides, method visibility reductions, concrete classes with
+  unimplemented abstract methods rejected at runtime, and inherited method
+  static/non-static compatibility enforced at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,

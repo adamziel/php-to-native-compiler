@@ -10,6 +10,7 @@ use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
     fixture_manifest, run_fixture_dir_with_options, FixtureManifestCompatibilityTarget,
     FixtureManifestEntry, FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
+    PhpVersionManifest, PhpVersionManifestEntry,
 };
 
 fn main() -> ExitCode {
@@ -124,6 +125,7 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
     let mut compare_php = false;
     let mut list_fixtures = false;
     let mut list_fixtures_json = false;
+    let mut php_versions_json = false;
     let mut root = None;
 
     for arg in args {
@@ -133,6 +135,8 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
             list_fixtures = true;
         } else if arg == "--list-fixtures-json" {
             list_fixtures_json = true;
+        } else if arg == "--php-versions-json" {
+            php_versions_json = true;
         } else if root.is_none() {
             root = Some(PathBuf::from(arg));
         } else {
@@ -140,7 +144,7 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
                 Phase::Cli,
                 0,
                 0,
-                "usage: phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]",
+                "usage: phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir] | phpc test --php-versions-json",
             ));
         }
     }
@@ -152,6 +156,20 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
             0,
             "expected at most one fixture manifest output mode",
         ));
+    }
+    if php_versions_json && (list_fixtures || list_fixtures_json || compare_php || root.is_some()) {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "usage: phpc test --php-versions-json",
+        ));
+    }
+
+    if php_versions_json {
+        let manifest = php_compiler::test_runner::php_version_manifest_from_env();
+        print!("{}", render_php_version_manifest_json(&manifest));
+        return Ok(0);
     }
 
     let root = root.unwrap_or_else(|| PathBuf::from("tests/fixtures"));
@@ -414,6 +432,74 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     output
 }
 
+fn render_php_version_manifest_json(manifest: &PhpVersionManifest) -> String {
+    let mut output = String::new();
+    output.push_str("{\n");
+    output.push_str("  \"contract_version\": 1,\n");
+    output.push_str("  \"tracked_php_branches\": [");
+    for (index, branch) in manifest.tracked_php_branches.iter().enumerate() {
+        if index > 0 {
+            output.push_str(", ");
+        }
+        output.push_str(&json_string_literal(branch));
+    }
+    output.push_str("],\n");
+    output.push_str("  \"summary\": {\n");
+    output.push_str(&format!(
+        "    \"requested\": {},\n",
+        manifest.summary.requested
+    ));
+    output.push_str(&format!(
+        "    \"available\": {},\n",
+        manifest.summary.available
+    ));
+    output.push_str(&format!(
+        "    \"tracked_available\": {},\n",
+        manifest.summary.tracked_available
+    ));
+    output.push_str("    \"missing_tracked_branches\": [");
+    for (index, branch) in manifest.summary.missing_tracked_branches.iter().enumerate() {
+        if index > 0 {
+            output.push_str(", ");
+        }
+        output.push_str(&json_string_literal(branch));
+    }
+    output.push_str("]\n");
+    output.push_str("  },\n");
+    output.push_str("  \"php_binaries\": [\n");
+    for (index, entry) in manifest.php_binaries.iter().enumerate() {
+        output.push_str(&render_php_version_manifest_entry_json(entry));
+        if index + 1 < manifest.php_binaries.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ]\n");
+    output.push_str("}\n");
+    output
+}
+
+fn render_php_version_manifest_entry_json(entry: &PhpVersionManifestEntry) -> String {
+    let mut output = String::new();
+    output.push_str("    {\n");
+    output.push_str(&format!(
+        "      \"command\": {},\n",
+        json_string_literal(&entry.command)
+    ));
+    output.push_str(&format!("      \"available\": {},\n", entry.available));
+    output.push_str(&format!(
+        "      \"version\": {},\n",
+        json_optional_string_literal(entry.version.as_deref())
+    ));
+    output.push_str(&format!(
+        "      \"branch\": {},\n",
+        json_optional_string_literal(entry.branch.as_deref())
+    ));
+    output.push_str(&format!("      \"tracked\": {}\n", entry.tracked));
+    output.push_str("    }");
+    output
+}
+
 fn fixture_manifest_entry_expectations(entry: &FixtureManifestEntry) -> Vec<&'static str> {
     let mut expectations = Vec::new();
     if entry.has_stdout {
@@ -426,6 +512,12 @@ fn fixture_manifest_entry_expectations(entry: &FixtureManifestEntry) -> Vec<&'st
         expectations.push("exit");
     }
     expectations
+}
+
+fn json_optional_string_literal(value: Option<&str>) -> String {
+    value
+        .map(json_string_literal)
+        .unwrap_or_else(|| "null".to_string())
 }
 
 fn json_string_literal(value: &str) -> String {
@@ -469,4 +561,5 @@ fn print_help() {
     println!("  phpc compile <input.php> --emit-asm");
     println!("  phpc run <input.php>");
     println!("  phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]");
+    println!("  phpc test --php-versions-json");
 }

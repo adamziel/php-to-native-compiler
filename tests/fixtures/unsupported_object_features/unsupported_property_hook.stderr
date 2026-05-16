@@ -1,0 +1,2 @@
+parse error at 3:26: unsupported property hook declaration: PHP property get/set hooks require hook metadata, backing/virtual property behavior, typed-property storage and enforcement, references, reflection, and native lowering
+

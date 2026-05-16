@@ -885,6 +885,51 @@ fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
 }
 
 #[test]
+fn unsupported_property_hook_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass Post {\n    public string $title { get => $this->title; }\n}\n",
+            3,
+            26,
+        ),
+        (
+            "<?php\nclass Post {\n    public $title { get => 'draft'; }\n}\n",
+            3,
+            19,
+        ),
+        (
+            "<?php\nclass Post {\n    protected string $slug { set { $this->slug = $value; } }\n}\n",
+            3,
+            28,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported property hook declaration: PHP property get/set hooks require hook metadata, backing/virtual property behavior, typed-property storage and enforcement, references, reflection, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_property_hook_declarations_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nclass Post {\n    public string $title { get => $this->title; }\n}\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported property hook declaration: PHP property get/set hooks require hook metadata, backing/virtual property behavior, typed-property storage and enforcement, references, reflection, and native lowering"
+    );
+}
+
+#[test]
 fn unsupported_asymmetric_property_visibility_has_stable_parse_errors() {
     let cases = [
         (
