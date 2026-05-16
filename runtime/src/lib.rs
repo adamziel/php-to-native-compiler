@@ -1630,37 +1630,76 @@ impl ArrayEntry {
 
 #[derive(Debug, PartialEq)]
 pub struct ArraySlot {
-    value: Value,
+    cell: ArraySlotCell,
 }
 
 impl Clone for ArraySlot {
     fn clone(&self) -> Self {
-        Self::new(self.value.clone())
+        Self {
+            cell: self.cell.clone_by_value(),
+        }
     }
 }
 
 impl ArraySlot {
     pub fn new(value: Value) -> Self {
-        Self { value }
+        Self {
+            cell: ArraySlotCell::new(value),
+        }
     }
 
     pub fn value(&self) -> &Value {
-        &self.value
+        self.cell.value()
     }
 
     pub fn value_mut(&mut self) -> &mut Value {
-        &mut self.value
+        self.cell.value_mut()
     }
 
     pub fn value_cloned(&self) -> Value {
-        self.value.clone()
+        self.cell.value_cloned()
     }
 
     pub fn set_value(&mut self, value: Value) {
-        self.value = value;
+        self.cell.set_value(value);
     }
 
     pub fn into_value(self) -> Value {
+        self.cell.into_value()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct ArraySlotCell {
+    value: Value,
+}
+
+impl ArraySlotCell {
+    fn new(value: Value) -> Self {
+        Self { value }
+    }
+
+    fn clone_by_value(&self) -> Self {
+        Self::new(self.value.clone())
+    }
+
+    fn value(&self) -> &Value {
+        &self.value
+    }
+
+    fn value_mut(&mut self) -> &mut Value {
+        &mut self.value
+    }
+
+    fn value_cloned(&self) -> Value {
+        self.value.clone()
+    }
+
+    fn set_value(&mut self, value: Value) {
+        self.value = value;
+    }
+
+    fn into_value(self) -> Value {
         self.value
     }
 }
@@ -4247,6 +4286,22 @@ mod tests {
             cloned.get("name"),
             Some(&Value::String("Katherine".to_string()))
         );
+    }
+
+    #[test]
+    fn array_slot_cells_clone_by_value_until_reference_cells_exist() {
+        let slot = ArraySlot::new(Value::String("original".to_string()));
+        let mut cloned = slot.clone();
+
+        assert!(
+            !ptr::addr_eq(&slot.cell, &cloned.cell),
+            "slot cloning must allocate an independent cell until PHP reference cells exist"
+        );
+
+        cloned.set_value(Value::String("clone".to_string()));
+
+        assert_eq!(slot.value(), &Value::String("original".to_string()));
+        assert_eq!(cloned.value(), &Value::String("clone".to_string()));
     }
 
     #[test]

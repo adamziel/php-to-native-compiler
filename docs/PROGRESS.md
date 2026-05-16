@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1060, a private `ArraySlotCell` layer under `ArraySlot`.
+  `ArraySlot` now owns an internal cell object and delegates all value access,
+  mutation, cloning, and extraction through that cell. Its custom clone path
+  still allocates a fresh cell with a cloned value, preserving today's eager
+  PHP array clone behavior while isolating the future switch point for shared
+  reference cells. Added a focused runtime test proving that cloning an
+  `ArraySlot` creates an independent cell and that mutating the clone does not
+  affect the original. This does not implement shared reference cells, direct
+  array-offset references, missing-offset reference materialization,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering. Verification so far:
+  `cargo test -p php_runtime array_slot_cells_clone_by_value_until_reference_cells_exist -- --test-threads=1`,
+  `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1059, a precise direct array-offset reference-source
   runtime boundary that now reaches array slot lookup before rejecting.
   Statement-form `$alias =& $items[$key];` still does not create a PHP alias,

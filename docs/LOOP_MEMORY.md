@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `51be02de docs: record array offset reference boundary gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1060, private `ArraySlotCell` layer under
+  `ArraySlot` while preserving clone-by-value behavior.
+- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime array_slot_cells_clone_by_value_until_reference_cells_exist -- --test-threads=1`
+  passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
+  with 110 tests. `cargo check -p php_runtime -p phpc`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Current WordPress frontier: `ArraySlot` now has an internal cell object that
+  can later become reference-aware while its current clone path still creates
+  an independent cell/value for PHP array clone-by-value behavior.
+- Remaining semantic gaps: `ArraySlotCell` is still private clone-by-value
+  storage, not a shared PHP reference cell; direct `$alias =& $array[$key]`,
+  missing-offset reference materialization, array/object offset aliases, exact
+  by-reference `foreach`, lingering references, copy-on-write,
+  mutation-during-iteration fidelity, and native lowering remain missing.
+- Next concrete task: add a stable internal slot-cell identity or rebinding
+  primitive that can be used by direct array-offset reference assignment
+  without changing by-value reads/writes yet.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `bcccb64c docs: record array slot lookup gate`, pushed to `origin/master`.
 - Task attempted: Milestone 1059, precise direct array-offset reference-source
   runtime boundary over normalized-key `ArraySlot` lookup.

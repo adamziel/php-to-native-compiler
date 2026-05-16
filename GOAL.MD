@@ -791,10 +791,11 @@ Reconciliation into concrete workstreams:
   receivers, an explicit magic `__callStatic` reference-return runtime
   boundary, a bounded direct-array-variable by-reference `foreach` copy-back
   path, private `ArrayEntry` value accessors backed by an explicit
-  clone-by-value `ArraySlot` wrapper that preserves eager array cloning while
-  preparing for real slot cells, normalized-key array slot lookup helpers,
-  a precise direct array-offset reference-source runtime boundary over that
-  slot lookup, documented runtime boundaries, and focused reference fixtures.
+  clone-by-value `ArraySlot` wrapper with an internal `ArraySlotCell` that
+  preserves eager array cloning while preparing for real slot cells,
+  normalized-key array slot lookup helpers, a precise direct array-offset
+  reference-source runtime boundary over that slot lookup, documented runtime
+  boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
   aliases, magic reference-return dispatch and broader by-reference returns,
   exact by-reference `foreach`, and COW tests that compare against PHP.

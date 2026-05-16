@@ -10254,6 +10254,17 @@ handled.
   shared reference cells, missing-offset reference materialization,
   copy-on-write, exact by-reference `foreach`, object-property offsets, or
   native lowering.
+
+## Milestone 1060: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: introduce a private `ArraySlotCell` layer
+  under `ArraySlot` while preserving clone-by-value behavior. `ArraySlot`
+  delegates all value access/mutation through the internal cell, and a focused
+  runtime test proves cloning a slot allocates an independent cell whose
+  mutation does not affect the original. This is not shared reference cells,
+  direct array-offset references, missing-offset reference materialization,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference
