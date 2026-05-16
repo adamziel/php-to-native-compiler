@@ -118,23 +118,25 @@
   and `unset($value)` detaches only the source name. Existing direct alias
   groups, source names already routed through array-offset aliases, `$GLOBALS`,
   PHP's deprecated false-root conversion, other non-array roots,
-  object-property append/deeper targets, `ArrayAccess` targets, non-direct
-  sources, full PHP reference containers, copy-on-write, exact alias
-  rebinding/mutation ordering, and native lowering remain unsupported. Direct
-  public object-property
-  array-offset reference targets such as `$object->items[$key] =& $value;`
-  execute when the target object is a direct object variable, the property is a
-  declared public property reachable through the current public property access
-  path, the target uses an explicit offset, and the source is a direct
-  unaliased variable name. A `null` public property materializes as an array,
-  writes through the source variable and direct object-property array offset
-  observe the same selected value, and `unset($value)` detaches only the source
-  name. Existing direct alias groups, source names already routed through
-  array-offset aliases, `$GLOBALS`, object-property append targets, untested
-  deeper object-property reference paths, dynamic/magic/non-public properties,
-  `ArrayAccess` reference targets, non-direct sources, full PHP reference
-  containers, copy-on-write, exact alias rebinding/mutation ordering, and
-  native lowering remain unsupported.
+  object-property/`ArrayAccess` targets, non-direct sources, full PHP
+  reference containers, copy-on-write, exact alias rebinding/mutation ordering,
+  and native lowering remain unsupported. Direct public object-property
+  array-offset and array-append reference targets such as
+  `$object->items[$key] =& $value;`, `$object->items[] =& $value;`,
+  `$object->groups[$outer][$inner] =& $value;`, and
+  `$object->groups[$outer][] =& $value;` execute when the target object is a
+  direct object variable, the property is a declared public property reachable
+  through the current public property access path, every parent offset is
+  explicit for append-at-depth, and the source is a direct unaliased variable
+  name. A `null` public property and missing parent containers materialize as
+  arrays, append targets use the runtime array append cursor, writes through
+  the source variable and direct object-property array offset observe the same
+  selected value, and `unset($value)` detaches only the source name. Existing
+  direct alias groups, source names already routed through array-offset
+  aliases, `$GLOBALS`, dynamic/magic/non-public properties, `ArrayAccess`
+  reference targets, non-direct sources, full PHP reference containers,
+  copy-on-write, exact alias rebinding/mutation ordering, and native lowering
+  remain unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

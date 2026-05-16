@@ -4,6 +4,37 @@
 
 Implemented:
 
+- Added Milestone 1072, a bounded direct public object-property array-append
+  reference-target slice for direct variable sources. Statement-form
+  `$object->items[] =& $value;` now works when the object expression is a
+  direct object variable, the property is a declared public property reachable
+  through the existing public property access path, and the source is an
+  unaliased direct variable name. The same route supports append-at-depth under
+  explicit public-property array parents, such as
+  `$object->groups[$key][] =& $value;`, and the fixture now also proves the
+  deeper explicit property path `$object->groups[$outer][$inner] =& $value;`.
+  The interpreter materializes a `null` public property and missing parent
+  containers as arrays, appends through the runtime array append cursor at the
+  selected property array parent, records the selected auto key in the alias
+  path, and routes the source name to that slot. Writes through the source
+  variable and through the direct object-property array offset observe the same
+  selected value, and `unset($value)` detaches the source name while leaving
+  the property slot value alive. Existing direct alias groups, source names
+  already routed through array-offset aliases, `$GLOBALS`, dynamic/magic/
+  non-public property targets, `ArrayAccess` reference targets, non-direct
+  sources, full PHP reference containers, copy-on-write, exact mutation
+  ordering/alias rebinding, and native lowering remain unsupported.
+  Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1072 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1071 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1070 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1276 fixture
+  tests, 723 system PHP comparisons, and 553 skipped comparisons, then
+  committed `09d75d5f runtime: add object property append reference targets`.
+
 - Added Milestone 1071, a bounded direct public object-property array-offset
   reference-target slice for direct variable sources. Statement-form
   `$object->items[$key] =& $value;` now works when the object expression is a

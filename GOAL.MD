@@ -1771,6 +1771,12 @@ unchecked work. Current state:
   reference targets such as `$object->items[$key] =& $value;` now work for a
   direct object variable, declared public property, explicit offset, and
   unaliased direct variable source, with PHP comparison coverage.
+- Milestone 1072 is committed: direct public object-property array-append and
+  deeper explicit reference targets such as `$object->items[] =& $value;`,
+  `$object->groups[$key][] =& $value;`, and
+  `$object->groups[$outer][$inner] =& $value;` now work for declared public
+  properties and unaliased direct variable sources, with PHP comparison
+  coverage.
 - Milestone 1040 is the active checkpoint candidate: bounded `Countable` object
   protocol support now lets `is_countable($object)` recognize object values
   whose class metadata records `implements Countable`, and lets

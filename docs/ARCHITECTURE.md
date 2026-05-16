@@ -234,19 +234,22 @@ cursor at the selected nested parent. Direct public object-property
 array-offset targets have a similarly bounded route:
 `$object->items[$key] =& $value;` can bind an unaliased direct source variable
 to an explicit offset inside a declared public property on a direct object
-variable. That route reads and writes the root through the existing public
+variable. `$object->items[] =& $value;` and
+`$object->groups[$key][] =& $value;` append through the same public-property
+root route and bind the source name to the selected property-array auto key.
+That route reads and writes the root through the existing public
 object-property access path and materializes `null` property values as arrays
-before selecting the offset. The interpreter materializes missing explicit
-keys, missing intermediate containers for the direct-array target slice, and
-undefined or `null` direct-array target roots through the direct-offset and
-nested-array materialization paths, copies the current source value into the
-selected slot, then routes the source name to that slot. Writes through either
-the source variable or the supported direct array/object-property offset
-observe the same selected value, and `unset($value)` detaches only the source
-name. Undefined source variables start as `null` before binding. Existing
-direct alias groups, source names already routed through array-offset aliases,
-`$GLOBALS`, PHP's deprecated false-root conversion, other non-array roots,
-object-property append/deeper untested paths, dynamic/magic/non-public
+before selecting or appending the offset. The interpreter materializes missing
+explicit keys, missing intermediate containers for the direct-array and
+tested object-property target slices, and undefined or `null` direct-array
+target roots through the direct-offset and nested-array materialization paths,
+copies the current source value into the selected slot, then routes the source
+name to that slot. Writes through either the source variable or the supported
+direct array/object-property offset observe the same selected value, and
+`unset($value)` detaches only the source name. Undefined source variables
+start as `null` before binding. Existing direct alias groups, source names
+already routed through array-offset aliases, `$GLOBALS`, PHP's deprecated
+false-root conversion, other non-array roots, dynamic/magic/non-public
 property targets, `ArrayAccess` reference targets, non-direct sources,
 non-static `self::`/`parent::`/`static::`/dynamic-static sources, magic method
 reference sources, full PHP reference containers, broader by-reference

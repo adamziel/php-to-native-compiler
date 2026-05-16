@@ -10416,18 +10416,39 @@ handled.
   paths, dynamic/magic/non-public properties, `ArrayAccess` reference targets,
   non-direct sources, full PHP reference containers, copy-on-write, exact alias
   rebinding/mutation ordering, or native lowering.
+
+## Milestone 1072: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add bounded direct public object-property
+  array-append and deeper explicit reference-target coverage for unaliased
+  direct variable sources. In the current subset, `$object->items[] =& $value;`
+  and `$object->groups[$key][] =& $value;` work when the target object is a
+  direct object variable, the property is declared public and reached through
+  the existing public property access path, every parent offset is explicit,
+  and the source is a direct unaliased variable name. The same milestone also
+  covers the tested deeper explicit path
+  `$object->groups[$outer][$inner] =& $value;`. A `null` public property and
+  missing parent containers materialize as arrays, append targets use the
+  runtime array append cursor, writes through the source variable and direct
+  object-property array offset observe the same selected value, and
+  `unset($value)` detaches only the source name. This is not existing alias
+  groups, source names already routed through array-offset aliases, `$GLOBALS`,
+  dynamic/magic/non-public properties, `ArrayAccess` reference targets,
+  non-direct sources, full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  object-property append/deeper reference targets, `ArrayAccess` reference
-  targets, nested/object offset aliases, remaining by-reference `foreach`
-  fidelity, array/object copy-on-write split behavior, or native lowering
-  boundaries, and add the next bounded behavior or explicit diagnostic with PHP
-  comparison coverage where applicable.
+  `ArrayAccess` reference targets, nested/object offset aliases, remaining
+  by-reference `foreach` fidelity, array/object copy-on-write split behavior,
+  dynamic/magic/non-public property reference targets, `$GLOBALS` reference
+  target semantics, or native lowering boundaries, and add the next bounded
+  behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `403cdac4 runtime: add object property reference targets`, covering
-  Milestone 1071.
+  `09d75d5f runtime: add object property append reference targets`, covering
+  Milestone 1072.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
