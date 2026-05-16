@@ -7,3 +7,7 @@ echo $items["name"], "|", $alias;
 echo "|";
 $items[$key] = "Hedy";
 echo $items["name"], "|", $alias, "|", $items["other"];
+echo "|";
+$missing =& $items["missing"];
+$missing = "materialized";
+echo $items["missing"];

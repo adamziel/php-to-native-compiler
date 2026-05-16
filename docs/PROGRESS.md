@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1064, missing-offset materialization for the bounded direct
+  array-offset reference-source slice. Statement-form
+  `$alias =& $array[$key];` now materializes a missing key as `null` when the
+  source root is an existing direct array variable, then binds the target
+  direct variable to that slot route. Writes through the alias update the new
+  array slot, and subsequent direct offset writes are visible through the
+  alias. Non-array roots remain an explicit runtime boundary. This does not
+  implement undefined/null root materialization, nested offsets,
+  object-property offsets, `ArrayAccess` offsets, direct array-offset reference
+  targets, exact by-reference `foreach`, copy-on-write, or native lowering.
+  Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`.
+
 - Added Milestone 1063, a bounded PHP-visible direct array-offset reference
   source slice for existing keys. Statement-form `$alias =& $array[$key];`
   now works when the source is a direct array variable, the evaluated key

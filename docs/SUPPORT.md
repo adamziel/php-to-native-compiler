@@ -93,15 +93,15 @@
   values, object-property array targets, exact by-reference `foreach`, broader
   reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
-  rebinding beyond direct names and the existing-key array-offset source slice,
+  rebinding beyond direct names and the direct array-offset source slice,
   PHP reference-container edge cases, copy-on-write, and native lowering remain
   unsupported. Direct array-offset reference sources such as
-  `$alias =& $array[$key];` execute when the source is a direct array variable,
-  the evaluated key already exists after current key normalization, and the
-  target is a direct variable. Writes through the alias and direct array offset
-  observe the same selected slot, and `unset($alias)` detaches only the alias
-  name. Missing offsets remain an explicit runtime boundary; they do not
-  materialize a new referenced slot. Nested offsets, object-property offsets,
+  `$alias =& $array[$key];` execute when the source is an existing direct array
+  variable and the target is a direct variable. The evaluated key is normalized
+  with the current array key rules; an absent key is materialized as `null` on
+  that array root before binding. Writes through the alias and direct array
+  offset observe the same selected slot, and `unset($alias)` detaches only the
+  alias name. Undefined/null roots, nested offsets, object-property offsets,
   `ArrayAccess` offsets, direct array-offset reference targets, exact
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
   native lowering remain unsupported.

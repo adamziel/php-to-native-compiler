@@ -1,3 +1,3 @@
 <?php
-$items = [];
-$alias =& $items["missing"];
+$items = 1;
+$alias =& $items[0];

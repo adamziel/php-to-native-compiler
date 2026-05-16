@@ -1363,11 +1363,30 @@ echo $other;
 }
 
 #[test]
-fn reference_assignment_missing_array_offset_source_remains_boundary() {
-    let error = runtime_error(
+fn reference_assignment_missing_array_offset_source_materializes_null_slot() {
+    let execution = run_source(
         r#"<?php
 $items = [];
 $alias =& $items["missing"];
+$alias = "materialized";
+echo $items["missing"];
+echo "|";
+$items["missing"] = "updated";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "materialized|updated");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_array_offset_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$items = 1;
+$alias =& $items[0];
 "#,
     );
 
@@ -1375,7 +1394,7 @@ $alias =& $items["missing"];
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: missing array-offset reference materialization is not implemented"
+        "invalid array access: cannot read offset on int"
     );
 }
 

@@ -1,6 +1,6 @@
 exit: 0
 stdout:
-Katherine|Katherine|Hedy|Hedy|Grace
+Katherine|Katherine|Hedy|Hedy|Grace|materialized
 --- stdout end ---
 stderr:
 --- stderr end ---

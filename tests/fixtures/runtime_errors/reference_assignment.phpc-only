@@ -1,1 +1,1 @@
-phpc supports existing-key direct array-offset reference sources, but missing array-offset reference materialization remains an explicit runtime boundary.
+phpc supports direct array-offset reference sources for existing and missing keys on array roots, but non-array roots remain an explicit runtime boundary.

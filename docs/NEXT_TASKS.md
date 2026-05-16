@@ -10299,10 +10299,20 @@ handled.
   not missing-offset reference materialization, nested/object/`ArrayAccess`
   offsets, direct array-offset reference targets, exact by-reference
   `foreach`, copy-on-write, or native lowering.
+
+## Milestone 1064: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: materialize missing keys for the bounded direct
+  array-offset reference-source slice. In the current subset,
+  `$alias =& $array[$key];` over an existing direct array variable now
+  materializes an absent normalized key as `null`, then binds the direct target
+  variable to that slot route. This is not undefined/null root materialization,
+  nested/object/`ArrayAccess` offsets, direct array-offset reference targets,
+  exact by-reference `foreach`, copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  missing-offset reference materialization, nested/object offset aliases,
-  exact by-reference `foreach`, array/object copy-on-write split behavior, or
-  native lowering boundaries, and add the next bounded behavior or explicit
+  undefined/null root materialization, nested/object offset aliases, exact
+  by-reference `foreach`, array/object copy-on-write split behavior, or native
+  lowering boundaries, and add the next bounded behavior or explicit
   diagnostic with PHP comparison coverage where applicable.
 
 ## Latest Completed Checkpoint

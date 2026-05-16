@@ -439,7 +439,7 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         if let Some(alias) = self.array_offset_aliases.get(source).cloned() {
-            self.ensure_existing_array_offset_alias(&alias, span)?;
+            self.materialize_array_offset_alias(&alias, span)?;
             self.bind_static_to_array_offset_alias(target, alias);
             return Ok(());
         }
@@ -472,7 +472,7 @@ impl SymbolTable {
             array_name: array_name.to_string(),
             key,
         };
-        self.ensure_existing_array_offset_alias(&alias, span)?;
+        self.materialize_array_offset_alias(&alias, span)?;
         self.bind_static_to_array_offset_alias(target, alias);
         Ok(())
     }
@@ -482,24 +482,18 @@ impl SymbolTable {
         self.array_offset_aliases.insert(target.to_string(), alias);
     }
 
-    fn ensure_existing_array_offset_alias(
-        &self,
+    fn materialize_array_offset_alias(
+        &mut self,
         alias: &ArrayOffsetAlias,
         span: Span,
     ) -> CompileResult<()> {
         match self.read_storage_named(&alias.array_name) {
-            Some(Value::Array(array)) => {
-                if array.get_slot(alias.key.clone()).is_some() {
-                    Ok(())
-                } else {
-                    Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "reference assignment",
-                            "missing array-offset reference materialization is not implemented",
-                        ),
-                    ))
+            Some(Value::Array(mut array)) => {
+                if array.get_slot(alias.key.clone()).is_none() {
+                    array.insert(alias.key.clone(), Value::Null);
+                    self.write_storage_named(&alias.array_name, Value::Array(array));
                 }
+                Ok(())
             }
             Some(other) => Err(runtime_error(
                 span,

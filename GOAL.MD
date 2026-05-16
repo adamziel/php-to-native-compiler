@@ -795,10 +795,10 @@ Reconciliation into concrete workstreams:
   has stable internal identity and shared-handle groundwork while preserving
   eager array cloning, by-value public writes, and value-based equality,
   normalized-key array slot lookup helpers, and a bounded PHP-visible
-  existing-key direct array-offset reference-source slice for
-  `$alias =& $array[$key];`, documented runtime boundaries, and focused
-  reference fixtures.
-  Missing artifact: missing-offset reference materialization, nested and
+  direct array-offset reference-source slice for `$alias =& $array[$key];`
+  over existing array roots, including missing-key-to-`null` materialization,
+  documented runtime boundaries, and focused reference fixtures.
+  Missing artifact: undefined/null root reference materialization, nested and
   object-property offset aliases, full runtime reference containers, magic
   reference-return dispatch and broader by-reference returns, exact
   by-reference `foreach`, and COW tests that compare against PHP.
