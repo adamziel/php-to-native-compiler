@@ -1774,6 +1774,12 @@ historical blockers and remaining full-support gaps include:
   `wpdb` smoke, without claiming true by-reference aliasing, later variable
   mutation, array parameter execution, mutation SQL, broad SQL execution,
   host database state, PHP warning/error fidelity, or native database
+  lowering. Milestone 987 adds bounded direct-execute-time refresh of direct
+  `mysqli_stmt_bind_param()` variables for exact known statement SQL shapes,
+  including a WordPress-shaped `wpdb` smoke, without claiming true
+  by-reference aliasing, cross-scope reference cells, array parameter
+  execution, mutation SQL, broad SQL execution, host database state, PHP
+  warning/error fidelity, call-user-func refresh behavior, or native database
   lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

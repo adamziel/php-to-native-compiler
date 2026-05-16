@@ -4756,6 +4756,14 @@ impl Interpreter {
             ));
         }
 
+        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+    }
+
+    fn execute_mysqli_stmt_placeholder(
+        &mut self,
+        stmt_id: i64,
+        span: Span,
+    ) -> CompileResult<Value> {
         let (query, bound_parameters) = {
             let state = self.mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?;
             if state.param_count != 0 && state.bound_parameter_values.len() != state.param_count {
@@ -8194,6 +8202,9 @@ impl Interpreter {
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
+                if key == "mysqli_stmt_execute" {
+                    return self.call_mysqli_stmt_execute_direct(args, span, caller_scope);
+                }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
                 }
@@ -8258,6 +8269,9 @@ impl Interpreter {
                 }
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
+                }
+                if key == "mysqli_stmt_execute" {
+                    return self.call_mysqli_stmt_execute_direct(args, span, caller_scope);
                 }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
@@ -8524,6 +8538,59 @@ impl Interpreter {
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
+    }
+
+    fn call_mysqli_stmt_execute_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_execute()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let statement = self.evaluate(&args[0], caller_scope)?;
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &statement, span)?;
+        if let Some(params_arg) = args.get(1) {
+            let params = self.evaluate(params_arg, caller_scope)?;
+            if !matches!(params, Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_execute()",
+                        format!(
+                            "params argument must be null or omitted in the current subset, got {}",
+                            params.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let variable_names = self
+            .mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?
+            .bound_parameter_variables
+            .clone();
+        if !variable_names.is_empty() {
+            let mut variable_values = Vec::with_capacity(variable_names.len());
+            for name in &variable_names {
+                let value = caller_scope.read_static(name, span)?;
+                validate_mysqli_stmt_bound_parameter_value(&value, span)?;
+                variable_values.push(value);
+            }
+            self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                .bound_parameter_values = variable_values;
+        }
+
+        self.execute_mysqli_stmt_placeholder(stmt_id, span)
     }
 
     fn call_mysqli_stmt_bind_result_direct(

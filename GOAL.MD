@@ -506,6 +506,12 @@ shapes, including direct MySQLi and WordPress-shaped `wpdb` smokes, without
 claiming true by-reference aliasing, later variable mutation, array parameter
 execution, mutation SQL, broad SQL execution, host database state, PHP
 warning/error fidelity, or native lowering,
+plus bounded direct-execute-time refresh of direct-variable
+`mysqli_stmt_bind_param()` values for exact known statement SQL shapes,
+including direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
+true by-reference aliasing, cross-scope reference cells, array parameter
+execution, mutation SQL, broad SQL execution, host database state, PHP
+warning/error fidelity, call-user-func refresh behavior, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

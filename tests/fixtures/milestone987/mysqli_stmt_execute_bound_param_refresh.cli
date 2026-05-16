@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone987/mysqli_stmt_execute_bound_param_refresh.php
+exit: 0
+stdout:
+executed|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

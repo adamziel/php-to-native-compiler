@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic direct-variable
+`mysqli_stmt_bind_param()` refresh at direct `mysqli_stmt_execute()` time for
+active placeholder statements. System PHP requires a real initialized MySQLi
+connection and by-reference mysqlnd parameter binding; phpc re-reads direct
+variables in the current scope for exact known placeholder SQL shapes.
+It does not implement true by-reference aliasing, cross-scope reference cells,
+array parameter execution, mutation SQL, broad SQL execution, host database
+state, PHP warning/error fidelity, or native database lowering.

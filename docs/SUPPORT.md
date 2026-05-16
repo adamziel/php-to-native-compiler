@@ -1002,10 +1002,12 @@
   result rows, and `mysqli_stmt_get_result($statement)` returns a placeholder
   `mysqli_result` containing those rows. `mysqli_stmt_bind_param($statement,
   $types, &...$vars)` records direct scalar/null variable snapshots for
-  active statements using `s`, `i`, or `d` type markers. This is not true
-  by-reference aliasing, later variable mutation, array parameter execution,
-  mutation SQL, broad SQL execution, host database state, PHP warning/error
-  fidelity, or native statement lowering.
+  active statements using `s`, `i`, or `d` type markers and direct
+  `mysqli_stmt_execute($statement)` re-reads those direct variables from the
+  current caller scope before execution. This is not true by-reference
+  aliasing, cross-scope reference cells, array parameter execution, mutation
+  SQL, broad SQL execution, host database state, PHP warning/error fidelity,
+  call-user-func refresh behavior, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -3334,14 +3336,15 @@
   execution diagnostics, warning-chain objects, error-list entries,
   affected-row metadata, insert-id metadata, or host database execution,
   `mysqli_stmt_execute(...)`/`mysqli_stmt_get_result(...)` expose only
-  deterministic unbound placeholder execution and result materialization for
-  current known statement shapes without bound parameters, array parameter
-  execution, mutations, real mysqlnd transfer, host database state, or broad
-  SQL execution,
+  deterministic unbound placeholder execution and direct-variable bound
+  execution for current known statement shapes without array parameter
+  execution, mutations, real mysqlnd transfer, host database state, broad SQL
+  execution, or call-user-func refresh behavior,
   `mysqli_stmt_bind_param(...)` exposes only direct scalar/null variable
-  snapshots for known placeholder statement SQL shapes without true
-  by-reference aliasing, later variable mutation, array parameter execution,
-  mutation SQL, broad SQL execution, or host database state,
+  snapshots and direct-execute-time re-reads for known placeholder statement
+  SQL shapes without true by-reference aliasing, cross-scope reference cells,
+  array parameter execution, mutation SQL, broad SQL execution, or host
+  database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
   variable placeholder result binding and buffered row copying for current
   known statement result shapes without true by-reference aliasing, unbuffered

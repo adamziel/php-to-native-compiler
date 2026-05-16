@@ -9322,19 +9322,32 @@ handled.
   mutation, array parameter execution, mutation SQL, broad SQL execution,
   host database state, PHP warning/error fidelity, or native database
   lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as
   later-mutation behavior for bound parameters, broader escaping charset
   fidelity, local-infile option effects, connection multi-result pending
   queues, or the next real database integration gap, and add the next bounded
   behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
   native rejection coverage where lowering remains unsupported.
+  Milestone 987 adds bounded execute-time refresh for direct-variable
+  `mysqli_stmt_bind_param()` values on direct `mysqli_stmt_execute()` calls,
+  including a WordPress-shaped `wpdb` smoke. This is not true by-reference
+  aliasing, cross-scope reference cells, array parameter execution, mutation
+  SQL, broad SQL execution, host database state, PHP warning/error fidelity,
+  call-user-func refresh behavior, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, broader escaping charset fidelity,
+  local-infile option effects, connection multi-result pending queues, or the
+  next real database integration gap, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `52470df3 runtime: add mysqli stmt bind fetch placeholders`, covering
-  Milestone 985 before the current Milestone 986 candidate.
+  `a7e160cd runtime: add mysqli stmt param bind placeholders`, covering
+  Milestone 986 before the current Milestone 987 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
