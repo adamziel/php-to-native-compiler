@@ -89,11 +89,10 @@
   method-call sources are executable only for the bounded direct-variable
   reference-return shapes documented above. Magic `__callStatic`
   reference-return method sources report the explicit runtime boundary
-  documented above. Array-offset sources, direct array-offset targets for array
-  values, object-property array targets, exact by-reference `foreach`, broader
-  reference returns,
+  documented above. Object-property array targets, exact by-reference
+  `foreach`, broader reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
-  rebinding beyond direct names and the direct array-offset source slice,
+  rebinding beyond direct names and the documented direct array-offset slices,
   PHP reference-container edge cases, copy-on-write, and native lowering remain
   unsupported. Direct array-offset reference sources such as
   `$alias =& $array[$key];` execute when the source is a direct array variable
@@ -103,9 +102,21 @@
   are materialized as arrays containing the selected `null` slot before
   binding. Writes through the alias and direct array offset observe the same
   selected slot, and `unset($alias)` detaches only the alias name. Non-array
-  roots, nested offsets, object-property offsets, `ArrayAccess` offsets, direct
-  array-offset reference targets, exact by-reference `foreach`, full PHP
-  reference containers, copy-on-write, and native lowering remain unsupported.
+  roots, nested offsets, object-property offsets, `ArrayAccess` offsets, exact
+  by-reference `foreach`, full PHP reference containers, copy-on-write, and
+  native lowering remain unsupported. Direct array-offset reference targets
+  such as `$array[$key] =& $value;` execute when the target root is a direct
+  array variable, the offset is explicit, and the source is a direct unaliased
+  variable name. The evaluated key is normalized with the current array key
+  rules; existing and missing keys work, undefined or `null` target roots
+  materialize as arrays, and undefined source variables begin as `null` before
+  binding. Writes through the source variable and direct array offset observe
+  the same selected value, and `unset($value)` detaches only the source name.
+  Existing direct alias groups, source names already routed through
+  array-offset aliases, `$GLOBALS`, append targets, nested/object/`ArrayAccess`
+  targets, non-direct sources, full PHP reference containers, copy-on-write,
+  exact alias rebinding/mutation ordering, and native lowering remain
+  unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

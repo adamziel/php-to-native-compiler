@@ -10334,17 +10334,33 @@ handled.
   non-direct iterable support, object/`Traversable` iteration, foreach
   destructuring, full PHP reference containers, copy-on-write, or native
   lowering.
+
+## Milestone 1067: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct array-offset
+  reference-target slice for unaliased direct variable sources. In the current
+  subset, `$array[$key] =& $value;` works when the target root is a direct
+  array variable, the offset is explicit, and the source is a direct unaliased
+  variable name. Missing keys and undefined or `null` target roots materialize
+  through the direct-offset array path, undefined source variables begin as
+  `null`, writes through the source variable and direct offset observe the same
+  selected value, and `unset($value)` detaches only the source name. This is
+  not existing alias groups, source names already routed through array-offset
+  aliases, `$GLOBALS`, append targets, nested/object/`ArrayAccess` targets,
+  non-direct sources, full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  nested/object offset aliases, remaining by-reference `foreach` fidelity,
-  array/object copy-on-write split behavior, or native lowering boundaries, and
-  add the next bounded behavior or explicit diagnostic with PHP comparison
-  coverage where applicable.
+  append/nested/object/`ArrayAccess` reference targets, nested/object offset
+  aliases, remaining by-reference `foreach` fidelity, array/object
+  copy-on-write split behavior, or native lowering boundaries, and add the next
+  bounded behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ed93c7e6 runtime: add foreach lingering reference`, covering Milestone
-  1066.
+  `288f9716 runtime: add array offset reference targets`, covering Milestone
+  1067.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

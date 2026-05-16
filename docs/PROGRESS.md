@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 1067, a bounded direct array-offset reference-target slice
+  for direct variable sources. Statement-form `$array[$key] =& $value;` now
+  binds a direct array-variable slot to an unaliased direct source variable
+  name by routing the source name to the selected normalized-key slot after
+  copying the current source value into that slot. Missing keys, undefined
+  target roots, and null target roots materialize as arrays/slots through the
+  existing direct-offset materialization path. Writes through the source
+  variable and direct array offset observe the same selected value, and
+  `unset($value)` detaches the source name while leaving the array slot value
+  alive. Undefined source variables are treated as `null` before binding.
+  Existing direct alias groups, source names already routed through
+  array-offset aliases, `$GLOBALS`, append targets, nested/object/`ArrayAccess`
+  targets, non-direct sources, full PHP reference containers, copy-on-write,
+  exact mutation ordering/alias rebinding, and native lowering remain
+  unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1067 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1271 fixture
+  tests, 717 system PHP comparisons, and 554 skipped comparisons, then
+  committed `288f9716 runtime: add array offset reference targets`.
+
 - Added Milestone 1066, lingering post-loop references for the existing
   direct-array-variable by-reference `foreach` slice. In the current subset,
   `foreach ($items as $key => &$item) { ... }` over a direct array variable
