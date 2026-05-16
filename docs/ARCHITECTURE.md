@@ -214,11 +214,17 @@ array-offset reference sources now have a narrow execution path:
 variable name to the selected normalized-key array slot route. Missing keys on
 an existing array root are materialized as `null` before binding, and undefined
 or `null` direct source roots are materialized as arrays containing that `null`
-slot before binding. Writes through the alias and through the direct array
-offset observe the same value, and `unset($alias)` removes only the alias
-binding. Non-array roots, nested offsets, object-property offsets,
-`ArrayAccess` offsets, exact by-reference `foreach`, full reference containers,
-copy-on-write, and native lowering remain future work. Direct variable sources
+slot before binding. Direct object-property array-offset reference sources have
+a similarly narrow direct-variable target path:
+`$alias =& $object->items[$key];` can bind the alias variable to an explicit
+offset inside a declared public property on a direct object variable,
+materializing a `null` property as an array and missing selected slots as
+`null`. Writes through the alias and through the direct array or supported
+object-property offset observe the same value, and `unset($alias)` removes
+only the alias binding. Non-array roots, nested object-property offset sources,
+dynamic/magic/non-public property sources, `ArrayAccess` offsets, exact
+by-reference `foreach`, full reference containers, copy-on-write, and native
+lowering remain future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function

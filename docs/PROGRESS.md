@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 1085, a bounded direct object-property array-offset
+  reference-source slice. Statement-form `$alias =& $object->items[$key];`
+  now parses and executes when the target is a direct variable, the source
+  object is a direct variable, the property is a named declared public
+  property, and the offset is explicit. The selected public property array slot
+  is materialized as `null` when missing, a `null` property is materialized as
+  an array, and writes through either the alias or the object-property slot
+  observe the same value. This reuses the existing object-property alias-root
+  metadata and remains narrower than full PHP references. Nested
+  object-property offset sources, dynamic/magic/non-public property sources,
+  non-direct object expressions, non-variable reference targets, ArrayAccess
+  offset reference sources, full PHP reference containers, copy-on-write
+  containers, exact alias destruction ordering, and native lowering remain
+  unsupported. Verification so far: local PHP 8.2.29 probes for direct
+  object-property offset reference sources,
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_offset_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1085 --compare-php`.
+
 - Added Milestone 1084, a bounded object-property array-copy/reference-element
   slice. When a declared public object property array contains a covered
   direct array-offset reference target and that property array is copied into a

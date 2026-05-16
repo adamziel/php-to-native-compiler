@@ -2201,6 +2201,21 @@ impl Parser {
                     index: *index,
                     span,
                 }),
+                Expr::Property {
+                    target,
+                    property,
+                    span,
+                } => match *target {
+                    Expr::Variable(object, _) => Ok(ReferenceSource::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        index: *index,
+                        span,
+                    }),
+                    _ => {
+                        Err(self.error_at(span, unsupported_reference_assignment_source_message()))
+                    }
+                },
                 _ => Err(self.error_at(span, unsupported_reference_assignment_source_message())),
             },
             Expr::Property { .. } | Expr::DynamicProperty { .. } => {
@@ -5780,7 +5795,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct array-offset, direct object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

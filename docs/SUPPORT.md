@@ -103,20 +103,30 @@
   selected slot, and `unset($alias)` detaches only the alias name. Non-array
   roots, nested offsets, object-property offsets, `ArrayAccess` offsets, exact
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
-  native lowering remain unsupported. When a direct static array variable with
-  a covered direct array-offset reference alias is copied into another direct
-  static variable, the copied slot remains tied to the same bounded alias
-  group: writes through the source alias, the original array slot, or the
-  copied array slot update the same value for that direct key path. Plain
-  arrays without reference elements still copy by value under the current
-  array model. When a declared public object property array with a covered
+  native lowering remain unsupported. Direct object-property array-offset
+  reference sources such as `$alias =& $object->items[$key];` execute when the
+  target is a direct variable, the source object is a direct variable, the
+  property is a named declared public property, and the offset is explicit.
+  The selected public-property array slot is materialized as `null` when
+  missing, a `null` property materializes as an array, and writes through the
+  alias or the object-property array offset observe the same selected value.
+  Nested object-property offset sources, dynamic/magic/non-public property
+  sources, non-direct object expressions, non-variable reference targets,
+  ArrayAccess offset reference sources, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, and native
+  lowering remain unsupported for this source form. When a direct static array
+  variable with a covered direct array-offset reference alias is copied into
+  another direct static variable, the copied slot remains tied to the same
+  bounded alias group: writes through the source alias, the original array
+  slot, or the copied array slot update the same value for that direct key
+  path. Plain arrays without reference elements still copy by value under the
+  current array model. When a declared public object property array with a covered
   direct object-property array-offset reference target is copied into a direct
   static variable, the copied slot also joins the same bounded alias group:
   writes through the source variable, the original object-property slot, or the
   copied static-array slot update the same selected value. Whole-property
   assignment and whole-object-variable reassignment remove stale property-root
-  alias metadata before later copies. Object-property reference sources such as
-  `$alias =& $object->items[$key]`, arbitrary nested copied reference slots,
+  alias metadata before later copies. Arbitrary nested copied reference slots,
   reference array literals, ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct

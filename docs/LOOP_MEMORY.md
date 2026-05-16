@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T00:55:00Z
+
+- Checkpoint before this task:
+  `1a192bb8 docs: record object property reference array copy gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1085, bounded direct object-property array-offset
+  reference sources. `$alias =& $object->items[$key];` now parses and executes
+  when the alias target is a direct variable, the object source is a direct
+  variable, the property is a named declared public property, and the offset is
+  explicit.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1085/object_property_array_offset_reference_source.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: local PHP 8.2.29 probes for direct object-property
+  array-offset reference sources, `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_offset_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1085 --compare-php` passed.
+- Remaining semantic gaps: nested object-property offset sources,
+  dynamic/magic/non-public property reference sources, non-direct object
+  expressions, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, and native lowering remain missing.
+- Next concrete task: run the full functions/scopes regression, object-model
+  regression, `cargo check -p php_runtime -p phpc`, `git diff --check`, then
+  the serialized checkpoint gate with
+  `tools/checkpoint.sh "runtime: add object property reference sources"` if the
+  focused checks pass.
+
 ## Loop Event 2026-05-17T00:20:00Z
 
 - Checkpoint before this task:

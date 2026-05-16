@@ -10522,6 +10522,32 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
+## Milestone 1085: Object-Property Reference Sources
+
+- [x] Runtime/value-model lane: add a bounded direct object-property
+  array-offset reference-source slice. `$alias =& $object->items[$key];`
+  parses and executes when the target is a direct variable, the object source
+  is a direct variable, the property is a named declared public property, and
+  the offset is explicit. Missing selected slots and `null` properties
+  materialize through the existing public-property alias-root metadata. This
+  is not nested object-property source support, dynamic/magic/non-public
+  property reference sources, non-direct object expressions, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
+- [ ] Runtime/value-model lane: choose the next reference/COW gap from
+  remaining nested copied reference slots, remaining by-reference `foreach`
+  fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
+  property reference targets, remaining `$GLOBALS` reference target semantics,
+  by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
+  native lowering boundaries, and add the next bounded behavior or explicit
+  diagnostic with PHP comparison coverage where applicable.
+- [ ] WordPress entry-flow lane: choose the next real entry blocker from a
+  stricter XML-RPC request-body trace, REST/front controller request state,
+  cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
+  probe documented as an external measurement unless a normalized fixture is
+  added.
+
 ## Milestone 1084: Object-Property Copied Reference Slots
 
 - [x] Runtime/value-model lane: add a bounded object-property array-copy
@@ -10535,18 +10561,6 @@ handled.
   reference slots, ArrayAccess references, full PHP reference containers,
   copy-on-write containers, exact alias destruction ordering, or native
   lowering.
-- [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  remaining nested copied reference slots, remaining by-reference `foreach`
-  fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
-  property reference targets, remaining `$GLOBALS` reference target semantics,
-  by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
-  native lowering boundaries, and add the next bounded behavior or explicit
-  diagnostic with PHP comparison coverage where applicable.
-- [ ] WordPress entry-flow lane: choose the next real entry blocker from a
-  stricter XML-RPC request-body trace, REST/front controller request state,
-  cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
-  probe documented as an external measurement unless a normalized fixture is
-  added.
 
 ## Milestone 1083: WordPress XML-RPC Request Body Placeholder
 

@@ -526,6 +526,26 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_existing_object_property_array_offset(
+        &mut self,
+        target: &str,
+        object_name: &str,
+        property: &str,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            keys: vec![key],
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
         self.bind_static_to_array_offset_aliases(target, vec![alias]);
     }
@@ -3925,6 +3945,17 @@ impl Interpreter {
                 {
                     let key = self.evaluate_array_key(index, scope)?;
                     scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
+                } else if let ReferenceSource::ObjectPropertyArrayIndex {
+                    object,
+                    property,
+                    index,
+                    ..
+                } = source
+                {
+                    let key = self.evaluate_array_key(index, scope)?;
+                    scope.bind_static_to_existing_object_property_array_offset(
+                        name, object, property, key, span,
+                    )?;
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
                     scope.bind_static_to_cell(name, cell);
@@ -4264,6 +4295,15 @@ impl Interpreter {
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
+            ReferenceSource::ObjectPropertyArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "object-property array-offset reference sources require a direct variable target in the current subset",
+                    ),
+                ));
+            }
             ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(
                     span,
@@ -4298,6 +4338,15 @@ impl Interpreter {
             ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
             ReferenceSource::ArrayIndex { name, index, .. } => {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
+            }
+            ReferenceSource::ObjectPropertyArrayIndex { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "object-property array-offset reference sources require a direct variable target in the current subset",
+                    ),
+                ));
             }
             ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(

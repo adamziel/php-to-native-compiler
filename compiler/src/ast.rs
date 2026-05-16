@@ -342,6 +342,12 @@ pub enum ReferenceSource {
         index: Expr,
         span: Span,
     },
+    ObjectPropertyArrayIndex {
+        object: String,
+        property: String,
+        index: Expr,
+        span: Span,
+    },
     Property {
         expr: Expr,
         span: Span,
