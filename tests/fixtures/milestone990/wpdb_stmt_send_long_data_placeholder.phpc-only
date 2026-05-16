@@ -1,0 +1,6 @@
+This fixture records deterministic placeholder long-data statement state
+through a WordPress-shaped `wpdb` object. It covers only active statement
+handle validation, in-range parameter indexes, and string chunk recording. It
+does not implement real blob binding, packet buffering, send timing, execution
+integration, host database state, PHP warning/error fidelity, or native
+database lowering.

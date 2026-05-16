@@ -525,6 +525,11 @@ including direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
 named params arrays, true by-reference aliasing, mutation SQL, broad SQL
 execution, host database state, PHP warning/error fidelity, mysqlnd behavior,
 or native lowering,
+plus deterministic `mysqli_stmt_send_long_data()` placeholder chunk state for
+active statements, including direct MySQLi and WordPress-shaped `wpdb` smokes,
+without claiming real blob binding, packet buffering, send timing, execution
+integration, host database state, PHP warning/error fidelity, mysqlnd behavior,
+or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

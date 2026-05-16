@@ -1024,6 +1024,12 @@
   by-reference aliasing, unbuffered statement fetching, bound-parameter
   execution, real mysqlnd cursor behavior, host database state, PHP
   warning/error fidelity, or native statement lowering.
+  `mysqli_stmt_send_long_data($statement, $param_num, $data)` validates active
+  statements, non-negative in-range parameter indexes, and string chunk data,
+  then records deterministic placeholder chunk state that is cleared by
+  prepare/reset. This is not real blob binding, packet buffering, send timing,
+  execution integration, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native statement lowering.
   `mysqli_stmt_field_count($statement)` reports deterministic field counts for
   the current placeholder statement result metadata shapes.
   `mysqli_stmt_result_metadata($statement)` returns placeholder
@@ -3382,9 +3388,9 @@
   deterministic `false` for active placeholder statements without
   multi-statement execution, pending statement result queues, cursor
   advancement, or host database state,
-  `mysqli_stmt_send_long_data(...)` is an explicit statement parameter
-  streaming boundary without long-parameter streaming, packet buffering, or
-  statement parameter state,
+  `mysqli_stmt_send_long_data(...)` records only deterministic placeholder
+  chunk state for active statements without real blob binding, packet
+  buffering, send timing, execution integration, or host database state,
   `mysqli_stmt_fetch_fields(...)`/`mysqli_stmt_fetch_field(...)` are not PHP
   mysqli functions and are not exposed by the current function table,
   `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success

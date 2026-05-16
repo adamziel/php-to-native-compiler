@@ -1433,6 +1433,10 @@ $stmt = mysqli_prepare(mysqli_init(), "SELECT option_value FROM wp_options WHERE
 echo "|";
 echo mysqli_stmt_param_count($stmt);
 echo "|";
+echo mysqli_stmt_send_long_data($stmt, 0, "blob") ? "sent-long" : "send-failed";
+echo "|";
+echo $send_long_data($stmt, 0, "-chunk") ? "sent-long-dynamic" : "send-failed";
+echo "|";
 echo mysqli_stmt_reset($stmt) ? "reset" : "failed";
 echo "|";
 echo mysqli_stmt_param_count($stmt);
@@ -1448,7 +1452,7 @@ echo mysqli_stmt_next_result($multi) ? "next" : "no-next";
 
     assert_eq!(
         execution.stdout,
-        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable|1|reset|0|no-more|no-next"
+        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable|1|sent-long|sent-long-dynamic|reset|0|no-more|no-next"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -1465,7 +1469,23 @@ mysqli_stmt_send_long_data($stmt, 0, "blob");
     assert_eq!(send_long_data_error.column, 1);
     assert_eq!(
         send_long_data_error.message,
-        "unsupported call mysqli_stmt_send_long_data(): mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_send_long_data(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let send_long_param_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_send_long_data($stmt, 1, "blob");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(send_long_param_error.phase, Phase::Runtime);
+    assert_eq!(send_long_param_error.line, 3);
+    assert_eq!(send_long_param_error.column, 1);
+    assert_eq!(
+        send_long_param_error.message,
+        "unsupported call mysqli_stmt_send_long_data(): param_num argument must reference one of the current 1 placeholder parameter(s), got 1"
     );
 
     let reset_error = run_source(

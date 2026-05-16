@@ -317,10 +317,12 @@ lowering.
 `true`. `mysqli_stmt_more_results($statement)` and
 `mysqli_stmt_next_result($statement)` return deterministic `false` for active
 placeholder statements because no pending statement result queues are modeled.
-`mysqli_stmt_send_long_data($statement, $param_num, $data)` remains an
-explicit runtime boundary because long-parameter streaming, packet buffering,
-statement parameter state, real multi-statement execution, host database
-state, PHP warning/error fidelity, and native lowering are not implemented.
+`mysqli_stmt_send_long_data($statement, $param_num, $data)` validates active
+statement handles, non-negative in-range parameter indexes, and string chunks,
+then records deterministic placeholder chunk state that is cleared by
+prepare/reset. Real blob binding, packet buffering, send timing, execution
+integration, real multi-statement execution, host database state, PHP
+warning/error fidelity, and native lowering are not implemented.
 
 `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` are not PHP
 mysqli functions and are not exposed by the current function table.

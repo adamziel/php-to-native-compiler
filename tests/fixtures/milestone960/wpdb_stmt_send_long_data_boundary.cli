@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone960/wpdb_stmt_send_long_data_boundary.php:12:16: unsupported call mysqli_stmt_send_long_data(): mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset
+runtime error at tests/fixtures/milestone960/wpdb_stmt_send_long_data_boundary.php:12:16: unsupported call mysqli_stmt_send_long_data(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 --- stderr end ---

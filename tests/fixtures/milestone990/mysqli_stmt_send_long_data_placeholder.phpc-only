@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_send_long_data()` state for active statements. System PHP requires
+a real initialized MySQLi connection and mysqlnd long-parameter streaming; phpc
+only validates active statement handles, in-range parameter indexes, and string
+chunks, then records deterministic chunk state that is cleared by statement
+reset. It does not implement real blob binding, packet buffering, send timing,
+execution integration, host database state, PHP warning/error fidelity, or
+native database lowering.

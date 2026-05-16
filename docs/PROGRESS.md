@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 990, deterministic `mysqli_stmt_send_long_data()`
+  placeholder chunk state for active statements. The runtime now validates
+  active `mysqli_stmt` handles, non-negative in-range parameter indexes, and
+  string chunk data, appends chunks to statement-local placeholder state, and
+  clears that state on prepare/reset. The new fixtures include direct MySQLi
+  and WordPress-shaped `wpdb` smokes; affected legacy `milestone959` and
+  `milestone960` boundary fixtures now record the narrower handle-validation
+  diagnostic. This is not real blob binding, packet buffering, send timing,
+  execution integration, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset_and_multi_results_are_visible_but_explicit_boundaries -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone990`.
+
 - Added Milestone 989, bounded positional params-array support for
   `mysqli_stmt_execute($stmt, array(...))` over exact known placeholder
   statement SQL shapes. Direct calls and

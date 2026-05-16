@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone990/wpdb_stmt_send_long_data_placeholder.php
+exit: 0
+stdout:
+sent
+--- stdout end ---
+stderr:
+--- stderr end ---

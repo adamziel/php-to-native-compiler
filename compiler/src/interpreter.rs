@@ -145,6 +145,7 @@ struct MysqliStatementState {
     buffered_result_cursor: usize,
     bound_result_variables: Vec<String>,
     attributes: HashMap<i64, Value>,
+    long_data: HashMap<usize, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4071,6 +4072,7 @@ impl Interpreter {
                 buffered_result_cursor: 0,
                 bound_result_variables: Vec::new(),
                 attributes: HashMap::new(),
+                long_data: HashMap::new(),
             },
         );
         Ok(Value::Object(PhpObject::from_class_with_id(
@@ -4666,6 +4668,7 @@ impl Interpreter {
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
+        state.long_data.clear();
         Ok(Value::Bool(true))
     }
 
@@ -4988,15 +4991,55 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_stmt_send_long_data(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_send_long_data(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_send_long_data", args, 3, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_send_long_data()",
-                "mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_send_long_data()", &args[0], span)?;
+        let Value::Int(param_num) = args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_send_long_data()",
+                    format!(
+                        "param_num argument must be int in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        if param_num < 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_send_long_data()",
+                    "param_num argument must be non-negative in the current subset",
+                ),
+            ));
+        }
+        let data = string_builtin_argument("mysqli_stmt_send_long_data()", "data", &args[2], span)?;
+        let state =
+            self.mysqli_statement_state_mut("mysqli_stmt_send_long_data()", stmt_id, span)?;
+        if param_num as usize >= state.param_count {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_send_long_data()",
+                    format!(
+                        "param_num argument must reference one of the current {} placeholder parameter(s), got {}",
+                        state.param_count, param_num
+                    ),
+                ),
+            ));
+        }
+        state
+            .long_data
+            .entry(param_num as usize)
+            .or_default()
+            .push_str(&data);
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_reset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5013,6 +5056,7 @@ impl Interpreter {
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
         state.attributes.clear();
+        state.long_data.clear();
         Ok(Value::Bool(true))
     }
 
