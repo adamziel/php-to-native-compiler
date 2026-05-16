@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1034/mysqli_wp_options_prepared_upsert_state.php
+exit: 0
+stdout:
+updated|2|2|2|https://upserted.test|inserted|1|3|https://home.test
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -330,6 +330,13 @@ prepared statement records string option-name, option-value, and autoload
 parameters on the same handle, updates statement and connection affected-row
 metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
 exposes later exact option-value reads through the same state island. The exact
+`INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
+ON DUPLICATE KEY UPDATE ...` prepared statement records string parameters on
+the same handle for the current exact WordPress-style option upsert shapes,
+reports affected rows as `2` when updating an existing recorded option and
+`1` when inserting a missing option, advances deterministic
+`mysqli_insert_id($handle)`, and exposes later exact option-value reads
+through the same state island. The exact
 `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
 prepared statement records string parameters on the same handle, reports
 affected rows as `2` when replacing an existing recorded option and `1` when
@@ -344,9 +351,9 @@ existing recorded option for a string option-name parameter on the same
 handle, updates statement and connection affected-row metadata, and treats
 missing option names as successful zero-row deletes. Prepared mutation SQL
 without a prior state island remains unsupported. This does not add broad
-prepared SQL execution, `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index
-enforcement, non-string parameter coercion, result binding fidelity beyond
-exact metadata, host database execution, PDO, or native lowering.
+prepared SQL execution, real unique-index enforcement, no-op update
+affected-row fidelity, non-string parameter coercion, result binding fidelity
+beyond exact metadata, host database execution, PDO, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

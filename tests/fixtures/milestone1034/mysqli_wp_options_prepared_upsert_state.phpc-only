@@ -1,0 +1,1 @@
+system PHP requires a real MySQL server and database state for mysqli prepared wp_options insert-on-duplicate/readback comparison.

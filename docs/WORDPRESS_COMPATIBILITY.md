@@ -1183,8 +1183,12 @@ historical blockers and remaining full-support gaps include:
   for the same string parameter shape, with affected rows `2` for existing
   recorded options, affected rows `1` for missing options, and deterministic
   insert-id metadata.
+  Milestone 1034 extends the state island to exact prepared option
+  insert-on-duplicate shapes for the same string parameter shape, with
+  affected rows `2` for existing recorded options, affected rows `1` for
+  missing options, and deterministic insert-id metadata.
   This is still not broad SQL parsing, ordering/collation fidelity,
-  `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index enforcement,
+  real unique-index enforcement, no-op update affected-row fidelity,
   transactions, host database execution, PDO, or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,

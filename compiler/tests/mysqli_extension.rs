@@ -1173,6 +1173,69 @@ mysqli_stmt_execute($stmt, array("blog_public", 1, "yes"));
 }
 
 #[test]
+fn mysqli_statement_upserts_current_wordpress_option_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE option_name = VALUES(option_name), option_value = VALUES(option_value), autoload = VALUES(autoload)");
+$name = "siteurl";
+$value = "https://upserted.test";
+$autoload = "no";
+mysqli_stmt_bind_param($stmt, "sss", $name, $value, $autoload);
+echo mysqli_stmt_execute($stmt) ? "updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+$name = "home";
+$value = "https://home.test";
+$autoload = "yes";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "inserted" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+$home_row = mysqli_fetch_assoc($home);
+echo $home_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "updated|2|2|2|https://upserted.test|inserted|1|3|https://home.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = VALUES(autoload)");
+mysqli_stmt_execute($stmt, array("blog_public", 1, "yes"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(type_error.phase, Phase::Runtime);
+    assert_eq!(type_error.line, 3);
+    assert_eq!(type_error.column, 1);
+    assert_eq!(
+        type_error.message,
+        "unsupported call mysqli_stmt_execute(): prepared wp_options insert-on-duplicate requires string option name, option value, and autoload parameters in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_updates_current_wordpress_option_state() {
     let execution = run_source(
         r#"<?php

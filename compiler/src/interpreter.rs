@@ -5389,6 +5389,44 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_insert_on_duplicate_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
+                    bound_parameters.as_slice()
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            "prepared wp_options insert-on-duplicate requires string option name, option value, and autoload parameters in the current subset",
+                        ),
+                    ));
+                };
+                let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                    option_name.clone(),
+                    WordPressOptionState {
+                        value: option_value.clone(),
+                        autoload: autoload.clone(),
+                    },
+                );
+                let affected_rows = if previous.is_some() { 2 } else { 1 };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                let next_insert_id = self
+                    .mysqli_insert_ids
+                    .get(&handle_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+                let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                state.executed_result = None;
+                state.affected_rows = affected_rows;
+                state.buffered_result = None;
+                state.buffered_result_cursor = 0;
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if is_wordpress_option_prepared_replace_query(&query) {
             if let Some(handle_id) = connection_handle_id {
                 let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
@@ -16233,6 +16271,17 @@ fn is_wordpress_option_prepared_insert_query(query: &str) -> bool {
     query == "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)"
         || query
             == "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (?, ?, ?)"
+}
+
+fn is_wordpress_option_prepared_insert_on_duplicate_query(query: &str) -> bool {
+    let query = query.trim();
+    matches!(
+        query,
+        "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = VALUES(autoload)"
+            | "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE option_name = VALUES(option_name), option_value = VALUES(option_value), autoload = VALUES(autoload)"
+            | "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `option_value` = VALUES(`option_value`), `autoload` = VALUES(`autoload`)"
+            | "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `option_name` = VALUES(`option_name`), `option_value` = VALUES(`option_value`), `autoload` = VALUES(`autoload`)"
+    )
 }
 
 fn is_wordpress_option_prepared_replace_query(query: &str) -> bool {

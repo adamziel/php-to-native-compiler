@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1034, bounded prepared-statement `wp_options` insert-on-
+  duplicate state over the current per-placeholder-connection MySQLi state
+  island. `mysqli_prepare($handle, "INSERT INTO wp_options (option_name,
+  option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ...")`,
+  direct-variable `mysqli_stmt_bind_param(..., "sss", $name, $value,
+  $autoload)`, and `mysqli_stmt_execute()` now record string option-name,
+  option-value, and autoload parameters on the same placeholder handle,
+  update existing recorded options with `mysqli_stmt_affected_rows($stmt)` and
+  `mysqli_affected_rows($handle)` set to `2`, insert missing options with
+  affected rows set to `1`, advance deterministic `mysqli_insert_id($handle)`,
+  and expose the resulting values through the existing exact option-value
+  readback path. The exact current SQL shapes include the reached WordPress
+  style with `option_name = VALUES(option_name), option_value =
+  VALUES(option_value), autoload = VALUES(autoload)` and the narrower
+  value/autoload update variant. This is not broad prepared SQL execution,
+  real unique-index enforcement, no-op update affected-row fidelity,
+  non-string parameter coercion, schema/index behavior, transactions, host
+  database execution, warning/error fidelity, PDO, or native lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_upserts_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1034`.
+
 - Added Milestone 1033, bounded prepared-statement `wp_options` replace state
   over the current per-placeholder-connection MySQLi state island.
   `mysqli_prepare($handle, "REPLACE INTO wp_options (option_name,
