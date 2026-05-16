@@ -5518,7 +5518,8 @@ impl Interpreter {
             ));
         };
 
-        if is_wordpress_charset_setup_query(query) {
+        if is_mysqli_no_result_placeholder_query(query) {
+            self.set_mysqli_pending_result_queue(handle_id, vec![MysqliMultiResultSlot::NoResult]);
             return Ok(Value::Bool(true));
         }
 
@@ -5598,7 +5599,8 @@ impl Interpreter {
             ));
         }
 
-        if is_wordpress_charset_setup_query(query) {
+        if is_mysqli_no_result_placeholder_query(query) {
+            self.set_mysqli_pending_result_queue(handle_id, vec![MysqliMultiResultSlot::NoResult]);
             return Ok(Value::Bool(true));
         }
 
@@ -14668,7 +14670,7 @@ fn mysqli_pending_results_for_multi_statement_query(
 }
 
 fn mysqli_multi_result_slot_for_query(query: &str) -> Option<MysqliMultiResultSlot> {
-    if is_wordpress_charset_setup_query(query) {
+    if is_mysqli_no_result_placeholder_query(query) {
         return Some(MysqliMultiResultSlot::NoResult);
     }
 
@@ -14869,6 +14871,10 @@ fn is_wordpress_empty_options_query(query: &str) -> bool {
 
 fn is_wordpress_charset_setup_query(query: &str) -> bool {
     query == "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'"
+}
+
+fn is_mysqli_no_result_placeholder_query(query: &str) -> bool {
+    is_wordpress_charset_setup_query(query) || query == "SELECT @@SESSION.sql_mode"
 }
 
 fn is_wordpress_empty_result_query(query: &str) -> bool {

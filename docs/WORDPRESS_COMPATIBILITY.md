@@ -1820,7 +1820,13 @@ historical blockers and remaining full-support gaps include:
   including a WordPress-shaped `wpdb` smoke, without claiming true SQL
   execution, broad multi-statement parsing, arbitrary no-result statements,
   mutation SQL, host database state, PHP warning/error fidelity, mysqlnd
-  behavior, or native database lowering.
+  behavior, or native database lowering. Milestone 995 adds deterministic
+  SQL-mode no-result slots for `mysqli_real_query()` and `mysqli_multi_query()`
+  around the exact WordPress `SELECT @@SESSION.sql_mode` probe, including a
+  WordPress-shaped `wpdb` smoke, without claiming arbitrary no-result SQL,
+  true SQL execution, broad multi-statement parsing, mutation SQL, host
+  database state, PHP warning/error fidelity, mysqlnd behavior, or native
+  database lowering.
   Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

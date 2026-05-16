@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 995, deterministic SQL-mode no-result slots for
+  `mysqli_real_query()` and `mysqli_multi_query()`. The exact WordPress
+  `SELECT @@SESSION.sql_mode` probe can now clear pending state as a no-result
+  `mysqli_real_query()` placeholder, run as a single no-result
+  `mysqli_multi_query()` placeholder, or participate in bounded
+  semicolon-separated `mysqli_multi_query()` queues before exact known result
+  placeholders. The new fixtures include direct MySQLi and WordPress-shaped
+  `wpdb` smokes. This is not arbitrary no-result SQL, true SQL execution,
+  broad multi-statement parsing, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_tracks_current_sql_mode_no_result_queue -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_multi_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone995`.
+
 - Added Milestone 994, bounded mixed no-result/result queue slots for
   deterministic `mysqli_multi_query()` input. Known no-result charset setup
   statements can now appear before or after exact known result placeholders in

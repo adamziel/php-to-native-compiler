@@ -9432,9 +9432,23 @@ handled.
   broad multi-statement parsing, arbitrary no-result statements, mutation SQL,
   host database state, PHP warning/error fidelity, mysqlnd behavior, or native
   database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as arbitrary
   no-result statement handling, real reference aliasing around bound
+  parameters/results, named params-array behavior, broader escaping charset
+  fidelity, local-infile option effects, mutation SQL, or the next real
+  database integration gap, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
+  Milestone 995 adds deterministic SQL-mode no-result slots for
+  `mysqli_real_query()` and `mysqli_multi_query()` around the exact WordPress
+  `SELECT @@SESSION.sql_mode` probe, including a WordPress-shaped `wpdb`
+  smoke. This is not arbitrary no-result SQL, true SQL execution, broad
+  multi-statement parsing, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as additional
+  exact no-result statements, real reference aliasing around bound
   parameters/results, named params-array behavior, broader escaping charset
   fidelity, local-infile option effects, mutation SQL, or the next real
   database integration gap, and add the next bounded behavior or explicit
@@ -9444,8 +9458,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f5c43faa runtime: add mysqli multi query result queues`, covering
-  Milestone 993 before the current Milestone 994 candidate.
+  `41aae8c7 runtime: add mysqli mixed multi query queues`, covering
+  Milestone 994 before the current Milestone 995 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

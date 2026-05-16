@@ -3428,6 +3428,54 @@ echo mysqli_more_results($handle2) ? "more" : "done";
 }
 
 #[test]
+fn mysqli_multi_query_tracks_current_sql_mode_no_result_queue() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_real_query($handle, "SELECT @@SESSION.sql_mode") ? "real-ok" : "real-failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-result" : "result";
+
+$handle2 = mysqli_init();
+mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_multi_query($handle2, "SELECT @@SESSION.sql_mode") ? "multi-ok" : "multi-failed";
+echo "|";
+echo mysqli_field_count($handle2);
+echo "|";
+echo mysqli_store_result($handle2) === false ? "no-result" : "result";
+echo "|";
+echo mysqli_more_results($handle2) ? "more" : "done";
+
+$handle3 = mysqli_init();
+mysqli_real_connect($handle3, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_multi_query($handle3, "SELECT @@SESSION.sql_mode; SELECT ID, post_title FROM wp_posts WHERE ID = 1") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle3);
+echo "|";
+echo mysqli_store_result($handle3) === false ? "no-result" : "result";
+echo "|";
+echo mysqli_next_result($handle3) ? "next" : "blocked";
+$result = mysqli_store_result($handle3);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "real-ok|0|no-result|multi-ok|0|no-result|done|queued|0|no-result|next|1:Hello world placeholder"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_reap_async_query_returns_current_clean_placeholder_state() {
     let execution = run_source(
         r#"<?php
