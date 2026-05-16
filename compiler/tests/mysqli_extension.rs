@@ -2791,6 +2791,52 @@ echo $release($handle, "wp2") ? "dynamic-release" : "failed";
 }
 
 #[test]
+fn mysqli_savepoints_restore_current_wordpress_option_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_begin_transaction($handle);
+mysqli_savepoint($handle, "before_home");
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://changed.test' WHERE option_name = 'siteurl'");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes')");
+echo mysqli_rollback($handle, 0, "before_home") ? "savepoint" : "failed";
+echo "|";
+$site = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$site_row = mysqli_fetch_assoc($site);
+echo $site_row["option_value"];
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+echo mysqli_num_rows($home);
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://after-savepoint.test' WHERE option_name = 'siteurl'");
+echo "|";
+echo mysqli_commit($handle) ? "commit" : "failed";
+echo "|";
+$committed = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$committed_row = mysqli_fetch_assoc($committed);
+echo $committed_row["option_value"];
+mysqli_begin_transaction($handle);
+mysqli_savepoint($handle, "released");
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://released.test' WHERE option_name = 'siteurl'");
+mysqli_release_savepoint($handle, "released");
+mysqli_rollback($handle, 0, "released");
+echo "|";
+$released = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$released_row = mysqli_fetch_assoc($released);
+echo $released_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "savepoint|https://example.test|0|commit|https://after-savepoint.test|https://released.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php

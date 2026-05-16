@@ -1195,10 +1195,14 @@ historical blockers and remaining full-support gaps include:
   state island: `mysqli_begin_transaction()` and `mysqli_autocommit(false)`
   capture per-handle option state, `mysqli_rollback()` restores it, and
   `mysqli_commit()`/`mysqli_autocommit(true)` keep later changes.
+  Milestone 1037 adds bounded savepoint snapshots for the same option state
+  island: `mysqli_savepoint()` records a named option-state snapshot,
+  `mysqli_rollback($handle, 0, $name)` restores it, and
+  `mysqli_release_savepoint()` removes it.
   This is still not broad SQL parsing, ordering/collation fidelity,
   real unique-index enforcement, no-op update affected-row fidelity,
-  real transaction isolation/locking/savepoints, host database execution, PDO,
-  or native database lowering. The real bootstrap-shim
+  real transaction isolation/locking/savepoint semantics, host database
+  execution, PDO, or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

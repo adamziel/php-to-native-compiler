@@ -9981,18 +9981,30 @@ handled.
   changes. This is not real host transaction state, savepoints,
   isolation/locking, auto-increment rollback fidelity, broad SQL execution,
   PDO, or native lowering.
-- [ ] Runtime/database lane: inspect the next real database-state gap from the
+- [x] Runtime/database lane: inspect the next real database-state gap from the
   audited PHP/WordPress surface, such as broader escaping fidelity,
   host-backed query execution, PDO, real schema/index behavior, savepoints, or
   the next `wpdb` state consumer, and add the next bounded behavior or
   explicit runtime boundary with tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
+  Milestone 1037 covers bounded savepoint snapshots for the current exact
+  per-handle `wp_options` state island: `mysqli_savepoint()` records a named
+  option-state snapshot, `mysqli_rollback($handle, 0, $name)` restores it, and
+  `mysqli_release_savepoint()` removes it. This is not real host savepoint
+  state, savepoint nesting/release diagnostics, isolation/locking, broad SQL
+  execution, PDO, or native lowering.
+- [ ] Runtime/database lane: inspect the next real database-state gap from the
+  audited PHP/WordPress surface, such as broader escaping fidelity,
+  host-backed query execution, PDO, real schema/index behavior, nested
+  transactions, or the next `wpdb` state consumer, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b65adb57 docs: record wp options direct upsert gate`, covering
-  Milestone 1035 before the current Milestone 1036 candidate.
+  `6613f0c9 docs: record wp options transaction gate`, covering
+  Milestone 1036 before the current Milestone 1037 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

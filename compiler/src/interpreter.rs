@@ -133,6 +133,7 @@ struct WordPressOptionState {
 #[derive(Clone)]
 struct MysqliTransactionState {
     wp_options_snapshot: Option<HashMap<String, WordPressOptionState>>,
+    wp_option_savepoints: HashMap<String, Option<HashMap<String, WordPressOptionState>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -6129,8 +6130,28 @@ impl Interpreter {
             handle_id,
             MysqliTransactionState {
                 wp_options_snapshot,
+                wp_option_savepoints: HashMap::new(),
             },
         );
+    }
+
+    fn current_mysqli_wp_options_snapshot(
+        &self,
+        handle_id: i64,
+    ) -> Option<HashMap<String, WordPressOptionState>> {
+        self.mysqli_wp_options.get(&handle_id).cloned()
+    }
+
+    fn restore_mysqli_wp_options_snapshot(
+        &mut self,
+        handle_id: i64,
+        snapshot: Option<HashMap<String, WordPressOptionState>>,
+    ) {
+        if let Some(options) = snapshot {
+            self.mysqli_wp_options.insert(handle_id, options);
+        } else {
+            self.mysqli_wp_options.remove(&handle_id);
+        }
     }
 
     fn call_mysqli_commit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -6144,21 +6165,26 @@ impl Interpreter {
     fn call_mysqli_rollback(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.expect_mysqli_transaction_completion_args("mysqli_rollback", args, span)?;
         let handle_id = expect_mysqli_handle_id("mysqli_rollback()", &args[0], span)?;
-        if let Some(transaction) = self.mysqli_transactions.remove(&handle_id) {
-            if let Some(options) = transaction.wp_options_snapshot {
-                self.mysqli_wp_options.insert(handle_id, options);
-            } else {
-                self.mysqli_wp_options.remove(&handle_id);
+        if let Some(Value::String(name)) = args.get(2) {
+            if let Some(snapshot) = self
+                .mysqli_transactions
+                .get(&handle_id)
+                .and_then(|transaction| transaction.wp_option_savepoints.get(name))
+                .cloned()
+            {
+                self.restore_mysqli_wp_options_snapshot(handle_id, snapshot);
             }
+        } else if let Some(transaction) = self.mysqli_transactions.remove(&handle_id) {
+            self.restore_mysqli_wp_options_snapshot(handle_id, transaction.wp_options_snapshot);
         }
         self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_savepoint(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_savepoint(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_savepoint", args, 2, span)?;
-        expect_mysqli_handle("mysqli_savepoint()", &args[0], span)?;
-        let Value::String(_) = &args[1] else {
+        let handle_id = expect_mysqli_handle_id("mysqli_savepoint()", &args[0], span)?;
+        let Value::String(name) = &args[1] else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -6170,13 +6196,25 @@ impl Interpreter {
                 ),
             ));
         };
+        self.begin_mysqli_transaction_snapshot(handle_id);
+        let snapshot = self.current_mysqli_wp_options_snapshot(handle_id);
+        if let Some(transaction) = self.mysqli_transactions.get_mut(&handle_id) {
+            transaction
+                .wp_option_savepoints
+                .insert(name.clone(), snapshot);
+        }
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_release_savepoint(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_release_savepoint(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         expect_arity("mysqli_release_savepoint", args, 2, span)?;
-        expect_mysqli_handle("mysqli_release_savepoint()", &args[0], span)?;
-        let Value::String(_) = &args[1] else {
+        let handle_id = expect_mysqli_handle_id("mysqli_release_savepoint()", &args[0], span)?;
+        let Value::String(name) = &args[1] else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -6188,6 +6226,10 @@ impl Interpreter {
                 ),
             ));
         };
+        if let Some(transaction) = self.mysqli_transactions.get_mut(&handle_id) {
+            transaction.wp_option_savepoints.remove(name);
+        }
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 

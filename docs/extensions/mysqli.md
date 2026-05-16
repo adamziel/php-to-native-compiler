@@ -319,8 +319,8 @@ autoload mutation beyond exact inserts, real unique-index enforcement, no-op
 update affected-row fidelity, DELETE breadth, REPLACE support, real
 transaction isolation/locking/savepoint behavior, host database execution, PDO,
 broad prepared-statement mutation state, warning/error fidelity, or native
-lowering. The current transaction helpers can snapshot and restore this exact
-option state only.
+lowering. The current transaction and savepoint helpers can snapshot and
+restore this exact option state only.
 
 Prepared statement execution over the same state island supports the exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
@@ -478,10 +478,13 @@ emit warnings/errors, or touch host database state.
 
 `mysqli_savepoint($handle, $name)` and
 `mysqli_release_savepoint($handle, $name)` accept the placeholder object and a
-string savepoint name, returning deterministic `true`. They do not create,
-release, roll back to, validate, or persist real savepoint state, interact with
-host database transactions, emit warnings/errors, or affect later placeholder
-transaction calls.
+string savepoint name, returning deterministic `true`. For the current exact
+`wp_options` state island, savepoint records a named per-handle option-state
+snapshot, `mysqli_rollback($handle, 0, $name)` restores that named snapshot,
+and release removes the named snapshot so later named rollbacks leave current
+option state unchanged. They do not create, release, validate, or persist real
+host savepoints, implement savepoint nesting diagnostics, roll back host
+database state, emit warnings/errors, or touch host transaction state.
 
 `mysqli_errno($handle)`, `mysqli_error($handle)`,
 `mysqli_sqlstate($handle)`, `mysqli_warning_count($handle)`, and

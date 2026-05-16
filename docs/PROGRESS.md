@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1037, bounded MySQLi savepoint snapshots for the current
+  per-placeholder-connection `wp_options` state island.
+  `mysqli_savepoint($handle, $name)` now records a named option-state snapshot
+  on the placeholder handle, `mysqli_rollback($handle, 0, $name)` restores
+  that named snapshot while keeping the outer transaction open, and
+  `mysqli_release_savepoint($handle, $name)` removes the named snapshot so
+  later named rollback calls leave the current option state unchanged. The
+  helpers still return deterministic `true` for the current placeholder
+  argument shapes and do not touch a host database. This is not real server
+  savepoint behavior, savepoint nesting/release diagnostics, isolation/locking,
+  broad SQL execution, host database execution, warning/error fidelity, PDO, or
+  native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_savepoints_restore_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1037`.
+
 - Added Milestone 1036, bounded MySQLi transaction snapshots for the current
   per-placeholder-connection `wp_options` state island.
   `mysqli_begin_transaction($handle)` and `mysqli_autocommit($handle, false)`

@@ -1172,9 +1172,14 @@
   savepoints, emit warnings/errors, or touch host database state.
   `mysqli_savepoint($handle, $name)` and
   `mysqli_release_savepoint($handle, $name)` accept the placeholder object and
-  a string savepoint name, returning deterministic `true` without creating,
-  releasing, validating, or persisting real savepoints, rolling back to
-  savepoints, warning/error behavior, or host transaction state.
+  a string savepoint name, returning deterministic `true`. For the current
+  exact `wp_options` state island, savepoint records a named per-handle
+  option-state snapshot, `mysqli_rollback($handle, 0, $name)` restores that
+  named snapshot, and release removes the named snapshot so later named
+  rollbacks leave current option state unchanged. They do not create, release,
+  validate, or persist real host savepoints, implement savepoint nesting
+  diagnostics, roll back host database state, emit warnings/errors, or touch
+  host transaction state.
   `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder handle and
   returns deterministic `true` for the reached WordPress charset setup path
   without negotiating a real connection charset or collation state.
@@ -1268,7 +1273,8 @@
   breadth, REPLACE, real transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
-  transaction helpers can snapshot and restore this exact option state only.
+  transaction and savepoint helpers can snapshot and restore this exact option
+  state only.
   Prepared statement execution over the same state island supports the exact
   `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
   option-name parameters on the same placeholder handle through

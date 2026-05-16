@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1037/mysqli_wp_options_savepoint_state.php
+exit: 0
+stdout:
+savepoint|https://example.test|0|commit|https://after-savepoint.test|https://released.test
+--- stdout end ---
+stderr:
+--- stderr end ---
