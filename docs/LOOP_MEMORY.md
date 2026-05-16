@@ -29,6 +29,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `d85deeab runtime: add mysqli stmt result metadata placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 980, deterministic unbound
+  `mysqli_stmt_execute()` plus `mysqli_stmt_get_result()` behavior for active
+  placeholder statements over the current seed-post WordPress SELECT shape,
+  with direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone980/*`,
+  affected legacy statement execution/result fixture snapshots in
+  `tests/fixtures/milestone945`, `milestone946`, `milestone947`, and
+  `milestone948`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_and_execute -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone980`;
+  and `cargo run -p phpc -- test --compare-php` for `milestone945`,
+  `milestone946`, `milestone947`, and `milestone948`. All passed; the new
+  fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: unbound placeholder prepared statements can now
+  execute the current seed-post SELECT shape and materialize deterministic
+  rows through `mysqli_stmt_get_result()` for a WordPress-shaped `wpdb` method.
+- Remaining semantic gaps: bound-parameter execution, array parameter
+  execution, mutation execution, unknown SELECT metadata, real mysqlnd
+  transfer, host database state, PHP warning/error fidelity, and native
+  database lowering remain missing.
+- Next concrete task: run formatting, focused MySQLi statement tests, and the
+  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  statement result buffering/fetching, active statement binding boundaries,
+  broader escaping charset fidelity, local-infile option effects, or
+  multi-result pending queues.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b63c63e9 runtime: add mysqli stmt clean diagnostics`, pushed to
   `origin/master`.
 - Task attempted: Milestone 979, deterministic placeholder
@@ -56,11 +92,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   result rows, mysqlnd result transfer, broad SQL metadata, host database
   metadata, PHP warning/error fidelity, and native database lowering remain
   missing.
-- Next concrete task: run formatting, focused MySQLi metadata tests, and the
-  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
-  active-statement binding/execution boundaries, result buffering/fetching,
-  broader escaping charset fidelity, local-infile option effects, or
-  multi-result pending queues.
+- Checkpoint result: committed and pushed
+  `d85deeab runtime: add mysqli stmt result metadata placeholders`.
+- Next concrete task: inspect active-statement execution/result
+  materialization, result buffering/fetching, broader escaping charset
+  fidelity, local-infile option effects, or multi-result pending queues.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

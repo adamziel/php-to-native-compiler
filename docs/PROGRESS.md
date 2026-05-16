@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 980, deterministic unbound `mysqli_stmt_execute()` plus
+  `mysqli_stmt_get_result()` behavior for active placeholder statements over
+  the current seed-post WordPress SELECT shape. Executing that prepared
+  placeholder records deterministic result rows, and `mysqli_stmt_get_result()`
+  materializes a placeholder `mysqli_result` that existing fetch helpers can
+  consume. The new fixtures include direct MySQLi and WordPress-shaped `wpdb`
+  smokes. Statements with bound parameters, array parameter execution,
+  mutation execution, unknown SELECT metadata, real mysqlnd transfer, host
+  database state, PHP warning/error fidelity, and native database lowering
+  remain unsupported. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_and_execute -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_and_close -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone980`, and
+  `cargo run -p phpc -- test --compare-php` for the affected `milestone945`,
+  `milestone946`, `milestone947`, and `milestone948` fixture groups.
+
 - Added Milestone 979, deterministic `mysqli_stmt_result_metadata()`,
   `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()` behavior for
   active placeholder statements prepared with the current seed-post WordPress

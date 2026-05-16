@@ -466,6 +466,12 @@ and WordPress-shaped `wpdb` smokes, without claiming prepared binding,
 statement execution, statement result rows, mysqlnd result transfer, broad SQL
 metadata, host database metadata, PHP warning/error fidelity, or native
 lowering,
+plus deterministic unbound `mysqli_stmt_execute()` and
+`mysqli_stmt_get_result()` behavior for the current seed-post WordPress SELECT
+shape through direct MySQLi and WordPress-shaped `wpdb` smokes, without
+claiming bound-parameter execution, array parameter execution, mutation
+execution, unknown SELECT metadata, real mysqlnd transfer, host database state,
+PHP warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

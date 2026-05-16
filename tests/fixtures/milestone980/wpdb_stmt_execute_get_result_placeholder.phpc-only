@@ -1,0 +1,6 @@
+This fixture exercises deterministic placeholder prepared-statement execution
+and mysqlnd-style result materialization through a WordPress-shaped `wpdb`
+method. It covers only the current unbound seed-post SELECT shape and does not
+implement binding, parameter execution, mutation execution, real mysqlnd
+transfer, host database state, PHP warning/error fidelity, or native database
+lowering.

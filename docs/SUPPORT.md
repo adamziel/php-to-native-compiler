@@ -995,16 +995,17 @@
   statement. This does not track failed prepares, executions,
   warning-chain objects, error-list entries, affected rows, insert IDs, host
   database state, PHP warning/error fidelity, or native statement lowering.
-  `mysqli_stmt_bind_param($statement, $types, &...$vars)` and
-  `mysqli_stmt_execute($statement, $params = null)` are visible through
-  callable metadata but reached calls report stable unsupported diagnostics
-  because statement objects, by-reference parameter binding, type strings,
-  array-parameter execution, result state, and host database execution are not
-  implemented.
-  `mysqli_stmt_get_result($statement)` is visible through callable metadata
-  but reached calls report stable unsupported diagnostics because mysqlnd
-  result transfer, result metadata, execution state, and host database rows
-  are not implemented.
+  `mysqli_stmt_execute($statement, $params = null)` executes only the current
+  unbound placeholder statement shapes. For the seed-post WordPress SELECT, it
+  records deterministic placeholder result rows, and
+  `mysqli_stmt_get_result($statement)` returns a placeholder `mysqli_result`
+  containing those rows. Statements with bound parameters, array parameter
+  execution, mutations, unknown SELECT metadata, real mysqlnd result transfer,
+  host database state, PHP warning/error fidelity, and native statement
+  lowering remain unsupported.
+  `mysqli_stmt_bind_param($statement, $types, &...$vars)` remains an explicit
+  runtime boundary because by-reference parameter binding and type strings are
+  not implemented.
   `mysqli_stmt_field_count($statement)` reports deterministic field counts for
   the current placeholder statement result metadata shapes.
   `mysqli_stmt_result_metadata($statement)` returns placeholder
@@ -3315,14 +3316,15 @@
   deterministic clean placeholder metadata without failed-prepare tracking,
   execution diagnostics, warning-chain objects, error-list entries,
   affected-row metadata, insert-id metadata, or host database execution,
-  `mysqli_stmt_bind_param(...)`/`mysqli_stmt_bind_result(...)`/
-  `mysqli_stmt_execute(...)` are explicit statement binding/execution
-  boundaries without statement objects, by-reference parameter/result binding,
-  type strings, result buffer mutation, array-parameter execution, result
-  state, fetch integration, or host database execution,
-  `mysqli_stmt_get_result(...)` is an explicit statement result boundary
-  without mysqlnd result transfer, result metadata, execution state, or host
-  database rows,
+  `mysqli_stmt_execute(...)`/`mysqli_stmt_get_result(...)` expose only
+  deterministic unbound placeholder execution and result materialization for
+  current known statement shapes without bound parameters, array parameter
+  execution, mutations, real mysqlnd transfer, host database state, or broad
+  SQL execution,
+  `mysqli_stmt_bind_param(...)`/`mysqli_stmt_bind_result(...)` are explicit
+  statement binding boundaries without by-reference parameter/result binding,
+  type strings, result buffer mutation, fetch integration, or host database
+  execution,
   `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
   `mysqli_stmt_free_result(...)` expose only deterministic placeholder field
   metadata and cleanup for current known statement SELECT shapes without

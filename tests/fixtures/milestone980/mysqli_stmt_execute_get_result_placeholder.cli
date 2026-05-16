@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone980/mysqli_stmt_execute_get_result_placeholder.php
+exit: 0
+stdout:
+executed|mysqli_result|1|Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

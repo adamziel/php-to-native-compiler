@@ -9228,19 +9228,33 @@ handled.
   prepared binding, statement execution, statement result rows, mysqlnd result
   transfer, broad SQL metadata, host database metadata, PHP warning/error
   fidelity, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as active-statement
   binding/execution boundaries, statement result buffering/fetching,
   broader escaping charset fidelity, local-infile option effects, or
   multi-result pending queues, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
+  Milestone 980 adds deterministic unbound `mysqli_stmt_execute()` plus
+  `mysqli_stmt_get_result()` behavior for active placeholder statements over
+  the current seed-post WordPress SELECT shape, including a WordPress-shaped
+  `wpdb` smoke. This is not bound-parameter execution, array parameter
+  execution, mutation execution, unknown SELECT metadata, real mysqlnd
+  transfer, host database state, PHP warning/error fidelity, or native
+  database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as statement result
+  buffering/fetching, active-statement binding boundaries, broader escaping
+  charset fidelity, local-infile option effects, or multi-result pending
+  queues, and add the next bounded behavior or explicit runtime boundary with
+  tests, CLI fixtures, docs, and native rejection coverage where lowering
+  remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b63c63e9 runtime: add mysqli stmt clean diagnostics`, covering
-  Milestone 978 before the current Milestone 979 candidate.
+  `d85deeab runtime: add mysqli stmt result metadata placeholders`, covering
+  Milestone 979 before the current Milestone 980 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

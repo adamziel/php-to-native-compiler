@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone948/wpdb_stmt_get_result_boundary.php:12:16: unsupported call mysqli_stmt_get_result(): mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset
+runtime error at tests/fixtures/milestone948/wpdb_stmt_get_result_boundary.php:12:16: unsupported call mysqli_stmt_get_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 --- stderr end ---

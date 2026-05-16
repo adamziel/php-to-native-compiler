@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_execute()` plus `mysqli_stmt_get_result()` behavior for an
+unbound prepared statement using the current seed-post WordPress SELECT shape.
+System PHP requires a real initialized MySQLi connection and mysqlnd result
+transfer; phpc only maps the known placeholder query shape to deterministic
+rows and does not implement binding, parameter execution, mutation execution,
+host database state, PHP warning/error fidelity, or native database lowering.

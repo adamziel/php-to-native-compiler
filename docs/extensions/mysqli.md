@@ -232,19 +232,20 @@ metadata placeholders only; they do not track failed prepares, executions,
 warning-chain objects, error-list entries, affected rows, insert IDs, host
 database state, PHP warning/error fidelity, or native lowering.
 
-`mysqli_stmt_bind_param($statement, $types, &...$vars)`,
-`mysqli_stmt_bind_result($statement, &...$vars)`, and
-`mysqli_stmt_execute($statement, $params = null)` are also visible through
-callable metadata but are explicit runtime boundaries. Reached calls report
-stable unsupported diagnostics because statement objects, by-reference
-parameter/result binding, type strings, result buffer mutation,
-array-parameter execution, result state, fetch integration, and host database
-execution are not implemented.
+`mysqli_stmt_execute($statement, $params = null)` executes only the current
+unbound placeholder statement shapes. For the seed-post WordPress SELECT, it
+records deterministic placeholder result rows; `mysqli_stmt_get_result()` then
+returns a placeholder `mysqli_result` containing those rows. Statements with
+bound parameters, array parameter execution, mutations, unknown SELECT
+metadata, real mysqlnd result transfer, host database state, PHP warning/error
+fidelity, and native lowering remain unsupported.
 
-`mysqli_stmt_get_result($statement)` is visible through callable metadata but
-is an explicit runtime boundary. Reached calls report stable unsupported
-diagnostics because mysqlnd result transfer, result metadata, execution state,
-and host database rows are not implemented.
+`mysqli_stmt_bind_param($statement, $types, &...$vars)` and
+`mysqli_stmt_bind_result($statement, &...$vars)` are visible through callable
+metadata but are explicit runtime boundaries. Reached calls report stable
+unsupported diagnostics because by-reference parameter/result binding, type
+strings, result buffer mutation, fetch integration, and host database execution
+are not implemented.
 
 `mysqli_stmt_field_count($statement)` reports deterministic field counts for
 the current placeholder statement result metadata shapes, including the

@@ -604,13 +604,16 @@ echo "|";
 echo function_exists($execute) ? "execute-exists" : "execute-missing";
 echo "|";
 echo is_callable($execute) ? "execute-callable" : "execute-missing";
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "executed" : "not-executed";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|bind-callable|execute-exists|execute-callable"
+        "yes|bind-callable|execute-exists|execute-callable|executed"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -644,7 +647,23 @@ mysqli_stmt_execute($stmt);
     assert_eq!(execute_error.column, 1);
     assert_eq!(
         execute_error.message,
-        "unsupported call mysqli_stmt_execute(): mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset"
+        "unsupported call mysqli_stmt_execute(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let parameter_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT option_value FROM wp_options WHERE option_name = ?");
+mysqli_stmt_execute($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(parameter_error.phase, Phase::Runtime);
+    assert_eq!(parameter_error.line, 3);
+    assert_eq!(parameter_error.column, 1);
+    assert_eq!(
+        parameter_error.message,
+        "unsupported call mysqli_stmt_execute(): bound parameters and array parameter execution are not implemented in the current subset"
     );
 }
 
@@ -709,6 +728,13 @@ echo "|";
 echo function_exists($close) ? "close-exists" : "close-missing";
 echo "|";
 echo is_callable($close) ? "close-callable" : "close-missing";
+$prepared = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($prepared);
+$result = mysqli_stmt_get_result($prepared);
+echo "|";
+echo get_class($result);
+echo "|";
+echo mysqli_fetch_assoc($result)["post_title"];
 $stmt = mysqli_stmt_init(mysqli_init());
 echo "|";
 echo mysqli_stmt_close($stmt) ? "closed" : "open";
@@ -718,7 +744,7 @@ echo mysqli_stmt_close($stmt) ? "closed" : "open";
 
     assert_eq!(
         execution.stdout,
-        "yes|result-callable|close-exists|close-callable|closed"
+        "yes|result-callable|close-exists|close-callable|mysqli_result|Hello world placeholder|closed"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -735,7 +761,7 @@ mysqli_stmt_get_result($stmt);
     assert_eq!(result_error.column, 1);
     assert_eq!(
         result_error.message,
-        "unsupported call mysqli_stmt_get_result(): mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset"
+        "unsupported call mysqli_stmt_get_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let close_error = run_source(

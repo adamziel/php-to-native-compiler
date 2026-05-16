@@ -1,2 +1,2 @@
-runtime error at 3:1: unsupported call mysqli_stmt_execute(): mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset
+runtime error at 3:1: unsupported call mysqli_stmt_execute(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 

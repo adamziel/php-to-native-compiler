@@ -137,6 +137,7 @@ struct MysqliPendingResultState {
 struct MysqliStatementState {
     query: Option<String>,
     param_count: usize,
+    executed_result: Option<MysqliPendingResultState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4055,6 +4056,7 @@ impl Interpreter {
                     .map(mysqli_placeholder_param_count)
                     .unwrap_or(0),
                 query,
+                executed_result: None,
             },
         );
         Ok(Value::Object(PhpObject::from_class_with_id(
@@ -4643,6 +4645,7 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_prepare()", stmt_id, span)?;
         state.param_count = mysqli_placeholder_param_count(&query);
         state.query = Some(query);
+        state.executed_result = None;
         Ok(Value::Bool(true))
     }
 
@@ -4707,7 +4710,7 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_stmt_execute(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_execute(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
                 span,
@@ -4718,24 +4721,68 @@ impl Interpreter {
                 ),
             ));
         }
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_execute()",
-                "mysqli statement objects, bound parameters, array parameter execution, result state, and host database execution are not implemented in the current subset",
-            ),
-        ))
+
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
+        if args.len() == 2 && !matches!(args[1], Value::Null) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_execute()",
+                    format!(
+                        "params argument must be null or omitted in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        }
+
+        let query = {
+            let state = self.mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?;
+            if state.param_count != 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_execute()",
+                        "bound parameters and array parameter execution are not implemented in the current subset",
+                    ),
+                ));
+            }
+            state.query.clone()
+        };
+
+        let Some(query) = query else {
+            let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
+            state.executed_result = None;
+            return Ok(Value::Bool(false));
+        };
+
+        if is_mysqli_mutation_query(&query) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_execute()",
+                    "statement mutation execution and host database state are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        let result = mysqli_statement_result_for_query("mysqli_stmt_execute()", &query, span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
+        state.executed_result = result;
+        Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_stmt_get_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_get_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_get_result", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_get_result()",
-                "mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_get_result()", &args[0], span)?;
+        let result = self
+            .mysqli_statement_state("mysqli_stmt_get_result()", stmt_id, span)?
+            .executed_result
+            .clone();
+        let Some(result) = result else {
+            return Ok(Value::Bool(false));
+        };
+        self.create_mysqli_result_placeholder(span, result.fields, result.rows)
     }
 
     fn call_mysqli_stmt_close(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4896,6 +4943,7 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_reset()", stmt_id, span)?;
         state.query = None;
         state.param_count = 0;
+        state.executed_result = None;
         Ok(Value::Bool(true))
     }
 
