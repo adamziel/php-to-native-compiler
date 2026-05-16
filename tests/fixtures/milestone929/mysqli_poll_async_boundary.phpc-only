@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic `mysqli_poll()` async-readiness
+boundary. System PHP requires by-reference arrays and real async mysqli socket
+state; phpc exposes `mysqli_poll()` and `MYSQLI_ASYNC` for metadata lookup but
+rejects the call because by-reference array mutation, socket readiness,
+pending async result queues, and real host query execution are not modeled.

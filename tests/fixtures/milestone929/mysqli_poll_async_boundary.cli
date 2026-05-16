@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone929/mysqli_poll_async_boundary.php:13:1: unsupported call mysqli_poll(): async socket readiness and by-reference array mutation are not implemented in the current subset
+--- stderr end ---

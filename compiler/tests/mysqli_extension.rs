@@ -1557,6 +1557,42 @@ echo $call($handle) === false ? "dynamic" : "async";
 }
 
 #[test]
+fn mysqli_poll_is_visible_but_async_readiness_is_an_explicit_boundary() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_poll";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo defined("MYSQLI_ASYNC") ? MYSQLI_ASYNC : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|8");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = run_source(
+        r#"<?php
+$read = [];
+$error = [];
+$reject = [];
+mysqli_poll($read, $error, $reject, 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_poll(): async socket readiness and by-reference array mutation are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_query_returns_current_empty_result_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -2442,6 +2478,8 @@ echo function_exists("mysqli_use_result") ? "1" : "0";
 echo is_callable("mysqli_use_result") ? "1" : "0";
 echo function_exists("mysqli_reap_async_query") ? "1" : "0";
 echo is_callable("mysqli_reap_async_query") ? "1" : "0";
+echo function_exists("mysqli_poll") ? "1" : "0";
+echo is_callable("mysqli_poll") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -2450,6 +2488,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
 echo defined("MYSQLI_ASSOC") ? "1" : "0";
 echo defined("MYSQLI_NUM") ? "1" : "0";
 echo defined("MYSQLI_BOTH") ? "1" : "0";
+echo defined("MYSQLI_ASYNC") ? "1" : "0";
 echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_GRANT") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_LOG") ? "1" : "0";
@@ -2465,7 +2504,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 127, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 130, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2929,6 +2968,18 @@ mysqli_ping(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_reap_async_query(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_poll(1, 2, 3, 0);
 "#,
     )
     .unwrap_err();

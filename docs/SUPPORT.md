@@ -532,7 +532,7 @@
   `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
-  `mysqli_reap_async_query`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -2490,7 +2490,7 @@
   `mysqli_data_seek`,
   `mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
   `mysqli_store_result`, `mysqli_use_result`, `mysqli_reap_async_query`,
-  `mysqli_report`, `mysqli_init`,
+  `mysqli_poll`, `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2812,7 +2812,7 @@
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
-  `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_report`,
+  `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
   `get_class`, `is_object`, `get_debug_type`,
@@ -3041,7 +3041,7 @@
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
   `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
-  `mysqli_reap_async_query`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
+  `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` and `mysqli_get_server_version(...)` return
@@ -3085,6 +3085,8 @@
   `mysqli_reap_async_query(...)` returns only deterministic clean no-async
   result state without `MYSQLI_ASYNC`, `mysqli_poll()`, async socket readiness,
   or pending async result queues;
+  `mysqli_poll(...)` is an explicit unsupported boundary for async socket
+  readiness and by-reference array mutation;
   `mysqli_errno(...)`, `mysqli_error(...)`, `mysqli_sqlstate(...)`, and
   `mysqli_warning_count(...)` expose only clean placeholder diagnostics;
   `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
@@ -3119,7 +3121,7 @@
   `mysqli_num_rows(...)`/`mysqli_data_seek(...)`/
   `mysqli_free_result(...)`/`mysqli_more_results(...)`/
   `mysqli_next_result(...)`/`mysqli_store_result(...)`/
-  `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/
+  `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/`mysqli_poll(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
@@ -4771,12 +4773,12 @@
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
-  `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/
+  `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
   `mysqli_num_rows()`/`mysqli_data_seek()`/`mysqli_free_result()`/
   `mysqli_more_results()`/`mysqli_next_result()`/`mysqli_store_result()`/
-  `mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_report()`/
+  `mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/`mysqli_report()`/
   `mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
   fake server-info/server-status/autocommit-success/begin-transaction-success/commit-rollback-success/SQL-mode-query/charset-setup/database-selection/escaping/

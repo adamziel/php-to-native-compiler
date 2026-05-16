@@ -5228,6 +5228,26 @@ impl Interpreter {
         Ok(Value::Bool(false))
     }
 
+    fn call_mysqli_poll(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(4..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_poll()",
+                    ArityExpectation::Between { min: 4, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_poll()",
+                "async socket readiness and by-reference array mutation are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn mysqli_result_state(
         &self,
         function: &str,
@@ -9653,6 +9673,7 @@ impl Interpreter {
             "mysqli_store_result" => self.call_mysqli_store_result(&args, span),
             "mysqli_use_result" => self.call_mysqli_use_result(&args, span),
             "mysqli_reap_async_query" => self.call_mysqli_reap_async_query(&args, span),
+            "mysqli_poll" => self.call_mysqli_poll(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -12616,6 +12637,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_store_result"
             | "mysqli_use_result"
             | "mysqli_reap_async_query"
+            | "mysqli_poll"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
@@ -12720,6 +12742,7 @@ const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
 const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
+const PHP_MYSQLI_ASYNC: i64 = 8;
 const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
 const PHP_MYSQLI_REFRESH_GRANT: i64 = 1;
 const PHP_MYSQLI_REFRESH_LOG: i64 = 2;
@@ -12776,6 +12799,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_ASSOC" => Some(Value::Int(PHP_MYSQLI_ASSOC)),
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
+        "MYSQLI_ASYNC" => Some(Value::Int(PHP_MYSQLI_ASYNC)),
         "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => Some(Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE)),
         "MYSQLI_REFRESH_GRANT" => Some(Value::Int(PHP_MYSQLI_REFRESH_GRANT)),
         "MYSQLI_REFRESH_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_LOG)),

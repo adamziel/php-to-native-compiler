@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 929, bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata with
+  an explicit async-readiness runtime boundary. The runtime exposes
+  `MYSQLI_ASYNC = 8`, makes `mysqli_poll()` visible through
+  `function_exists()`, `is_callable()`, dynamic lookup, and native metadata
+  lookup, and rejects reached `mysqli_poll()` calls with a stable diagnostic
+  naming async socket readiness and by-reference array mutation as missing.
+  This is not real async query execution, `mysqli_poll()` readiness,
+  by-reference mutation of read/error/reject arrays, pending async result
+  queues, host socket state, host database state, PHP warning/error fidelity,
+  or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_poll -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone929`.
+
 - Added Milestone 928, a synthetic WordPress-shaped `wpdb` connection async
   bookkeeping smoke that calls bounded
   `mysqli_reap_async_query($this->dbh)`, records deterministic clean

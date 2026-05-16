@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `680f7fb tests: add wordpress wpdb reap async smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 929, bounded `mysqli_poll()`/`MYSQLI_ASYNC`
+  metadata with an explicit async-readiness runtime boundary.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone929/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_poll -- --test-threads=1`
+  passed with 1 test, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone929`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: async MySQLi metadata now exposes
+  `MYSQLI_ASYNC` and `mysqli_poll()` while reached polling remains a stable
+  boundary.
+- Remaining semantic gaps: real async polling, by-reference read/error/reject
+  array mutation, socket readiness, pending async result queues,
+  warnings/errors, host database state, and native database lowering remain
+  missing.
+- Next concrete task: run the full MySQLi extension test, then the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, add a synthetic
+  WordPress-shaped `wpdb` smoke for the `mysqli_poll()` boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ccc6888 runtime: add mysqli reap async query placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 928, a synthetic WordPress-shaped `wpdb`

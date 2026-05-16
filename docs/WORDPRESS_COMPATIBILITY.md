@@ -1503,7 +1503,11 @@ historical blockers and remaining full-support gaps include:
   async-result bookkeeping smoke without claiming real async query execution,
   `MYSQLI_ASYNC`, `mysqli_poll()`, socket readiness, pending async result
   queues, host database state, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 929 exposes `MYSQLI_ASYNC` and `mysqli_poll()` metadata
+  while keeping reached `mysqli_poll()` calls as a stable async-readiness
+  boundary without real polling, by-reference read/error/reject array mutation,
+  pending async result queues, host socket state, host database state,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

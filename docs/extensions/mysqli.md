@@ -20,8 +20,8 @@ Status: boundary only.
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
-`mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_report`, and
-`mysqli_init` are currently visible
+`mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`,
+`mysqli_report`, and `mysqli_init` are currently visible
 through `function_exists()`, `is_callable()`, dynamic string-valued function
 lookup, and native function-table introspection so WordPress' early database
 startup paths can move to the next real bootstrap blocker.
@@ -214,6 +214,11 @@ resources.
 placeholder connection, meaning no async result is pending. `MYSQLI_ASYNC`,
 `mysqli_poll()`, async socket readiness, pending async result queues, host
 database state, and result object creation are not implemented.
+
+`MYSQLI_ASYNC` is exposed with value `8`, and `mysqli_poll()` is visible for
+function/callability metadata. Reached `mysqli_poll()` calls report a stable
+unsupported diagnostic because async socket readiness and by-reference
+read/error/reject array mutation are not implemented.
 
 `mysqli_query($handle, 'SELECT ID, post_title FROM wp_posts WHERE ID = 1')`
 returns a placeholder `mysqli_result` object with deterministic interpreter
