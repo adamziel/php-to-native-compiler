@@ -1858,7 +1858,11 @@
   class as the called-class context,
   and `self::method(...)`, `parent::method(...)`, and `static::method(...)`
   execute resolved visible static methods while an active class/called-class
-  context exists. `clone $object` expressions evaluate the operand, require a
+  context exists. Missing named, dynamic-receiver, `self::`, and late
+  `static::` method calls dispatch to visible static
+  `__callStatic($name, $args)` when one is declared or inherited, with
+  `$args` materialized as a zero-indexed PHP array of evaluated positional
+  arguments. `clone $object` expressions evaluate the operand, require a
   current object value,
   allocate a fresh process-local object handle, shallow-copy the object's
   current property slots, and return the cloned object. Object-valued

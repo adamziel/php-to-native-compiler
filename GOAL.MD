@@ -1008,7 +1008,13 @@ instance method calls while leaving inaccessible-method `__call` fidelity,
 dynamic method-name magic beyond the existing static-token method-call form,
 `__callStatic`, named arguments, splat/unpack behavior, by-reference argument
 aliasing, exact warning behavior, references/copy-on-write, and native
-lowering explicit gaps. Milestone 833
+lowering explicit gaps. Milestone 1011 adds bounded static
+`__callStatic($name, $args)` dispatch for missing named, dynamic-receiver,
+`self::`, and late `static::` method calls while leaving
+inaccessible-method `__callStatic` fidelity, `parent::` missing-method magic,
+dynamic method-name syntax, named arguments, splat/unpack behavior,
+by-reference argument aliasing, exact warning behavior, references/copy-on-write,
+and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct

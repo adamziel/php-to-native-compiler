@@ -9669,6 +9669,20 @@ handled.
   method-call form, `__callStatic`, named arguments, splat/unpack behavior,
   by-reference argument aliasing, exact warning/visibility diagnostics,
   recursion edge-case fidelity, references/copy-on-write, or native lowering.
+- [x] Object semantics lane: inspect the adjacent static missing-method magic
+  gap and add bounded `__callStatic($name, $args)` behavior or an explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
+  Milestone 1011 adds bounded static `__callStatic($name, $args)` dispatch for
+  missing named, dynamic-receiver, `self::`, and late `static::` method calls.
+  Declared visible static methods still dispatch first; missing methods
+  evaluate positional arguments left to right, package them in a zero-indexed
+  PHP array, invoke visible static `__callStatic`, and preserve the receiver
+  class as called-class context. This is not inaccessible-method
+  `__callStatic` fidelity, `parent::` missing-method magic, dynamic
+  method-name syntax, named arguments, splat/unpack behavior, by-reference
+  argument aliasing, exact warning/visibility diagnostics, recursion edge-case
+  fidelity, references/copy-on-write, or native lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9680,8 +9694,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e2508683 runtime: add magic property unset`, covering Milestone 1009
-  before the current Milestone 1010 candidate.
+  `bded7582 runtime: add magic method calls`, covering Milestone 1010
+  before the current Milestone 1011 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

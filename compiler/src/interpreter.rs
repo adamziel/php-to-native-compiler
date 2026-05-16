@@ -7240,6 +7240,7 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -7248,13 +7249,21 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(class_id, method_name)
         else {
-            return Err(runtime_error(
+            return match self.call_missing_static_method_via_magic(
+                class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    receiver_class.name()
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{receiver_class_name}::{method_name}()"
+                    )),
                 )),
-            ));
+            };
         };
 
         if is_static {
@@ -7343,6 +7352,7 @@ impl Interpreter {
             .classes
             .get(receiver_class_id)
             .expect("receiver class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -7351,13 +7361,21 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(receiver_class_id, method_name)
         else {
-            return Err(runtime_error(
+            return match self.call_missing_static_method_via_magic(
+                receiver_class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    receiver_class.name()
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{receiver_class_name}::{method_name}()"
+                    )),
                 )),
-            ));
+            };
         };
 
         self.ensure_instance_method_visible(
@@ -7403,6 +7421,67 @@ impl Interpreter {
             Vec::new(),
             None,
         )
+    }
+
+    fn call_missing_static_method_via_magic(
+        &mut self,
+        receiver_class_id: ClassId,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(receiver_class_id, "__callStatic")
+        else {
+            return Ok(None);
+        };
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__callStatic()"),
+                    "magic static missing-method dispatch requires a static __callStatic method in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(
+            class_id,
+            &class_name,
+            "__callStatic",
+            visibility,
+            span,
+        )?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 2, span)?;
+        ensure_supported_function_signature(function, 2, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut argument_array = PhpArray::new();
+        for arg in args {
+            let value = self.evaluate(arg, caller_scope)?;
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(arg.span(), error))?;
+        }
+
+        self.call_user_function_with_checked_values(
+            function,
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            None,
+            Some(class_id),
+            Some(receiver_class_id),
+            Vec::new(),
+            None,
+        )
+        .map(Some)
     }
 
     fn evaluate_interpolated_string(
@@ -8326,16 +8405,25 @@ impl Interpreter {
             .classes
             .get(current_class_id)
             .expect("active class context should resolve to class metadata");
+        let current_class_name = current_class.name().to_string();
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(current_class_id, method_name)
         else {
-            return Err(runtime_error(
+            return match self.call_missing_static_method_via_magic(
+                current_class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    current_class.name()
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{current_class_name}::{method_name}()"
+                    )),
                 )),
-            ));
+            };
         };
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
@@ -8411,16 +8499,25 @@ impl Interpreter {
             .classes
             .get(called_class_id)
             .expect("called class context should resolve to class metadata");
+        let called_class_name = called_class.name().to_string();
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(called_class_id, method_name)
         else {
-            return Err(runtime_error(
+            return match self.call_missing_static_method_via_magic(
+                called_class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    called_class.name()
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{called_class_name}::{method_name}()"
+                    )),
                 )),
-            ));
+            };
         };
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;

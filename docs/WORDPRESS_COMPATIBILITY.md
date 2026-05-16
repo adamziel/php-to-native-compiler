@@ -1207,7 +1207,13 @@ historical blockers and remaining full-support gaps include:
   dynamic method-name magic beyond the existing static-token method-call form,
   `__callStatic`, named arguments, splat/unpack behavior, by-reference
   argument aliasing, exact warning behavior, references/copy-on-write, and
-  native lowering explicit gaps.
+  native lowering explicit gaps. Milestone 1011 adds bounded static
+  `__callStatic($name, $args)` dispatch for missing named, dynamic-receiver,
+  `self::`, and late `static::` method calls while leaving
+  inaccessible-method `__callStatic` fidelity, `parent::` missing-method magic,
+  dynamic method-name syntax, named arguments, splat/unpack behavior,
+  by-reference argument aliasing, exact warning behavior,
+  references/copy-on-write, and native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

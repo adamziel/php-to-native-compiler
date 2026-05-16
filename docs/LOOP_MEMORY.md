@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `bded7582 runtime: add magic method calls`, pushed to `origin/master`.
+- Task attempted: Milestone 1011, bounded static
+  `__callStatic($name, $args)` for missing named, dynamic-receiver, `self::`,
+  and late `static::` method calls.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1011/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model magic_call_static_runs_for_missing_static_methods -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1011`
+  passed.
+- Current WordPress frontier: missing static method calls can now route
+  through visible static `__callStatic` with a PHP-shaped positional argument
+  array and called-class context instead of immediately failing with
+  undefined-method diagnostics.
+- Remaining semantic gaps: inaccessible-method `__callStatic` fidelity,
+  `parent::` missing-method magic, dynamic method-name syntax, named
+  arguments, splat/unpack behavior, by-reference argument aliasing, exact PHP
+  warning/visibility diagnostics, recursion edge-case fidelity,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `e2508683 runtime: add magic property unset`, pushed to `origin/master`.
 - Task attempted: Milestone 1010, bounded instance `__call($name, $args)` for
   missing direct instance method calls.

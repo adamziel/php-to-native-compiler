@@ -290,12 +290,19 @@ stable runtime diagnostic because PHP forbids unsetting static properties; they
 do not remove static storage. Named static method expressions such as
 `ClassName::method(...)` execute for declared or inherited visible static
 methods under the current positional/default-parameter subset, without `$this`,
-and with the declaring class as the active class context.
+and with the declaring class as the active class context. Missing named static
+method calls dispatch to visible static `__callStatic($name, $args)` when one
+is declared or inherited, with `$args` materialized as a zero-indexed PHP
+array of evaluated positional arguments.
 `$object::method(...)` and `$className::method(...)` evaluate the receiver
 object or class-name string, resolve a visible static method from that receiver
 class, execute without `$this`, and use the receiver class as the called-class
-context. `self::method(...)` and `parent::method(...)` also execute resolved
-visible static methods while running inside active class context.
+context. Missing dynamic-receiver static method calls also dispatch to visible
+static `__callStatic`. `self::method(...)` and `parent::method(...)` also
+execute resolved visible static methods while running inside active class
+context, while missing `self::method(...)` and late `static::method(...)` calls
+dispatch to visible static `__callStatic` in the current class/called-class
+context.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -392,8 +399,8 @@ typed/uninitialized property behavior, inaccessible-property `__unset`
 fidelity,
 dynamic property-name magic, property-array-offset magic, inaccessible-property
 `__set` fidelity, inaccessible-method `__call` fidelity, dynamic method-name
-magic, `__callStatic`, `__toString`, static member execution through `::`
-beyond the current class-name constant and
+magic, inaccessible-method `__callStatic` fidelity, parent missing-method
+`__callStatic`, `__toString`, static member execution through `::` beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 native lowering for `get_called_class` called-class context, broader late

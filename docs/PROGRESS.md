@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1011, bounded static `__callStatic($name, $args)` dispatch
+  for missing static method calls through named class receivers, dynamic
+  object/class-string receivers, `self::`, and late-bound `static::`.
+  Declared visible static methods still dispatch first; when lookup misses and
+  a visible static `__callStatic()` method is declared or inherited, the
+  interpreter evaluates positional arguments left to right, packages them into
+  a zero-indexed PHP array, calls `__callStatic()` with the missing method
+  name and argument array, and preserves the receiver class as the called
+  class context. This is not inaccessible-method `__callStatic` fidelity,
+  `parent::` missing-method magic, dynamic method-name syntax beyond existing
+  static-token method calls, named arguments, splat/unpack behavior,
+  by-reference argument aliasing, exact PHP warning/visibility diagnostics,
+  recursion edge-case fidelity, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model magic_call_static_runs_for_missing_static_methods -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1011`.
+
 - Added Milestone 1010, bounded instance `__call($name, $args)` dispatch for
   missing direct instance method calls. Ordinary `$object->method(...)` still
   dispatches declared visible methods first; when that lookup misses and a
