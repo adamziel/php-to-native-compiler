@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T16:20:08Z
+
+- Checkpoint before this task:
+  `308fa847 runtime: add non-public property reference sources`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1092, stable `ArrayAccess` reference-source
+  boundary. `$alias =& $bag[$key];` and
+  `$alias =& $holder->bag[$key];` now report a specific unsupported-call
+  diagnostic when the source root is an `ArrayAccess` object, including direct,
+  nested, and append source shapes rooted at a direct object variable or a
+  public object property holding an `ArrayAccess` object.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1092/reference_assignment_array_access_source_boundary.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: local PHP 8.2.29 probes for ArrayAccess reference-source
+  behavior, `cargo fmt --check`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_array_access_offset_source --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_access_source -- --test-threads=1`,
+  and `cargo run -q -p phpc -- test tests/fixtures/milestone1092
+  --compare-php` passed.
+- Remaining semantic gaps: by-reference `ArrayAccess::offsetGet()` aliasing,
+  by-value `offsetGet()` indirect-modification notice fidelity, missing-key
+  materialization through `offsetGet()`, append-source `offsetGet(null)`
+  behavior, magic/property-provided ArrayAccess containers, full PHP reference
+  containers, copy-on-write containers, exact warning/fatal wording, and native
+  lowering remain missing.
+- Next concrete task: run adjacent reference tests, run the serialized
+  checkpoint gate, commit, push, then choose the next behavior slice from
+  magic `__get` reference sources or clone/reference-slot mirroring.
+
 ## Loop Event 2026-05-16T16:13:06Z
 
 - Checkpoint before this task:

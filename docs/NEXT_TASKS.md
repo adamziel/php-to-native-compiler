@@ -10674,6 +10674,21 @@ handled.
   full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, or native lowering.
 
+## Milestone 1092: ArrayAccess Reference-Source Boundary
+
+- [x] Runtime/value-model lane: add a stable `ArrayAccess` reference-source
+  boundary. `$alias =& $bag[$key];` and
+  `$alias =& $holder->bag[$key];` now report a specific unsupported-call
+  diagnostic when the source root is an `ArrayAccess` object, covering direct,
+  nested, and append source shapes rooted at a direct object variable or a
+  public object property holding an `ArrayAccess` object. This is not
+  by-reference `ArrayAccess::offsetGet()` aliasing, by-value `offsetGet()`
+  indirect-modification notice fidelity, missing-key materialization through
+  `offsetGet()`, append-source `offsetGet(null)` behavior,
+  magic/property-provided ArrayAccess containers, full PHP reference
+  containers, copy-on-write containers, exact warning/fatal wording, or native
+  lowering.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

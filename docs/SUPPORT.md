@@ -172,8 +172,12 @@
   non-direct object expressions, missing dynamic properties on classes that do
   not allow dynamic public slots, dynamic non-public property source aliases,
   magic `__get` by-reference behavior, non-variable reference targets,
-  ArrayAccess sources, full reference containers, copy-on-write, exact alias
-  destruction ordering, and native lowering remain unsupported. Direct
+  full reference containers, copy-on-write, exact alias destruction ordering,
+  and native lowering remain unsupported. `ArrayAccess` reference sources
+  such as `$alias =& $bag[$key];` and
+  `$alias =& $holder->bag[$key];` report a stable unsupported-call boundary
+  because faithful support requires by-reference `ArrayAccess::offsetGet()`
+  aliasing and runtime reference containers. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

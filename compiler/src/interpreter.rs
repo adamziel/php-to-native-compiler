@@ -4246,6 +4246,7 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
                 } else if let ReferenceSource::NestedArrayIndex {
                     name: array_name,
@@ -4257,6 +4258,7 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_existing_nested_array_offset(
                         name, array_name, keys, span,
                     )?;
@@ -4270,6 +4272,7 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_appended_array_offset(name, array_name, keys, span)?;
                 } else if let ReferenceSource::ObjectPropertyArrayIndex {
                     object,
@@ -4279,6 +4282,9 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, property, span, scope,
+                    )?;
                     scope.bind_static_to_existing_object_property_array_offset(
                         name, object, property, key, span,
                     )?;
@@ -4293,6 +4299,9 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, property, span, scope,
+                    )?;
                     scope.bind_static_to_existing_object_property_nested_array_offset(
                         name, object, property, keys, span,
                     )?;
@@ -4307,6 +4316,9 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, property, span, scope,
+                    )?;
                     scope.bind_static_to_appended_object_property_array_offset(
                         name, object, property, keys, span,
                     )?;
@@ -4583,6 +4595,18 @@ impl Interpreter {
         Ok(())
     }
 
+    fn reject_array_access_reference_source_if_needed(
+        &self,
+        name: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        if let Some(value) = scope.read_named(name) {
+            self.reject_array_access_reference_source_value(&value, span)?;
+        }
+        Ok(())
+    }
+
     fn reject_object_property_array_access_reference_target_if_needed(
         &self,
         object_name: &str,
@@ -4595,6 +4619,22 @@ impl Interpreter {
         };
         if let Ok(value) = object.read_public_property(property) {
             self.reject_array_access_reference_target_value(&value, span)?;
+        }
+        Ok(())
+    }
+
+    fn reject_object_property_array_access_reference_source_if_needed(
+        &self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(());
+        };
+        if let Ok(value) = object.read_public_property(property) {
+            self.reject_array_access_reference_source_value(&value, span)?;
         }
         Ok(())
     }
@@ -4614,6 +4654,28 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "reference assignment",
                         "ArrayAccess object offsets cannot be assigned by reference in the current runtime",
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn reject_array_access_reference_source_value(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        if let Value::Object(object) = value {
+            if self
+                .classes
+                .implements_interface(object.class_id(), "ArrayAccess")
+            {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented",
                     ),
                 ));
             }

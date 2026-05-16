@@ -1,0 +1,2 @@
+runtime error at 11:1: unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented
+

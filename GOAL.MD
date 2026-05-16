@@ -99,7 +99,9 @@ object-property array-offset
 reference sources such as `$alias =& $object->items[$key]`, plus bounded
 nested direct-array and object-property array-offset reference sources, plus
 bounded append direct-array, object-property, and string-keyed `$GLOBALS`
-array-offset reference sources.
+array-offset reference sources, plus stable ArrayAccess reference-source
+boundaries that name the missing by-reference `offsetGet()`/reference-container
+work.
 The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global

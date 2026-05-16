@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 1092, a stable `ArrayAccess` reference-source boundary.
+  Statement-form `$alias =& $bag[$key];` and
+  `$alias =& $holder->bag[$key];` now report a specific unsupported-call
+  diagnostic when the source root is an `ArrayAccess` object, instead of
+  falling through to a generic object offset read error. This boundary is used
+  for direct, nested, and append source shapes rooted at a direct
+  `ArrayAccess` object or a public object property holding one. It does not
+  implement by-reference `ArrayAccess::offsetGet()` aliasing, by-value
+  `offsetGet()` indirect-modification notice fidelity, missing-key
+  materialization through `offsetGet()`, append-source `offsetGet(null)`
+  behavior, magic/property-provided ArrayAccess containers, full PHP reference
+  containers, copy-on-write containers, exact warning/fatal wording, or native
+  lowering. Verification so far: local PHP 8.2.29 probes for ArrayAccess
+  reference-source behavior, `cargo fmt --check`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_array_access_offset_source --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_access_source -- --test-threads=1`,
+  and `cargo run -q -p phpc -- test tests/fixtures/milestone1092
+  --compare-php` passed.
+
 - Added Milestone 1091, a bounded non-public object-property
   reference-source slice for active method visibility contexts. Statement-form
   `$alias =& $this->privateProperty;`,

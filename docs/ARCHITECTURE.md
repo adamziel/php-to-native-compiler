@@ -321,8 +321,11 @@ selected slot under the real global symbol table. `$GLOBALS[]` append
 sources, non-string root keys, recursive `$GLOBALS` materialization,
 dynamic-property sources on non-direct object expressions, dynamic
 non-public property sources, magic property sources, non-variable reference
-targets, `ArrayAccess` sources, full reference containers, copy-on-write,
-exact alias destruction ordering, and native lowering remain future work.
+targets, full reference containers, copy-on-write, exact alias destruction
+ordering, and native lowering remain future work. `ArrayAccess` reference
+sources rooted at a direct object variable or public object property now fail
+through a stable boundary because faithful support requires by-reference
+`ArrayAccess::offsetGet()` return aliasing and runtime reference containers.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
