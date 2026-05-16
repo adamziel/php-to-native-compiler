@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_debug()`
+host-diagnostics boundary. System PHP configures MySQL DBUG tracing through
+the client library; phpc returns deterministic success without parsing DBUG
+options, opening trace files, mutating host client-library debug state,
+touching sockets, or querying database state.

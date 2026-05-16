@@ -4464,6 +4464,12 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_debug(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_debug", args, 1, span)?;
+        let _options = string_builtin_argument("mysqli_debug()", "options", &args[0], span)?;
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_stat(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stat", args, 1, span)?;
         expect_mysqli_handle("mysqli_stat()", &args[0], span)?;
@@ -9656,6 +9662,7 @@ impl Interpreter {
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_get_links_stats" => self.call_mysqli_get_links_stats(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
+            "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
             "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
@@ -12622,6 +12629,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_connection_stats"
             | "mysqli_get_links_stats"
             | "mysqli_dump_debug_info"
+            | "mysqli_debug"
             | "mysqli_stat"
             | "mysqli_autocommit"
             | "mysqli_begin_transaction"

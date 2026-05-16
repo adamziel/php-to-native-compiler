@@ -8697,17 +8697,29 @@ handled.
   method. It is not MySQL DBUG trace output, host client-library debug state,
   socket inspection, host database state, warning/error fidelity, or native
   lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi host-state or diagnostics
+- [x] Runtime/mysqli lane: inspect the next MySQLi host-state or diagnostics
   boundary after deterministic dump-debug metadata, such as a sharper
   unsupported diagnostic for real debug trace behavior, the next missing
   WordPress-reached MySQLi function, or a real-state replacement for one of
   the current placeholders before claiming broader database fidelity.
+  Milestone 935 implements bounded deterministic `mysqli_debug()` support for
+  the current scalar/null string-convertible options boundary. It returns
+  deterministic `true`, rejects array options with a stable diagnostic, and is
+  visible through runtime and native metadata lookup. This is not MySQL DBUG
+  option parsing, trace-file creation, host client-library debug state
+  mutation, socket inspection, host database state, warning/error fidelity, or
+  native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+  records bounded `mysqli_debug()` metadata through a WordPress-shaped
+  connection diagnostics method without claiming MySQL DBUG option parsing,
+  trace-file creation, host client-library debug state mutation, sockets, host
+  database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1aa1f5b tests: add wordpress wpdb dump debug info smoke`, covering
-  Milestone 934 before the next runtime/mysqli candidate.
+  `c03ec16 docs: record wpdb dump debug info checkpoint`, covering
+  Milestone 934 before the current Milestone 935 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

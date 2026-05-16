@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 935, bounded `mysqli_debug()` support for deterministic
+  placeholder MySQLi DBUG configuration metadata. The runtime accepts the
+  current scalar/null string-convertible options boundary, returns
+  deterministic `true`, rejects array options with a stable diagnostic, and
+  exposes the name through runtime and native metadata lookup. This is not
+  MySQL DBUG option parsing, trace-file creation, host client-library debug
+  state mutation, socket inspection, host database state, PHP warning/error
+  fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_debug -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone935`.
+
 - Added Milestone 934, a synthetic WordPress-shaped `wpdb` connection
   diagnostics smoke that records bounded `mysqli_dump_debug_info()` metadata
   through a `wpdb`-style method, verifies callable metadata, records

@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone935/mysqli_debug_placeholder.php
+yes
+callable
+debug
+dynamic

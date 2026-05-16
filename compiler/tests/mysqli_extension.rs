@@ -381,6 +381,26 @@ echo $call($handle) ? "dynamic" : "failed";
 }
 
 #[test]
+fn mysqli_debug_accepts_current_placeholder_options() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_debug";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo mysqli_debug("d:t:o,/tmp/phpc-mysqli-debug.trace") ? "debug" : "failed";
+echo "|";
+echo $call(null) ? "dynamic" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|debug|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_field_count_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -2225,6 +2245,24 @@ mysqli_dump_debug_info("not-a-handle");
 }
 
 #[test]
+fn mysqli_debug_rejects_forms_outside_current_boundary() {
+    let bad_options = run_source(
+        r#"<?php
+mysqli_debug([]);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_options.phase, Phase::Runtime);
+    assert_eq!(bad_options.line, 2);
+    assert_eq!(bad_options.column, 1);
+    assert_eq!(
+        bad_options.message,
+        "unsupported call mysqli_debug(): options argument arrays are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_select_db_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -2495,6 +2533,8 @@ echo function_exists("mysqli_get_links_stats") ? "1" : "0";
 echo is_callable("mysqli_get_links_stats") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
+echo function_exists("mysqli_debug") ? "1" : "0";
+echo is_callable("mysqli_debug") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
 echo is_callable("mysqli_stat") ? "1" : "0";
 echo function_exists("mysqli_autocommit") ? "1" : "0";
@@ -2589,7 +2629,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 134, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 136, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2825,6 +2865,18 @@ mysqli_get_links_stats();
     let error = emit_ir_source(
         r#"<?php
 mysqli_dump_debug_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_debug("d:t:o,/tmp/phpc.trace");
 "#,
     )
     .unwrap_err();

@@ -10,7 +10,7 @@ Status: boundary only.
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-`mysqli_dump_debug_info`, `mysqli_autocommit`,
+`mysqli_dump_debug_info`, `mysqli_debug`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
@@ -144,6 +144,11 @@ links, sockets, host client-library state, or connection reuse state.
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host
 client-library debug state, inspect sockets, or read host database state.
+
+`mysqli_debug($options)` accepts the current scalar/null string-convertible
+options boundary and returns deterministic `true`. It does not parse MySQL
+DBUG options, create trace files, mutate host client-library debug state,
+inspect sockets, or read host database state.
 
 `mysqli_stat($handle)` accepts the placeholder object and returns deterministic
 zeroed server-status metadata. It does not query real counters, thread/table
