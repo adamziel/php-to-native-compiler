@@ -5840,6 +5840,107 @@ echo $leaf->compute();
 }
 
 #[test]
+fn abstract_method_implementation_is_enforced_for_concrete_classes() {
+    let error = runtime_error(
+        r#"<?php
+abstract class Base {
+    abstract protected function compute();
+}
+
+class Child extends Base {}
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement abstract method Base::compute()"
+    );
+
+    let own_abstract_error = runtime_error(
+        r#"<?php
+class Box {
+    abstract public function id();
+}
+"#,
+    );
+
+    assert_eq!(own_abstract_error.line, 2);
+    assert_eq!(own_abstract_error.column, 1);
+    assert_eq!(
+        own_abstract_error.message,
+        "unsupported class inheritance for Box: concrete class Box must implement abstract method Box::id()"
+    );
+}
+
+#[test]
+fn abstract_child_classes_can_defer_abstract_method_implementation() {
+    let execution = run_source(
+        r#"<?php
+abstract class Base {
+    abstract protected function compute();
+}
+
+abstract class Mid extends Base {}
+
+class Leaf extends Mid {
+    public function compute() {
+        return "leaf";
+    }
+}
+
+$leaf = new Leaf();
+echo $leaf->compute();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "leaf");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn nested_abstract_method_boundary_preserves_registration_timing() {
+    let execution = run_source(
+        r#"<?php
+abstract class Base {
+    abstract protected function compute();
+}
+
+if (false) {
+    class Child extends Base {}
+}
+
+echo class_exists("Child") ? "registered" : "not-registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "not-registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+abstract class Base {
+    abstract protected function compute();
+}
+
+if (true) {
+    class Child extends Base {}
+}
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 5);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement abstract method Base::compute()"
+    );
+}
+
+#[test]
 fn final_class_declarations_register_and_instantiate_current_subset() {
     let execution = run_source(
         r#"<?php

@@ -1889,8 +1889,13 @@ impl Interpreter {
                 if class.is_nested {
                     continue;
                 }
-                let class_id =
-                    register_class_members(&mut classes, &final_classes, &final_methods, class)?;
+                let class_id = register_class_members(
+                    &mut classes,
+                    &final_classes,
+                    &abstract_methods,
+                    &final_methods,
+                    class,
+                )?;
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
@@ -2130,6 +2135,7 @@ impl Interpreter {
             let class_id = register_class_members(
                 &mut self.classes,
                 &self.final_classes,
+                &self.abstract_methods,
                 &self.final_methods,
                 class,
             )?;
@@ -2168,6 +2174,7 @@ impl Interpreter {
         if let Err(error) = register_class_members(
             &mut self.classes,
             &self.final_classes,
+            &self.abstract_methods,
             &self.final_methods,
             class,
         ) {
@@ -18908,6 +18915,7 @@ fn register_final_method_markers(
 fn register_class_members(
     classes: &mut PhpClassTable,
     final_classes: &HashSet<ClassId>,
+    abstract_methods: &HashSet<(ClassId, String)>,
     final_methods: &HashMap<(ClassId, String), String>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
@@ -18984,7 +18992,137 @@ fn register_class_members(
         }
     }
 
+    validate_abstract_method_implementation(classes, abstract_methods, id, class)
+        .map_err(|error| runtime_error(class.span, error))?;
+
     Ok(id)
+}
+
+fn validate_abstract_method_implementation(
+    classes: &PhpClassTable,
+    abstract_methods: &HashSet<(ClassId, String)>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract {
+        return Ok(());
+    }
+
+    let own_abstract_methods = abstract_method_names_for_class_decl(class);
+    let mut missing = Vec::new();
+    let mut covered_names = HashSet::new();
+
+    for member in &class.members {
+        let ClassMember::Method(method) = member else {
+            continue;
+        };
+        let lookup_name = method.function.name.to_ascii_lowercase();
+        if method.is_abstract {
+            covered_names.insert(lookup_name);
+            missing.push(format!("{}::{}()", class.name, method.function.name));
+        } else {
+            covered_names.insert(lookup_name);
+        }
+    }
+
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        for method in parent.methods() {
+            let lookup_name = method.name().to_ascii_lowercase();
+            if !covered_names.insert(lookup_name.clone()) {
+                continue;
+            }
+            if !abstract_methods.contains(&(parent_id, lookup_name.clone())) {
+                continue;
+            }
+            if has_concrete_method_implementation(
+                classes,
+                abstract_methods,
+                class_id,
+                &own_abstract_methods,
+                &lookup_name,
+            ) {
+                continue;
+            }
+            missing.push(format!("{}::{}()", parent.name(), method.name()));
+        }
+
+        current = parent.parent_id();
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!(
+            "concrete class {} must implement abstract {method_word} {method_list}",
+            class.name
+        ),
+    ))
+}
+
+fn abstract_method_names_for_class_decl(class: &ClassDecl) -> HashSet<String> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| {
+            let ClassMember::Method(method) = member else {
+                return None;
+            };
+            method
+                .is_abstract
+                .then(|| method.function.name.to_ascii_lowercase())
+        })
+        .collect()
+}
+
+fn has_concrete_method_implementation(
+    classes: &PhpClassTable,
+    abstract_methods: &HashSet<(ClassId, String)>,
+    class_id: ClassId,
+    own_abstract_methods: &HashSet<String>,
+    method_lookup_name: &str,
+) -> bool {
+    if classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .method(method_lookup_name)
+        .is_some()
+    {
+        return !own_abstract_methods.contains(method_lookup_name);
+    }
+
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+    while let Some(current_id) = current {
+        let current_class = classes
+            .get(current_id)
+            .expect("class id should resolve to class metadata");
+        if current_class.method(method_lookup_name).is_some() {
+            return !abstract_methods.contains(&(current_id, method_lookup_name.to_string()));
+        }
+        current = current_class.parent_id();
+    }
+
+    false
 }
 
 fn validate_final_method_override(

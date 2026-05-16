@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 
 #[test]
 fn phpc_run_still_handles_current_function_call_subset() {
@@ -29,13 +30,11 @@ echo $builtin("callable");
 }
 
 #[test]
-fn emit_ir_rejects_direct_builtin_user_and_dynamic_calls_with_specific_boundary() {
+fn emit_ir_rejects_direct_builtin_and_user_calls_with_specific_boundary() {
     for source in [
         "<?php\necho label(\"user\");\nfunction label($value) { return $value; }\n",
         "<?php\necho dirname(\"/a/b.php\");\n",
         "<?php\nassert(true);\n",
-        "<?php\n$call = \"strlen\";\necho $call(\"abc\");\n",
-        "<?php\n$call = \"strlen\";\necho $call(\"abc\",);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
@@ -93,11 +92,13 @@ fn emit_ir_rejects_dynamic_calls_before_lowering_callee_or_arguments() {
     for source in [
         "<?php\n$call = \"strlen\";\necho $call([]);\n",
         "<?php\n$call = \"assert\";\necho $call([]);\n",
+        "<?php\n$call = \"strlen\";\necho $call(\"abc\");\n",
+        "<?php\n$call = \"strlen\";\necho $call(\"abc\",);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+        assert_eq!(error.message, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION);
     }
 }
 
@@ -113,6 +114,14 @@ fn emit_asm_rejects_function_calls_before_backend_execution() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
     }
+}
+
+#[test]
+fn emit_asm_rejects_dynamic_calls_before_backend_execution() {
+    let error = emit_asm_source("<?php\n$call = \"strlen\";\necho $call(\"abc\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
@@ -141,6 +150,68 @@ fn native_function_call_emit_ir_cli_snapshot_matches_committed_output() {
             .join("tests/fixtures/milestone169/native_function_call_boundary_emit_ir.cli"),
     )
     .expect("native function-call CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_dynamic_function_call_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1128/native_dynamic_function_call_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1128/native_dynamic_function_call_boundary_emit_ir.cli"),
+    )
+    .expect("native dynamic function-call IR CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_dynamic_function_call_emit_asm_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1128/native_dynamic_function_call_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected =
+        fs::read_to_string(workspace_root.join(
+            "tests/fixtures/milestone1128/native_dynamic_function_call_boundary_emit_asm.cli",
+        ))
+        .expect("native dynamic function-call assembly CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

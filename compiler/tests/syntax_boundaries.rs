@@ -848,6 +848,51 @@ fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
 }
 
 #[test]
+fn unsupported_asymmetric_property_visibility_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass Value {\n    public private(set) string $id;\n}\n",
+            3,
+            12,
+        ),
+        (
+            "<?php\nclass Value {\n    protected private(SET) string $id;\n}\n",
+            3,
+            15,
+        ),
+        (
+            "<?php\nclass Value {\n    public static protected(set) string $id;\n}\n",
+            3,
+            19,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_asymmetric_property_visibility_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nclass Value {\n    public private(set) string $id;\n}\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_abstract_final_non_method_members_at_parse_boundary() {
     let property_error =
         php_compiler::emit_ir_source("<?php\nclass Value {\n    abstract $id;\n}\n").unwrap_err();

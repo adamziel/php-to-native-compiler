@@ -1,0 +1,3 @@
+<?php
+$call = "strlen";
+echo $call("abc");

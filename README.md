@@ -29,6 +29,7 @@ cargo run -p phpc -- compile examples/hello.php --emit-ir
 cargo run -p phpc -- compile examples/hello.php --emit-asm
 cargo run -p phpc -- test
 cargo run -p phpc -- test --list-fixtures
+cargo run -p phpc -- test --list-fixtures-json
 ```
 
 The installed binary name is `phpc`.
@@ -165,9 +166,9 @@ incorrect native code.
   the `class` statement,
   parsed `abstract`/`final` class modifiers and `abstract`/`final` method
   modifiers as metadata, with abstract class instantiation rejected as a
-  runtime boundary, final class inheritance and final method overrides
-  rejected as runtime boundaries, and readonly class declarations kept at a
-  parse boundary,
+  runtime boundary, final class inheritance, final method overrides, and
+  concrete classes with unimplemented abstract methods rejected as runtime
+  boundaries, and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,
@@ -237,12 +238,13 @@ bare namespace constant fallback reads, class-constant lookup through
 string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
-visibility enforcement beyond the current public and
-same-declaring-class private-property, protected-property, protected-method,
-constructor, and class-constant slice, typed property compatibility and
-DNF-shaped typed property declarations plus property defaults beyond the
-current untyped constant-expression instance property slice, readonly property
-metadata and write-once enforcement, promoted constructor properties,
+method visibility compatibility enforcement, visibility enforcement beyond the
+current public and same-declaring-class private-property, protected-property,
+protected-method, constructor, and class-constant slice, typed property
+compatibility and DNF-shaped typed property declarations plus property defaults
+beyond the current untyped constant-expression instance property slice,
+readonly property metadata and write-once enforcement, promoted constructor
+properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 nullsafe object access `?->`,
@@ -321,6 +323,8 @@ Use `phpc test --list-fixtures [fixture-dir]` to print a deterministic fixture
 manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison.
+Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
+manifest as deterministic JSON with `contract_version` 1.
 
 Use these commands while developing:
 

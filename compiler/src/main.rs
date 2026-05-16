@@ -123,6 +123,7 @@ fn run_options_from_env() -> CompileResult<RunOptions> {
 fn command_test(args: &[String]) -> CompileResult<u8> {
     let mut compare_php = false;
     let mut list_fixtures = false;
+    let mut list_fixtures_json = false;
     let mut root = None;
 
     for arg in args {
@@ -130,6 +131,8 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
             compare_php = true;
         } else if arg == "--list-fixtures" {
             list_fixtures = true;
+        } else if arg == "--list-fixtures-json" {
+            list_fixtures_json = true;
         } else if root.is_none() {
             root = Some(PathBuf::from(arg));
         } else {
@@ -137,9 +140,18 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
                 Phase::Cli,
                 0,
                 0,
-                "usage: phpc test [--compare-php] [--list-fixtures] [fixture-dir]",
+                "usage: phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]",
             ));
         }
+    }
+
+    if list_fixtures && list_fixtures_json {
+        return Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            "expected at most one fixture manifest output mode",
+        ));
     }
 
     let root = root.unwrap_or_else(|| PathBuf::from("tests/fixtures"));
@@ -153,6 +165,11 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         for orphan in &manifest.orphan_sidecars {
             println!("{}", render_fixture_manifest_orphan_sidecar(orphan));
         }
+        return Ok(0);
+    }
+    if list_fixtures_json {
+        let manifest = fixture_manifest(&root)?;
+        print!("{}", render_fixture_manifest_json(&manifest));
         return Ok(0);
     }
 
@@ -226,6 +243,141 @@ fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar)
     )
 }
 
+fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
+    let mut output = String::new();
+    output.push_str("{\n");
+    output.push_str("  \"contract_version\": 1,\n");
+    output.push_str(&format!(
+        "  \"fixture_count\": {},\n",
+        manifest.summary.total
+    ));
+    output.push_str("  \"summary\": {\n");
+    output.push_str(&format!("    \"total\": {},\n", manifest.summary.total));
+    output.push_str(&format!(
+        "    \"php_comparison_eligible\": {},\n",
+        manifest.summary.php_comparison_eligible
+    ));
+    output.push_str(&format!(
+        "    \"phpc_only\": {},\n",
+        manifest.summary.phpc_only
+    ));
+    output.push_str("    \"expectations\": {\n");
+    output.push_str(&format!(
+        "      \"stdout\": {},\n",
+        manifest.summary.stdout_expectations
+    ));
+    output.push_str(&format!(
+        "      \"stderr\": {},\n",
+        manifest.summary.stderr_expectations
+    ));
+    output.push_str(&format!(
+        "      \"exit\": {},\n",
+        manifest.summary.exit_expectations
+    ));
+    output.push_str(&format!(
+        "      \"phpc_only\": {}\n",
+        manifest.summary.phpc_only_markers
+    ));
+    output.push_str("    },\n");
+    output.push_str(&format!(
+        "    \"orphan_sidecars\": {}\n",
+        manifest.summary.orphan_sidecars
+    ));
+    output.push_str("  },\n");
+    output.push_str("  \"fixtures\": [\n");
+    for (index, entry) in manifest.entries.iter().enumerate() {
+        output.push_str("    {\n");
+        output.push_str(&format!(
+            "      \"path\": {},\n",
+            json_string_literal(&entry.path)
+        ));
+        output.push_str("      \"expectations\": [");
+        let expectations = fixture_manifest_entry_expectations(entry);
+        for (expectation_index, expectation) in expectations.iter().enumerate() {
+            if expectation_index > 0 {
+                output.push_str(", ");
+            }
+            output.push_str(&json_string_literal(expectation));
+        }
+        output.push_str("],\n");
+        let comparison = if entry.phpc_only {
+            "phpc-only"
+        } else {
+            "eligible"
+        };
+        output.push_str(&format!(
+            "      \"php_comparison\": {}\n",
+            json_string_literal(comparison)
+        ));
+        output.push_str("    }");
+        if index + 1 < manifest.entries.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ],\n");
+    output.push_str("  \"orphan_sidecars\": [\n");
+    for (index, orphan) in manifest.orphan_sidecars.iter().enumerate() {
+        output.push_str("    {\n");
+        output.push_str(&format!(
+            "      \"path\": {},\n",
+            json_string_literal(&orphan.path)
+        ));
+        output.push_str(&format!(
+            "      \"kind\": {},\n",
+            json_string_literal(&orphan.kind)
+        ));
+        output.push_str(&format!(
+            "      \"expected_fixture\": {}\n",
+            json_string_literal(&orphan.expected_fixture)
+        ));
+        output.push_str("    }");
+        if index + 1 < manifest.orphan_sidecars.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ]\n");
+    output.push_str("}\n");
+    output
+}
+
+fn fixture_manifest_entry_expectations(entry: &FixtureManifestEntry) -> Vec<&'static str> {
+    let mut expectations = Vec::new();
+    if entry.has_stdout {
+        expectations.push("stdout");
+    }
+    if entry.has_stderr {
+        expectations.push("stderr");
+    }
+    if entry.has_exit {
+        expectations.push("exit");
+    }
+    expectations
+}
+
+fn json_string_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            character if character <= '\u{1f}' => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
+}
+
 fn read_source(path: &Path) -> CompileResult<String> {
     fs::read_to_string(path).map_err(|error| {
         Diagnostic::new(
@@ -244,5 +396,5 @@ fn print_help() {
     println!("  phpc compile <input.php> --emit-ir");
     println!("  phpc compile <input.php> --emit-asm");
     println!("  phpc run <input.php>");
-    println!("  phpc test [--compare-php] [--list-fixtures] [fixture-dir]");
+    println!("  phpc test [--compare-php] [--list-fixtures | --list-fixtures-json] [fixture-dir]");
 }

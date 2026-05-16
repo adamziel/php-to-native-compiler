@@ -262,7 +262,7 @@ fn emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$call = \"strlen\";\necho $call(\"abc\");\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("dynamic function-call"),
         "{}",
         error.message
     );

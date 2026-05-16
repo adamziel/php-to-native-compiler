@@ -29,6 +29,8 @@ For fixture audits that should not execute code, use
 `cargo run -p phpc -- test --list-fixtures [fixture-dir]`; it prints a sorted
 manifest of fixtures, recognized expectation files, aggregate sidecar counts,
 recognized orphan sidecars, and PHP-comparison eligibility.
+Use `cargo run -p phpc -- test --list-fixtures-json [fixture-dir]` when
+automation needs the same audit-only manifest as deterministic JSON.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

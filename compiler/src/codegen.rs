@@ -14,6 +14,8 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
@@ -702,9 +704,10 @@ impl LlvmGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
-                Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION))
+            Expr::DynamicCall { span, .. } => {
+                Err(self.unsupported(*span, LLVM_DYNAMIC_FUNCTION_CALL_REJECTION))
             }
+            Expr::Call { span, .. } => Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION)),
             Expr::InstanceOf { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
@@ -3537,7 +3540,10 @@ impl CGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
+            Expr::DynamicCall { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION))
+            }
+            Expr::Call { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
             }
             Expr::InstanceOf { span, .. } => {

@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T00:10:00Z
+
+- Checkpoint before this task:
+  `f1b7bfb9 runtime: enforce final method boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1126-1130, four-lane implementation batch plus
+  `GOAL.MD` reconciliation toward full PHP and WordPress compatibility,
+  including difficult tracks such as references/copy-on-write, object
+  semantics, exceptions/errors, runtime services/extensions, WordPress flows,
+  native execution, and measurable compatibility harnesses.
+- Files changed so far: parser/runtime/codegen/CLI test-runner code, focused
+  tests and fixtures for asymmetric property visibility parse boundaries,
+  abstract method implementation runtime boundaries, native dynamic
+  function-call rejection, JSON fixture-manifest reporting, plus `README.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OPERATIONS.md`, and this memory file.
+- Tests run so far: each lane reported focused checks passing in its own
+  worktree and target directory; integration focused checks and the serialized
+  checkpoint gate are pending in the main workspace.
+- Remaining semantic gaps: full references/copy-on-write, real readonly and
+  typed property semantics, method visibility/signature compatibility, trait
+  composition, interface enforcement, exception unwinding and PHP error
+  objects, native object/function/static-local/multifile execution, native
+  boxed runtime integration, standard-library/extensions,
+  database/PDO/MySQLi realism, filesystem/streams, request/SAPI/server state,
+  Composer/autoload/multifile behavior, WordPress entry flows, and
+  compatibility verification gates remain implementation work.
+- Next concrete task: run integrated focused checks, run the serialized full
+  checkpoint gate, commit, push, then start Milestones 1131-1134 from separate
+  worktrees.
+
 ## Loop Event 2026-05-16T23:05:00Z
 
 - Checkpoint before this task:
@@ -42,7 +74,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   `docs/OBJECT_MODEL.md`, and this memory file.
 - Tests run so far: each lane reported focused checks passing in its own
   worktree and target directory; integration focused checks and the serialized
-  checkpoint gate are pending in the main workspace.
+  checkpoint gate passed before commit
+  `f1b7bfb9 runtime: enforce final method boundary`.
 - Remaining semantic gaps: full references/copy-on-write, real readonly and
   typed property semantics, abstract method implementation enforcement, method
   visibility compatibility enforcement, trait composition, interface
@@ -51,9 +84,7 @@ injects this file into every prompt. Each Codex pass should update it with:
   realism, filesystem/streams, request/SAPI/server state,
   Composer/autoload/multifile behavior, WordPress entry flows, and
   compatibility verification gates remain implementation work.
-- Next concrete task: run integrated focused checks, run the serialized full
-  checkpoint gate, commit, push, then start Milestones 1126-1129 from separate
-  worktrees.
+- Next concrete task: start Milestones 1126-1129 from separate worktrees.
 
 ## Loop Event 2026-05-16T22:05:00Z
 

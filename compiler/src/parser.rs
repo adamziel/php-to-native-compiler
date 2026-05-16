@@ -756,6 +756,13 @@ impl Parser {
         let mut final_span = None;
 
         loop {
+            if self.check_asymmetric_property_visibility_modifier() {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_asymmetric_property_visibility_message(),
+                ));
+            }
+
             let modifier = match &self.peek().kind {
                 TokenKind::Public => Some(ClassVisibility::Public),
                 TokenKind::Protected => Some(ClassVisibility::Protected),
@@ -6112,11 +6119,27 @@ fn unsupported_readonly_class_member_modifier_message() -> &'static str {
     "unsupported readonly class member modifier: readonly methods and readonly class constants are not implemented"
 }
 
+fn unsupported_asymmetric_property_visibility_message() -> &'static str {
+    "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
+}
+
 fn unsupported_trait_use_message() -> &'static str {
     "unsupported trait use: trait composition inside classes is not implemented"
 }
 
 impl Parser {
+    fn check_asymmetric_property_visibility_modifier(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Public | TokenKind::Protected | TokenKind::Private
+        ) && matches!(self.peek_next().kind, TokenKind::LParen)
+            && matches!(
+                &self.peek_n(2).kind,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set")
+            )
+            && matches!(self.peek_n(3).kind, TokenKind::RParen)
+    }
+
     fn check_readonly_property_declaration(&self) -> bool {
         for token in self.tokens[self.current..]
             .iter()

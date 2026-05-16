@@ -4,6 +4,89 @@
 
 Implemented:
 
+- Added Milestone 1130, a tests/docs reconciliation after the 1126-1129
+  implementation batch. `GOAL.MD` now keeps the full PHP and WordPress
+  compatibility gaps as first-class roadmap tracks, `docs/NEXT_TASKS.md`
+  marks Milestones 1126-1130 complete and opens Milestones 1131-1135, and the
+  support/architecture/operations docs describe asymmetric property visibility
+  parse boundaries, abstract-method implementation runtime boundaries, native
+  dynamic function-call rejection, and JSON fixture manifests. This does not
+  change runtime behavior, native lowering, fixture execution, or
+  PHP/WordPress compatibility claims beyond the implemented 1126-1129 slices.
+  Full gate pending at the 1126-1130 checkpoint.
+
+- Added Milestone 1129, a deterministic compiler-output JSON fixture-manifest
+  contract. `phpc test --list-fixtures-json [fixture-dir]` now emits a stable
+  `contract_version: 1` JSON document with aggregate fixture counts, sorted
+  fixture entries, recognized expectation metadata, PHP-comparison eligibility,
+  and recognized orphan sidecars. This improves machine-readable fixture audit
+  logs without parsing, executing, or comparing fixtures and without changing
+  normal `phpc test`, `--compare-php`, runtime behavior, native lowering, or
+  PHP/WordPress support claims. Unsupported/remaining gaps: the JSON is a
+  manifest-only contract and does not encode fixture execution results, system
+  PHP comparison outcomes, PHP-version-specific diagnostics, or unrecognized
+  sidecar files. Verification so far: `cargo test -p phpc --test
+  fixture_manifest -- --test-threads=1`, `cargo test -p phpc --test
+  php_comparison -- --test-threads=1`, direct `cargo run -q -p phpc -- test
+  --list-fixtures-json <temp-fixture-dir>`, `cargo fmt --check`, and scoped
+  `git diff --check` passed in the compiler-output lane. Full gate deferred
+  until integration.
+
+- Added Milestone 1128, a dedicated native dynamic function-call rejection.
+  `phpc compile --emit-ir` and `--emit-asm` now reject variable-call
+  expressions such as `$name(...)` with a diagnostic naming callable
+  expression evaluation, runtime function lookup, stack frames,
+  arity/type diagnostics, callback dispatch, and exact native callable errors
+  instead of the broader function-call boundary. This does not implement
+  native callable expression evaluation, runtime function lookup, stack-frame
+  layout, arity/type diagnostics, callback dispatch, or exact native callable
+  errors. Verification so far: `cargo test -p phpc --test
+  native_function_call_boundary -- --test-threads=1`, direct `cargo run -q -p
+  phpc -- compile
+  tests/fixtures/milestone1128/native_dynamic_function_call_boundary.phpc-source
+  --emit-ir`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1128/native_dynamic_function_call_boundary.phpc-source
+  --emit-asm`, `cargo fmt --check`, and scoped `git diff --check` passed in
+  the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1127, bounded runtime enforcement for abstract method
+  implementation obligations on concrete classes. Concrete classes that
+  declare or inherit abstract methods without a concrete implementation now
+  report the stable runtime boundary `unsupported class inheritance for Child:
+  concrete class Child must implement abstract method Base::compute()` during
+  class registration. Abstract child classes can still defer implementation,
+  and concrete descendants can satisfy the obligation. This does not implement
+  method visibility compatibility, method signature compatibility, trait or
+  interface enforcement, exact PHP `Error` objects/diagnostics/exit parity,
+  declaration-order/autoload fidelity, or native object/class lowering.
+  Verification so far: `cargo test -p phpc --test object_model
+  abstract_method -- --test-threads=1`, `cargo test -p phpc --test
+  object_model -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1127`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1127`, direct system PHP probes for
+  the matching implementation and abstract-method fatal case, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the runtime lane. Full
+  gate deferred until integration.
+
+- Added Milestone 1126, a parser/syntax-boundary diagnostic for unsupported
+  PHP asymmetric property visibility. Class members using PHP 8 set-visibility
+  modifiers such as `public private(set) string $id;`,
+  `protected private(set) string $id;`, and
+  `public static protected(set) string $id;` now fail with a stable parse
+  diagnostic naming the missing property visibility metadata, typed-property
+  storage/enforcement, reflection behavior, and native lowering instead of the
+  misleading duplicate-visibility diagnostic. This does not implement
+  asymmetric property visibility, typed-property storage/enforcement,
+  readonly/write-once interactions, reflection behavior, exact PHP
+  diagnostics, or native lowering. Verification so far:
+  `cargo test -p phpc --test syntax_boundaries unsupported_asymmetric_property_visibility_has_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -q -p phpc -- compile tests/fixtures/unsupported_object_features/unsupported_asymmetric_property_visibility.php --emit-ir`
+  returning exit `1`, `cargo fmt --check`, and scoped `git diff --check`
+  passed in the parser lane. Full gate deferred until integration.
+
 - Added Milestone 1125, a tests/docs lane queue refresh after the 1121-1124
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1121-1125
   complete and opens Milestones 1126-1130, `docs/LANE_WORKERS.md` points the

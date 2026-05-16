@@ -1265,36 +1265,69 @@ destructors/reuse, and exact PHP diagnostics.
 
 ## What Is Still Missing Before Full WordPress Support
 
-Full WordPress support is still missing at several layers:
+The remaining work is part of the goal, not an escape hatch. Full PHP and
+WordPress compatibility means these tracks eventually have executable support,
+tests, CLI coverage, docs, and named unsupported edge cases while they are in
+progress.
 
-1. Bootstrap correctness: direct `wp-settings.php` still needs a faithful
-   entrypoint/environment policy for `ABSPATH`, include path, configuration,
-   source mapping, and autoload behavior.
-2. PHP language semantics: references, copy-on-write, by-reference
-   calls/returns, closures with capture and invocation, generators, `match`,
-   named arguments, spread/unpack, full
-   namespace/import forms, and version-specific parse/runtime behavior.
-3. Object model: full constructors/inheritance, interfaces, traits, enums,
-   magic methods beyond the current bounded `__get`/`__isset`/`__set`/
-   `__unset`/`__call`/`__callStatic`/direct-`__toString` and direct
-   `ArrayAccess` offset slices, dynamic properties/methods, typed properties
-   and property defaults beyond the current constant-expression subset,
-   reflection, cloning/destructors, late static binding, and exact visibility
-   behavior.
-4. Error model: warnings/notices/deprecations, recoverable errors, `@`
-   suppression, exceptions and stack unwinding, output buffering, partial
-   output, stack traces, and PHP-shaped fatal behavior.
-5. Runtime services: filesystem and streams, JSON, XML/DOM/SimpleXML, regex,
-   mbstring/intl, date/time, password/hash/crypto, serialization, sessions,
-   cookies, headers, superglobals, ini/environment state, HTTP, database
-   access, object cache, options/transients, and extension constants/functions.
-6. WordPress flows: core bootstrap, installer/config loading, database-backed
-   requests, hooks/filters, plugin/theme discovery and loading, front-end,
-   admin, REST, cron, media/filesystem, blocks, and WP-CLI-like entrypoints.
-7. Native path: generated code for boxed values, arrays, objects, calls, stack
-   frames, heap/lifetime management, runtime helper ABI, diagnostics, linked
-   executable behavior, and stable rejection for every unsupported lowering
-   case.
+PHP value semantics:
+General references, reference containers, array/object copy-on-write, alias
+destruction ordering, by-reference `foreach`, by-reference builtins, and
+mutation behavior across function calls, arrays, objects, and globals.
+
+PHP syntax and program structure:
+Generators, `match`, named arguments, spread/unpack, complex destructuring,
+complete namespace/import forms, attributes with runtime reflection effects,
+`eval`, autoload-triggered discovery, and version-specific parse/runtime
+differences.
+
+Objects and class-like types:
+Constructor and inheritance compatibility, abstract method implementation
+checks, method/property visibility compatibility, interfaces, interface
+inheritance, traits and conflict resolution, enums, typed/readonly properties,
+reflection, magic methods, dynamic members, `__clone`, destructors, late static
+binding, and exact fatal/error behavior.
+
+Error and exception model:
+Warnings, notices, deprecations, recoverable errors, real `@` suppression,
+`Throwable`/`Exception` objects, `try`/`catch` matching, stack unwinding, stack
+traces, output buffering, shutdown/destructor/finally ordering, and PHP-shaped
+fatal exits.
+
+Runtime services and extensions:
+Filesystem and streams, JSON, XML/DOM/SimpleXML, regex breadth, mbstring/intl,
+date/time fidelity, password/hash/crypto, serialization, sessions, cookies,
+headers, superglobals, ini/environment state, HTTP, database access, object
+cache, options/transients, extension constants, and extension function catalogs.
+
+WordPress execution:
+Faithful `wp-settings.php` bootstrapping, `ABSPATH`/config/include/autoload
+policy, database-backed requests, real hook/filter behavior at scale,
+plugin/theme discovery and loading, front-end, admin, REST, cron, XML-RPC,
+media/filesystem, block/theme flows, and WP-CLI-like entrypoints.
+
+Native execution:
+Boxed-value lowering, arrays, objects, calls, stack frames, heap/lifetime
+management, runtime helper ABI, linked executable behavior, native diagnostics,
+native stdout/stderr/exit behavior, and precise rejection for every construct
+not yet lowered.
+
+Compatibility measurement:
+A pinned PHP-version matrix, imported or mirrored behavioral fixtures where
+appropriate, a committed WordPress core harness, representative plugin/theme
+smoke targets, and machine-readable pass/fail/skip reports with named
+unsupported reasons.
+
+Practical order of attack:
+
+1. Keep widening `phpc run` until real PHP programs can execute without
+   placeholder-only success.
+2. Replace placeholder WordPress/database/filesystem behavior with testable
+   semantics whenever a fixture depends on it.
+3. Grow native support through runtime-backed helpers instead of hand-emitting
+   misleading scalar-only code for dynamic PHP.
+4. Keep unsupported constructs visible as parser, runtime, or codegen
+   boundaries until the implementation and tests exist.
 
 ## Current Baseline
 

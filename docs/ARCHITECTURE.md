@@ -190,7 +190,8 @@ Implemented now:
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
   parsed abstract/final class modifiers plus abstract/final method modifiers
   as metadata, with abstract class instantiation, final-parent inheritance,
-  and final method overrides rejected at runtime,
+  final method overrides, and concrete classes with unimplemented abstract
+  methods rejected at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,

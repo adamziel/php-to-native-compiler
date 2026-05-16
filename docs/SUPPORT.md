@@ -562,7 +562,9 @@
   class runtime diagnostic. Extending a declared final parent reports a stable
   runtime boundary before registering the child class. Declaring a child method
   with the same case-insensitive name as an inherited final method reports a
-  stable runtime boundary before registering the child class.
+  stable runtime boundary before registering the child class. A concrete class
+  that declares or inherits abstract methods without a concrete implementation
+  reports a stable runtime boundary before registering the class.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -574,8 +576,10 @@
   diagnostic. Instantiating an abstract class reports a stable runtime boundary;
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
-  Abstract-method implementation enforcement, method visibility compatibility
-  enforcement, and readonly class semantics are not implemented. Magic
+  Concrete classes with unimplemented abstract methods report a stable runtime
+  boundary. Method visibility compatibility enforcement, method signature
+  compatibility enforcement, and readonly class semantics are not implemented.
+  Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
   is supported in active class/method contexts, including no-argument forms
   without parentheses, by resolving to the current, parent, or called class
@@ -1972,6 +1976,9 @@
   `abstract`/`final`/`readonly` class member modifiers, readonly property
   declarations before readonly metadata, initialization rules, write-once
   enforcement, reflection behavior, and native lowering exist,
+  asymmetric PHP 8 property set-visibility modifiers such as `private(set)`
+  and `protected(set)` before property visibility metadata, typed-property
+  storage/enforcement, reflection behavior, and native lowering exist,
   typed instance property declarations, typed static property declarations
   before typed metadata/uninitialized state/write enforcement exist, instance
   property default values, multiple property declarations, unsupported class
@@ -3318,8 +3325,12 @@
   user-defined functions in native output, namespace/import/autoload-aware
   lookup, extension-loaded functions outside the documented builtin table,
   general callable builtin dispatch, runtime call lookup, stack-frame layout,
-  arity/type diagnostics, direct `assert(...)`, unsupported `defined(...)` names, dynamic
-  string-call dispatch, and exact native error objects remain unsupported.
+  arity/type diagnostics, direct `assert(...)`, unsupported `defined(...)`
+  names, and exact native error objects remain unsupported. Native dynamic
+  function-call expressions such as `$name(...)` are rejected with a dedicated
+  codegen diagnostic until generated code has callable expression evaluation,
+  runtime function lookup, stack-frame layout, arity/type diagnostics,
+  callback dispatch, and exact native callable errors.
   Native user-function declarations
   and return statements are rejected before function-body lowering with a
   specific codegen diagnostic until generated code has function symbol tables,
@@ -4760,9 +4771,11 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  abstract-method implementation enforcement, method visibility compatibility
+  method visibility compatibility enforcement, method signature compatibility
   enforcement, readonly class semantics, readonly properties, typed property
   storage and enforcement,
+  asymmetric property set visibility such as `private(set)` and
+  `protected(set)`,
   promoted constructor properties,
   property initialization rules beyond the current untyped constant-expression
   default subset, inheritance interactions,
@@ -4922,6 +4935,12 @@
   and recognized sidecars. It also reports recognized orphan sidecars that do
   not have a matching `.php` fixture. It does not parse, execute, or compare
   fixtures.
+- `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
+  fixture manifest as deterministic JSON with `contract_version` 1, aggregate
+  counts, sorted fixture entries, recognized expectation metadata,
+  PHP-comparison eligibility, and recognized orphan sidecars. It does not
+  parse, execute, compare fixtures, report fixture execution results, or report
+  unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported

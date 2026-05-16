@@ -1,0 +1,2 @@
+runtime error at 6:1: unsupported class inheritance for Child: concrete class Child must implement abstract method Base::compute()
+
