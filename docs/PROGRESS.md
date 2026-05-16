@@ -16,6 +16,9 @@ Implemented:
   native lowering. Verification so far:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   and `cargo run -p phpc -- test tests/fixtures/milestone1054`.
+  The serialized checkpoint gate passed with 1268 fixture tests, 713 system
+  PHP comparisons, and 555 skipped comparisons, then committed
+  `8c6294d7 runtime: add magic static reference return boundary`.
 
 - Added Milestone 1053, bounded direct-variable reference-return cells for
   statement-form reference assignment from dynamic static receiver method calls

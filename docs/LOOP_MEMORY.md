@@ -38,11 +38,14 @@ injects this file into every prompt. Each Codex pass should update it with:
   `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1054/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
   `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   passed with 13 tests.
   `cargo run -p phpc -- test tests/fixtures/milestone1054` passed with 1
-  fixture.
+  fixture. `cargo fmt --check` and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1268 fixture tests, 713 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `8c6294d7 runtime: add magic static reference return boundary`.
 - Current WordPress frontier: missing static method reference-return sources
   that would normally route through `__callStatic` now report a stable
   unsupported `Box::__callStatic()` boundary instead of a misleading undefined
@@ -52,10 +55,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   expressions, nested-control-flow returns, array/object offset references,
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
   native lowering remain missing.
-- Next concrete task: run the serialized checkpoint gate, then pivot to the
-  next reference/COW blocker: array slot/reference-container groundwork for
-  array-offset references and exact by-reference `foreach`, unless a smaller
-  audited boundary is higher value.
+- Next concrete task: pivot to the next reference/COW blocker: array
+  slot/reference-container groundwork for array-offset references and exact
+  by-reference `foreach`, unless a smaller audited boundary is higher value.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
