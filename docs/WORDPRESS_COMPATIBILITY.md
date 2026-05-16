@@ -1507,7 +1507,11 @@ historical blockers and remaining full-support gaps include:
   while keeping reached `mysqli_poll()` calls as a stable async-readiness
   boundary without real polling, by-reference read/error/reject array mutation,
   pending async result queues, host socket state, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 930 wires
+  that metadata and boundary through a synthetic WordPress-shaped `wpdb`
+  connection method without claiming real polling, by-reference result arrays,
+  socket readiness, host query execution, warning/error fidelity, or native
+  database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

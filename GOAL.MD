@@ -240,7 +240,10 @@ queues, host database state, warning/error fidelity, or native lowering, plus
 bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata with an explicit
 async-readiness runtime boundary and no real polling, by-reference
 read/error/reject array mutation, pending async result queues, host socket
-state, host database state, warning/error fidelity, or native lowering, plus
+state, host database state, warning/error fidelity, or native lowering, now
+wired through a synthetic WordPress-shaped `wpdb` async-readiness smoke without
+claiming real polling, by-reference result arrays, socket readiness, host query
+execution, warning/error fidelity, or native lowering, plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping

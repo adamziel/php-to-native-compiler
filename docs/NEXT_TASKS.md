@@ -8645,17 +8645,27 @@ handled.
   real async query execution, `mysqli_poll()` readiness, by-reference array
   mutation, pending async result queues, host socket state, warnings/errors,
   host database state, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata and stable async-readiness
   boundary through a WordPress-shaped connection method without claiming real
   polling, by-reference result arrays, socket readiness, or host query
   execution fidelity.
+  Milestone 930 adds a `phpc-only` synthetic `wpdb` fixture that records
+  `mysqli_poll()` function/callability metadata and `MYSQLI_ASYNC = 8`, then
+  reaches the stable `mysqli_poll()` async-readiness boundary through a
+  connection method. It is not real async polling, by-reference
+  read/error/reject array mutation, socket readiness, pending async result
+  queues, warnings/errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi connection option or async
+  execution boundary after `mysqli_poll()`, such as `mysqli_get_links_stats()`,
+  `mysqli_dump_debug_info()`, or a sharper unsupported diagnostic, before
+  claiming broader mysqli host-state fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `680f7fb tests: add wordpress wpdb reap async smoke`, covering
-  Milestone 928 before the current Milestone 929 candidate.
+  `361a047 runtime: add mysqli poll boundary`, covering Milestone 929 before
+  the current Milestone 930 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

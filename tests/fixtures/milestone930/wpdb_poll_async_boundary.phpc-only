@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic `mysqli_poll()` async-readiness
+boundary through a WordPress-shaped `wpdb` connection method. System PHP needs
+real async mysqli socket state and by-reference read/error/reject array
+mutation; phpc exposes `mysqli_poll()` and `MYSQLI_ASYNC` metadata but rejects
+the reached poll because socket readiness, pending async result queues, and
+host query execution are not modeled.

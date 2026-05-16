@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 930, a synthetic WordPress-shaped `wpdb` async-readiness
+  smoke that records bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata and then
+  reaches the stable `mysqli_poll()` runtime boundary through a connection
+  method. This is a harness smoke only; it does not add real WordPress async
+  polling, by-reference read/error/reject array mutation, socket readiness,
+  pending async result queues, host database state, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone930`.
+
 - Added Milestone 929, bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata with
   an explicit async-readiness runtime boundary. The runtime exposes
   `MYSQLI_ASYNC = 8`, makes `mysqli_poll()` visible through
