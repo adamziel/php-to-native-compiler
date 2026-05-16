@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone925/mysqli_multi_query_charset_placeholder.php
+yes
+callable
+charset-ok
+dynamic
+done
+done
+no-pending
+no-use

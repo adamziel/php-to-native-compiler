@@ -8585,16 +8585,30 @@ handled.
   SQL execution, pending result tracking, result object creation, mutation
   state, connection charset mutation, warnings/errors, host database state, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi execution boundary after
+- [x] Runtime/mysqli lane: inspect the next MySQLi execution boundary after
   placeholder `mysqli_real_query()` bookkeeping, such as `mysqli_multi_query()`
   or a sharper unsupported diagnostic for unsupported query/pending-result
   state, before claiming broader SQL execution or multi-result fidelity.
+  Milestone 925 implements bounded deterministic `mysqli_multi_query($handle,
+  $query)` support for current placeholder `mysqli` handles and the exact
+  WordPress charset setup statement. It returns deterministic `true`, rejects
+  multi-statement SQL, result-producing SQL, mutation SQL, and unsupported
+  query values with stable diagnostics, and is visible through runtime and
+  native metadata lookup. This is not real multi-statement execution, pending
+  result queues, `mysqli_more_results()`/`mysqli_next_result()` state, result
+  object creation, mutation state, host database state, warnings/errors, or
+  native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_multi_query()` charset setup placeholder through a
+  WordPress-shaped connection query method without claiming real
+  multi-statement execution, pending result queues, or connection charset
+  mutation fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `fe2a720 runtime: add mysqli real query placeholder`, covering Milestone 923
-  before the current Milestone 924 candidate.
+  `7c13bf5 tests: add wordpress wpdb real query smoke`, covering Milestone 924
+  before the current Milestone 925 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

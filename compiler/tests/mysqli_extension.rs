@@ -1504,6 +1504,37 @@ echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
 }
 
 #[test]
+fn mysqli_multi_query_accepts_current_wordpress_charset_setup_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_multi_query";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_multi_query($handle, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'") ? "charset-ok" : "charset-failed";
+echo "|";
+echo $call($handle, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'") ? "dynamic" : "failed";
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "done";
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-pending" : "pending";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|charset-ok|dynamic|done|done|no-pending"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_returns_current_empty_result_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -1959,6 +1990,84 @@ mysqli_real_query(mysqli_init(), "UPDATE wp_options SET option_value = '1' WHERE
 }
 
 #[test]
+fn mysqli_multi_query_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_multi_query("not-a-handle", "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_multi_query(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_query = run_source(
+        r#"<?php
+mysqli_multi_query(mysqli_init(), false);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_query.phase, Phase::Runtime);
+    assert_eq!(bad_query.line, 2);
+    assert_eq!(bad_query.column, 1);
+    assert_eq!(
+        bad_query.message,
+        "unsupported call mysqli_multi_query(): query argument must be string in the current subset, got bool"
+    );
+
+    let unsupported_multi_statement = run_source(
+        r#"<?php
+mysqli_multi_query(mysqli_init(), "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_multi_statement.phase, Phase::Runtime);
+    assert_eq!(unsupported_multi_statement.line, 2);
+    assert_eq!(unsupported_multi_statement.column, 1);
+    assert_eq!(
+        unsupported_multi_statement.message,
+        "unsupported call mysqli_multi_query(): multi-statement mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_more_results()/mysqli_next_result() state are not modeled; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'; SELECT 1"
+    );
+
+    let unsupported_select = run_source(
+        r#"<?php
+mysqli_multi_query(mysqli_init(), "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_select.phase, Phase::Runtime);
+    assert_eq!(unsupported_select.line, 2);
+    assert_eq!(unsupported_select.column, 1);
+    assert_eq!(
+        unsupported_select.message,
+        "unsupported call mysqli_multi_query(): result-producing mysqli_multi_query() SQL is not implemented because pending result queues and mysqli_store_result()/mysqli_use_result() state are not modeled; got SELECT 1"
+    );
+
+    let unsupported_mutation = run_source(
+        r#"<?php
+mysqli_multi_query(mysqli_init(), "UPDATE wp_options SET option_value = '1' WHERE option_name = 'blog_public'");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_mutation.phase, Phase::Runtime);
+    assert_eq!(unsupported_mutation.line, 2);
+    assert_eq!(unsupported_mutation.column, 1);
+    assert_eq!(
+        unsupported_mutation.message,
+        "unsupported call mysqli_multi_query(): mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got UPDATE wp_options SET option_value = '1' WHERE option_name = 'blog_public'"
+    );
+}
+
+#[test]
 fn mysqli_select_db_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -2241,6 +2350,8 @@ echo function_exists("mysqli_query") ? "1" : "0";
 echo is_callable("mysqli_query") ? "1" : "0";
 echo function_exists("mysqli_real_query") ? "1" : "0";
 echo is_callable("mysqli_real_query") ? "1" : "0";
+echo function_exists("mysqli_multi_query") ? "1" : "0";
+echo is_callable("mysqli_multi_query") ? "1" : "0";
 echo function_exists("mysqli_errno") ? "1" : "0";
 echo is_callable("mysqli_errno") ? "1" : "0";
 echo function_exists("mysqli_error") ? "1" : "0";
@@ -2312,7 +2423,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 123, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 125, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2644,6 +2755,18 @@ mysqli_query(mysqli_init(), "SELECT @@SESSION.sql_mode");
     let error = emit_ir_source(
         r#"<?php
 mysqli_real_query(mysqli_init(), "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_multi_query(mysqli_init(), "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
 "#,
     )
     .unwrap_err();
