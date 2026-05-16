@@ -1170,10 +1170,12 @@ historical blockers and remaining full-support gaps include:
   all options, autoloaded options, and explicit option-name lists. Milestone
   1028 extends the same state to exact prepared option-value reads for string
   option-name parameters through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()`
-  and `mysqli_execute_query()`. This is still not broad SQL parsing,
-  ordering/collation fidelity, INSERT-on-duplicate behavior, DELETE breadth,
-  REPLACE, transactions, host database execution, PDO, prepared-statement
-  mutation state, or native database lowering. The real bootstrap-shim
+  and `mysqli_execute_query()`. Milestone 1029 extends that prepared readback
+  to exact option-name/option-value row reads for the same string option-name
+  parameter shape. This is still not broad SQL parsing, ordering/collation
+  fidelity, INSERT-on-duplicate behavior, DELETE breadth, REPLACE,
+  transactions, host database execution, PDO, prepared-statement mutation
+  state, or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

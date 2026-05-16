@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1029/mysqli_wp_options_prepared_row_state.php
+exit: 0
+stdout:
+executed|1:2|siteurl=https://example.test|missing-executed|0:0|siteurl=https://example.test
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -5368,6 +5368,29 @@ impl Interpreter {
             }));
         }
 
+        if query == "SELECT option_name, option_value FROM wp_options WHERE option_name = ?" {
+            if let Some((option_name, option_value)) = match (connection_handle_id, params) {
+                (Some(handle_id), [Value::String(option_name)]) => self
+                    .mysqli_wp_options
+                    .get(&handle_id)
+                    .and_then(|options| options.get(option_name))
+                    .map(|option| (option_name.clone(), option.value.clone())),
+                _ => None,
+            } {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "option_value".to_string()],
+                    rows: vec![vec![
+                        ("option_name".to_string(), Value::String(option_name)),
+                        ("option_value".to_string(), Value::String(option_value)),
+                    ]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         mysqli_statement_result_for_query_with_params(function, query, params, span)
     }
 
@@ -16182,6 +16205,13 @@ fn mysqli_statement_result_for_query_with_params(
     if query == "SELECT option_value FROM wp_options WHERE option_name = ?" {
         return Ok(Some(MysqliPendingResultState {
             fields: vec!["option_value".to_string()],
+            rows: Vec::new(),
+        }));
+    }
+
+    if query == "SELECT option_name, option_value FROM wp_options WHERE option_name = ?" {
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec!["option_name".to_string(), "option_value".to_string()],
             rows: Vec::new(),
         }));
     }

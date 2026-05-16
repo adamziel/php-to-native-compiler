@@ -1008,6 +1008,46 @@ echo mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_statement_reads_current_wordpress_option_row_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name = ?");
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "s", $name);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+$result = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($result);
+echo ":";
+echo mysqli_num_fields($result);
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["option_name"], "=", $row["option_value"];
+$name = "home";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "missing-executed" : "failed";
+$missing = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($missing), ":", mysqli_num_fields($missing);
+echo "|";
+$direct = mysqli_execute_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name = ?", array("siteurl"));
+$direct_row = mysqli_fetch_assoc($direct);
+echo $direct_row["option_name"], "=", $direct_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "executed|1:2|siteurl=https://example.test|missing-executed|0:0|siteurl=https://example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_bind_result_has_direct_variable_placeholder_state() {
     let execution = run_source(
         r#"<?php

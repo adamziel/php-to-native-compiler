@@ -319,8 +319,13 @@ Prepared statement execution over the same state island supports the exact
 option-name parameters on the same placeholder handle through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array($name))`; missing names return an
-empty placeholder result. This does not add broad prepared SQL execution,
-prepared mutation state, non-string option-name parameter coercion, host
+empty placeholder result. The exact
+`SELECT option_name, option_value FROM wp_options WHERE option_name = ?` query
+also returns a recorded option-name/option-value row for string option-name
+parameters on the same handle through the same prepared result paths; missing
+names return an empty zero-field placeholder result. This does not add broad
+prepared SQL execution, prepared mutation state, non-string option-name
+parameter coercion, result binding fidelity beyond exact metadata, host
 database execution, PDO, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
