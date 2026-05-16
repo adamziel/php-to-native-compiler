@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1032/mysqli_wp_options_prepared_insert_state.php
+exit: 0
+stdout:
+inserted|1|1|1|https://example.test|inserted-again|1|2|https://home.test
+--- stdout end ---
+stderr:
+--- stderr end ---

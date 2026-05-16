@@ -5352,6 +5352,43 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_insert_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                let [Value::String(option_name), Value::String(option_value), Value::String(autoload)] =
+                    bound_parameters.as_slice()
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function,
+                            "prepared wp_options insert requires string option name, option value, and autoload parameters in the current subset",
+                        ),
+                    ));
+                };
+                self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                    option_name.clone(),
+                    WordPressOptionState {
+                        value: option_value.clone(),
+                        autoload: autoload.clone(),
+                    },
+                );
+                self.mysqli_affected_rows.insert(handle_id, 1);
+                let next_insert_id = self
+                    .mysqli_insert_ids
+                    .get(&handle_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+                let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                state.executed_result = None;
+                state.affected_rows = 1;
+                state.buffered_result = None;
+                state.buffered_result_cursor = 0;
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if is_wordpress_option_prepared_delete_query(&query) {
             if let Some(handle_id) = connection_handle_id {
                 if self.mysqli_wp_options.contains_key(&handle_id) {
@@ -16151,6 +16188,13 @@ fn is_wordpress_option_prepared_update_query(query: &str) -> bool {
     let query = query.trim();
     query == "UPDATE wp_options SET option_value = ? WHERE option_name = ?"
         || query == "UPDATE `wp_options` SET `option_value` = ? WHERE `option_name` = ?"
+}
+
+fn is_wordpress_option_prepared_insert_query(query: &str) -> bool {
+    let query = query.trim();
+    query == "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)"
+        || query
+            == "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (?, ?, ?)"
 }
 
 fn is_wordpress_option_prepared_delete_query(query: &str) -> bool {

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1032, bounded prepared-statement `wp_options` insert state
+  over the current per-placeholder-connection MySQLi state island.
+  `mysqli_prepare($handle, "INSERT INTO wp_options (option_name, option_value,
+  autoload) VALUES (?, ?, ?)")`, direct-variable
+  `mysqli_stmt_bind_param(..., "sss", $name, $value, $autoload)`, and
+  `mysqli_stmt_execute()` now record string option-name, option-value, and
+  autoload parameters on the same placeholder handle, set
+  `mysqli_stmt_affected_rows($stmt)` and `mysqli_affected_rows($handle)` to
+  `1`, advance deterministic `mysqli_insert_id($handle)`, and expose the
+  inserted values through the existing exact option-value readback path.
+  This is not broad prepared SQL execution, duplicate-key or
+  INSERT-on-duplicate semantics, prepared REPLACE, non-string parameter
+  coercion, schema/index behavior, transactions, host database execution,
+  warning/error fidelity, PDO, or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_inserts_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1032`.
+
 - Added Milestone 1031, bounded prepared-statement `wp_options` delete state
   over the current per-placeholder-connection MySQLi state island.
   `mysqli_prepare($handle, "DELETE FROM wp_options WHERE option_name = ?")`,
