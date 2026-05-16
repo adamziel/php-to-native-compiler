@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_dump_debug_info()` host-diagnostics boundary through a
+WordPress-shaped `wpdb` connection diagnostics method. System PHP asks the
+client library to dump debug information; phpc returns deterministic success
+without writing MySQL DBUG traces, inspecting host client-library debug state,
+touching sockets, or querying database state.

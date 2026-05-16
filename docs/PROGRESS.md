@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 934, a synthetic WordPress-shaped `wpdb` connection
+  diagnostics smoke that records bounded `mysqli_dump_debug_info()` metadata
+  through a `wpdb`-style method, verifies callable metadata, records
+  deterministic debug-dump success, and checks that the placeholder connection
+  remains open. This is a harness smoke only; it does not add MySQL DBUG trace
+  output, host client-library debug state, socket inspection, host database
+  state, PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone934`.
+
 - Added Milestone 933, bounded `mysqli_dump_debug_info()` support for
   deterministic placeholder MySQLi host-diagnostics metadata. The runtime
   accepts current placeholder `mysqli` handles, returns deterministic `true`,

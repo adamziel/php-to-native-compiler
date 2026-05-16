@@ -8686,17 +8686,28 @@ handled.
   runtime and native metadata lookup. This is not MySQL DBUG trace output,
   host client-library debug state, socket inspection, host database state,
   warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_dump_debug_info()` host-diagnostics placeholder through a
   WordPress-shaped connection diagnostics method without claiming MySQL DBUG
   trace output, host client-library debug state, sockets, host database state,
   warning/error fidelity, or native lowering.
+  Milestone 934 adds a `phpc-only` synthetic `wpdb` fixture that records
+  callable metadata, deterministic `mysqli_dump_debug_info()` success, and
+  placeholder connection liveness through a WordPress-shaped diagnostics
+  method. It is not MySQL DBUG trace output, host client-library debug state,
+  socket inspection, host database state, warning/error fidelity, or native
+  lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi host-state or diagnostics
+  boundary after deterministic dump-debug metadata, such as a sharper
+  unsupported diagnostic for real debug trace behavior, the next missing
+  WordPress-reached MySQLi function, or a real-state replacement for one of
+  the current placeholders before claiming broader database fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2073f6c tests: add wordpress wpdb links stats smoke`, covering
-  Milestone 932 before the current Milestone 933 candidate.
+  `140b2c9 runtime: add mysqli dump debug info placeholder`, covering
+  Milestone 933 before the current Milestone 934 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

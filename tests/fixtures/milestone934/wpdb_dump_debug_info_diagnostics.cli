@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone934/wpdb_dump_debug_info_diagnostics.php
+dumped
+callable
+dumped
+open

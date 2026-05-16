@@ -1522,6 +1522,10 @@ historical blockers and remaining full-support gaps include:
   `mysqli_dump_debug_info()` placeholder host-diagnostics metadata without
   MySQL DBUG trace output, host client-library debug state, socket inspection,
   host database state, warning/error fidelity, or native database lowering.
+  Milestone 934 wires that metadata through a synthetic WordPress-shaped
+  `wpdb` connection diagnostics smoke without claiming MySQL DBUG trace
+  output, host client-library debug state, socket inspection, host database
+  state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
