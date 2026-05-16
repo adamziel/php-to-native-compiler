@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1016, bounded direct object-offset `ArrayAccess`
+  increment/decrement. Direct `++$object[$key]`, `$object[$key]++`,
+  `--$object[$key]`, and `$object[$key]--` now read the current value through
+  visible non-static `offsetGet($key)`, apply the existing integer/float
+  increment/decrement helper on PHP's current by-value temporary path, and do
+  not dispatch `offsetSet($key, $value)`. The new fixture suppresses PHP's
+  indirect-modification notices and covers pre/post increment and decrement
+  against system PHP. This is not by-reference `offsetGet()` mutation,
+  indirect-modification notice fidelity, nested/mixed object-property/
+  ArrayAccess paths, append compound assignment, ArrayAccess iteration,
+  built-in interface enforcement/signature validation, typed method
+  invocation, string increment/decrement semantics, exact PHP warning/
+  visibility diagnostics, references/copy-on-write aliasing during
+  read-modify-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model array_access_offsets_support_increment_decrement -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1016`,
+  `cargo test -p phpc --test increment_decrement -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries increment_decrement -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`.
+
 - Added Milestone 1015, bounded direct object-offset `ArrayAccess` compound
   assignment. Direct `$object[$key] op= expr` now reads the current left value
   through visible non-static `offsetGet($key)`, applies the existing compound
@@ -11,7 +33,7 @@ Implemented:
   visible non-static `offsetSet($key, $value)`. The new fixture covers integer
   addition and string concatenation forms against system PHP. This is not
   nested/mixed object-property/ArrayAccess paths, append compound assignment,
-  ArrayAccess increment/decrement, ArrayAccess iteration, built-in interface
+  ArrayAccess iteration, built-in interface
   enforcement/signature validation, typed method invocation, exact PHP
   warning/visibility diagnostics, references/copy-on-write aliasing during
   read-modify-write, or native lowering. Verification so far:

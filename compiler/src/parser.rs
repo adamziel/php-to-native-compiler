@@ -5612,7 +5612,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_bracketed_namespace_message() -> &'static str {

@@ -261,7 +261,7 @@ fn array_offset_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables, array offsets, object properties, or static properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
     );
 }
 
@@ -275,7 +275,7 @@ fn object_property_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables, array offsets, object properties, or static properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
     );
 }
 
@@ -287,7 +287,7 @@ fn increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables, array offsets, object properties, or static properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
     );
 }
 
@@ -299,7 +299,7 @@ fn expression_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables, array offsets, object properties, or static properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
     );
 }
 
@@ -313,7 +313,7 @@ fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 13);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables, array offsets, object properties, or static properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string"
     );
 }
 

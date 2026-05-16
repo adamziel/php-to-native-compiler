@@ -29,6 +29,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `e63134a3 runtime: add array access compound assignment`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1016, bounded direct object-offset `ArrayAccess`
+  increment/decrement for classes whose metadata records `implements
+  ArrayAccess`.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1016/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test object_model array_access_offsets_support_increment_decrement -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1016`,
+  `cargo test -p phpc --test increment_decrement -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries increment_decrement -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed after
+  correcting the by-value `ArrayAccess` increment/decrement semantics.
+- Current WordPress frontier: direct object-offset increment/decrement
+  expressions can now use `offsetGet` and PHP's by-value temporary result
+  behavior instead of failing at ordinary invalid array access.
+- Remaining semantic gaps: by-reference `offsetGet()` mutation, indirect
+  modification notice fidelity, nested/mixed object-property/ArrayAccess paths,
+  append compound assignment, ArrayAccess iteration, built-in interface
+  enforcement/signature validation, typed method invocation, string
+  increment/decrement semantics, exact diagnostics, references/copy-on-write,
+  and native lowering remain missing.
+- Next concrete task: run focused verification, then checkpoint only if the
+  full gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `fdb9a88a runtime: add array access offsets`, pushed to `origin/master`.
 - Task attempted: Milestone 1015, bounded direct object-offset `ArrayAccess`
   compound assignment for classes whose metadata records `implements

@@ -241,6 +241,7 @@ enum CompoundAssignmentPlace {
         name: String,
         key: ArrayKey,
     },
+    ArrayAccessTemporary,
     ObjectProperty {
         object: String,
         property: String,
@@ -3570,6 +3571,7 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
+            CompoundAssignmentPlace::ArrayAccessTemporary => Ok(()),
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
@@ -3749,6 +3751,15 @@ impl Interpreter {
                             value,
                         ))
                     }
+                    Some(Value::Object(object)) => {
+                        let value = self.call_array_access_method(
+                            object,
+                            "offsetGet",
+                            vec![Self::array_key_value(Some(key))],
+                            span,
+                        )?;
+                        Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
+                    }
                     Some(other) => Err(runtime_error(
                         span,
                         RuntimeError::invalid_array_access(format!(
@@ -3860,7 +3871,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "increment/decrement",
                         format!(
-                            "only int and float variables, array offsets, object properties, or static properties are implemented, got {}",
+                            "only int and float variables, array/object offsets, object properties, or static properties are implemented, got {}",
                             other.type_name()
                         ),
                     ),

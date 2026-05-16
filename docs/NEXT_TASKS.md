@@ -9727,12 +9727,25 @@ handled.
   append compound assignment, ArrayAccess increment/decrement, ArrayAccess
   iteration, built-in interface enforcement/signature validation, typed method
   invocation, exact diagnostics, references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded direct object-offset `ArrayAccess`
+  increment/decrement for classes that record `implements ArrayAccess` in
+  current class metadata.
+  Milestone 1016 covers direct `++$object[$key]`, `$object[$key]++`,
+  `--$object[$key]`, and `$object[$key]--` by dispatching visible non-static
+  `offsetGet($key)`, applying the current integer/float increment/decrement
+  helper to PHP's current by-value temporary result, and not dispatching
+  `offsetSet($key, $value)`. This is not by-reference `offsetGet()` mutation,
+  indirect-modification notice fidelity, nested/mixed object-property/
+  ArrayAccess paths, append compound assignment, ArrayAccess iteration,
+  built-in interface enforcement/signature validation, typed method
+  invocation, string increment/decrement semantics, exact diagnostics,
+  references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess paths,
-  ArrayAccess increment/decrement, object interpolation, `__clone` dispatch,
-  destructors, or inaccessible-member magic fidelity, and add the next bounded
-  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
-  native rejection coverage where lowering remains unsupported.
+  ArrayAccess iteration, object interpolation, `__clone` dispatch, destructors,
+  or inaccessible-member magic fidelity, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9744,8 +9757,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `fdb9a88a runtime: add array access offsets`, covering Milestone 1014
-  before the current Milestone 1015 candidate.
+  `e63134a3 runtime: add array access compound assignment`, covering
+  Milestone 1015 before the current Milestone 1016 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

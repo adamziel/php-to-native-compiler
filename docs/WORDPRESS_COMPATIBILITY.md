@@ -1236,7 +1236,15 @@ direct object-offset `ArrayAccess` to compound assignment by calling
 back with `offsetSet($key, $value)`, while leaving nested/mixed
 object-property/ArrayAccess paths, append compound assignment, increment/
 decrement, iteration, references/copy-on-write, exact diagnostics, and native
-lowering explicit gaps.
+lowering explicit gaps. Milestone 1016 extends direct object-offset
+`ArrayAccess` to pre/post increment and decrement for current integer and
+float values by calling `offsetGet($key)`, applying the current
+increment/decrement helper to PHP's by-value temporary result, and not calling
+`offsetSet($key, $value)`, while leaving by-reference `offsetGet()` mutation,
+indirect-modification notice fidelity, nested/mixed object-property/
+ArrayAccess paths, append compound assignment, iteration, string
+increment/decrement semantics, references/copy-on-write, exact diagnostics,
+and native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

@@ -395,7 +395,8 @@ method names, dynamic property-name forms beyond existing public slots and
 `stdClass` public dynamic slots,
 property assignment targets other than a direct variable, object comparisons,
 object callables, ArrayAccess beyond current direct object-offset
-read/write/append/isset/empty/`??`/unset and compound-assignment forms,
+read/write/append/isset/empty/`??`/unset, compound-assignment, and
+integer/float increment/decrement forms,
 non-public property `isset` operands outside the current private/protected
 method context, complex object-property `isset` operands, dynamic
 property-name `empty` operands, non-public property
