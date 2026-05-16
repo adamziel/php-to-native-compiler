@@ -10093,9 +10093,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2be6fe92 runtime: bind reference parameters to caller cells`, covering
-  Milestone 1045. A Milestone 1046 constructor reference-parameter alias-cell
-  slice is implemented in the working tree and awaiting checkpoint.
+  `9d535aa4 runtime: bind constructor reference parameters`, covering
+  Milestone 1046.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

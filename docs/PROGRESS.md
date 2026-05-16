@@ -17,6 +17,9 @@ Implemented:
   remain unsupported. Verification so far:
   `cargo test -p phpc --test object_model constructor_reference -- --test-threads=1`
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1046`.
+  The serialized checkpoint gate passed with 1260 fixture tests, 706 system PHP
+  comparisons, and 554 skipped comparisons, then committed
+  `9d535aa4 runtime: bind constructor reference parameters`.
 
 - Added Milestone 1045, direct-variable by-reference parameter alias cells for
   the current user function and instance method call subset. Supplied
