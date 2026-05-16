@@ -37,11 +37,14 @@
   direct named static method calls whose visible static method returns a direct
   variable by reference, for example `$alias =& Box::identity($value);`. In an
   active class/method context, `self::method()` sources are also executable for
-  visible static methods in the same direct-variable return shape. In those
-  shapes, the assigned alias binds to the returned variable cell and
+  visible static methods in the same direct-variable return shape. In an active
+  child class/method context, `parent::method()` sources are executable for
+  visible inherited static methods in that same direct-variable return shape.
+  In those shapes, the assigned alias binds to the returned variable cell and
   `unset($alias)` detaches only the alias name. Normal invocation such as
   `identity($value)`, `$object->identity($value)`, `Box::identity($value)`, or
-  `self::identity($value)`, non-static `self::` sources, `parent::`,
+  `self::identity($value)`, or `parent::identity($value)`, non-static `self::`
+  sources, non-static `parent::` sources, missing-parent parent calls,
   `static::`, dynamic static receiver, and magic `__callStatic`
   reference-return method sources, non-direct return expressions,
   nested-control-flow returns, full PHP reference containers, copy-on-write,
@@ -72,10 +75,11 @@
   current object values may also be assigned into direct array offsets under
   the existing object-handle value model. Direct free-function and direct
   object method-call sources, direct named static method-call sources, and
-  `self::` static method-call sources are executable only for the bounded
-  direct-variable reference-return shapes documented above. Array-offset
-  sources, direct array-offset targets for array values, object-property array
-  targets, by-reference `foreach`, broader reference returns,
+  `self::` static method-call sources, and `parent::` static method-call
+  sources are executable only for the bounded direct-variable reference-return
+  shapes documented above. Array-offset sources, direct array-offset targets
+  for array values, object-property array targets, by-reference `foreach`,
+  broader reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names, PHP reference-container edge cases,
   copy-on-write, and native lowering remain unsupported and report stable

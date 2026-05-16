@@ -785,9 +785,10 @@ Reconciliation into concrete workstreams:
   and constructor calls, a bounded direct-variable reference-return assignment
   path for direct free-function, direct object method, and direct named static
   method calls plus `self::` static method calls in active class/method
+  context and `parent::` static method calls in active child class/method
   context, documented runtime boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
-  aliases, parent/late-static/dynamic/magic and broader by-reference returns,
+  aliases, late-static/dynamic/magic and broader by-reference returns,
   by-reference `foreach`, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
