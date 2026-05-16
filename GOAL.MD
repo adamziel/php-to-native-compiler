@@ -307,6 +307,9 @@ plus explicit `mysqli_stmt_get_result()`/`mysqli_stmt_close()` statement
 result/cleanup boundaries that expose callable metadata and stable unsupported
 diagnostics without statement object allocation, mysqlnd result transfer,
 result metadata, resource cleanup, lifecycle state, host database execution,
+warning/error fidelity, or native lowering, now wired through synthetic
+WordPress-shaped `wpdb` result/cleanup smokes without claiming statement
+objects, result transfer, result metadata, cleanup state, host database state,
 warning/error fidelity, or native lowering,
 plus
 deterministic

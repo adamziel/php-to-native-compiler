@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 948, synthetic WordPress-shaped `wpdb` prepared-statement
+  result/cleanup smokes that reach the explicit `mysqli_stmt_get_result()`
+  and `mysqli_stmt_close()` boundaries through `wpdb`-style methods. These
+  are harness smokes only; they do not add statement object allocation,
+  mysqlnd result transfer, result metadata, resource cleanup, lifecycle state,
+  host database execution, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone948`.
+
 - Added Milestone 947, explicit MySQLi statement result/cleanup boundaries
   for `mysqli_stmt_get_result()` and `mysqli_stmt_close()`. The runtime
   exposes both names through function/callability metadata, validates arity

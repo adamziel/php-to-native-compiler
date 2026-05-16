@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_get_result(): mysqli statement objects, statement result materialization, result metadata, and mysqlnd result transfer are not implemented in the current subset
+

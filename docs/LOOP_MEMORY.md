@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `bfacff5 runtime: add mysqli stmt result close boundaries`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 948, synthetic WordPress-shaped `wpdb`
+  prepared-statement result/cleanup smokes that reach the explicit
+  `mysqli_stmt_get_result()` and `mysqli_stmt_close()` boundaries.
+- Files changed so far: `tests/fixtures/milestone948/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone948`;
+  `cargo fmt --check`.
+  Both passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: WordPress-shaped prepared-statement result and
+  cleanup methods now record explicit statement result/cleanup diagnostics.
+- Remaining semantic gaps: statement object allocation, mysqlnd result
+  transfer, result metadata, statement cleanup/lifecycle state, host database
+  execution, warnings/errors, and native database lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, inspect the next MySQLi statement metadata/error API
+  boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `011c241 tests: add wordpress wpdb stmt bind execute smokes`, pushed to
   `origin/master`.
 - Task attempted: Milestone 947, explicit MySQLi statement result/cleanup
