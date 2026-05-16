@@ -1636,7 +1636,15 @@ historical blockers and remaining full-support gaps include:
   positioning/attribute methods without claiming statement objects, buffered
   result cursor state, offset seeking, statement attribute catalogs, option
   registry state, option mutation, host database state, warning/error
-  fidelity, or native database lowering.
+  fidelity, or native database lowering. Milestone 959 adds explicit
+  `mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/
+  `mysqli_stmt_more_results()`/`mysqli_stmt_next_result()` statement
+  parameter streaming/reset/multi-result boundaries with callable metadata and
+  stable unsupported diagnostics, without statement object allocation,
+  long-parameter streaming, packet buffering, statement parameter state,
+  statement state reset, buffered result cleanup, parameter/result lifecycle
+  state, multi-result state, pending result queues, host database execution,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4722,6 +4722,50 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_send_long_data(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_send_long_data", args, 3, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_send_long_data()",
+                "mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_reset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_reset", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_reset()",
+                "mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_more_results(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_more_results", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_more_results()",
+                "mysqli statement objects, multi-result state, and pending statement result queues are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_next_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_next_result", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_next_result()",
+                "mysqli statement objects, multi-result cursor advancement, and pending statement result queues are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9947,6 +9991,10 @@ impl Interpreter {
             "mysqli_stmt_data_seek" => self.call_mysqli_stmt_data_seek(&args, span),
             "mysqli_stmt_attr_get" => self.call_mysqli_stmt_attr_get(&args, span),
             "mysqli_stmt_attr_set" => self.call_mysqli_stmt_attr_set(&args, span),
+            "mysqli_stmt_send_long_data" => self.call_mysqli_stmt_send_long_data(&args, span),
+            "mysqli_stmt_reset" => self.call_mysqli_stmt_reset(&args, span),
+            "mysqli_stmt_more_results" => self.call_mysqli_stmt_more_results(&args, span),
+            "mysqli_stmt_next_result" => self.call_mysqli_stmt_next_result(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12936,6 +12984,10 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_data_seek"
             | "mysqli_stmt_attr_get"
             | "mysqli_stmt_attr_set"
+            | "mysqli_stmt_send_long_data"
+            | "mysqli_stmt_reset"
+            | "mysqli_stmt_more_results"
+            | "mysqli_stmt_next_result"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

@@ -358,6 +358,14 @@ WordPress-shaped `wpdb` statement positioning/attribute smokes without claiming
 statement objects, buffered result cursor state, offset seeking, statement
 attribute catalogs, option registry state, option mutation, host database
 state, warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/
+`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()` statement parameter
+streaming/reset/multi-result boundaries that expose callable metadata and
+stable unsupported diagnostics without statement object allocation,
+long-parameter streaming, packet buffering, statement parameter state,
+statement state reset, buffered result cleanup, parameter/result lifecycle
+state, multi-result state, pending result queues, host database execution,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

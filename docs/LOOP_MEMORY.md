@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1e9277c5 tests: add wordpress wpdb stmt positioning attr smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 959, explicit MySQLi statement parameter
+  streaming/reset/multi-result boundaries for
+  `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, and `mysqli_stmt_next_result()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone959/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset_and_multi_results -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone959`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement long-parameter
+  streaming, reset, and multi-result APIs now produce stable diagnostics
+  instead of generic unknown-call behavior.
+- Remaining semantic gaps: statement object allocation, long-parameter
+  streaming, packet buffering, statement parameter state, statement state
+  reset, buffered result cleanup, parameter/result lifecycle state,
+  multi-result state, pending result queues, host database state,
+  warnings/errors, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+  parameter streaming/reset/multi-result smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `2ef10fab runtime: add mysqli stmt positioning attr boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 958, synthetic WordPress-shaped `wpdb`
@@ -49,8 +82,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   state, offset seeking, statement attribute catalogs, option registry state,
   option mutation, host database state, warnings/errors, and native database
   lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next prepared-statement
+- Checkpoint result: committed and pushed
+  `1e9277c5 tests: add wordpress wpdb stmt positioning attr smokes`.
+- Next concrete task: inspect the next prepared-statement
   parameter streaming/reset/multi-result boundary such as
   `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
   `mysqli_stmt_more_results()`, or `mysqli_stmt_next_result()`.

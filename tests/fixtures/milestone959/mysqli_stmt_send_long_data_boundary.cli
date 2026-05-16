@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone959/mysqli_stmt_send_long_data_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone959/mysqli_stmt_send_long_data_boundary.php:3:1: unsupported call mysqli_stmt_send_long_data(): mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset
+--- stderr end ---

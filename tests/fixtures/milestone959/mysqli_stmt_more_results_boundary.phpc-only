@@ -1,0 +1,5 @@
+This fixture exercises phpc's explicit MySQLi statement multi-result check
+boundary. System PHP would require a real mysqli statement object, multi-result
+state, and pending statement result queues; phpc only records the reached
+`mysqli_stmt_more_results()` boundary with a stable unsupported diagnostic and
+does not implement statement objects or host database state.

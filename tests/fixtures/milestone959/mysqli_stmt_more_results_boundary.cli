@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone959/mysqli_stmt_more_results_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone959/mysqli_stmt_more_results_boundary.php:3:1: unsupported call mysqli_stmt_more_results(): mysqli statement objects, multi-result state, and pending statement result queues are not implemented in the current subset
+--- stderr end ---

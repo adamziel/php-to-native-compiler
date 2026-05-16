@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 959, explicit MySQLi statement parameter
+  streaming/reset/multi-result boundaries for
+  `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, and `mysqli_stmt_next_result()`. The runtime
+  exposes the names through function/callability metadata, validates the
+  current arities, and reports stable unsupported diagnostics when long
+  parameter streaming, statement reset, or statement multi-result state is
+  reached. Native metadata lookup knows the names while direct native
+  lowering remains rejected. This is not statement object allocation,
+  long-parameter streaming, packet buffering, statement parameter state,
+  statement state reset, buffered result cleanup, parameter/result lifecycle
+  state, multi-result state, pending result queues, host database execution,
+  PHP warning/error fidelity, or native database lowering. Verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_streaming_reset_and_multi_results -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone959`.
+
 - Added Milestone 958, synthetic WordPress-shaped `wpdb`
   prepared-statement positioning/attribute smokes that reach the explicit
   `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and

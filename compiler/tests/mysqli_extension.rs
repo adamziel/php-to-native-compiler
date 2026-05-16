@@ -932,6 +932,104 @@ mysqli_stmt_attr_set($stmt, 1, 1);
 }
 
 #[test]
+fn mysqli_statement_streaming_reset_and_multi_results_are_visible_but_explicit_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$send_long_data = "mysqli_stmt_send_long_data";
+$reset = "mysqli_stmt_reset";
+$more_results = "mysqli_stmt_more_results";
+$next_result = "mysqli_stmt_next_result";
+echo function_exists($send_long_data) ? "yes" : "no";
+echo "|";
+echo is_callable($send_long_data) ? "send-long-callable" : "send-long-missing";
+echo "|";
+echo function_exists($reset) ? "reset-exists" : "reset-missing";
+echo "|";
+echo is_callable($reset) ? "reset-callable" : "reset-missing";
+echo "|";
+echo function_exists($more_results) ? "more-results-exists" : "more-results-missing";
+echo "|";
+echo is_callable($more_results) ? "more-results-callable" : "more-results-missing";
+echo "|";
+echo function_exists($next_result) ? "next-result-exists" : "next-result-missing";
+echo "|";
+echo is_callable($next_result) ? "next-result-callable" : "next-result-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|send-long-callable|reset-exists|reset-callable|more-results-exists|more-results-callable|next-result-exists|next-result-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let send_long_data_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_send_long_data($stmt, 0, "blob");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(send_long_data_error.phase, Phase::Runtime);
+    assert_eq!(send_long_data_error.line, 3);
+    assert_eq!(send_long_data_error.column, 1);
+    assert_eq!(
+        send_long_data_error.message,
+        "unsupported call mysqli_stmt_send_long_data(): mysqli statement objects, long-parameter streaming, packet buffering, and statement parameter state are not implemented in the current subset"
+    );
+
+    let reset_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_reset($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(reset_error.phase, Phase::Runtime);
+    assert_eq!(reset_error.line, 3);
+    assert_eq!(reset_error.column, 1);
+    assert_eq!(
+        reset_error.message,
+        "unsupported call mysqli_stmt_reset(): mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset"
+    );
+
+    let more_results_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_more_results($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(more_results_error.phase, Phase::Runtime);
+    assert_eq!(more_results_error.line, 3);
+    assert_eq!(more_results_error.column, 1);
+    assert_eq!(
+        more_results_error.message,
+        "unsupported call mysqli_stmt_more_results(): mysqli statement objects, multi-result state, and pending statement result queues are not implemented in the current subset"
+    );
+
+    let next_result_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_next_result($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(next_result_error.phase, Phase::Runtime);
+    assert_eq!(next_result_error.line, 3);
+    assert_eq!(next_result_error.column, 1);
+    assert_eq!(
+        next_result_error.message,
+        "unsupported call mysqli_stmt_next_result(): mysqli statement objects, multi-result cursor advancement, and pending statement result queues are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -3206,6 +3304,14 @@ echo function_exists("mysqli_stmt_attr_get") ? "1" : "0";
 echo is_callable("mysqli_stmt_attr_get") ? "1" : "0";
 echo function_exists("mysqli_stmt_attr_set") ? "1" : "0";
 echo is_callable("mysqli_stmt_attr_set") ? "1" : "0";
+echo function_exists("mysqli_stmt_send_long_data") ? "1" : "0";
+echo is_callable("mysqli_stmt_send_long_data") ? "1" : "0";
+echo function_exists("mysqli_stmt_reset") ? "1" : "0";
+echo is_callable("mysqli_stmt_reset") ? "1" : "0";
+echo function_exists("mysqli_stmt_more_results") ? "1" : "0";
+echo is_callable("mysqli_stmt_more_results") ? "1" : "0";
+echo function_exists("mysqli_stmt_next_result") ? "1" : "0";
+echo is_callable("mysqli_stmt_next_result") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3304,7 +3410,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 180, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 188, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3792,6 +3898,54 @@ mysqli_stmt_attr_get(mysqli_init(), 1);
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_attr_set(mysqli_init(), 1, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_send_long_data(mysqli_init(), 0, "blob");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_reset(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_more_results(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_next_result(mysqli_init());
 "#,
     )
     .unwrap_err();

@@ -8969,18 +8969,36 @@ handled.
   state, offset seeking, statement attribute catalogs, option registry state,
   option mutation, host database state, warning/error fidelity, or native
   lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   parameter streaming/reset/multi-result boundary, such as
   `mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/
   `mysqli_stmt_more_results()`/`mysqli_stmt_next_result()` callable metadata
   and explicit unsupported diagnostics, before claiming broader prepared
   statement fidelity.
+  Milestone 959 exposes `mysqli_stmt_send_long_data()`,
+  `mysqli_stmt_reset()`, `mysqli_stmt_more_results()`, and
+  `mysqli_stmt_next_result()` through callable metadata and turns reached
+  parameter streaming, reset, and multi-result calls into stable unsupported
+  diagnostics. This is not statement object allocation, long-parameter
+  streaming, packet buffering, statement parameter state, statement state
+  reset, buffered result cleanup, parameter/result lifecycle state,
+  multi-result state, pending result queues, host database execution,
+  warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+  parameter streaming/reset/multi-result smokes that reach the explicit
+  `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, or `mysqli_stmt_next_result()` boundary
+  through WordPress-shaped methods without claiming statement objects,
+  long-parameter streaming, packet buffering, statement parameter state,
+  statement state reset, buffered result cleanup, parameter/result lifecycle
+  state, multi-result state, pending result queues, host database state,
+  warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `2ef10fab runtime: add mysqli stmt positioning attr boundaries`, covering
-  Milestone 957 before the current Milestone 958 candidate.
+  `1e9277c5 tests: add wordpress wpdb stmt positioning attr smokes`, covering
+  Milestone 958 before the current Milestone 959 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
