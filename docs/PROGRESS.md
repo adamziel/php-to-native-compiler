@@ -17,9 +17,12 @@ Implemented:
   reference-returning call iterables, object/`Traversable` iteration, foreach
   destructuring, array/object/`ArrayAccess` offset loop variables,
   full reference containers, copy-on-write, broad mutation-ordering fidelity,
-  or native lowering. Verification so far:
+  or native lowering. Verification:
   `cargo test -p phpc --test foreach -- --test-threads=1` and
   `cargo run -q -p phpc -- test tests/fixtures/milestone1078 --compare-php`.
+  The serialized checkpoint gate passed with 1283 fixture tests, 728 system PHP
+  comparisons, and 555 skipped comparisons, then committed
+  `c987abea runtime: add foreach temporary reference arrays`.
 
 - Added Milestone 1077, a bounded nested/append string-keyed `$GLOBALS`
   reference-target slice for direct variable sources. Statement-form

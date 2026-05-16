@@ -34,13 +34,13 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Task attempted: Milestone 1078, bounded by-reference `foreach`
   temporary-array expression iteration for array literals and direct
   non-reference-returning function calls returning arrays.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/foreach.rs`,
   `tests/fixtures/milestone747/foreach_by_reference_reached.*`,
   `tests/fixtures/milestone1078/by_reference_foreach_temporary_arrays.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test foreach -- --test-threads=1` passed with 18
   tests. `cargo run -q -p phpc -- test tests/fixtures/milestone1078
   --compare-php` passed with 1 fixture and 1 system PHP comparison.
@@ -48,6 +48,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   --test-threads=1` and `cargo run -q -p phpc -- test
   tests/fixtures/milestone747` passed after retargeting the old
   non-direct-iterable boundary fixture to a nested lvalue iterable.
+  The serialized checkpoint gate passed with 1283 fixture tests, 728 system PHP
+  comparisons, and 555 skipped comparisons, then committed
+  `c987abea runtime: add foreach temporary reference arrays`.
 - Current frontier: `foreach ([...] as &$value)` and
   `foreach (function_returning_array() as &$value)` now evaluate array
   literals or direct non-reference-returning function call results, route the
@@ -63,9 +66,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   preserve reference-element identity, native lowering, exact mutation
   ordering, alias rebinding, and by-reference `ArrayAccess::offsetGet()`
   indirect-modification fidelity remain missing.
-- Next concrete task: finish formatting/checks, checkpoint Milestone 1078,
-  then consider the array-copy-preserves-reference-element COW slice identified
-  by the read-only COW lane.
+- Next concrete task: consider the array-copy-preserves-reference-element COW
+  slice identified by the read-only COW lane, or the WP-Cron
+  `ignore_user_abort()` frontier identified by the WordPress lane.
 
 ## Loop Event 2026-05-16T20:05:00Z
 

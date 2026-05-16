@@ -10532,8 +10532,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `aec28701 runtime: add nested globals reference targets`, covering Milestone
-  1077. Milestone 1078 is in progress and not checkpointed yet.
+  `c987abea runtime: add foreach temporary reference arrays`, covering
+  Milestone 1078.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
