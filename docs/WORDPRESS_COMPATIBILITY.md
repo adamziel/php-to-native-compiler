@@ -1179,9 +1179,13 @@ historical blockers and remaining full-support gaps include:
   Milestone 1032 extends the state island to exact prepared option inserts for
   string option-name, option-value, and autoload parameters plus affected-row
   and deterministic insert-id metadata.
+  Milestone 1033 extends the state island to exact prepared option replaces
+  for the same string parameter shape, with affected rows `2` for existing
+  recorded options, affected rows `1` for missing options, and deterministic
+  insert-id metadata.
   This is still not broad SQL parsing, ordering/collation fidelity,
-  duplicate-key or INSERT-on-duplicate behavior, prepared REPLACE, transactions,
-  host database execution, PDO, or native database lowering. The real bootstrap-shim
+  `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index enforcement,
+  transactions, host database execution, PDO, or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

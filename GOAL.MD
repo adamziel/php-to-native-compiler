@@ -1283,13 +1283,16 @@ The repository already has a working Rust workspace with:
   reads now expose recorded row data for the same string option-name parameter
   shape. Exact prepared option inserts now record string option-name,
   option-value, and autoload parameters and expose affected-row/insert-id
-  metadata. Exact prepared option updates now mutate existing recorded option
-  values for string value/name parameters and expose affected-row metadata,
+  metadata. Exact prepared option replaces now replace existing recorded
+  options with affected rows `2`, insert missing options with affected rows
+  `1`, and expose deterministic insert IDs. Exact prepared option updates now
+  mutate existing recorded option values for string value/name parameters and
+  expose affected-row metadata,
   and exact prepared option deletes now remove existing recorded option values
   for string option-name parameters and expose affected-row metadata,
   without claiming broad SQL parsing, ordering/collation fidelity,
-  duplicate-key or INSERT-on-duplicate behavior, prepared REPLACE, transactions,
-  host database execution, PDO, or native lowering.
+  `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index enforcement,
+  transactions, host database execution, PDO, or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
   direct nested array-offset and object-property array-offset `empty(...)`
@@ -1682,13 +1685,14 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1032 is the active checkpoint candidate: exact prepared
-  `wp_options` MySQLi insert state now records string option-name,
-  option-value, and autoload parameters on the same placeholder handle and
-  records statement/connection affected rows plus deterministic insert IDs,
-  while broad SQL parsing,
+- Milestone 1033 is the active checkpoint candidate: exact prepared
+  `wp_options` MySQLi replace state now records string option-name,
+  option-value, and autoload parameters on the same placeholder handle,
+  replaces existing recorded options with affected rows `2`, inserts missing
+  options with affected rows `1`, and records deterministic insert IDs, while
+  broad SQL parsing,
   escaping/quoting fidelity, schema/index behavior, ordering/collation
-  fidelity, duplicate-key or INSERT-on-duplicate behavior, prepared REPLACE,
+  fidelity, `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index enforcement,
   transactions, host database execution, warning/error fidelity, PDO, and
   native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics

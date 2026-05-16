@@ -1272,6 +1272,11 @@
   parameters on the same handle, updates statement and connection affected-row
   metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
   exposes later exact option-value reads through the same state island. The exact
+  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
+  prepared statement records string parameters on the same handle, reports
+  affected rows as `2` when replacing an existing recorded option and `1` when
+  inserting a missing option, advances deterministic `mysqli_insert_id($handle)`,
+  and exposes later exact option-value reads through the same state island. The exact
   `UPDATE wp_options SET option_value = ? WHERE option_name = ?` prepared
   statement updates an existing recorded option value for string parameters on
   the same handle, updates statement and connection affected-row metadata, and
@@ -1281,10 +1286,9 @@
   handle, updates statement and connection affected-row metadata, and treats
   missing option names as successful zero-row deletes. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
-  prepared SQL execution, duplicate-key or INSERT-on-duplicate semantics,
-  prepared REPLACE state, non-string parameter coercion, result binding
-  fidelity beyond exact metadata, host database execution, PDO, or native
-  lowering. For the
+  prepared SQL execution, `INSERT ... ON DUPLICATE KEY UPDATE`, real unique-index
+  enforcement, non-string parameter coercion, result binding fidelity beyond
+  exact metadata, host database execution, PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
