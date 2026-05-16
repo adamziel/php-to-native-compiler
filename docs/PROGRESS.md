@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added Milestone 1087, a bounded append array-offset reference-source slice
+  for direct arrays and direct public object-property arrays. Statement-form
+  `$alias =& $array[];`, `$alias =& $array[$outer][];`,
+  `$alias =& $object->items[];`, and
+  `$alias =& $object->items[$outer][];` now parse and execute when the target
+  is a direct variable, the array/object root is direct, the object-property
+  root is a named declared public property, and every parent offset is
+  explicit. Missing roots or parent containers are materialized as arrays, the
+  selected append slot is materialized as `null`, and writes through either
+  the alias or the appended slot observe the same value for the covered path.
+  This does not implement `$GLOBALS` append reference sources,
+  dynamic/magic/non-public property reference sources, non-direct object
+  expressions, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, or native lowering. Verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_nested_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_append_source --
+  --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_nested_array_append_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1087 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+
 - Added Milestone 1086, a bounded nested array-offset reference-source slice
   for direct arrays and direct public object-property arrays. Statement-form
   `$alias =& $array[$outer][$inner];` and

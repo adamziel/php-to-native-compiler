@@ -342,6 +342,11 @@ pub enum ReferenceSource {
         index: Expr,
         span: Span,
     },
+    ArrayAppend {
+        name: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     NestedArrayIndex {
         name: String,
         indices: Vec<Expr>,
@@ -351,6 +356,12 @@ pub enum ReferenceSource {
         object: String,
         property: String,
         index: Expr,
+        span: Span,
+    },
+    ObjectPropertyArrayAppend {
+        object: String,
+        property: String,
+        indices: Vec<Expr>,
         span: Span,
     },
     ObjectPropertyNestedArrayIndex {

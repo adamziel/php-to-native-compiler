@@ -544,6 +544,51 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_appended_array_offset(
+        &mut self,
+        target: &str,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if array_name == "GLOBALS" {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "$GLOBALS",
+                    "append reference sources through $GLOBALS are not implemented",
+                ),
+            ));
+        }
+
+        let mut array = match self.read_storage_named(array_name) {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        self.write_storage_named(array_name, Value::Array(array));
+        self.bind_static_to_array_offset_alias(
+            target,
+            ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: array_name.to_string(),
+                },
+                keys: alias_keys,
+            },
+        );
+        Ok(())
+    }
+
     fn bind_static_to_existing_object_property_array_offset(
         &mut self,
         target: &str,
@@ -581,6 +626,48 @@ impl SymbolTable {
         };
         self.materialize_array_offset_alias(&alias, span)?;
         self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_appended_object_property_array_offset(
+        &mut self,
+        target: &str,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+            object: object_name.to_string(),
+            property: property.to_string(),
+        };
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        self.bind_static_to_array_offset_alias(
+            target,
+            ArrayOffsetAlias {
+                root,
+                keys: alias_keys,
+            },
+        );
         Ok(())
     }
 
@@ -3996,6 +4083,17 @@ impl Interpreter {
                     scope.bind_static_to_existing_nested_array_offset(
                         name, array_name, keys, span,
                     )?;
+                } else if let ReferenceSource::ArrayAppend {
+                    name: array_name,
+                    indices,
+                    ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_static_to_appended_array_offset(name, array_name, keys, span)?;
                 } else if let ReferenceSource::ObjectPropertyArrayIndex {
                     object,
                     property,
@@ -4019,6 +4117,20 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     scope.bind_static_to_existing_object_property_nested_array_offset(
+                        name, object, property, keys, span,
+                    )?;
+                } else if let ReferenceSource::ObjectPropertyArrayAppend {
+                    object,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_static_to_appended_object_property_array_offset(
                         name, object, property, keys, span,
                     )?;
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
@@ -4361,7 +4473,9 @@ impl Interpreter {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
             ReferenceSource::NestedArrayIndex { .. }
+            | ReferenceSource::ArrayAppend { .. }
             | ReferenceSource::ObjectPropertyArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyArrayAppend { .. }
             | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
@@ -4407,7 +4521,9 @@ impl Interpreter {
                 return self.reject_array_offset_reference_source(name, index, span, scope);
             }
             ReferenceSource::NestedArrayIndex { .. }
+            | ReferenceSource::ArrayAppend { .. }
             | ReferenceSource::ObjectPropertyArrayIndex { .. }
+            | ReferenceSource::ObjectPropertyArrayAppend { .. }
             | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,

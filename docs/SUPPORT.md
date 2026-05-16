@@ -103,11 +103,17 @@
   selected slot, and `unset($alias)` detaches only the alias name. Nested
   direct array-offset reference sources such as
   `$alias =& $array[$outer][$inner];` also execute for explicit key paths,
-  materializing missing intermediate containers and selected slots. Non-array
-  roots, append-at-depth reference sources, object-property offsets outside
-  the documented public-property source subset, `ArrayAccess` offsets, exact
-  by-reference `foreach`, full PHP reference containers, copy-on-write, and
-  native lowering remain unsupported. Direct object-property array-offset
+  materializing missing intermediate containers and selected slots. Append
+  reference sources such as `$alias =& $array[];` and
+  `$alias =& $array[$outer][];` execute for direct array variables and
+  explicit parent key paths: missing roots or parent containers materialize as
+  arrays, the runtime append cursor chooses the selected slot, and that slot
+  is bound to the direct alias variable as `null` until either side writes.
+  Non-array roots, `$GLOBALS` append reference sources, object-property
+  offsets outside the documented public-property source subset, `ArrayAccess`
+  offsets, exact by-reference `foreach`, full PHP reference containers,
+  copy-on-write, and native lowering remain unsupported. Direct
+  object-property array-offset
   reference sources such as `$alias =& $object->items[$key];` execute when the
   target is a direct variable, the source object is a direct variable, the
   property is a named declared public property, and the offset is explicit.
@@ -116,8 +122,12 @@
   alias or the object-property array offset observe the same selected value.
   Nested object-property source paths such as
   `$alias =& $object->items[$outer][$inner];` execute for explicit key paths
-  with the same public-property root materialization. Append-at-depth reference
-  sources, dynamic/magic/non-public property sources, non-direct object
+  with the same public-property root materialization. Append source paths such
+  as `$alias =& $object->items[];` and
+  `$alias =& $object->items[$outer][];` execute for direct object variables
+  and named declared public properties, materializing `null` properties and
+  missing parent containers as arrays before binding the selected appended
+  slot. Dynamic/magic/non-public property sources, non-direct object
   expressions, non-variable reference targets, ArrayAccess offset reference
   sources, full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, and native lowering remain unsupported for this source

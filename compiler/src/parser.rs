@@ -2191,7 +2191,7 @@ impl Parser {
     }
 
     fn parse_reference_assignment_source(&mut self) -> CompileResult<ReferenceSource> {
-        let expr = self.parse_expression()?;
+        let expr = self.parse_non_assignment_expression_with_ternary(true)?;
         let span = expr.span();
         match expr {
             Expr::Variable(name, span) => Ok(ReferenceSource::Variable { name, span }),
@@ -2233,6 +2233,42 @@ impl Parser {
                 }
 
                 Err(self.error_at(span, unsupported_reference_assignment_source_message()))
+            }
+            Expr::AppendIndex { target, span } => {
+                if let Some((object, property, indices, _)) =
+                    Self::object_property_array_append_target_from_expr(target.as_ref())
+                {
+                    return Ok(ReferenceSource::ObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                match *target {
+                    Expr::Variable(name, _) => Ok(ReferenceSource::ArrayAppend {
+                        name,
+                        indices: Vec::new(),
+                        span,
+                    }),
+                    nested @ Expr::Index { .. } => {
+                        let (name, indices, _) = Self::array_index_path_from_expr(nested)
+                            .ok_or_else(|| {
+                                self.error_at(
+                                    span,
+                                    unsupported_reference_assignment_source_message(),
+                                )
+                            })?;
+                        Ok(ReferenceSource::ArrayAppend {
+                            name,
+                            indices,
+                            span,
+                        })
+                    }
+                    _ => {
+                        Err(self.error_at(span, unsupported_reference_assignment_source_message()))
+                    }
+                }
             }
             Expr::Property { .. } | Expr::DynamicProperty { .. } => {
                 Ok(ReferenceSource::Property { expr, span })
@@ -5811,7 +5847,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct/nested array-offset, direct/nested object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

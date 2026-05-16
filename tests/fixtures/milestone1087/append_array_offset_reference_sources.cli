@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1087/append_array_offset_reference_sources.php
+array-alias
+array-slot
+nested-alias
+nested-slot
+property-alias
+property-slot
+group-alias
+group-slot

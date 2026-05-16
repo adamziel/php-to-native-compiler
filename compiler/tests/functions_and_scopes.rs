@@ -2239,6 +2239,88 @@ echo $alias;
 }
 
 #[test]
+fn reference_assignment_array_append_source_aliases_appended_slot() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+$alias =& $items[];
+$alias = "from-alias";
+echo $items[0];
+echo "|";
+$items[0] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_append_source_aliases_appended_slot() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+$alias =& $items["outer"][];
+$alias = "from-alias";
+echo $items["outer"][0];
+echo "|";
+$items["outer"][0] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_array_append_source_aliases_appended_slot() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items = [];
+}
+$box = new Box();
+$alias =& $box->items[];
+$alias = "from-alias";
+echo $box->items[0];
+echo "|";
+$box->items[0] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_nested_array_append_source_aliases_appended_slot() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $items;
+}
+$box = new Box();
+$alias =& $box->items["outer"][];
+$alias = "from-alias";
+echo $box->items["outer"][0];
+echo "|";
+$box->items["outer"][0] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_complex_object_property_array_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php
@@ -2250,7 +2332,7 @@ $alias =& make_box()->items[0];
     assert_eq!(error.column, 11);
     assert_eq!(
         error.message,
-        "unsupported reference assignment: only direct variable, direct/nested array-offset, direct/nested object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
+        "unsupported reference assignment: only direct variable, direct/nested/append array-offset, direct/nested/append object-property array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
     );
 }
 

@@ -277,7 +277,7 @@ writes through the source variable, the property slot, or the copied slot
 synchronize for the covered key path. Undefined source variables start as
 `null` before binding. Existing direct alias groups, source names already
 routed through array-offset aliases, PHP's deprecated false-root conversion,
-other non-array roots, object-property reference sources, dynamic/magic/non-public
+other non-array roots, dynamic/magic/non-public
 property targets, non-direct sources, non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, full PHP reference containers, broader by-reference
@@ -287,6 +287,22 @@ offset targets such as `$bag[$key] =& $value;` and property-held
 `$holder->bag[$key] =& $value;` are an explicit runtime boundary with a stable
 diagnostic, reflecting PHP's fatal behavior for assigning by reference to an
 object array dimension while avoiding engine-specific notice/fatal text.
+Direct array-offset reference sources mirror a subset of those same alias
+routes for direct variable targets. `$alias =& $array[$key];` and
+`$alias =& $array[$outer][$inner];` bind the target name to the selected
+direct-array slot, materializing missing containers and selected slots as
+needed. `$alias =& $array[];` and `$alias =& $array[$outer][];` append a
+`null` slot through the runtime append cursor and bind the target name to that
+selected slot. Direct public object-property array-offset sources follow the
+same bounded root route for named declared public properties:
+`$alias =& $object->items[$key];`,
+`$alias =& $object->items[$outer][$inner];`,
+`$alias =& $object->items[];`, and
+`$alias =& $object->items[$outer][];`. `$GLOBALS` append reference sources,
+dynamic/magic/non-public property sources, non-direct object expressions,
+non-variable reference targets, `ArrayAccess` sources, full reference
+containers, copy-on-write, exact alias destruction ordering, and native
+lowering remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

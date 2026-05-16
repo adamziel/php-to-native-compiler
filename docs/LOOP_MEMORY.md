@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T15:42:57Z
+
+- Checkpoint before this task:
+  `d486eb7c docs: record nested reference source gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1087, bounded append array-offset reference
+  sources for direct arrays and direct public object-property arrays. `$alias
+  =& $array[];`, `$alias =& $array[$outer][];`,
+  `$alias =& $object->items[];`, and
+  `$alias =& $object->items[$outer][];` now parse and execute for direct
+  variable alias targets and explicit parent paths.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1087/append_array_offset_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_nested_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_array_append_source --
+  --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_nested_array_append_source --
+  --test-threads=1`, and `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1087 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+- Remaining semantic gaps: `$GLOBALS` append reference sources,
+  dynamic/magic/non-public property reference sources, non-direct object
+  expressions, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, and native lowering remain missing.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: add append reference sources"` if the
+  working tree still matches the focused checks.
+
 ## Loop Event 2026-05-17T01:25:00Z
 
 - Checkpoint before this task:
