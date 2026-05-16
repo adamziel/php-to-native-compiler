@@ -11,7 +11,7 @@ Status: boundary only.
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
-`mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+`mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
 `mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
@@ -176,6 +176,14 @@ warning/error behavior, and escaping charset effects are not implemented.
 object and that exact SQL mode probe, returning `false` as a deterministic
 empty/no-result boundary. This lets WordPress skip SQL mode normalization
 without executing SQL or producing a result resource.
+
+`mysqli_real_query($handle, 'SET NAMES \'utf8mb4\' COLLATE
+\'utf8mb4_unicode_520_ci\'')` accepts the placeholder object and that exact
+WordPress charset setup statement, returning deterministic `true`. Unlike
+`mysqli_query()`, it does not return result objects and it does not create
+pending result state for `mysqli_store_result()` or `mysqli_use_result()`.
+Result-producing SQL and mutation SQL remain explicit unsupported boundaries
+for `mysqli_real_query()`.
 
 `mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
 placeholder `mysqli_result` object for the first deterministic empty result

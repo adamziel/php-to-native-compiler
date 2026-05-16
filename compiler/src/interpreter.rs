@@ -4761,6 +4761,61 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_real_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_real_query", args, 2, span)?;
+        expect_mysqli_handle("mysqli_real_query()", &args[0], span)?;
+        let Value::String(query) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_query()",
+                    format!(
+                        "query argument must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if is_wordpress_charset_setup_query(query) {
+            return Ok(Value::Bool(true));
+        }
+
+        if is_mysqli_select_query(query) || is_wordpress_empty_options_query(query) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_query()",
+                    format!(
+                        "result-producing mysqli_real_query() SQL is not implemented because pending result state for mysqli_store_result()/mysqli_use_result() is not modeled; got {query}"
+                    ),
+                ),
+            ));
+        }
+
+        if is_mysqli_mutation_query(query) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_query()",
+                    format!(
+                        "mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got {query}"
+                    ),
+                ),
+            ));
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_real_query()",
+                format!(
+                    "only the WordPress charset setup query is implemented for mysqli_real_query() in the current subset; got {query}"
+                ),
+            ),
+        ))
+    }
+
     fn call_mysqli_errno(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_errno", args, 1, span)?;
         expect_mysqli_handle("mysqli_errno()", &args[0], span)?;
@@ -9498,6 +9553,7 @@ impl Interpreter {
             "mysqli_rollback" => self.call_mysqli_rollback(&args, span),
             "mysqli_set_charset" => self.call_mysqli_set_charset(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
+            "mysqli_real_query" => self.call_mysqli_real_query(&args, span),
             "mysqli_errno" => self.call_mysqli_errno(&args, span),
             "mysqli_error" => self.call_mysqli_error(&args, span),
             "mysqli_sqlstate" => self.call_mysqli_sqlstate(&args, span),
@@ -12458,6 +12514,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_rollback"
             | "mysqli_set_charset"
             | "mysqli_query"
+            | "mysqli_real_query"
             | "mysqli_errno"
             | "mysqli_error"
             | "mysqli_sqlstate"

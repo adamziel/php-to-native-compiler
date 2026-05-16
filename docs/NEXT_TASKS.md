@@ -8561,16 +8561,29 @@ handled.
   replication reset, server status reset, connection/session mutation,
   warnings/errors, host database state, PHP deprecation fidelity, or native
   lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi execution or connection
+- [x] Runtime/mysqli lane: inspect the next MySQLi execution or connection
   boundary after placeholder refresh bookkeeping, such as `mysqli_real_query()`
   or a sharper unsupported diagnostic, before claiming broader query execution
   fidelity.
+  Milestone 923 implements bounded deterministic `mysqli_real_query($handle,
+  $query)` support for current placeholder `mysqli` handles and the exact
+  WordPress charset setup statement. It returns deterministic `true`, rejects
+  result-producing SQL before pending result state is claimed, rejects mutation
+  SQL and unsupported query values with stable diagnostics, and is visible
+  through runtime and native metadata lookup. This is not real query execution,
+  pending result tracking for `mysqli_store_result()`/`mysqli_use_result()`,
+  result object creation, mutation state, host database state, warnings/errors,
+  or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_real_query()` charset setup placeholder through a
+  WordPress-shaped connection query method without claiming real query
+  execution, pending result, or connection charset mutation fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8d3b37e runtime: add mysqli refresh placeholder`, covering Milestone 921
-  before the current Milestone 922 candidate.
+  `fafe694 tests: add wordpress wpdb refresh smoke`, covering Milestone 922
+  before the current Milestone 923 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

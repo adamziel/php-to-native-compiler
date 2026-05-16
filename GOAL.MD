@@ -213,7 +213,10 @@ metadata over exposed deprecated `MYSQLI_REFRESH_*` flags, now wired through a
 synthetic WordPress-shaped `wpdb` connection refresh bookkeeping smoke without
 real table/log/cache flush behavior, replication reset, server status reset,
 host server state, connection/session mutation, PHP deprecation/warning
-fidelity, or native lowering, plus deterministic
+fidelity, or native lowering, plus bounded deterministic `mysqli_real_query()`
+placeholder charset setup execution metadata without real query execution,
+pending result tracking, result object creation, mutation state, host database
+state, warning/error fidelity, or native lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
 smoke, plus deterministic

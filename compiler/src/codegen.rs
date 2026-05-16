@@ -6379,6 +6379,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_rollback"
             | "mysqli_set_charset"
             | "mysqli_query"
+            | "mysqli_real_query"
             | "mysqli_errno"
             | "mysqli_error"
             | "mysqli_sqlstate"

@@ -522,7 +522,7 @@
   `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
@@ -931,7 +931,11 @@
   reached WordPress charset setup query
   `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`, returning `true`
   as a deterministic successful no-result boundary without changing real
-  connection charset state. `mysqli_query(...)` also accepts the
+  connection charset state. `mysqli_real_query($handle, ...)` accepts that
+  same exact charset setup statement and returns deterministic `true` without
+  creating pending result state for `mysqli_store_result()` or
+  `mysqli_use_result()`; result-producing SQL and mutation SQL remain explicit
+  unsupported boundaries for `mysqli_real_query()`. `mysqli_query(...)` also accepts the
   reached WordPress options-table bootstrap reads
   `SELECT option_name, option_value FROM <prefix>options WHERE autoload IN (
   'yes', 'on', 'auto-on', 'auto' )` and
@@ -2469,7 +2473,7 @@
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
@@ -2797,6 +2801,7 @@
   `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
+  `mysqli_real_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
@@ -2946,7 +2951,7 @@
   `mysqli_get_charset`, `mysqli_character_set_name`,
   `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
@@ -3021,6 +3026,7 @@
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
+  `mysqli_real_query`,
   `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
@@ -3064,7 +3070,8 @@
   success for the current `utf8mb4` placeholder charset, and
   `mysqli_query(...)` returns only the current false
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
-  synthetic empty-result boundaries;
+  synthetic empty-result boundaries; `mysqli_real_query(...)` returns only
+  deterministic charset setup success without pending result state;
   `mysqli_errno(...)`, `mysqli_error(...)`, `mysqli_sqlstate(...)`, and
   `mysqli_warning_count(...)` expose only clean placeholder diagnostics;
   `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
@@ -3088,6 +3095,7 @@
   `mysqli_get_connection_stats(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
+  `mysqli_real_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_sqlstate(...)`/
   `mysqli_warning_count(...)`/`mysqli_info(...)`/`mysqli_get_warnings(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
@@ -4746,7 +4754,7 @@
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
   `mysqli_get_connection_stats()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
-  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
+  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_set_charset()`/
   `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_store_result()`/`mysqli_use_result()`/

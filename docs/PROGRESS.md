@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 923, bounded `mysqli_real_query()` support for deterministic
+  placeholder MySQLi charset setup execution metadata. The runtime accepts
+  current placeholder `mysqli` handles plus the exact WordPress charset setup
+  statement, returns deterministic `true`, rejects non-`mysqli` handles,
+  non-string query values, result-producing SQL, mutation SQL, and other SQL
+  shapes with stable diagnostics, and exposes the name through runtime and
+  native metadata lookup. This is not real query execution, pending result
+  tracking for `mysqli_store_result()`/`mysqli_use_result()`, result object
+  creation, mutation state, host database state, PHP warning/error fidelity, or
+  native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_real_query -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone923`.
+
 - Added Milestone 922, a synthetic WordPress-shaped `wpdb` connection refresh
   bookkeeping smoke that calls bounded
   `mysqli_refresh($this->dbh, MYSQLI_REFRESH_LOG | MYSQLI_REFRESH_TABLES)`,

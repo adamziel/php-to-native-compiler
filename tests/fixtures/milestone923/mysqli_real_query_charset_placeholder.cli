@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone923/mysqli_real_query_charset_placeholder.php
+yes
+callable
+charset-ok
+dynamic
+no-pending
+no-use

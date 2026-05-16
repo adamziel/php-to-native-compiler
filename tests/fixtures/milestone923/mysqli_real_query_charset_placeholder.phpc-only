@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_real_query()`
+charset setup boundary after placeholder MySQLi setup. System PHP needs a real
+mysqli connection and host query execution state; phpc only accepts the exact
+WordPress charset setup statement as a no-pending-result placeholder and does
+not model pending result state for `mysqli_store_result()` or
+`mysqli_use_result()`.
