@@ -801,13 +801,15 @@ Reconciliation into concrete workstreams:
   undefined/`null` direct root materialization, plus a bounded direct
   array-offset reference-target slice for `$array[$key] =& $value;` when the
   target root is a direct array variable and the source is an unaliased direct
-  variable name, documented runtime boundaries, and focused reference fixtures.
-  Missing artifact: append, nested, object-property, and `ArrayAccess`
-  reference targets, existing alias-group and source-rebinding cases, nested
-  and object-property offset aliases, full runtime reference containers, magic
-  reference-return dispatch and broader by-reference returns, remaining exact
-  by-reference `foreach` mutation and target fidelity, and COW tests that
-  compare against PHP.
+  variable name, and a bounded direct array-append reference-target slice for
+  `$array[] =& $value;` over the same unaliased direct variable source shape,
+  documented runtime boundaries, and focused reference fixtures. Missing
+  artifact: nested, object-property, and `ArrayAccess` reference targets,
+  existing alias-group and source-rebinding cases, nested and object-property
+  offset aliases, full runtime reference containers, magic reference-return
+  dispatch and broader by-reference returns, remaining exact by-reference
+  `foreach` mutation and target fidelity, and COW tests that compare against
+  PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact

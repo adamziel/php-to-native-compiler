@@ -221,19 +221,21 @@ when the receiver evaluates to an object or class string and resolves a visible
 static method. Missing static methods that would dispatch through magic
 `__callStatic` are kept as an explicit reference-return boundary with a stable
 unsupported-call diagnostic; magic reference-return dispatch is not modeled.
-Direct array-offset reference targets also have a narrow execution path:
+Direct array-offset reference targets also have narrow execution paths:
 `$array[$key] =& $value;` works when the target root is a direct array
 variable, the offset is explicit, and the source is an unaliased direct
-variable name. The interpreter materializes missing keys and undefined or
-`null` target roots through the direct-offset array materialization path,
-copies the current source value into the selected slot, then routes the source
-name to that normalized-key slot. Writes through either the source variable or
-direct array offset observe the same selected value, and `unset($value)`
-detaches only the source name. Undefined source variables start as `null`
-before binding. Existing direct alias groups, source names already routed
-through array-offset aliases, `$GLOBALS`, append targets,
-nested/object/`ArrayAccess` targets, non-direct sources, object-property array
-targets,
+variable name. `$array[] =& $value;` works for the same direct root/source
+shape by appending through the runtime array append cursor and routing the
+source name to the selected auto key. The interpreter materializes missing
+explicit keys and undefined or `null` target roots through the direct-offset
+array materialization path, copies the current source value into the selected
+slot, then routes the source name to that slot. Writes through either the
+source variable or direct array offset observe the same selected value, and
+`unset($value)` detaches only the source name. Undefined source variables start
+as `null` before binding. Existing direct alias groups, source names already
+routed through array-offset aliases, `$GLOBALS`, PHP's deprecated false-root
+conversion, other non-array roots, nested/object/`ArrayAccess` reference
+targets, non-direct sources, object-property array targets,
 non-static `self::`/`parent::`/`static::`/dynamic-static sources, magic method
 reference sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native

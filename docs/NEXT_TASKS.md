@@ -10349,18 +10349,34 @@ handled.
   aliases, `$GLOBALS`, append targets, nested/object/`ArrayAccess` targets,
   non-direct sources, full PHP reference containers, copy-on-write, exact alias
   rebinding/mutation ordering, or native lowering.
+
+## Milestone 1068: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct array-append
+  reference-target slice for unaliased direct variable sources. In the current
+  subset, `$array[] =& $value;` works when the target root is a direct array
+  variable and the source is a direct unaliased variable name. Existing arrays
+  append through the runtime array append cursor and bind the source name to
+  the selected auto key, undefined or `null` target roots materialize as
+  arrays, undefined source variables begin as `null`, writes through the source
+  variable and appended direct offset observe the same selected value, and
+  `unset($value)` detaches only the source name. This is not existing alias
+  groups, source names already routed through array-offset aliases, `$GLOBALS`,
+  PHP's deprecated false-root conversion, other non-array roots,
+  nested/object/`ArrayAccess` append targets, non-direct sources, full PHP
+  reference containers, copy-on-write, exact alias rebinding/mutation ordering,
+  or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  append/nested/object/`ArrayAccess` reference targets, nested/object offset
-  aliases, remaining by-reference `foreach` fidelity, array/object
-  copy-on-write split behavior, or native lowering boundaries, and add the next
-  bounded behavior or explicit diagnostic with PHP comparison coverage where
-  applicable.
+  nested/object/`ArrayAccess` reference targets, nested/object offset aliases,
+  remaining by-reference `foreach` fidelity, array/object copy-on-write split
+  behavior, or native lowering boundaries, and add the next bounded behavior or
+  explicit diagnostic with PHP comparison coverage where applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `288f9716 runtime: add array offset reference targets`, covering Milestone
-  1067.
+  `78eca1d3 runtime: add array append reference targets`, covering Milestone
+  1068.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

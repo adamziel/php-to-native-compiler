@@ -105,18 +105,20 @@
   roots, nested offsets, object-property offsets, `ArrayAccess` offsets, exact
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
   native lowering remain unsupported. Direct array-offset reference targets
-  such as `$array[$key] =& $value;` execute when the target root is a direct
-  array variable, the offset is explicit, and the source is a direct unaliased
-  variable name. The evaluated key is normalized with the current array key
-  rules; existing and missing keys work, undefined or `null` target roots
-  materialize as arrays, and undefined source variables begin as `null` before
-  binding. Writes through the source variable and direct array offset observe
-  the same selected value, and `unset($value)` detaches only the source name.
-  Existing direct alias groups, source names already routed through
-  array-offset aliases, `$GLOBALS`, append targets, nested/object/`ArrayAccess`
-  targets, non-direct sources, full PHP reference containers, copy-on-write,
-  exact alias rebinding/mutation ordering, and native lowering remain
-  unsupported.
+  such as `$array[$key] =& $value;` and `$array[] =& $value;` execute when the
+  target root is a direct array variable and the source is a direct unaliased
+  variable name. Explicit-offset targets normalize the evaluated key with the
+  current array key rules; existing and missing keys work. Append targets use
+  the runtime array append cursor and bind the source name to the selected auto
+  key. Undefined or `null` target roots materialize as arrays, and undefined
+  source variables begin as `null` before binding. Writes through the source
+  variable and direct array offset observe the same selected value, and
+  `unset($value)` detaches only the source name. Existing direct alias groups,
+  source names already routed through array-offset aliases, `$GLOBALS`, PHP's
+  deprecated false-root conversion, other non-array roots, nested/object/
+  `ArrayAccess` targets, non-direct sources, full PHP reference containers,
+  copy-on-write, exact alias rebinding/mutation ordering, and native lowering
+  remain unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

@@ -26,6 +26,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T14:42:00Z
+
+- Checkpoint before this task:
+  `8593e672 docs: record array offset reference target gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1068, bounded direct array-append reference targets
+  for unaliased direct variable sources.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1068/reference_assignment_array_append_target_direct_variable.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  local PHP 8.2.29 probes confirmed append-reference target behavior for
+  existing arrays, undefined roots, `null` roots, undefined sources, direct
+  slot/source writes, `unset($value)`, and non-array root boundaries.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
+  passed with 24 filtered reference-assignment tests.
+  `cargo run -p phpc -- test tests/fixtures/milestone1068 --compare-php`
+  passed with 1 fixture, 1 PHP comparison, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/milestone1067 --compare-php`
+  passed with 1 fixture, 1 PHP comparison, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 164
+  fixtures. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1272
+  fixture tests, 718 system PHP comparisons, and 554 skipped comparisons, then
+  committed `78eca1d3 runtime: add array append reference targets`.
+- Current WordPress frontier: statement-form `$array[] =& $value;` now appends
+  to a direct array-variable root and aliases an unaliased direct source
+  variable name through the selected auto-key slot. Undefined or `null` target
+  roots materialize, undefined sources begin as `null`, writes through either
+  route observe the same selected value, and `unset($value)` detaches only the
+  source name.
+- Remaining semantic gaps: existing direct alias groups, source names already
+  routed through array-offset aliases, `$GLOBALS`, PHP's deprecated false-root
+  conversion, other non-array roots, nested/object/`ArrayAccess` reference
+  targets, non-direct sources, nested/object/`ArrayAccess` offset aliases,
+  mutation-during-iteration fidelity, non-direct iterables,
+  object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, full PHP reference
+  containers, copy-on-write, native lowering, exact mutation ordering, and
+  alias rebinding remain missing.
+- Next concrete task: choose the next reference/COW gap, likely
+  nested/object/`ArrayAccess` reference targets, nested/object offset aliases,
+  remaining by-reference `foreach` mutation fidelity, COW split behavior, or
+  native lowering boundaries, and add a bounded behavior or explicit diagnostic
+  with PHP comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T14:08:00Z
 
 - Checkpoint before this task:

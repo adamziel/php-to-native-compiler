@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 1068, a bounded direct array-append reference-target slice
+  for direct variable sources. Statement-form `$array[] =& $value;` now works
+  when the target root is a direct array variable and the source is an
+  unaliased direct variable name. Existing arrays append through the runtime
+  array append cursor and bind the source name to the selected auto key;
+  undefined and `null` target roots materialize as arrays first. Undefined
+  source variables are treated as `null` before binding. Writes through the
+  source variable and appended direct array offset observe the same selected
+  value, and `unset($value)` detaches the source name while leaving the array
+  slot value alive. Existing direct alias groups, source names already routed
+  through array-offset aliases, `$GLOBALS`, PHP's deprecated false-root
+  conversion, other non-array roots, nested/object/`ArrayAccess` append
+  targets, non-direct sources, full PHP reference containers, copy-on-write,
+  exact mutation ordering/alias rebinding, and native lowering remain
+  unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1068 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1067 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1272 fixture
+  tests, 718 system PHP comparisons, and 554 skipped comparisons, then
+  committed `78eca1d3 runtime: add array append reference targets`.
+
 - Added Milestone 1067, a bounded direct array-offset reference-target slice
   for direct variable sources. Statement-form `$array[$key] =& $value;` now
   binds a direct array-variable slot to an unaliased direct source variable
