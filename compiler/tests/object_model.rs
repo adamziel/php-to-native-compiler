@@ -4727,6 +4727,57 @@ echo $default->label();
 }
 
 #[test]
+fn constructor_reference_parameters_share_caller_cell_during_execution() {
+    let execution = run_source(
+        r#"<?php
+function observe() {
+    global $value;
+    echo "seen=", $value, "|";
+}
+
+class Box {
+    public function __construct(&$param) {
+        $param = 2;
+        observe();
+        $param = 3;
+    }
+}
+
+$value = 1;
+$box = new Box($value);
+echo "final=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seen=2|final=3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_constructor_reference_parameter_detaches_local_name() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public function __construct(&$param) {
+        unset($param);
+        $param = 9;
+        echo "local=", $param, "|";
+    }
+}
+
+$value = 1;
+$box = new Box($value);
+echo "caller=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "local=9|caller=1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn inherited_public_constructors_execute_with_child_this_binding() {
     let execution = run_source(
         r#"<?php

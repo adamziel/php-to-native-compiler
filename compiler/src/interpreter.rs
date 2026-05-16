@@ -2421,20 +2421,20 @@ impl Interpreter {
         )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate(arg, scope)?);
-        }
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, scope)?;
 
-        self.call_user_function_with_this(
+        self.call_user_function_with_checked_values(
             function,
-            object.clone(),
             values,
+            Some(object.clone()),
             Some(constructor_class_id),
             Some(object.class_id()),
+            reference_bindings,
+            Some(scope),
         )?;
         Ok(Value::Object(object))
     }

@@ -31,16 +31,17 @@
   if execution invokes one of them, `phpc run` reports `unsupported call
   <name>(): reference returns are not implemented`. This does not create PHP
   reference-return binding, alias cells, or copy-on-write containers.
-- by-reference function and method parameters may be declared. Calls that omit
-  an optional by-reference parameter use that parameter's default value in the
-  callee local scope without creating an alias. Calls that provide a
-  by-reference parameter are supported only for direct variable arguments: the
-  callee local parameter shares the caller's variable cell during execution, so
-  writes through the parameter are visible to other reads of the caller
-  variable before the function returns. `unset($param)` detaches only the
-  callee's local parameter name; later local writes do not mutate the caller
-  variable. This is still a bounded direct-variable alias path, not full PHP
-  reference containers or copy-on-write.
+- by-reference function, method, and constructor parameters may be declared.
+  Calls that omit an optional by-reference parameter use that parameter's
+  default value in the callee local scope without creating an alias. Calls that
+  provide a by-reference parameter are supported only for direct variable
+  arguments in the current user-function, instance-method, and constructor
+  dispatch paths: the callee local parameter shares the caller's variable cell
+  during execution, so writes through the parameter are visible to other reads
+  of the caller variable before the call returns. `unset($param)` detaches only
+  the callee's local parameter name; later local writes do not mutate the
+  caller variable. This is still a bounded direct-variable alias path, not full
+  PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`

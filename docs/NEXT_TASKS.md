@@ -10073,6 +10073,17 @@ handled.
   reference containers, array/object offset references, reference returns,
   by-reference `foreach`, copy-on-write, non-variable arguments, broader
   callback reference behavior, or native lowering.
+
+## Milestone 1046: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: extend the shared caller/callee variable-cell
+  path to direct-variable by-reference constructor parameters in the current
+  public/inherited constructor dispatch subset. Constructor writes through
+  `&$param` are now visible before `new ClassName($value)` returns, and
+  `unset($param)` detaches only the constructor's local name. This is not full
+  PHP reference containers, array/object offset references, reference returns,
+  by-reference `foreach`, copy-on-write, non-variable constructor arguments,
+  static constructor support, or native object lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   by-reference return values, by-reference `foreach`, object-property
@@ -10083,7 +10094,8 @@ handled.
 
 - The latest committed checkpoint is
   `2be6fe92 runtime: bind reference parameters to caller cells`, covering
-  Milestone 1045.
+  Milestone 1045. A Milestone 1046 constructor reference-parameter alias-cell
+  slice is implemented in the working tree and awaiting checkpoint.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

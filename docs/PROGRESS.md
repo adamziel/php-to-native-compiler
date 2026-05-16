@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 1046, direct-variable by-reference constructor parameter
+  alias cells for the current public/inherited constructor dispatch subset.
+  Constructor parameters declared by reference now share the caller's variable
+  cell during `new ClassName($value)` execution when the argument is a direct
+  variable, so writes through the constructor parameter are visible before the
+  constructor returns. `unset($param)` detaches the constructor's local name
+  without mutating the caller variable, matching the bounded function/method
+  behavior from Milestone 1045. Non-variable constructor arguments,
+  array/object offset aliases, reference returns, by-reference `foreach`,
+  full PHP reference containers, copy-on-write, and native object lowering
+  remain unsupported. Verification so far:
+  `cargo test -p phpc --test object_model constructor_reference -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1046`.
+
 - Added Milestone 1045, direct-variable by-reference parameter alias cells for
   the current user function and instance method call subset. Supplied
   by-reference parameters now bind the callee parameter name to the caller's

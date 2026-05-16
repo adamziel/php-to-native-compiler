@@ -192,11 +192,12 @@ or alias binding is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
-to the caller's variable cell for the duration of the call. Writes through the
-parameter are visible before the function returns, and `unset($param)` detaches
-only the callee's local name from the shared cell. This deliberately does not
-model full PHP reference containers, by-reference array/object offsets,
-reference returns, by-reference `foreach`, or copy-on-write.
+to the caller's variable cell for the duration of current user-function,
+instance-method, and constructor calls. Writes through the parameter are
+visible before the call returns, and `unset($param)` detaches only the callee's
+local name from the shared cell. This deliberately does not model full PHP
+reference containers, by-reference array/object offsets, reference returns,
+by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax is likewise represented only far enough to
 preserve a stable runtime boundary when reached; it does not mutate array slots
 through aliases, preserve lingering loop-variable references, or implement PHP
