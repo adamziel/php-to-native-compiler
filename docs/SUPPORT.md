@@ -982,8 +982,19 @@
   `mysqli_stmt_reset($statement)` clears the recorded query/count, and
   `mysqli_stmt_close($statement)` removes placeholder statement state. This is
   not prepared SQL parsing, real parameter metadata, by-reference binding,
-  execution, result metadata transfer, statement diagnostics, host database
-  state, warning/error fidelity, or native statement lowering.
+  execution, result metadata transfer, host database state, warning/error
+  fidelity, or native statement lowering.
+  `mysqli_stmt_errno($statement)` returns `0`,
+  `mysqli_stmt_error($statement)` returns an empty string,
+  `mysqli_stmt_sqlstate($statement)` returns `00000`,
+  `mysqli_stmt_warning_count($statement)` returns `0`,
+  `mysqli_stmt_get_warnings($statement)` returns `false`,
+  `mysqli_stmt_error_list($statement)` returns an empty array,
+  `mysqli_stmt_affected_rows($statement)` returns `0`, and
+  `mysqli_stmt_insert_id($statement)` returns `0` for the current placeholder
+  statement. This does not track failed prepares, executions,
+  warning-chain objects, error-list entries, affected rows, insert IDs, host
+  database state, PHP warning/error fidelity, or native statement lowering.
   `mysqli_stmt_bind_param($statement, $types, &...$vars)` and
   `mysqli_stmt_execute($statement, $params = null)` are visible through
   callable metadata but reached calls report stable unsupported diagnostics
@@ -994,11 +1005,6 @@
   but reached calls report stable unsupported diagnostics because mysqlnd
   result transfer, result metadata, execution state, and host database rows
   are not implemented.
-  `mysqli_stmt_errno($statement)`, `mysqli_stmt_error($statement)`, and
-  `mysqli_stmt_affected_rows($statement)` are visible through callable
-  metadata but reached calls report stable unsupported diagnostics because
-  statement objects, statement error state, statement error messages,
-  statement execution state, and affected-row metadata are not implemented.
   `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
   deterministic `true` without emitting MySQL DBUG trace output, inspecting
   host client-library debug state, inspecting sockets, or reading host
@@ -3290,23 +3296,22 @@
   `mysqli_stmt_reset(...)`/`mysqli_stmt_close(...)` are deterministic
   placeholder statement lifecycle helpers without prepared SQL parsing, real
   parameter metadata, by-reference binding, execution, result metadata
-  transfer, statement diagnostics, host database state, warning/error
-  fidelity, or native lowering,
-  `mysqli_stmt_get_warnings(...)`/`mysqli_stmt_error_list(...)` are explicit
-  diagnostic-list boundaries without warning-chain objects, error-list arrays,
-  statement diagnostic state, or host database execution,
+  transfer, host database state, warning/error fidelity, or native lowering,
+  `mysqli_stmt_errno(...)`/`mysqli_stmt_error(...)`/
+  `mysqli_stmt_sqlstate(...)`/`mysqli_stmt_warning_count(...)`/
+  `mysqli_stmt_get_warnings(...)`/`mysqli_stmt_error_list(...)`/
+  `mysqli_stmt_affected_rows(...)`/`mysqli_stmt_insert_id(...)` expose only
+  deterministic clean placeholder metadata without failed-prepare tracking,
+  execution diagnostics, warning-chain objects, error-list entries,
+  affected-row metadata, insert-id metadata, or host database execution,
   `mysqli_stmt_bind_param(...)`/`mysqli_stmt_bind_result(...)`/
   `mysqli_stmt_execute(...)` are explicit statement binding/execution
   boundaries without statement objects, by-reference parameter/result binding,
   type strings, result buffer mutation, array-parameter execution, result
   state, fetch integration, or host database execution,
-  `mysqli_stmt_get_result(...)`/`mysqli_stmt_close(...)` are explicit
-  statement result/cleanup boundaries without statement objects, mysqlnd
-  result transfer, result metadata, resource cleanup, or lifecycle state,
-  `mysqli_stmt_errno(...)`/`mysqli_stmt_error(...)`/
-  `mysqli_stmt_affected_rows(...)` are explicit statement metadata boundaries
-  without statement objects, statement error state, statement error messages,
-  statement execution state, or affected-row metadata,
+  `mysqli_stmt_get_result(...)` is an explicit statement result boundary
+  without mysqlnd result transfer, result metadata, execution state, or host
+  database rows,
   `mysqli_stmt_store_result(...)`/`mysqli_stmt_num_rows(...)`/
   `mysqli_stmt_fetch(...)` are explicit statement result/cursor boundaries
   without statement objects, buffered result storage, statement row-count
@@ -3324,15 +3329,10 @@
   `mysqli_stmt_send_long_data(...)`/`mysqli_stmt_reset(...)`/
   `mysqli_stmt_more_results(...)`/`mysqli_stmt_next_result(...)` are explicit
   statement parameter streaming/reset/multi-result boundaries without
-  statement objects, long-parameter streaming, packet buffering, statement
-  parameter state, statement state reset, buffered result cleanup,
+  long-parameter streaming, packet buffering, statement parameter state,
+  buffered result cleanup,
   parameter/result lifecycle state, multi-result state, or pending statement
   result queues,
-  `mysqli_stmt_sqlstate(...)`/`mysqli_stmt_warning_count(...)`/
-  `mysqli_stmt_insert_id(...)` are explicit statement diagnostics/insert
-  metadata boundaries without statement objects, statement SQLSTATE tracking,
-  statement warning tracking, statement diagnostic state, statement execution
-  state, or statement insert-id metadata,
   `mysqli_stmt_fetch_fields(...)`/`mysqli_stmt_fetch_field(...)` are not PHP
   mysqli functions and are not exposed by the current function table,
   `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success

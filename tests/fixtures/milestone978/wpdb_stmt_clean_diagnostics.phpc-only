@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic clean `mysqli_stmt` diagnostic
+metadata through a WordPress-shaped `wpdb` object. It records clean errno,
+error, SQLSTATE, warning count, warning-chain, error-list, affected-row, and
+insert-id metadata on a placeholder statement object without implementing
+prepared binding, execution, result state, host database state, PHP
+warning/error fidelity, or native database lowering.

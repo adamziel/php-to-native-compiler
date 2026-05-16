@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 978, deterministic clean diagnostic metadata for the current
+  placeholder `mysqli_stmt` lifecycle. For active placeholder statements,
+  `mysqli_stmt_errno()` returns `0`, `mysqli_stmt_error()` returns an empty
+  string, `mysqli_stmt_sqlstate()` returns `00000`,
+  `mysqli_stmt_warning_count()` returns `0`,
+  `mysqli_stmt_get_warnings()` returns `false`,
+  `mysqli_stmt_error_list()` returns an empty array,
+  `mysqli_stmt_affected_rows()` returns `0`, and
+  `mysqli_stmt_insert_id()` returns `0`. The new fixtures include both direct
+  MySQLi and WordPress-shaped `wpdb` statement diagnostic smokes. This is not
+  failed-prepare tracking, statement execution diagnostics, warning-chain
+  objects, real error-list entries, affected-row metadata, insert-id metadata,
+  host database state, PHP warning/error fidelity, or native statement
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_prepare_param -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_error_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_diagnostics -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone978`, and
+  `cargo run -p phpc -- test --compare-php` for the affected
+  `milestone949`, `milestone950`, `milestone961`, `milestone962`,
+  `milestone965`, and `milestone966` fixture groups.
+
 - Added Milestone 977, a deterministic `mysqli_stmt` placeholder lifecycle
   slice. The core class table now exposes `mysqli_stmt`; `mysqli_stmt_init()`
   creates an empty placeholder statement object; `mysqli_prepare()` creates a

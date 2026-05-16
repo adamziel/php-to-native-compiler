@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic clean diagnostic metadata for the
+current placeholder `mysqli_stmt` lifecycle. System PHP requires a fully
+initialized MySQLi connection before `mysqli_stmt_init()` can create a usable
+statement object; phpc uses this placeholder object only to expose clean
+diagnostic reads while prepared binding, execution, result state, warning-chain
+objects, host database state, PHP warning/error fidelity, and native database
+lowering remain unsupported.

@@ -9201,9 +9201,23 @@ handled.
   metadata, by-reference binding, execution, result metadata transfer,
   statement diagnostics, host database state, warning/error fidelity, or
   native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as broader escaping charset fidelity,
   local-infile option effects, statement binding/execution boundaries, or
+  multi-result pending queues, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
+  Milestone 978 adds deterministic clean diagnostic metadata for active
+  placeholder `mysqli_stmt` objects: clean errno/error, SQLSTATE, warning
+  count, warning-chain, error-list, affected-row, and insert-id reads now
+  execute directly and through a WordPress-shaped `wpdb` smoke. This is not
+  failed-prepare tracking, statement execution diagnostics, warning-chain
+  objects, real error-list entries, affected-row metadata, insert-id metadata,
+  host database state, PHP warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as statement
+  binding/execution boundaries with active placeholder statements, broader
+  escaping charset fidelity, local-infile option effects, result buffering, or
   multi-result pending queues, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
@@ -9211,8 +9225,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5eaf6ee0 runtime: add mysqli real query pending results`, covering
-  Milestone 976 before the current Milestone 977 candidate.
+  `41f8e051 runtime: add mysqli stmt lifecycle placeholders`, covering
+  Milestone 977 before the current Milestone 978 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

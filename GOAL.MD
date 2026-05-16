@@ -452,6 +452,13 @@ plus deterministic `mysqli_stmt` placeholder object lifecycle for
 metadata, by-reference binding, execution, result metadata transfer,
 statement diagnostics, host database state, warning/error fidelity, or native
 lowering,
+plus deterministic clean `mysqli_stmt` diagnostic metadata for active
+placeholder statements, including clean errno/error, SQLSTATE, warning count,
+warning-chain, error-list, affected-row, and insert-id reads through direct
+MySQLi calls and a WordPress-shaped `wpdb` smoke, without claiming
+failed-prepare tracking, statement execution diagnostics, warning-chain
+objects, real error-list entries, affected-row metadata, insert-id metadata,
+host database state, PHP warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -1720,6 +1720,13 @@ historical blockers and remaining full-support gaps include:
   `mysqli_stmt_reset()`, and `mysqli_stmt_close()` without claiming prepared
   SQL parsing, real parameter metadata, by-reference binding, execution,
   result metadata transfer, statement diagnostics, host database state,
+  warning/error fidelity, or native database lowering. Milestone 978 adds
+  deterministic clean `mysqli_stmt` diagnostic metadata for active
+  placeholder statements, including direct and WordPress-shaped `wpdb` smokes
+  for clean errno/error, SQLSTATE, warning count, warning-chain, error-list,
+  affected-row, and insert-id reads, without claiming failed-prepare tracking,
+  statement execution diagnostics, warning-chain objects, real error-list
+  entries, affected-row metadata, insert-id metadata, host database state, PHP
   warning/error fidelity, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

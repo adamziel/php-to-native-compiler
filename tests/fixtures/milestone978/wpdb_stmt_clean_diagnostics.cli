@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone978/wpdb_stmt_clean_diagnostics.php
+exit: 0
+stdout:
+0|empty|00000|0|false|0|0|0
+--- stdout end ---
+stderr:
+--- stderr end ---

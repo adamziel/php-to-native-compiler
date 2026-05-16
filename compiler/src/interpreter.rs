@@ -4655,24 +4655,16 @@ impl Interpreter {
 
     fn call_mysqli_stmt_get_warnings(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_get_warnings", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_get_warnings()",
-                "mysqli statement objects, statement warning chains, and statement diagnostic state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_get_warnings()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_get_warnings()", stmt_id, span)?;
+        Ok(Value::Bool(false))
     }
 
     fn call_mysqli_stmt_error_list(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_error_list", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_error_list()",
-                "mysqli statement objects, statement error-list tracking, and statement diagnostic state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_error_list()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_error_list()", stmt_id, span)?;
+        Ok(Value::Array(PhpArray::new()))
     }
 
     fn call_mysqli_stmt_bind_param(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4755,35 +4747,23 @@ impl Interpreter {
 
     fn call_mysqli_stmt_errno(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_errno", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_errno()",
-                "mysqli statement objects and statement error-state metadata are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_errno()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_errno()", stmt_id, span)?;
+        Ok(Value::Int(0))
     }
 
     fn call_mysqli_stmt_error(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_error", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_error()",
-                "mysqli statement objects and statement error-message metadata are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_error()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_error()", stmt_id, span)?;
+        Ok(Value::String(String::new()))
     }
 
     fn call_mysqli_stmt_affected_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_affected_rows", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_affected_rows()",
-                "mysqli statement objects, statement execution state, and affected-row metadata are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_affected_rows()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_affected_rows()", stmt_id, span)?;
+        Ok(Value::Int(0))
     }
 
     fn call_mysqli_stmt_store_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4929,35 +4909,23 @@ impl Interpreter {
 
     fn call_mysqli_stmt_sqlstate(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_sqlstate", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_sqlstate()",
-                "mysqli statement objects, statement SQLSTATE tracking, and statement diagnostic state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_sqlstate()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_sqlstate()", stmt_id, span)?;
+        Ok(Value::String("00000".to_string()))
     }
 
     fn call_mysqli_stmt_warning_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_warning_count", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_warning_count()",
-                "mysqli statement objects, statement warning tracking, and statement diagnostic state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_warning_count()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_warning_count()", stmt_id, span)?;
+        Ok(Value::Int(0))
     }
 
     fn call_mysqli_stmt_insert_id(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_insert_id", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_insert_id()",
-                "mysqli statement objects, statement execution state, and statement insert-id metadata are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_insert_id()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_insert_id()", stmt_id, span)?;
+        Ok(Value::Int(0))
     }
 
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {

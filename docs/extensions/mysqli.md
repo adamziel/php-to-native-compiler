@@ -219,10 +219,18 @@ placeholder count on an existing placeholder statement and returns `true`.
 `true`. These helpers do not parse SQL, understand placeholders inside strings
 or comments, expose real parameter metadata, bind values, execute statements,
 transfer result metadata, track statement diagnostics, touch host database
-state, or support native lowering. `mysqli_stmt_get_warnings($statement)` and
-`mysqli_stmt_error_list($statement)` remain explicit runtime boundaries because
-warning-chain objects, error-list arrays, and statement diagnostic state are
-not implemented.
+state, or support native lowering. For the same placeholder statement,
+`mysqli_stmt_errno($statement)` returns `0`,
+`mysqli_stmt_error($statement)` returns an empty string,
+`mysqli_stmt_sqlstate($statement)` returns `00000`,
+`mysqli_stmt_warning_count($statement)` returns `0`,
+`mysqli_stmt_get_warnings($statement)` returns `false`,
+`mysqli_stmt_error_list($statement)` returns an empty array,
+`mysqli_stmt_affected_rows($statement)` returns `0`, and
+`mysqli_stmt_insert_id($statement)` returns `0`. These are deterministic clean
+metadata placeholders only; they do not track failed prepares, executions,
+warning-chain objects, error-list entries, affected rows, insert IDs, host
+database state, PHP warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)`,
 `mysqli_stmt_bind_result($statement, &...$vars)`, and
@@ -233,18 +241,10 @@ parameter/result binding, type strings, result buffer mutation,
 array-parameter execution, result state, fetch integration, and host database
 execution are not implemented.
 
-`mysqli_stmt_get_result($statement)` and `mysqli_stmt_close($statement)` are
-visible through callable metadata but are explicit runtime boundaries. Reached
-calls report stable unsupported diagnostics because statement objects,
-mysqlnd result transfer, result metadata, resource cleanup, and statement
-lifecycle state are not implemented.
-
-`mysqli_stmt_errno($statement)`, `mysqli_stmt_error($statement)`, and
-`mysqli_stmt_affected_rows($statement)` are visible through callable metadata
-but are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, statement error state, statement error
-messages, statement execution state, and affected-row metadata are not
-implemented.
+`mysqli_stmt_get_result($statement)` is visible through callable metadata but
+is an explicit runtime boundary. Reached calls report stable unsupported
+diagnostics because mysqlnd result transfer, result metadata, execution state,
+and host database rows are not implemented.
 
 `mysqli_stmt_store_result($statement)`, `mysqli_stmt_num_rows($statement)`,
 and `mysqli_stmt_fetch($statement)` are visible through callable metadata but
@@ -277,14 +277,6 @@ diagnostics because statement objects, long-parameter streaming, packet
 buffering, statement parameter state, statement state reset, buffered result
 cleanup, parameter/result lifecycle state, multi-result state, and pending
 statement result queues are not implemented.
-
-`mysqli_stmt_sqlstate($statement)`,
-`mysqli_stmt_warning_count($statement)`, and
-`mysqli_stmt_insert_id($statement)` are visible through callable metadata but
-are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, statement SQLSTATE tracking, statement
-warning tracking, statement diagnostic state, statement execution state, and
-statement insert-id metadata are not implemented.
 
 `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` are not PHP
 mysqli functions and are not exposed by the current function table.

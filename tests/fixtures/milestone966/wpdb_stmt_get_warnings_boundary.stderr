@@ -1,2 +1,2 @@
-runtime error at 12:16: unsupported call mysqli_stmt_get_warnings(): mysqli statement objects, statement warning chains, and statement diagnostic state are not implemented in the current subset
+runtime error at 12:16: unsupported call mysqli_stmt_get_warnings(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 

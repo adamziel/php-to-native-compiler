@@ -512,13 +512,17 @@ echo mysqli_stmt_param_count($stmt);
 echo "|";
 mysqli_stmt_prepare($stmt, "SELECT option_name FROM wp_options");
 echo mysqli_stmt_param_count($stmt);
+echo "|";
+echo mysqli_stmt_get_warnings($stmt) === false ? "no-warnings" : "warnings";
+echo "|";
+echo count(mysqli_stmt_error_list($stmt));
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|prepare-callable|param-count-exists|param-count-callable|warnings-exists|warnings-callable|error-list-exists|error-list-callable|prepared|1|0"
+        "yes|prepare-callable|param-count-exists|param-count-callable|warnings-exists|warnings-callable|error-list-exists|error-list-callable|prepared|1|0|no-warnings|0"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -567,7 +571,7 @@ mysqli_stmt_get_warnings($stmt);
     assert_eq!(warnings_error.column, 1);
     assert_eq!(
         warnings_error.message,
-        "unsupported call mysqli_stmt_get_warnings(): mysqli statement objects, statement warning chains, and statement diagnostic state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_get_warnings(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let error_list_error = run_source(
@@ -583,7 +587,7 @@ mysqli_stmt_error_list($stmt);
     assert_eq!(error_list_error.column, 1);
     assert_eq!(
         error_list_error.message,
-        "unsupported call mysqli_stmt_error_list(): mysqli statement objects, statement error-list tracking, and statement diagnostic state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_error_list(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 }
 
@@ -779,6 +783,21 @@ echo is_callable($affected) ? "affected-callable" : "affected-missing";
     );
     assert_eq!(execution.exit_code, 0);
 
+    let diagnostics = run_source(
+        r#"<?php
+$stmt = mysqli_stmt_init(mysqli_init());
+echo mysqli_stmt_errno($stmt);
+echo "|";
+echo mysqli_stmt_error($stmt) === "" ? "empty" : "non-empty";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(diagnostics.stdout, "0|empty|0");
+    assert_eq!(diagnostics.exit_code, 0);
+
     let errno_error = run_source(
         r#"<?php
 $stmt = mysqli_init();
@@ -792,7 +811,7 @@ mysqli_stmt_errno($stmt);
     assert_eq!(errno_error.column, 1);
     assert_eq!(
         errno_error.message,
-        "unsupported call mysqli_stmt_errno(): mysqli statement objects and statement error-state metadata are not implemented in the current subset"
+        "unsupported call mysqli_stmt_errno(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let error_error = run_source(
@@ -808,7 +827,7 @@ mysqli_stmt_error($stmt);
     assert_eq!(error_error.column, 1);
     assert_eq!(
         error_error.message,
-        "unsupported call mysqli_stmt_error(): mysqli statement objects and statement error-message metadata are not implemented in the current subset"
+        "unsupported call mysqli_stmt_error(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let affected_error = run_source(
@@ -824,7 +843,7 @@ mysqli_stmt_affected_rows($stmt);
     assert_eq!(affected_error.column, 1);
     assert_eq!(
         affected_error.message,
-        "unsupported call mysqli_stmt_affected_rows(): mysqli statement objects, statement execution state, and affected-row metadata are not implemented in the current subset"
+        "unsupported call mysqli_stmt_affected_rows(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 }
 
@@ -1192,6 +1211,21 @@ echo is_callable($insert_id) ? "insert-id-callable" : "insert-id-missing";
     );
     assert_eq!(execution.exit_code, 0);
 
+    let diagnostics = run_source(
+        r#"<?php
+$stmt = mysqli_stmt_init(mysqli_init());
+echo mysqli_stmt_sqlstate($stmt);
+echo "|";
+echo mysqli_stmt_warning_count($stmt);
+echo "|";
+echo mysqli_stmt_insert_id($stmt);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(diagnostics.stdout, "00000|0|0");
+    assert_eq!(diagnostics.exit_code, 0);
+
     let sqlstate_error = run_source(
         r#"<?php
 $stmt = mysqli_init();
@@ -1205,7 +1239,7 @@ mysqli_stmt_sqlstate($stmt);
     assert_eq!(sqlstate_error.column, 1);
     assert_eq!(
         sqlstate_error.message,
-        "unsupported call mysqli_stmt_sqlstate(): mysqli statement objects, statement SQLSTATE tracking, and statement diagnostic state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_sqlstate(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let warning_count_error = run_source(
@@ -1221,7 +1255,7 @@ mysqli_stmt_warning_count($stmt);
     assert_eq!(warning_count_error.column, 1);
     assert_eq!(
         warning_count_error.message,
-        "unsupported call mysqli_stmt_warning_count(): mysqli statement objects, statement warning tracking, and statement diagnostic state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_warning_count(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let insert_id_error = run_source(
@@ -1237,7 +1271,7 @@ mysqli_stmt_insert_id($stmt);
     assert_eq!(insert_id_error.column, 1);
     assert_eq!(
         insert_id_error.message,
-        "unsupported call mysqli_stmt_insert_id(): mysqli statement objects, statement execution state, and statement insert-id metadata are not implemented in the current subset"
+        "unsupported call mysqli_stmt_insert_id(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 }
 
