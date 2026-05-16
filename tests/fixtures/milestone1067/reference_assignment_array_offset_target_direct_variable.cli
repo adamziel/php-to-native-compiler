@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1067/reference_assignment_array_offset_target_direct_variable.php
+exit: 0
+stdout:
+Grace|Hedy|Katherine|Katherine|detached|updated|slot|changed|from-slot
+--- stdout end ---
+stderr:
+--- stderr end ---

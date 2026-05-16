@@ -487,6 +487,69 @@ impl SymbolTable {
         self.array_offset_aliases.insert(target.to_string(), alias);
     }
 
+    fn bind_array_offset_to_static_source(
+        &mut self,
+        array_name: &str,
+        key: ArrayKey,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if array_name == source_name {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "array-offset reference targets cannot use the same direct variable as source and array root in the current subset",
+                ),
+            ));
+        }
+
+        if self.array_offset_aliases.contains_key(source_name) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "array-offset reference targets require a direct unaliased variable source",
+                ),
+            ));
+        }
+
+        if self.source_cell_has_other_direct_names(source_name) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "array-offset reference targets cannot rebind an existing direct variable alias group",
+                ),
+            ));
+        }
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let alias = ArrayOffsetAlias {
+            array_name: array_name.to_string(),
+            key,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_static_to_array_offset_alias(source_name, alias);
+        Ok(())
+    }
+
+    fn source_cell_has_other_direct_names(&self, name: &str) -> bool {
+        let Some(source_cell) = self.read_cell(name) else {
+            return false;
+        };
+        self.routed_storage(name)
+            .borrow()
+            .iter()
+            .any(|(candidate, cell)| candidate != name && Rc::ptr_eq(cell, &source_cell))
+    }
+
     fn materialize_array_offset_alias(
         &mut self,
         alias: &ArrayOffsetAlias,
@@ -2973,6 +3036,23 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if name == "GLOBALS" {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "reference binding through $GLOBALS offsets is not implemented",
+                            ),
+                        ));
+                    }
+                    scope.bind_array_offset_to_static_source(name, key, source_name, span)?;
+                    return Ok(());
+                }
+
                 let value = self.evaluate_container_reference_source_value(source, span, scope)?;
                 if name == "GLOBALS" {
                     let Some(global_name) = globals_offset_name(&key) else {
