@@ -365,7 +365,12 @@ stable unsupported diagnostics without statement object allocation,
 long-parameter streaming, packet buffering, statement parameter state,
 statement state reset, buffered result cleanup, parameter/result lifecycle
 state, multi-result state, pending result queues, host database execution,
-warning/error fidelity, or native lowering,
+warning/error fidelity, or native lowering, now wired through synthetic
+WordPress-shaped `wpdb` parameter streaming/reset/multi-result smokes without
+claiming statement objects, long-parameter streaming, packet buffering,
+statement parameter state, statement state reset, buffered result cleanup,
+parameter/result lifecycle state, multi-result state, pending result queues,
+host database state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

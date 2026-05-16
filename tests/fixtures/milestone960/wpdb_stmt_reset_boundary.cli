@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone960/wpdb_stmt_reset_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone960/wpdb_stmt_reset_boundary.php:12:16: unsupported call mysqli_stmt_reset(): mysqli statement objects, statement state reset, buffered results, and parameter/result lifecycle state are not implemented in the current subset
+--- stderr end ---

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone960/wpdb_stmt_next_result_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone960/wpdb_stmt_next_result_boundary.php:12:16: unsupported call mysqli_stmt_next_result(): mysqli statement objects, multi-result cursor advancement, and pending statement result queues are not implemented in the current subset
+--- stderr end ---

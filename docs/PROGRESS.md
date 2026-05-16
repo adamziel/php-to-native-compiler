@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 960, synthetic WordPress-shaped `wpdb`
+  prepared-statement parameter streaming/reset/multi-result smokes that reach
+  the explicit `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, and `mysqli_stmt_next_result()` boundaries
+  through `wpdb`-style methods. These are harness smokes only; they do not
+  add statement object allocation, long-parameter streaming, packet buffering,
+  statement parameter state, statement state reset, buffered result cleanup,
+  parameter/result lifecycle state, multi-result state, pending result queues,
+  host database execution, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone960`.
+
 - Added Milestone 959, explicit MySQLi statement parameter
   streaming/reset/multi-result boundaries for
   `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,

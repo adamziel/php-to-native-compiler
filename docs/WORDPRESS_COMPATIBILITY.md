@@ -1644,6 +1644,12 @@ historical blockers and remaining full-support gaps include:
   long-parameter streaming, packet buffering, statement parameter state,
   statement state reset, buffered result cleanup, parameter/result lifecycle
   state, multi-result state, pending result queues, host database execution,
+  warning/error fidelity, or native database lowering. Milestone 960 wires
+  those boundaries through synthetic WordPress-shaped `wpdb` parameter
+  streaming/reset/multi-result methods without claiming statement objects,
+  long-parameter streaming, packet buffering, statement parameter state,
+  statement state reset, buffered result cleanup, parameter/result lifecycle
+  state, multi-result state, pending result queues, host database state,
   warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;

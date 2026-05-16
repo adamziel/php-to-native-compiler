@@ -8984,7 +8984,7 @@ handled.
   reset, buffered result cleanup, parameter/result lifecycle state,
   multi-result state, pending result queues, host database execution,
   warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement
   parameter streaming/reset/multi-result smokes that reach the explicit
   `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
   `mysqli_stmt_more_results()`, or `mysqli_stmt_next_result()` boundary
@@ -8993,12 +8993,25 @@ handled.
   statement state reset, buffered result cleanup, parameter/result lifecycle
   state, multi-result state, pending result queues, host database state,
   warning/error fidelity, or native lowering.
+  Milestone 960 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, and `mysqli_stmt_next_result()` unsupported
+  diagnostics through WordPress-shaped methods. These are not statement object
+  allocation, long-parameter streaming, packet buffering, statement parameter
+  state, statement state reset, buffered result cleanup, parameter/result
+  lifecycle state, multi-result state, pending result queues, host database
+  state, warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+  diagnostics/insert metadata boundary, such as `mysqli_stmt_sqlstate()`,
+  `mysqli_stmt_warning_count()`, or `mysqli_stmt_insert_id()` callable
+  metadata and explicit unsupported diagnostics, before claiming broader
+  prepared statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1e9277c5 tests: add wordpress wpdb stmt positioning attr smokes`, covering
-  Milestone 958 before the current Milestone 959 candidate.
+  `eaf99484 runtime: add mysqli stmt streaming reset boundaries`, covering
+  Milestone 959 before the current Milestone 960 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
