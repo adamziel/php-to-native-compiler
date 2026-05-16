@@ -225,8 +225,8 @@ Array-offset sources, direct array-offset targets for array values,
 object-property array targets, non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, source/target rebinding beyond direct names, full PHP reference
-containers, by-reference `foreach`, mutation-ordering guarantees, and
-copy-on-write remain future runtime work.
+containers, broader by-reference `foreach` fidelity, mutation-ordering
+guarantees, and copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime
@@ -241,12 +241,15 @@ local name from the shared cell. This deliberately does not model full PHP
 reference containers, by-reference array/object offsets, broader reference
 returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
-copy-back interpreter path: it snapshots the initial keys, writes the current
-element value into the loop variable, executes the body, and copies the loop
-variable value back into that array slot. This intentionally avoids claiming
-actual array slot cells, lingering post-loop references,
-mutation-during-iteration fidelity, non-direct iterable support, or PHP
-copy-on-write.
+interpreter path: it snapshots the initial keys, writes the key variable by
+value, writes the current element value into the loop variable, executes the
+body, copies the loop variable value back into that array slot, and after loop
+completion leaves the value variable routed to the last successfully iterated
+slot until `unset($value)` detaches it. Empty array iteration creates no
+lingering route. This intentionally avoids claiming mutation-during-iteration
+fidelity, non-direct iterable support, object/`Traversable` iteration,
+destructuring targets, array/object/`ArrayAccess` offset loop variables, full
+reference containers, or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property

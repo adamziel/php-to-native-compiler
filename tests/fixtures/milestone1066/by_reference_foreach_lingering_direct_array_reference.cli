@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1066/by_reference_foreach_lingering_direct_array_reference.php
+exit: 0
+stdout:
+direct|a!|b!|tail|tail|tail|detached
+--- stdout end ---
+stderr:
+--- stderr end ---

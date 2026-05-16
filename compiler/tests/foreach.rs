@@ -122,6 +122,75 @@ echo $items[0], "|", $items[1]["nested"], "|", $items[1]["seen"];
 }
 
 #[test]
+fn foreach_by_reference_lingers_as_last_direct_array_slot_after_loop() {
+    let source = r#"<?php
+$items = ["a", "b", "c"];
+
+foreach ($items as $key => &$item) {
+    $item = $item . $key;
+}
+
+$items[2] = "direct";
+echo $item;
+echo "|";
+$item = "tail";
+echo $items[0], "|", $items[1], "|", $items[2], "|", $key, "|", $item;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "direct|a0|b1|tail|2|tail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_lingering_reference_is_cleared_by_unset_or_empty_iteration() {
+    let source = r#"<?php
+$items = ["a", "b", "c"];
+
+foreach ($items as &$item) {
+    $item = $item . "!";
+}
+
+unset($item);
+$item = "tail";
+echo $items[0], "|", $items[1], "|", $items[2], "|", $item;
+echo "\n";
+
+$empty = [];
+$value = "before";
+foreach ($empty as &$value) {
+    $value = "unreached";
+}
+$value = "after";
+echo count($empty), "|", $value;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "a!|b!|c!|tail\n0|after");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_value_assignment_reuses_existing_lingering_reference_like_php() {
+    let source = r#"<?php
+$items = ["a", "b", "c"];
+
+foreach ($items as &$item) {
+    $item = $item . "!";
+}
+
+foreach (["x"] as $item) {
+}
+
+echo $items[0], "|", $items[1], "|", $items[2], "|", $item;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "a!|b!|x|x");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_rejects_non_direct_iterables_as_stable_boundary() {
     let error = runtime_error(
         r#"<?php

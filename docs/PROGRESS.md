@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 1066, lingering post-loop references for the existing
+  direct-array-variable by-reference `foreach` slice. In the current subset,
+  `foreach ($items as $key => &$item) { ... }` over a direct array variable
+  still snapshots the initial keys and copies body writes back to the selected
+  array slot; after loop completion or a consumed inner `break`, the value
+  variable now remains bound to the last successfully iterated array slot.
+  Later direct writes to that array offset are visible through the loop
+  variable, assignment through the loop variable updates that slot, and
+  `unset($item)` detaches the lingering name. Empty array iteration creates no
+  lingering reference. This remains limited to direct array variables and
+  direct value variables, and does not implement mutation-during-iteration
+  fidelity, non-direct iterables, object/`Traversable` iteration, foreach
+  destructuring, array/object/`ArrayAccess` offset loop variables, full PHP
+  reference containers, copy-on-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test foreach -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1066 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1055 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone747`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1065, undefined/null root materialization for the bounded
   direct array-offset reference-source slice. Statement-form
   `$alias =& $array[$key];` now materializes an undefined or `null` direct

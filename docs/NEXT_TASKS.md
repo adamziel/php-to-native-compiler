@@ -10321,11 +10321,24 @@ handled.
   and non-array roots remain an explicit runtime boundary. This is not
   nested/object/`ArrayAccess` offsets, direct array-offset reference targets,
   exact by-reference `foreach`, copy-on-write, or native lowering.
+
+## Milestone 1066: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add lingering post-loop reference behavior for
+  the existing direct-array-variable by-reference `foreach` slice. In the
+  current subset, `foreach ($items as $key => &$item) { ... }` snapshots the
+  initial keys, copies body writes back to each selected slot, and after loop
+  completion leaves the value variable bound to the last successfully iterated
+  array slot until `unset($item)` detaches it. Empty array iteration creates no
+  lingering reference. This is not mutation-during-iteration fidelity,
+  non-direct iterable support, object/`Traversable` iteration, foreach
+  destructuring, full PHP reference containers, copy-on-write, or native
+  lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  nested/object offset aliases, exact by-reference `foreach`, array/object
-  copy-on-write split behavior, or native lowering boundaries, and add the next
-  bounded behavior or explicit diagnostic with PHP comparison coverage where
-  applicable.
+  nested/object offset aliases, remaining by-reference `foreach` fidelity,
+  array/object copy-on-write split behavior, or native lowering boundaries, and
+  add the next bounded behavior or explicit diagnostic with PHP comparison
+  coverage where applicable.
 
 ## Latest Completed Checkpoint
 

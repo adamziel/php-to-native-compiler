@@ -305,15 +305,17 @@
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays. By-reference value forms over a direct array variable, such
   as `foreach ($array as &$value)` and
-  `foreach ($array as $key => &$value)`, execute as a bounded copy-back slice:
-  the current keys are snapshotted, the key variable is written by value, the
-  loop variable receives the current element value, and the loop variable is
-  copied back into the same array slot after each iteration. This supports the
-  common `unset($value)`-after-loop shape, but it is not true PHP
-  by-reference iteration: lingering post-loop references,
-  mutation-during-iteration fidelity, array slot/reference cells,
-  copy-on-write, object/Traversable iteration, non-direct iterables, and
-  native lowering remain unsupported.
+  `foreach ($array as $key => &$value)`, execute as a bounded copy-back and
+  lingering-reference slice: the current keys are snapshotted, the key variable
+  is written by value, the loop variable receives the current element value,
+  the loop variable is copied back into the same array slot after each
+  iteration, and after loop completion the loop variable remains routed to the
+  last successfully iterated slot until `unset($value)` detaches it. Empty
+  array iteration creates no lingering reference. This is still not full PHP
+  by-reference iteration: mutation-during-iteration fidelity, full reference
+  containers, copy-on-write, object/Traversable iteration, non-direct
+  iterables, foreach destructuring, array/object/ArrayAccess offset loop
+  variables, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop

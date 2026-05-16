@@ -358,6 +358,11 @@ impl SymbolTable {
         self.write_named(name, value);
     }
 
+    fn write_static_detached(&mut self, name: &str, value: Value) {
+        self.array_offset_aliases.remove(name);
+        self.write_storage_named(name, value);
+    }
+
     fn is_set_static(&self, name: &str) -> bool {
         matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
     }
@@ -553,6 +558,19 @@ impl SymbolTable {
 
 fn value_cell(value: Value) -> VariableCell {
     Rc::new(RefCell::new(value))
+}
+
+fn bind_foreach_lingering_reference(
+    scope: &mut SymbolTable,
+    value: &str,
+    array_name: &str,
+    key: Option<ArrayKey>,
+    span: Span,
+) -> CompileResult<()> {
+    if let Some(key) = key {
+        scope.bind_static_to_existing_array_offset(value, array_name, key, span)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -1325,6 +1343,7 @@ impl Interpreter {
                         .iter()
                         .map(|entry| entry.key.clone())
                         .collect();
+                    let mut lingering_reference_key = None;
 
                     for entry_key in keys {
                         self.tick(*span)?;
@@ -1347,15 +1366,17 @@ impl Interpreter {
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
-                        scope.write_static(value, current_value);
+                        scope.write_static_detached(value, current_value);
                         let flow = self.execute_statements(body, scope)?;
 
+                        let mut copied_back = false;
                         if let Some(updated_value) = scope.read_named(value) {
                             let mut array_value = scope.read_static(&array_name, *span)?;
                             match &mut array_value {
                                 Value::Array(array) => {
                                     if array.contains_key(entry_key.clone()) {
                                         array.insert(entry_key.clone(), updated_value);
+                                        copied_back = true;
                                     }
                                 }
                                 other => {
@@ -1370,29 +1391,73 @@ impl Interpreter {
                             }
                             scope.write_static(&array_name, array_value);
                         }
+                        lingering_reference_key = copied_back.then(|| entry_key.clone());
 
                         match flow {
                             Flow::Normal => {}
                             Flow::Continue { depth, .. } if depth <= 1 => {}
-                            Flow::Continue { depth, span } => {
+                            Flow::Continue {
+                                depth,
+                                span: flow_span,
+                            } => {
+                                bind_foreach_lingering_reference(
+                                    scope,
+                                    value,
+                                    &array_name,
+                                    lingering_reference_key,
+                                    *span,
+                                )?;
                                 return Ok(Flow::Continue {
                                     depth: depth - 1,
-                                    span,
+                                    span: flow_span,
                                 });
                             }
                             Flow::Break { depth, .. } if depth <= 1 => break,
-                            Flow::Break { depth, span } => {
+                            Flow::Break {
+                                depth,
+                                span: flow_span,
+                            } => {
+                                bind_foreach_lingering_reference(
+                                    scope,
+                                    value,
+                                    &array_name,
+                                    lingering_reference_key,
+                                    *span,
+                                )?;
                                 return Ok(Flow::Break {
                                     depth: depth - 1,
-                                    span,
+                                    span: flow_span,
                                 });
                             }
-                            flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            Flow::Goto {
+                                label,
+                                span: flow_span,
+                            } => {
+                                bind_foreach_lingering_reference(
+                                    scope,
+                                    value,
+                                    &array_name,
+                                    lingering_reference_key,
+                                    *span,
+                                )?;
+                                return Ok(Flow::Goto {
+                                    label,
+                                    span: flow_span,
+                                });
+                            }
+                            flow @ (Flow::Return(_) | Flow::Exit(_)) => {
                                 return Ok(flow);
                             }
                         }
                     }
 
+                    bind_foreach_lingering_reference(
+                        scope,
+                        value,
+                        &array_name,
+                        lingering_reference_key,
+                        *span,
+                    )?;
                     return Ok(Flow::Normal);
                 }
                 let iterable = self.evaluate(iterable, scope)?;
