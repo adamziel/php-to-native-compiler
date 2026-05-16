@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_free_result(): mysqli statement objects, statement result buffers, and statement result cleanup state are not implemented in the current subset
+

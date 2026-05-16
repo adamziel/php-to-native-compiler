@@ -1621,7 +1621,11 @@ historical blockers and remaining full-support gaps include:
   object allocation, statement result metadata objects, field metadata
   transfer, field-count state, result buffers, statement result cleanup state,
   host database execution, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 956 wires those boundaries through synthetic
+  WordPress-shaped `wpdb` result metadata/cleanup methods without claiming
+  statement objects, statement result metadata, field metadata transfer,
+  field-count state, result buffers, result cleanup state, host database
+  state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

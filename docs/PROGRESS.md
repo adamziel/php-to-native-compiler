@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 956, synthetic WordPress-shaped `wpdb`
+  prepared-statement result metadata/cleanup smokes that reach the explicit
+  `mysqli_stmt_result_metadata()`, `mysqli_stmt_field_count()`, and
+  `mysqli_stmt_free_result()` boundaries through `wpdb`-style methods. These
+  are harness smokes only; they do not add statement object allocation,
+  statement result metadata objects, field metadata transfer, field-count
+  state, result buffers, statement result cleanup state, host database
+  execution, PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone956`.
+
 - Added Milestone 955, explicit MySQLi statement result metadata/cleanup
   boundaries for `mysqli_stmt_result_metadata()`,
   `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()`. The runtime
