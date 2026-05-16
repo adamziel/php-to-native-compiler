@@ -189,7 +189,8 @@ Implemented now:
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
   parsed abstract/final class modifiers plus abstract/final method modifiers
-  as metadata, with abstract class instantiation rejected at runtime,
+  as metadata, with abstract class instantiation and final-parent inheritance
+  rejected at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,

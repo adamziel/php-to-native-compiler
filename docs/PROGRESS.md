@@ -4,6 +4,81 @@
 
 Implemented:
 
+- Added Milestone 1120, a tests/docs lane queue refresh after the 1116-1119
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1116-1120
+  complete and opens Milestones 1121-1125, `docs/LANE_WORKERS.md` points the
+  next parser/runtime/IR/compiler-output/tests-docs lanes at that queue, and
+  support/architecture/operations docs now describe the readonly
+  non-property-member parse boundary, final-parent inheritance runtime
+  boundary, native global-declaration rejection, and fixture-manifest summary
+  totals. This does not change runtime behavior, native lowering, fixture
+  execution, or PHP/WordPress compatibility claims beyond the implemented
+  1116-1119 slices. Full gate pending at the 1116-1120 checkpoint.
+
+- Added Milestone 1119, a deterministic compiler-output fixture-manifest
+  summary refinement. `phpc test --list-fixtures [fixture-dir]` now prints
+  aggregate totals for PHP-comparison eligible fixtures, `.phpc-only`
+  fixtures, and recognized `.stdout`, `.stderr`, `.exit`, and `.phpc-only`
+  sidecars before the sorted fixture entries. This improves fixture audit logs
+  without parsing or executing fixtures and without changing normal
+  `phpc test` execution or `--compare-php` behavior. Verification so far:
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, `cargo
+  test -p phpc --test php_comparison -- --test-threads=1`, direct `cargo run
+  -q -p phpc -- test --compare-php --list-fixtures <temp-fixture-dir>`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the
+  compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1118, a dedicated native global-declaration rejection.
+  `phpc compile --emit-ir` and `--emit-asm` now reject `global` declarations
+  with a diagnostic naming root symbol-table imports, local/global aliasing,
+  `$GLOBALS` interactions, references/copy-on-write, included-file scope
+  interactions, and exact native diagnostics instead of the previous broad
+  ad hoc messages. This does not implement native root symbol-table imports,
+  local/global aliasing, `$GLOBALS` interactions, references/copy-on-write,
+  included-file scope interactions, or exact native diagnostics. Verification
+  so far: `cargo test -p phpc --test native_global_declaration_boundary --
+  --test-threads=1`, `cargo test -p phpc --test milestone1
+  emit_ir_rejects_global_declarations_until_scope_imports_exist --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1118/native_global_declaration_boundary.phpc-source
+  --emit-ir` returned exit `1` with the pinned diagnostic, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the IR lane. Full gate
+  deferred until integration.
+
+- Added Milestone 1117, bounded runtime enforcement for declared final class
+  inheritance. Declared `final class Base {}` still registers and instantiates
+  in the current object model, while `class Child extends Base {}` reports the
+  stable runtime boundary `unsupported class inheritance for Child: cannot
+  extend final class Base` when `Base` is final. Nested class registration
+  timing, abstract-class instantiation rejection, inherited property behavior,
+  and current final class instantiation remain covered. This does not
+  implement final method override enforcement, abstract method implementation
+  enforcement, readonly semantics, autoload-triggered class discovery, exact
+  PHP `Error` objects/diagnostics, or native object/class lowering.
+  Verification so far: focused `object_model` tests for final-class
+  instantiation, final-parent inheritance, nested registration timing,
+  abstract-class instantiation, inherited non-public slots, public property
+  slots, and class modifier registration; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1117`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1117`; direct `phpc run` and system PHP probes;
+  `cargo fmt --check`; and scoped `git diff --check` passed in the runtime
+  lane. Full gate deferred until integration.
+
+- Added Milestone 1116, a parser/syntax-boundary diagnostic for unsupported
+  non-property readonly class members. Forms such as `readonly function id()
+  {}`, `public readonly function id() {}`, and `readonly const ID = 1;` now
+  fail with a stable parse diagnostic naming unsupported readonly methods and
+  readonly class constants. Existing readonly property and readonly class
+  diagnostics are preserved. This does not implement readonly methods,
+  readonly class constants, readonly property/class runtime enforcement,
+  reflection behavior, or native lowering. Verification so far: `cargo test
+  -p phpc --test syntax_boundaries -- --test-threads=1`, `cargo test -p phpc
+  --test unsupported_object_features_cli -- --test-threads=1`, `cargo run -q
+  -p phpc -- test tests/fixtures/unsupported_object_features`, direct
+  `phpc compile --emit-ir` on a readonly-method source returning exit `1`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the parser
+  lane. Full gate deferred until integration.
+
 - Added Milestone 1115, a tests/docs lane queue refresh after the 1111-1114
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1111-1115
   complete and opens Milestones 1116-1120, `docs/LANE_WORKERS.md` points the
@@ -12,8 +87,10 @@ Implemented:
   boundary, non-public array-offset clone mirroring, native exit/die
   rejection, and fixture manifest command. This does not change runtime
   behavior, native lowering, fixture execution, or PHP/WordPress compatibility
-  claims beyond the implemented 1111-1114 slices. Full gate pending at the
-  1111-1115 checkpoint.
+  claims beyond the implemented 1111-1114 slices. Verification: focused
+  integration checks, `cargo fmt --check`, `git diff --check`, and the
+  serialized full gate passed before commit
+  `b86d5af8 runtime: advance compatibility roadmap batch`.
 
 - Added Milestone 1114, a deterministic compiler-output fixture-manifest
   contract. `phpc test --list-fixtures [fixture-dir]` now prints sorted

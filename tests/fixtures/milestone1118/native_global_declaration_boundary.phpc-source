@@ -1,0 +1,4 @@
+<?php
+$value = "root";
+global $value, $missing;
+echo "after";

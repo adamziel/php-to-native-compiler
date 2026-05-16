@@ -81,6 +81,7 @@ struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     abstract_classes: HashSet<ClassId>,
+    final_classes: HashSet<ClassId>,
     abstract_methods: HashSet<(ClassId, String)>,
     interfaces: Vec<Rc<InterfaceDecl>>,
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
@@ -1811,6 +1812,7 @@ impl Interpreter {
         let mut enum_lookup = HashMap::new();
         let mut methods = HashMap::new();
         let mut abstract_classes = HashSet::new();
+        let mut final_classes = HashSet::new();
         let mut abstract_methods = HashSet::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
@@ -1840,7 +1842,10 @@ impl Interpreter {
                             RuntimeError::duplicate_class(&class.name),
                         ));
                     }
-                    register_class_name(&mut classes, class)?;
+                    let class_id = register_class_name(&mut classes, class)?;
+                    if class.is_final {
+                        final_classes.insert(class_id);
+                    }
                 }
                 Stmt::Interface(interface) => {
                     register_interface_name(
@@ -1881,7 +1886,7 @@ impl Interpreter {
                 if class.is_nested {
                     continue;
                 }
-                let class_id = register_class_members(&mut classes, class)?;
+                let class_id = register_class_members(&mut classes, &final_classes, class)?;
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
@@ -1900,6 +1905,7 @@ impl Interpreter {
             functions,
             methods,
             abstract_classes,
+            final_classes,
             abstract_methods,
             interfaces,
             interface_lookup,
@@ -2070,6 +2076,9 @@ impl Interpreter {
                     if class.is_abstract {
                         self.abstract_classes.insert(class_id);
                     }
+                    if class.is_final {
+                        self.final_classes.insert(class_id);
+                    }
                 }
                 Stmt::Interface(interface) => {
                     register_interface_name(
@@ -2112,7 +2121,7 @@ impl Interpreter {
             if class.is_nested {
                 continue;
             }
-            let class_id = register_class_members(&mut self.classes, class)?;
+            let class_id = register_class_members(&mut self.classes, &self.final_classes, class)?;
             register_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
@@ -2142,8 +2151,12 @@ impl Interpreter {
         if class.is_abstract {
             self.abstract_classes.insert(class_id);
         }
-        if let Err(error) = register_class_members(&mut self.classes, class) {
+        if class.is_final {
+            self.final_classes.insert(class_id);
+        }
+        if let Err(error) = register_class_members(&mut self.classes, &self.final_classes, class) {
             self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -2164,6 +2177,7 @@ impl Interpreter {
                 class_id,
             );
             self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -2178,6 +2192,7 @@ impl Interpreter {
             self.instance_property_defaults
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -18853,6 +18868,7 @@ fn remove_class_member_runtime_tables(
 
 fn register_class_members(
     classes: &mut PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -18863,6 +18879,18 @@ fn register_class_members(
         let parent_id = classes
             .lookup_class_id(parent_name)
             .ok_or_else(|| runtime_error(class.span, RuntimeError::undefined_class(parent_name)))?;
+        if final_classes.contains(&parent_id) {
+            let parent = classes
+                .get(parent_id)
+                .expect("parent class id should resolve to class metadata");
+            return Err(runtime_error(
+                class.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!("cannot extend final class {}", parent.name()),
+                ),
+            ));
+        }
         classes
             .set_parent(id, parent_id)
             .map_err(|error| runtime_error(class.span, error))?;

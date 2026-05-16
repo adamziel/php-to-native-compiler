@@ -771,7 +771,9 @@ impl Parser {
                     if self.check_readonly_property_declaration() {
                         return Err(self.error_at(span, unsupported_readonly_property_message()));
                     }
-                    return Err(self.error_at(span, unsupported_class_member_modifier_message()));
+                    return Err(
+                        self.error_at(span, unsupported_readonly_class_member_modifier_message())
+                    );
                 }
                 _ => None,
             };
@@ -6062,7 +6064,8 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Interface => unsupported_interface_declaration_message().to_string(),
         TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
         TokenKind::Enum => unsupported_enum_declaration_message().to_string(),
-        TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => {
+        TokenKind::Readonly => unsupported_readonly_class_member_modifier_message().to_string(),
+        TokenKind::Abstract | TokenKind::Final => {
             unsupported_class_member_modifier_message().to_string()
         }
         _ => format!("expected class member, found {}", token_name(kind)),
@@ -6071,6 +6074,10 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
 
 fn unsupported_class_member_modifier_message() -> &'static str {
     "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented"
+}
+
+fn unsupported_readonly_class_member_modifier_message() -> &'static str {
+    "unsupported readonly class member modifier: readonly methods and readonly class constants are not implemented"
 }
 
 fn unsupported_trait_use_message() -> &'static str {

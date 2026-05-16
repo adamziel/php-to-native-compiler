@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone1118/native_global_declaration_boundary.phpc-source:3:1: LLVM global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior
+--- stderr end ---

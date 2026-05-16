@@ -165,7 +165,8 @@ incorrect native code.
   the `class` statement,
   parsed `abstract`/`final` class modifiers and `abstract`/`final` method
   modifiers as metadata, with abstract class instantiation rejected as a
-  runtime boundary and readonly class declarations kept at a parse boundary,
+  runtime boundary, final class inheritance rejected as a runtime boundary,
+  and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,
@@ -317,8 +318,8 @@ fixtures, with skipped fixtures split into missing-`php` and `.phpc-only`
 counts.
 Use `phpc test --list-fixtures [fixture-dir]` to print a deterministic fixture
 manifest without parsing or executing fixtures. The manifest lists each fixture,
-its committed expectation files, and whether it is eligible for system PHP
-comparison.
+its committed expectation files, aggregate expectation/comparison counts, and
+whether it is eligible for system PHP comparison.
 
 Use these commands while developing:
 

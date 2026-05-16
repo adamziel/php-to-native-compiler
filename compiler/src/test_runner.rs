@@ -20,6 +20,18 @@ pub struct TestSummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixtureManifest {
     pub entries: Vec<FixtureManifestEntry>,
+    pub summary: FixtureManifestSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FixtureManifestSummary {
+    pub total: usize,
+    pub php_comparison_eligible: usize,
+    pub phpc_only: usize,
+    pub stdout_expectations: usize,
+    pub stderr_expectations: usize,
+    pub exit_expectations: usize,
+    pub phpc_only_markers: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,9 +62,39 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
             has_exit: path.with_extension("exit").exists(),
             phpc_only: path.with_extension("phpc-only").exists(),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let summary = FixtureManifestSummary::from_entries(&entries);
 
-    Ok(FixtureManifest { entries })
+    Ok(FixtureManifest { entries, summary })
+}
+
+impl FixtureManifestSummary {
+    fn from_entries(entries: &[FixtureManifestEntry]) -> Self {
+        let mut summary = Self {
+            total: entries.len(),
+            ..Self::default()
+        };
+
+        for entry in entries {
+            if entry.phpc_only {
+                summary.phpc_only += 1;
+                summary.phpc_only_markers += 1;
+            } else {
+                summary.php_comparison_eligible += 1;
+            }
+            if entry.has_stdout {
+                summary.stdout_expectations += 1;
+            }
+            if entry.has_stderr {
+                summary.stderr_expectations += 1;
+            }
+            if entry.has_exit {
+                summary.exit_expectations += 1;
+            }
+        }
+
+        summary
+    }
 }
 
 pub fn run_fixture_dir(root: &Path) -> CompileResult<TestSummary> {

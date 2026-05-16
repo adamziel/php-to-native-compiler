@@ -559,7 +559,8 @@
   bodies, function/method bodies, switch cases, and included files register
   only when execution reaches the `class` statement; skipped branches do not
   define the class, and repeated reached declarations report a stable duplicate
-  class runtime diagnostic.
+  class runtime diagnostic. Extending a declared final parent reports a stable
+  runtime boundary before registering the child class.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -569,7 +570,8 @@
   variables with non-string values report a stable runtime boundary, and
   dynamic strings naming missing classes use the current undefined-class
   diagnostic. Instantiating an abstract class reports a stable runtime boundary;
-  abstract-method implementation enforcement, final inheritance/method
+  extending a declared final parent reports a stable runtime boundary.
+  Abstract-method implementation enforcement, final method override
   enforcement, and readonly class semantics are not implemented. Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
   is supported in active class/method contexts, including no-argument forms
@@ -2061,6 +2063,11 @@
   diagnostic until generated code has termination control flow, exit
   status/stdout handoff, shutdown functions, destructors/finally ordering,
   output buffers, SAPI interaction, and exact native diagnostics.
+- Native lowering rejects `global` declarations through a dedicated
+  global-declaration diagnostic until generated code has root symbol-table
+  imports, local/global aliasing, `$GLOBALS` interactions,
+  references/copy-on-write, included-file scope interactions, and exact native
+  diagnostics.
 - Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
   with a stable parse diagnostic. The planned first executable slice treats
   `eval` as a language construct with one string-valued argument, parses that
@@ -4745,7 +4752,7 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  abstract-method implementation enforcement, final inheritance/method
+  abstract-method implementation enforcement, final method override
   enforcement, readonly class semantics, readonly properties, typed property
   storage and enforcement,
   promoted constructor properties,
@@ -4903,7 +4910,8 @@
   committed fixture expectations still run.
 - `phpc test --list-fixtures [fixture-dir]` prints a sorted fixture manifest
   with each fixture's recognized expectation files and PHP-comparison
-  eligibility. It does not parse, execute, or compare fixtures.
+  eligibility, plus aggregate counts for eligible versus `.phpc-only` fixtures
+  and recognized sidecars. It does not parse, execute, or compare fixtures.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported

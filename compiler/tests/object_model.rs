@@ -5840,6 +5840,74 @@ echo $leaf->compute();
 }
 
 #[test]
+fn final_class_declarations_register_and_instantiate_current_subset() {
+    let execution = run_source(
+        r#"<?php
+final class Base {
+    public $label = "base";
+}
+
+$base = new Base();
+echo get_class($base), ":", $base->label;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Base:base");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn final_class_inheritance_reports_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+final class Base {}
+class Child extends Base {}
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: cannot extend final class Base"
+    );
+}
+
+#[test]
+fn nested_final_parent_inheritance_boundary_preserves_registration_timing() {
+    let execution = run_source(
+        r#"<?php
+final class Base {}
+if (false) {
+    class Child extends Base {}
+}
+echo class_exists("Child") ? "registered" : "not-registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "not-registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+final class Base {}
+if (true) {
+    class Child extends Base {}
+}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 5);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: cannot extend final class Base"
+    );
+}
+
+#[test]
 fn abstract_class_instantiation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php

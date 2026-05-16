@@ -36,6 +36,7 @@ fn cli_list_fixtures_prints_deterministic_manifest_without_running_fixtures() {
         stdout,
         concat!(
             "fixture manifest: 3 fixtures\n",
+            "summary: php-comparison eligible=2, phpc-only=1 expectations stdout=1, stderr=1, exit=1, phpc-only=1\n",
             "alpha.php expectations=stdout php-comparison=eligible\n",
             "nested/beta.php expectations=stderr,exit php-comparison=phpc-only\n",
             "zeta.php expectations=none php-comparison=eligible\n",

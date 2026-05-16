@@ -26,6 +26,8 @@ const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering reject
 const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
+const LLVM_GLOBAL_DECLARATION_REJECTION: &str = "LLVM global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior";
+const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
@@ -500,10 +502,9 @@ impl LlvmGenerator {
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
-            Stmt::Global { span, .. } => Err(self.unsupported(
-                *span,
-                "global declarations are not supported by LLVM IR emission yet",
-            )),
+            Stmt::Global { span, .. } => {
+                Err(self.unsupported(*span, LLVM_GLOBAL_DECLARATION_REJECTION))
+            }
             Stmt::StaticLocal { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
@@ -3330,10 +3331,9 @@ impl CGenerator {
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }
-            Stmt::Global { span, .. } => Err(self.unsupported(
-                *span,
-                "global declarations are not supported by assembly emission yet",
-            )),
+            Stmt::Global { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
+            }
             Stmt::StaticLocal { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }

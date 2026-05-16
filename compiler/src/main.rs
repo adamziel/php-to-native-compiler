@@ -8,7 +8,8 @@ use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
-    fixture_manifest, run_fixture_dir_with_options, FixtureManifestEntry, FixtureRunOptions,
+    fixture_manifest, run_fixture_dir_with_options, FixtureManifestEntry, FixtureManifestSummary,
+    FixtureRunOptions,
 };
 
 fn main() -> ExitCode {
@@ -144,7 +145,8 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
     let root = root.unwrap_or_else(|| PathBuf::from("tests/fixtures"));
     if list_fixtures {
         let manifest = fixture_manifest(&root)?;
-        println!("fixture manifest: {} fixtures", manifest.entries.len());
+        println!("fixture manifest: {} fixtures", manifest.summary.total);
+        println!("{}", render_fixture_manifest_summary(&manifest.summary));
         for entry in &manifest.entries {
             println!("{}", render_fixture_manifest_entry(entry));
         }
@@ -170,6 +172,18 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         );
     }
     Ok(if summary.failed == 0 { 0 } else { 1 })
+}
+
+fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
+    format!(
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={}",
+        summary.php_comparison_eligible,
+        summary.phpc_only,
+        summary.stdout_expectations,
+        summary.stderr_expectations,
+        summary.exit_expectations,
+        summary.phpc_only_markers
+    )
 }
 
 fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
