@@ -10186,11 +10186,24 @@ handled.
   reference-return method sources, non-direct return expressions,
   nested-control-flow returns, array/object offset aliases, by-reference
   `foreach`, full PHP reference containers, copy-on-write, or native lowering.
+
+## Milestone 1054: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add an explicit runtime boundary for magic
+  `__callStatic` reference-return method sources in statement-form reference
+  assignments. Missing static methods such as
+  `$alias =& Box::missing($value);` now report a stable unsupported
+  `Box::__callStatic()` diagnostic when the receiver class declares or
+  inherits `__callStatic`, instead of falling through to a plain undefined
+  static method error. This is not magic reference-return dispatch, PHP
+  reference containers, argument array aliasing, array/object offset aliases,
+  by-reference `foreach`, copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
-  magic reference-return method sources, by-reference `foreach`, object-property
-  references, source/target rebinding, or array copy-on-write, and add the next
-  bounded behavior or explicit runtime boundary with PHP comparison fixtures.
+  by-reference `foreach`, object-property references, source/target rebinding,
+  magic reference-return dispatch internals, or array copy-on-write, and add
+  the next bounded behavior or explicit runtime boundary with PHP comparison
+  fixtures.
 
 ## Latest Completed Checkpoint
 

@@ -1106,6 +1106,27 @@ echo "object=", $value;
 }
 
 #[test]
+fn magic_static_reference_return_assignment_reports_stable_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public static function &__callStatic($method, $args) {
+        return $args[0];
+    }
+}
+
+$value = 1;
+$alias =& Box::missing($value);
+"#,
+    );
+
+    assert_eq!(
+        error.message,
+        "unsupported call Box::__callStatic(): magic __callStatic reference-return method sources are not implemented"
+    );
+}
+
+#[test]
 fn reference_return_invocation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php

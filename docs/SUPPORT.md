@@ -53,11 +53,11 @@
   `$class::identity($value)`, or `$object::identity($value)`, non-static
   `self::`/`parent::`/`static::` sources, non-static dynamic static receiver
   sources, missing-parent parent calls, `static::` sources outside
-  class/method context, non-object/non-string dynamic receivers, and magic
-  `__callStatic`
-  reference-return method sources, non-direct return expressions,
-  nested-control-flow returns, full PHP reference containers, copy-on-write,
-  and native lowering remain unsupported.
+  class/method context, and non-object/non-string dynamic receivers remain
+  unsupported. Magic `__callStatic` reference-return method sources are an
+  explicit runtime boundary with a stable unsupported-call diagnostic.
+  Non-direct return expressions, nested-control-flow returns, full PHP
+  reference containers, copy-on-write, and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -87,9 +87,11 @@
   `self::` static method-call sources, `parent::` static method-call sources,
   `static::` late-static method-call sources, and dynamic static receiver
   method-call sources are executable only for the bounded direct-variable
-  reference-return shapes documented above. Array-offset sources, direct
-  array-offset targets for array values, object-property array targets,
-  by-reference `foreach`, broader reference returns,
+  reference-return shapes documented above. Magic `__callStatic`
+  reference-return method sources report the explicit runtime boundary
+  documented above. Array-offset sources, direct array-offset targets for array
+  values, object-property array targets, by-reference `foreach`, broader
+  reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names, PHP reference-container edge cases,
   copy-on-write, and native lowering remain unsupported and report stable

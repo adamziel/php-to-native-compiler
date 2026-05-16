@@ -194,8 +194,11 @@ static. `static::` late-static method-call sources have the same path from
 active class/method context when the called-class context resolves a visible
 static method. Dynamic static receiver method-call sources have the same path
 when the receiver evaluates to an object or class string and resolves a visible
-static method. Array-offset sources, direct array-offset targets for array
-values, object-property array targets, non-static
+static method. Missing static methods that would dispatch through magic
+`__callStatic` are kept as an explicit reference-return boundary with a stable
+unsupported-call diagnostic; magic reference-return dispatch is not modeled.
+Array-offset sources, direct array-offset targets for array values,
+object-property array targets, non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, source/target rebinding beyond direct names, full PHP reference
 containers, by-reference `foreach`, mutation-ordering guarantees, and

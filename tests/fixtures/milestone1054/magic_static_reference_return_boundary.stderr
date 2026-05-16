@@ -1,0 +1,2 @@
+runtime error at 9:14: unsupported call Box::__callStatic(): magic __callStatic reference-return method sources are not implemented
+

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 1054, an explicit runtime boundary for magic
+  `__callStatic` reference-return method sources in statement-form reference
+  assignments. Missing static methods such as
+  `$alias =& Box::missing($value);` now report a stable unsupported
+  `Box::__callStatic()` diagnostic when the receiver class declares or
+  inherits `__callStatic`, instead of falling through to a plain undefined
+  static method error. This deliberately does not implement magic
+  reference-return dispatch, PHP reference containers, argument array aliasing,
+  array/object offset aliases, by-reference `foreach`, copy-on-write, or
+  native lowering. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  and `cargo run -p phpc -- test tests/fixtures/milestone1054`.
+
 - Added Milestone 1053, bounded direct-variable reference-return cells for
   statement-form reference assignment from dynamic static receiver method calls
   where the receiver evaluates to an object or class string. In the current

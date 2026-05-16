@@ -11187,6 +11187,7 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(class_id, method_name)
         else {
+            self.reject_magic_static_reference_return_source(class_id, &receiver_class_name, span)?;
             return Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
@@ -11269,6 +11270,11 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(current_class_id, method_name)
         else {
+            self.reject_magic_static_reference_return_source(
+                current_class_id,
+                &current_class_name,
+                span,
+            )?;
             return Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{current_class_name}::{method_name}()")),
@@ -11435,6 +11441,11 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(called_class_id, method_name)
         else {
+            self.reject_magic_static_reference_return_source(
+                called_class_id,
+                &called_class_name,
+                span,
+            )?;
             return Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{called_class_name}::{method_name}()")),
@@ -11523,6 +11534,11 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(receiver_class_id, method_name)
         else {
+            self.reject_magic_static_reference_return_source(
+                receiver_class_id,
+                &receiver_class_name,
+                span,
+            )?;
             return Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
@@ -11578,6 +11594,28 @@ impl Interpreter {
             Some(receiver_class_id),
             reference_bindings,
         )
+    }
+
+    fn reject_magic_static_reference_return_source(
+        &self,
+        receiver_class_id: ClassId,
+        receiver_class_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self
+            .resolve_instance_method(receiver_class_id, "__callStatic")
+            .is_some()
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{receiver_class_name}::__callStatic()"),
+                    "magic __callStatic reference-return method sources are not implemented",
+                ),
+            ));
+        }
+
+        Ok(())
     }
 
     fn call_reference_return_function_with_checked_values(
