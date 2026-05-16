@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 922, a synthetic WordPress-shaped `wpdb` connection refresh
+  bookkeeping smoke that calls bounded
+  `mysqli_refresh($this->dbh, MYSQLI_REFRESH_LOG | MYSQLI_REFRESH_TABLES)`,
+  a dynamic-string `mysqli_refresh()` call with status/thread/replica flags,
+  and `mysqli_ping($this->dbh)`, records deterministic local placeholder
+  refresh metadata, verifies the `MYSQLI_REFRESH_REPLICA` alias, and verifies
+  that the placeholder connection remains open. This is a harness smoke only;
+  it does not add real WordPress flush behavior, replication reset, server
+  status reset, connection/session mutation, host database state, PHP
+  deprecation/warning fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone922`.
+
 - Added Milestone 921, bounded `mysqli_refresh()` support for deterministic
   placeholder MySQLi connection/session refresh metadata. The runtime accepts
   current placeholder `mysqli` handles plus nonzero integer combinations of

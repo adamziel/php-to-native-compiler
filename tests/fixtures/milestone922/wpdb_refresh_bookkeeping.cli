@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone922/wpdb_refresh_bookkeeping.php
+0
+6
+replica-alias
+refreshed
+dynamic
+still-open
+checked

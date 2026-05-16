@@ -1474,7 +1474,10 @@ historical blockers and remaining full-support gaps include:
   deprecated `MYSQLI_REFRESH_*` flags without real table/log/cache flush
   behavior, replication reset, server status reset, connection/session
   mutation, PHP deprecation/warning fidelity, host database state, or native
-  database lowering.
+  database lowering. Milestone 922 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` connection refresh bookkeeping smoke without
+  claiming real flush, replication reset, status reset, or session mutation
+  fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

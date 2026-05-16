@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_refresh()`
+refresh-flag boundary through a WordPress-shaped `wpdb` connection refresh
+method. System PHP needs a real mysqli connection and host server flush/session
+state; phpc only records local bookkeeping around deprecated
+`MYSQLI_REFRESH_*` flag acceptance and leaves the placeholder connection open.

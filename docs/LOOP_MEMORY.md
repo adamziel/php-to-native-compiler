@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `8d3b37e runtime: add mysqli refresh placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 922, a synthetic WordPress-shaped `wpdb`
+  connection refresh bookkeeping smoke over deterministic `mysqli_refresh()`
+  placeholder support.
+- Files changed so far: `tests/fixtures/milestone922/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone922`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection refresh method is
+  being extended to record deterministic placeholder refresh-flag metadata
+  while confirming the placeholder connection remains open.
+- Remaining semantic gaps: real table/log/cache flush behavior, replication
+  reset, server status reset, connection/session mutation,
+  deprecation/warning fidelity, warnings/errors, host database state, SQL
+  execution, and native database lowering remain missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, inspect the next MySQLi query
+  execution boundary such as `mysqli_real_query()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `53daed2 tests: add wordpress wpdb change user smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 921, bounded deterministic `mysqli_refresh()`

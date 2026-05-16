@@ -8550,16 +8550,27 @@ handled.
   lookup. This is not real table/log/cache flush behavior, replication reset,
   server status reset, connection/session mutation, PHP deprecation/warning
   fidelity, host database state, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_refresh()` placeholder through a WordPress-shaped connection
   refresh method without claiming real flush, replication reset, status reset,
   or session mutation fidelity.
+  Milestone 922 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_refresh()` placeholder metadata on local refresh
+  bookkeeping, verifies the `MYSQLI_REFRESH_REPLICA` alias, and verifies that
+  the placeholder connection remains open. It is not real flush behavior,
+  replication reset, server status reset, connection/session mutation,
+  warnings/errors, host database state, PHP deprecation fidelity, or native
+  lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi execution or connection
+  boundary after placeholder refresh bookkeeping, such as `mysqli_real_query()`
+  or a sharper unsupported diagnostic, before claiming broader query execution
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `53daed2 tests: add wordpress wpdb change user smoke`, covering Milestone
-  920 before the current Milestone 921 candidate.
+  `8d3b37e runtime: add mysqli refresh placeholder`, covering Milestone 921
+  before the current Milestone 922 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
