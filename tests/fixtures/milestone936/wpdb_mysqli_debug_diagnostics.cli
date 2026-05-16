@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone936/wpdb_mysqli_debug_diagnostics.php
+configured
+callable
+configured
+open

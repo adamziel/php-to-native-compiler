@@ -29,6 +29,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `75f6e44 runtime: add mysqli debug placeholder`, pushed to `origin/master`.
+- Task attempted: Milestone 936, a synthetic WordPress-shaped `wpdb`
+  diagnostics smoke over deterministic `mysqli_debug()` placeholder
+  DBUG-configuration metadata.
+- Files changed so far: `tests/fixtures/milestone936/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone936`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped diagnostics method now records
+  deterministic `mysqli_debug()` DBUG-configuration success and placeholder
+  connection liveness.
+- Remaining semantic gaps: MySQL DBUG option parsing, trace-file creation,
+  host client-library debug state mutation, socket inspection, host database
+  state, warnings/errors, and native database lowering remain missing.
+- Next concrete task: run the focused Milestone 936 fixture, then whitespace
+  checks and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, inspect the next MySQLi host-state boundary such as
+  `mysqli_get_client_stats()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `c03ec16 docs: record wpdb dump debug info checkpoint`, pushed to
   `origin/master`.
 - Task attempted: Milestone 935, bounded deterministic `mysqli_debug()`

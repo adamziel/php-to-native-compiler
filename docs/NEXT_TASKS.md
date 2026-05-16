@@ -8709,17 +8709,27 @@ handled.
   option parsing, trace-file creation, host client-library debug state
   mutation, socket inspection, host database state, warning/error fidelity, or
   native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+- [x] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
   records bounded `mysqli_debug()` metadata through a WordPress-shaped
   connection diagnostics method without claiming MySQL DBUG option parsing,
   trace-file creation, host client-library debug state mutation, sockets, host
   database state, warning/error fidelity, or native lowering.
+  Milestone 936 adds a `phpc-only` synthetic `wpdb` fixture that records
+  callable metadata, deterministic `mysqli_debug()` DBUG-configuration
+  success, and placeholder connection liveness through a WordPress-shaped
+  diagnostics method. It is not MySQL DBUG option parsing, trace-file
+  creation, host client-library debug state mutation, socket inspection, host
+  database state, warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi host-state boundary after
+  debug metadata, such as `mysqli_get_client_stats()` or a sharper unsupported
+  diagnostic for real mysqlnd client statistics, before claiming broader
+  client-library state fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c03ec16 docs: record wpdb dump debug info checkpoint`, covering
-  Milestone 934 before the current Milestone 935 candidate.
+  `75f6e44 runtime: add mysqli debug placeholder`, covering
+  Milestone 935 before the current Milestone 936 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
