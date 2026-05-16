@@ -1423,7 +1423,11 @@ being modeled. Symlink policy differences, exact warning plus `false`
 fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths, stat-cache
 behavior, and native filesystem lowering remain out of scope. Native
 function-table introspection recognizes the name, while direct native
-`realpath(...)` calls still reject under the generic function-call boundary.
+`realpath(...)` calls stop at a dedicated filesystem-canonicalization codegen
+boundary before argument lowering or backend selection until generated code has
+native filesystem canonicalization, symlink/path policy, warning/false
+recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling,
+references/COW, and exact native diagnostics.
 `getcwd()` is an interpreter-only request-state/filesystem builtin for the
 current CLI process. It accepts no arguments and returns the process current
 working directory as a UTF-8 string, while function-table introspection
@@ -1434,6 +1438,16 @@ native filesystem lowering. Direct native `getcwd()` calls stop at a dedicated
 current-directory codegen boundary before argument lowering or backend output
 until generated code has process/request cwd state, UTF-8/path policy, SAPI cwd
 behavior, references/copy-on-write, and exact native diagnostics.
+`is_writable()` is interpreter-only for one string local path. It uses the same
+process-path-then-repo-root relative path policy as the filesystem metadata
+builtins, rejects stream-wrapper paths, returns `false` for missing local
+paths, and treats existing readonly host metadata as not writable. Permission
+portability, exact warning behavior, include_path lookup, `open_basedir`,
+stream wrappers, symlink policy, stat-cache behavior, TOCTOU semantics,
+non-UTF-8 paths, and native filesystem lowering remain out of scope. Native
+function-table introspection recognizes the name, while direct native
+`is_writable(...)` calls still reject under the generic function-call
+boundary.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1458,12 +1472,18 @@ call execution still lacks stream-wrapper handling, local file I/O, binary
 string byte fidelity, warning plus `false` recovery, stream contexts,
 offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
 references/copy-on-write, and exact native diagnostics.
-Native function-table introspection recognizes `realpath`, but direct native
-`realpath(...)` calls still reject under the generic function-call boundary
-until generated code has local path resolution, symlink policy, warning plus
-`false` recovery, include-path and `open_basedir` policy, stream-wrapper
-rejection/dispatch, non-UTF-8 path handling, references/copy-on-write, and
-exact native diagnostics.
+Direct `realpath(...)` calls reject through a dedicated native
+filesystem-canonicalization boundary before argument lowering or backend
+selection. Native function-table introspection still recognizes `realpath`, but
+native call execution still lacks filesystem canonicalization,
+symlink/path policy, warning/false recovery, include_path/open_basedir/stat
+cache, non-UTF-8 path handling, references/COW, and exact native diagnostics.
+Native function-table introspection recognizes `is_writable`, but direct
+native `is_writable(...)` calls still reject under the generic function-call
+boundary until generated code has local writability checks, permission policy,
+warnings, include_path and `open_basedir` handling, stream-wrapper
+rejection/dispatch, symlink/stat-cache/TOCTOU behavior, non-UTF-8 path
+handling, references/copy-on-write, and exact native diagnostics.
 Direct `defined($name)` calls fold only when `$name` is an already-lowerable
 string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.
@@ -1602,6 +1622,12 @@ Call-site argument unpacking such as `handler(...$args)` stops at a dedicated
 parse diagnostic until iterable expansion order, string-keyed named-argument
 interaction, by-reference argument propagation, variadic collection, duplicate
 argument diagnostics, and native lowering exist.
+Call-time by-reference arguments such as `handler(&$value)` also stop at a
+dedicated parse diagnostic because the current by-reference parameter execution
+slice uses ordinary direct-variable call arguments and callee parameter
+metadata; legacy call-site `&` syntax, alias setup, default handling,
+variadic/unpacking interaction, references/copy-on-write, and native lowering
+remain unsupported.
 No-capture anonymous closure expressions, static anonymous closure expressions,
 and non-static arrow function expressions allocate inert runtime closure values
 in `phpc run`, which can be assigned, read, and truth-tested but not invoked.

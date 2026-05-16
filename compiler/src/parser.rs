@@ -4693,10 +4693,9 @@ impl Parser {
             TokenKind::Ellipsis => {
                 Err(self.error_at(token.span, unsupported_argument_unpacking_message()))
             }
-            TokenKind::Ampersand => Err(self.error_at(
-                token.span,
-                "unsupported reference argument: references are not implemented",
-            )),
+            TokenKind::Ampersand => {
+                Err(self.error_at(token.span, unsupported_reference_argument_message()))
+            }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 Err(self.error_at(token.span, unsupported_named_argument_message()))
             }
@@ -6088,6 +6087,10 @@ fn unsupported_first_class_callable_message() -> &'static str {
 
 fn unsupported_argument_unpacking_message() -> &'static str {
     "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+}
+
+fn unsupported_reference_argument_message() -> &'static str {
+    "unsupported call-time by-reference argument: passing & at a call site requires legacy syntax handling, by-reference parameter metadata, alias setup, default handling, variadic/unpacking interaction, references/copy-on-write, and native lowering"
 }
 
 fn unsupported_static_arrow_function_message() -> &'static str {

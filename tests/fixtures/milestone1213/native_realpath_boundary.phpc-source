@@ -1,0 +1,2 @@
+<?php
+echo realpath("tests/fixtures/milestone1207/realpath_target.txt");

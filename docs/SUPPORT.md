@@ -817,7 +817,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -1772,7 +1772,8 @@
   behavior, TOCTOU semantics, host filesystem coupling, partial-output
   behavior, and native lowering remain unsupported. Native function-table
   introspection can see the known builtin name, while direct native
-  `realpath(...)` calls still reject under the generic function-call boundary.
+  `realpath(...)` calls stop at a dedicated filesystem-canonicalization
+  codegen boundary before argument lowering or backend selection.
   `getcwd()` accepts no arguments and returns the process current working
   directory as a UTF-8 string. This is a bounded CLI/request-state filesystem
   slice: directory changes through `chdir()`, failure returning `false`,
@@ -1803,6 +1804,15 @@
   wrappers, canonicalization/symlink policy, portable permissions, warning
   behavior, non-string coercions, stat-cache behavior, open_basedir,
   partial-output behavior, and native lowering remain unsupported.
+  `is_writable($path)` accepts one string local path, rejects stream-wrapper
+  paths, returns `false` for missing paths, and checks the existing host
+  metadata permission bits by treating readonly paths as not writable. It
+  shares the same current relative path policy as `file_exists`. This is a
+  small local metadata slice, not full PHP filesystem writability: permission
+  portability, exact warnings, include_path lookup, `open_basedir`, stream
+  wrappers, symlink policy, stat-cache behavior, TOCTOU semantics, non-UTF-8
+  paths, broader scalar coercions, partial-output behavior, and native
+  lowering remain unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. It currently records no autoload stack and never invokes the
@@ -1980,9 +1990,10 @@
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
   inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: call-site
-  argument unpacking such as `handler(...$args)`, reference expressions,
-  function-scope reference parameter invocation, reference returns, type
-  declaration enforcement, named arguments such as `call(name: $value)`,
+  argument unpacking such as `handler(...$args)`, call-time by-reference
+  arguments such as `handler(&$value)`, reference expressions, function-scope
+  reference parameter invocation, reference returns, type declaration
+  enforcement, named arguments such as `call(name: $value)`,
   first-class callable syntax such as `strlen(...)` and `$callback(...)`,
   static arrow functions such as `static fn () => 1`,
   `declare(strict_types=1)`, `declare(ticks=1)`, and
@@ -3412,7 +3423,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -3783,7 +3794,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -3911,8 +3922,9 @@
   references/copy-on-write, and native lowering exist.
   Variadic parameters
   outside the bounded final-parameter by-value slice and call-site argument
-  unpacking such as `handler(...$args)`, reference returns, reference
-  expressions, named arguments, first-class callable syntax such as
+  unpacking such as `handler(...$args)`, call-time by-reference arguments such
+  as `handler(&$value)`, reference returns, reference expressions, named
+  arguments, first-class callable syntax such as
   `strlen(...)` and `$callback(...)`, static arrow functions such as
   `static fn () => 1`, empty call arguments, and `declare(strict_types=1)` are
   rejected with stable parse diagnostics. Function-local `static` declarations
@@ -3958,7 +3970,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4440,9 +4452,12 @@
   returning `false`, references/copy-on-write, and exact native diagnostics
   exist, while native function-table introspection recognizes the name.
   `realpath` accepts the same current one-string local path resolution subset
-  as the builtin section above; direct native `realpath(...)` calls still
-  reject under the function-call boundary, while native function-table
-  introspection recognizes the name.
+  as the builtin section above; direct native `realpath(...)` calls reject
+  under a dedicated filesystem-canonicalization boundary until native
+  filesystem canonicalization, symlink/path policy, warning/false recovery,
+  include_path/open_basedir/stat cache, non-UTF-8 path handling,
+  references/COW, and exact native diagnostics exist, while native
+  function-table introspection recognizes the name.
   `spl_autoload_register` accepts closure and string callbacks in `phpc run`
   without storing or invoking them; direct native calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -5200,12 +5215,15 @@
   omit the field. It also reports deterministic source and recognized sidecar
   byte counts, including `.cli` snapshot exercise files, for fixture entries,
   summaries, recognized orphan sidecars, and compatibility-target summaries,
-  plus aggregate CLI exercise gap counts for fixtures without `.cli` snapshot
-  sidecars and aggregate `.phpc-only` reason gap counts for markers whose text
-  is empty or whitespace-only. It also reports aggregate,
-  compatibility-target, and per-fixture missing recognized expectation
-  sidecars for the `.stdout`, `.stderr`, `.exit`, and `.cli` fixture contract
-  files without requiring or creating those files.
+  plus SHA-256 digests for present recognized fixture sidecars in fixture rows
+  in deterministic `stdout`, `stderr`, `exit`, `cli`, `phpc-only` order. This
+  is a text-only contract refinement; the JSON `contract_version` remains 13.
+  The text manifest also reports aggregate CLI exercise gap counts for fixtures
+  without `.cli` snapshot sidecars and aggregate `.phpc-only` reason gap counts
+  for markers whose text is empty or whitespace-only. It also reports
+  aggregate, compatibility-target, and per-fixture missing recognized
+  expectation sidecars for the `.stdout`, `.stderr`, `.exit`, and `.cli`
+  fixture contract files without requiring or creating those files.
   Compatibility-target entries also report `source-pin.md` path, byte count,
   and SHA-256 when a target pin file is present, and deterministic
   `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
@@ -5214,11 +5232,11 @@
   extension is not part of the fixture contract but whose corresponding `.php`
   fixture exists. It does not parse, execute, or compare fixtures, execute or
   validate `.cli` snapshots, validate compatibility probe expectations, parse
-  expected inventory output, hash fixture or sidecar payloads outside the
-  documented JSON digest fields and source-pin/probe metadata, validate that
-  `.phpc-only` reason text is non-empty, inspect non-fixture compatibility
-  metadata beyond `source-pin.md` and `.expected` probe artifacts, or report
-  unrecognized files that do not have a matching `.php` fixture.
+  expected inventory output, print fixture source SHA-256 in text fixture rows
+  outside the JSON `file_sha256.source` field, validate that `.phpc-only`
+  reason text is non-empty, inspect non-fixture compatibility metadata beyond
+  `source-pin.md` and `.expected` probe artifacts, or report unrecognized files
+  that do not have a matching `.php` fixture.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
   fixture manifest as deterministic JSON with `contract_version` 13, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
@@ -5319,6 +5337,10 @@
   call-site argument unpacking, including iterable expansion order,
   string-keyed named-argument interaction, by-reference argument propagation,
   variadic collection, duplicate argument diagnostics, and native lowering
+- call-time by-reference arguments such as `handler(&$value)`, including
+  legacy syntax handling, by-reference parameter metadata, alias setup, default
+  handling, variadic/unpacking interaction, references/copy-on-write, and
+  native lowering
 - provided reference parameter invocation outside direct variable arguments,
   reference returns, executable reference assignments beyond direct
   variable-to-variable aliases, reference assignments from nested
@@ -6268,8 +6290,8 @@
   slice: symlink policy differences, exact warning plus `false` fidelity,
   include-path lookup, `open_basedir`, stream wrappers, non-UTF-8 paths,
   portable permissions, stat-cache behavior, TOCTOU semantics, broad scalar
-  coercions, exact diagnostics, and native lowering beyond function-table
-  introspection
+  coercions, exact diagnostics, and native lowering beyond the dedicated
+  direct-call rejection plus function-table introspection
 - `is_dir()` behavior beyond the current one-string local path metadata slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission/open_basedir behavior, non-string coercions, stat-cache behavior,
@@ -6285,6 +6307,11 @@
   portable file-type details, permission/open_basedir behavior, non-string
   coercions, stat-cache behavior, exact diagnostics, and native lowering beyond
   function-table introspection
+- `is_writable()` behavior beyond the current one-string local path metadata
+  slice: permission portability, exact warnings, include_path lookup,
+  `open_basedir`, stream wrappers, symlink policy, stat-cache behavior, TOCTOU
+  semantics, non-UTF-8 paths, broad scalar coercions, exact diagnostics, and
+  native lowering beyond function-table introspection
 - `header()` behavior beyond accepting current string/bool/int arguments as a
   no-op returning `null`: response header storage, status-code parsing/state,
   replacement/removal behavior, output-sent warnings, SAPI/web-server

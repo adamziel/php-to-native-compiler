@@ -593,6 +593,56 @@ fn emit_ir_rejects_argument_unpacking_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_call_time_reference_arguments_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nfunction handler($value) {}\n$value = 1;\nhandler(&$value);\n",
+            4,
+            9,
+        ),
+        (
+            "<?php\nclass Hooks { public function add($hook) {} }\n$hooks = new Hooks();\n$hook = 'init';\n$hooks->add(&$hook);\n",
+            5,
+            13,
+        ),
+        (
+            "<?php\nclass Hooks { public static function add($hook) {} }\n$hook = 'init';\nHooks::add(&$hook);\n",
+            4,
+            12,
+        ),
+        (
+            "<?php\nclass Hook { public function __construct($hook) {} }\n$hook = 'init';\n$instance = new Hook(&$hook);\n",
+            4,
+            22,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported call-time by-reference argument: passing & at a call site requires legacy syntax handling, by-reference parameter metadata, alias setup, default handling, variadic/unpacking interaction, references/copy-on-write, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_call_time_reference_arguments_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nfunction handler($value) {}\n$value = 1;\nhandler(&$value);\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported call-time by-reference argument: passing & at a call site requires legacy syntax handling, by-reference parameter metadata, alias setup, default handling, variadic/unpacking interaction, references/copy-on-write, and native lowering"
+    );
+}
+
+#[test]
 fn unsupported_static_arrow_functions_have_stable_parse_errors() {
     let cases = [
         ("<?php\n$handler = static fn ($value) => $value;\n", 2, 12),

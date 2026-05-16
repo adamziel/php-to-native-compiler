@@ -4,6 +4,117 @@
 
 Implemented:
 
+- Added Milestone 1215, a tests/docs queue refresh after the 1211-1214
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1211-1215
+  complete and opens Milestones 1216-1220; `docs/LANE_WORKERS.md` records the
+  next parser/runtime/IR/compiler-output/tests-docs lane split. Public docs now
+  describe the call-time by-reference argument parse boundary, bounded
+  `is_writable()` runtime slice, dedicated native `realpath(...)` rejection,
+  and fixture-manifest text sidecar SHA-256 metadata without broadening
+  PHP/WordPress compatibility claims. Full gate passed at checkpoint: `1359`
+  fixture tests, `771` system PHP comparisons, and `588` skipped `phpc-only`
+  fixtures.
+
+- Added Milestone 1214, a deterministic compiler-output fixture-manifest audit
+  refinement. `phpc test --list-fixtures [fixture-dir]` text fixture rows now
+  print SHA-256 digests for present recognized fixture sidecars in stable
+  `stdout`, `stderr`, `exit`, `cli`, `phpc-only` order, matching the existing
+  JSON digest visibility while keeping JSON at `contract_version: 13`. Missing
+  sidecars render as `-`, ordering stays deterministic, and sidecars are not
+  executed, validated, required, created, or compared. This does not change
+  fixture execution, system PHP comparison behavior, parser/runtime behavior,
+  native lowering, or PHP/WordPress support claims. Unsupported/unchanged audit
+  gaps: the text manifest still does not print fixture source SHA-256 digests
+  in fixture rows, the manifests do not execute or validate `.cli` snapshots,
+  orphan sidecars, unrecognized sidecars, or compatibility probe expectations,
+  parse expected inventory output, compare external WordPress checkouts,
+  enforce non-empty `.phpc-only` reasons, inspect non-fixture compatibility
+  metadata beyond `source-pin.md` and `.expected` probe artifacts, report
+  unrecognized files without matching `.php` fixtures, or prove
+  branch-specific compatibility. Focused compiler-output lane verification
+  passed:
+  `CARGO_TARGET_DIR=target/focused-1214-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test fixture_manifest -- --test-threads=1`
+  with `9` tests; direct `phpc test --list-fixtures tests/fixtures/milestone42`
+  showed the text row sidecar digests for `.stdout` and `.cli`; direct
+  `phpc test --list-fixtures-json tests/fixtures/milestone42` showed
+  `contract_version: 13` and matching `file_sha256` values; `cargo fmt
+  --check` and `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1213, a dedicated native `realpath(...)`
+  filesystem-canonicalization rejection for the documented bounded interpreter
+  builtin. `phpc compile --emit-ir` and `--emit-asm` now reject direct
+  `realpath(...)` calls before argument lowering or backend output with a
+  diagnostic naming missing native filesystem canonicalization, symlink/path
+  policy, warning/false recovery, include_path/open_basedir/stat cache,
+  non-UTF-8 path handling, references/COW, and exact native diagnostics.
+  Native `function_exists()` and `is_callable()` metadata folds still
+  recognize `realpath`, and `phpc run` behavior is unchanged. This does not
+  implement native filesystem canonicalization, generated-code symlink/path
+  policy, warning/false recovery, include_path/open_basedir/stat cache,
+  non-UTF-8 path handling, references/COW, or exact native realpath
+  diagnostics. Focused IR lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1213-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test realpath_builtin -- --test-threads=1`
+  with `7` tests; direct
+  `CARGO_TARGET_DIR=target/focused-1213-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- compile tests/fixtures/milestone1213/native_realpath_boundary.phpc-source --emit-ir`
+  and
+  `CARGO_TARGET_DIR=target/focused-1213-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- compile tests/fixtures/milestone1213/native_realpath_boundary.phpc-source --emit-asm`
+  both returned exit `1` with the dedicated `LLVM realpath` diagnostic;
+  `CARGO_TARGET_DIR=target/focused-1213-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`
+  and scoped `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1211, a parser-lane diagnostic refinement for unsupported
+  call-time by-reference arguments. Forms such as `handler(&$value)`,
+  `$hooks->add(&$hook)`, `Hooks::add(&$hook)`, and `new Hook(&$hook)` now fail
+  at a dedicated parse boundary naming missing legacy syntax handling,
+  by-reference parameter metadata, alias setup, default handling,
+  variadic/unpacking interaction, references/copy-on-write, and native
+  lowering instead of the broader reference-expression fallback. This does not
+  implement call-site `&` syntax, broaden by-reference parameter invocation
+  beyond ordinary direct-variable arguments for declared by-reference
+  parameters, implement alias containers, default/reference interaction,
+  variadic/unpacking interaction, exact PHP diagnostics, or native lowering.
+  Focused parser lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1211-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`
+  passed with `105` tests;
+  `CARGO_TARGET_DIR=target/focused-1211-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`
+  passed; direct `phpc run` and `phpc compile --emit-ir` probes for
+  `tests/fixtures/unsupported_syntax_features/unsupported_call_time_reference_argument.php`
+  both returned exit `1` with the dedicated parse diagnostic;
+  `CARGO_TARGET_DIR=target/focused-1211-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with `48` fixture tests; and `--compare-php` reported `48`
+  `phpc-only` skips. `cargo fmt --check` and scoped `git diff --check`
+  passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1212, a bounded runtime `is_writable()` local filesystem
+  metadata slice. `phpc run` now supports exactly one string local path,
+  rejects stream-wrapper paths, returns `false` for missing local paths, and
+  reports existing readonly host metadata as not writable while exposing the
+  builtin through dynamic string-valued calls plus
+  `function_exists()`/`is_callable()` metadata. Direct native
+  `is_writable(...)` calls remain rejected by the generic function-call
+  lowering boundary while native function-table introspection recognizes the
+  name. This does not implement broad PHP filesystem writability semantics,
+  portable permission checks, exact warnings, include_path lookup,
+  `open_basedir`, stream wrappers, symlink policy, stat-cache behavior, TOCTOU
+  semantics, non-UTF-8 paths, broad scalar coercions, or native
+  filesystem/path lowering. Focused runtime lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1212-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test is_writable_builtin -- --test-threads=1`
+  with `4` tests; direct
+  `CARGO_TARGET_DIR=target/focused-1212-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- run tests/fixtures/milestone1212/is_writable.php`
+  returned stdout `writable|missing|exists|callable|repeat` with exit `0`;
+  direct system PHP comparison
+  `php tests/fixtures/milestone1212/is_writable.php` returned the same stdout
+  with exit `0`;
+  `CARGO_TARGET_DIR=target/focused-1212-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/milestone1212`
+  passed with `1` fixture test;
+  `CARGO_TARGET_DIR=target/focused-1212-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1212`
+  passed with `1` system PHP comparison and `0` skips; and
+  `CARGO_TARGET_DIR=target/focused-1212-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`
+  plus scoped `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
 - Added Milestone 1210, a tests/docs queue refresh after the 1206-1209
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1206-1210
   complete and opens Milestones 1211-1215; `docs/LANE_WORKERS.md` records the

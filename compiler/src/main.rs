@@ -354,7 +354,7 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
     let missing_expectation_sidecars = text_list(&entry.missing_expectation_sidecars);
 
     format!(
-        "{} expectations={} cli-exercise={} missing-expectation-sidecars={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
+        "{} expectations={} cli-exercise={} missing-expectation-sidecars={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} sha256 stdout={} stderr={} exit={} cli={} phpc-only={}",
         entry.path,
         expectations,
         if entry.has_cli { "yes" } else { "no" },
@@ -366,7 +366,12 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         text_optional_u64(entry.stderr_bytes),
         text_optional_u64(entry.exit_bytes),
         text_optional_u64(entry.cli_bytes),
-        text_optional_u64(entry.phpc_only_bytes)
+        text_optional_u64(entry.phpc_only_bytes),
+        text_optional_string(entry.stdout_sha256.as_deref()),
+        text_optional_string(entry.stderr_sha256.as_deref()),
+        text_optional_string(entry.exit_sha256.as_deref()),
+        text_optional_string(entry.cli_sha256.as_deref()),
+        text_optional_string(entry.phpc_only_sha256.as_deref())
     )
 }
 
@@ -979,6 +984,10 @@ fn text_optional_u64(value: Option<u64>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string())
+}
+
+fn text_optional_string(value: Option<&str>) -> String {
+    value.unwrap_or("-").to_string()
 }
 
 fn read_source(path: &Path) -> CompileResult<String> {

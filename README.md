@@ -117,8 +117,8 @@ incorrect native code.
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement, while parenthesized DNF-shaped type declarations and
-  call-site argument unpacking such as `handler(...$args)` remain parse
-  boundaries
+  call-site argument unpacking such as `handler(...$args)` plus call-time
+  by-reference arguments such as `handler(&$value)` remain parse boundaries
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
@@ -242,8 +242,9 @@ leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path statement
 and expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
-callback integration, named call arguments, type declaration enforcement, cast
-behavior outside the current `(string)`, `(int)`, `(bool)`, and
+callback integration, named call arguments, call-time by-reference arguments,
+type declaration enforcement, cast behavior outside the current `(string)`,
+`(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
@@ -339,7 +340,8 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
-direct `realpath(...)` path-resolution calls,
+direct `realpath(...)` filesystem canonicalization calls,
+direct `is_writable(...)` filesystem writability metadata calls,
 PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
@@ -372,17 +374,21 @@ whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
 also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts,
 including `.cli` snapshot exercise files, for fixtures, summaries, orphan
-sidecars, and compatibility targets, plus CLI exercise gap counts for fixtures
-without `.cli` snapshot sidecars and `.phpc-only` reason gap counts for
-markers whose text is empty or whitespace-only. It also reports aggregate,
-per-target, and per-fixture missing recognized expectation sidecars for the
-`.stdout`, `.stderr`, `.exit`, and `.cli` fixture contract files without
-requiring or creating those files. Text orphan sidecar rows
-include SHA-256 digests. Text manifests also report unrecognized sidecar-like
-siblings whose extension is not part of the fixture contract but whose
-corresponding `.php` fixture exists. Compatibility target entries also report
-`source-pin.md` path, byte count, and SHA-256 when a target pin file is present,
-plus deterministic
+sidecars, and compatibility targets. Text fixture rows also include SHA-256
+digests for present recognized fixture sidecars in deterministic
+`stdout`, `stderr`, `exit`, `cli`, `phpc-only` order, using `-` for absent
+sidecars; this is a text-only contract refinement, so the JSON
+`contract_version` remains unchanged. The text manifest reports CLI exercise
+gap counts for fixtures without `.cli` snapshot sidecars and `.phpc-only`
+reason gap counts for markers whose text is empty or whitespace-only. It also
+reports aggregate, per-target, and per-fixture missing recognized expectation
+sidecars for the `.stdout`, `.stderr`, `.exit`, and `.cli` fixture contract
+files without requiring or creating those files. Text orphan and unrecognized
+sidecar rows include SHA-256 digests. Text manifests also report unrecognized
+sidecar-like siblings whose extension is not part of the fixture contract but
+whose corresponding `.php` fixture exists. Compatibility target entries also
+report `source-pin.md` path, byte count, and SHA-256 when a target pin file is
+present, plus deterministic
 `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
 count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only

@@ -26,6 +26,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T22:32:16Z
+
+- Checkpoint before this task:
+  `051769ad runtime: add realpath`, pushed to `origin/master`.
+- Task attempted: Milestones 1211-1215, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/fixture-manifest output code, focused
+  tests and fixtures for unsupported call-time by-reference argument
+  diagnostics, bounded `is_writable()` runtime support, dedicated native
+  `realpath(...)` rejection, text fixture-manifest sidecar SHA-256 metadata,
+  plus `README.md`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, and this
+  memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: add is_writable"` passed with
+  `1359` fixture tests, `771` system PHP comparisons, and `588` skipped
+  `phpc-only` fixtures before the scoped checkpoint commit.
+- Remaining semantic gaps: call-time `&` execution, by-reference alias
+  containers, native `is_writable()` and `realpath(...)` lowering, portable
+  filesystem permission policy, exact warning/`false` fidelity, include-path
+  and `open_basedir` behavior, fixture `.cli` execution and validation,
+  branch-specific PHP comparison matrices, real reference/COW containers, real
+  database and filesystem services, web/SAPI request state, and full WordPress
+  request/plugin/theme flows remain implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, close completed lane
+  agents, then start Milestones 1216-1219 in separate parser/runtime/IR/
+  compiler-output worktrees with separate `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T22:21:23Z
 
 - Checkpoint before this task:

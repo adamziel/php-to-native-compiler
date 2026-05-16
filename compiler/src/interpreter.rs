@@ -16273,6 +16273,37 @@ impl Interpreter {
                     )),
                 }
             }
+            "is_writable" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "is_writable()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        Ok(Value::Bool(!metadata.permissions().readonly()))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "is_writable()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "register_shutdown_function" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -20437,6 +20468,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_dir"
             | "is_file"
             | "is_readable"
+            | "is_writable"
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"

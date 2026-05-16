@@ -1,9 +1,11 @@
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -112,11 +114,71 @@ echo is_callable("realpath") ? "1" : "0";
     assert_eq!(ir_error.phase, Phase::Codegen);
     assert_eq!(ir_error.line, 2);
     assert_eq!(ir_error.column, 6);
-    assert_eq!(ir_error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(ir_error.message, LLVM_REALPATH_REJECTION);
 
     let asm_error = emit_asm_source("<?php\necho realpath('/tmp');\n").unwrap_err();
     assert_eq!(asm_error.phase, Phase::Codegen);
     assert_eq!(asm_error.line, 2);
     assert_eq!(asm_error.column, 6);
-    assert_eq!(asm_error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(asm_error.message, LLVM_REALPATH_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_realpath_before_lowering_arguments() {
+    let error = emit_ir_source("<?php\necho realpath(42);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_REALPATH_REJECTION);
+}
+
+#[test]
+fn native_realpath_emit_ir_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-ir",
+        "tests/fixtures/milestone1213/native_realpath_boundary_emit_ir.cli",
+    );
+}
+
+#[test]
+fn native_realpath_emit_asm_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-asm",
+        "tests/fixtures/milestone1213/native_realpath_boundary_emit_asm.cli",
+    );
+}
+
+fn assert_cli_snapshot_matches(mode: &str, snapshot_path: &str) {
+    let workspace_root = workspace_root();
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone1213/native_realpath_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(&workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&workspace_root)
+        .args(["compile", &relative_fixture, mode])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(snapshot_path))
+        .expect("native realpath CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
 }
