@@ -232,7 +232,8 @@ magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, and direct/property-held `ArrayAccess` offsets and
-compound assignment/increment/decrement,
+compound assignment/increment/decrement, plus bounded `Countable`
+`is_countable()`/`count()` object protocol dispatch,
 resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.

@@ -1695,17 +1695,14 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1039 is the active checkpoint candidate: exact direct
-  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`
-  query strings now update the current `wp_options` state island, replacing
-  existing recorded options with affected rows `2`, inserting missing options
-  with affected rows `1`, advancing deterministic insert IDs, and reusing the
-  bounded MySQL-style escaped single-quoted literal parser. Broad SQL parsing,
-  real `REPLACE`/unique-index/delete-trigger/auto-increment fidelity,
-  schema/index behavior, SQL-mode-aware escaping, character-set/collation
-  fidelity, real transaction isolation/locking/savepoint semantics, host
-  database execution, warning/error fidelity, PDO, and native lowering remain
-  open.
+- Milestone 1040 is the active checkpoint candidate: bounded `Countable` object
+  protocol support now lets `is_countable($object)` recognize object values
+  whose class metadata records `implements Countable`, and lets
+  `count($object)` dispatch a visible non-static `count()` method that returns
+  an integer. Full interface signature enforcement, magic `__call` fallback,
+  `Traversable`/iterator protocols, inaccessible/static count methods,
+  non-integer count-result coercion, references/copy-on-write, exact
+  diagnostics, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

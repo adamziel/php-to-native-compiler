@@ -1317,6 +1317,13 @@ and PHP's current by-value temporary result behavior without dispatching
 `offsetSet($key, $value)`, while leaving nested chains, append compound
 assignment, magic-property containers, iteration, protocol enforcement, exact
 diagnostics, references/copy-on-write, and native lowering explicit gaps.
+Milestone 1040 adds bounded `Countable` object protocol execution:
+`is_countable($object)` recognizes recorded `implements Countable` metadata,
+and `count($object)` dispatches a visible non-static `count()` method with an
+integer result, while leaving full interface signature enforcement, magic
+`__call` fallback, iterator protocols, inaccessible/static count methods,
+non-integer result coercion, references/copy-on-write, exact diagnostics, and
+native lowering explicit gaps.
 Milestone 1015 extends
 direct object-offset `ArrayAccess` to compound assignment by calling
 `offsetGet($key)`, applying the current compound operator helper, and writing

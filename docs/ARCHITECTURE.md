@@ -1340,8 +1340,14 @@ without enforcing interface methods or requiring the interface to be declared,
 so internal names can participate in relationships. A bounded core interface
 catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
-`Countable`, and `Stringable`, while method enforcement and protocol execution
-remain separate runtime work.
+`Countable`, and `Stringable`. Protocol execution is added one narrow slice at
+a time: current `ArrayAccess` paths dispatch selected offset methods, current
+`Stringable`/`__toString` paths cover string conversion, and current
+`Countable` paths let `is_countable($object)` recognize recorded
+`implements Countable` metadata and `count($object)` dispatch a visible
+non-static `count()` method with an integer result. Full interface signature
+enforcement, broad protocol composition, references/copy-on-write, exact
+diagnostics, and native lowering remain separate runtime work.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.

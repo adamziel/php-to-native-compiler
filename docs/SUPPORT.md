@@ -625,8 +625,11 @@
   `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` inspect
   the current boxed value variant without coercion. `is_numeric` returns true
   for integers, floats, and well-formed numeric strings using the same current
-  numeric-string subset as scalar arithmetic. `is_countable` and `is_iterable`
-  return true for arrays and false for the current scalar/null/object values.
+  numeric-string subset as scalar arithmetic. `is_countable` returns true for
+  arrays and objects whose class metadata records `implements Countable`, and
+  false for the current scalar/null/non-`Countable` object values.
+  `is_iterable` returns true for arrays and false for the current
+  scalar/null/object values.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -851,6 +854,13 @@
   the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
   float/string/bool/null/object/resource operands, exact PHP diagnostics, and
   native lowering remain unsupported.
+  `count($value)` supports current arrays and objects whose class metadata
+  records `implements Countable`. For `Countable` objects, the interpreter
+  dispatches a visible non-static `count()` method and accepts an integer
+  result. Missing `count()` methods, inaccessible/static methods, non-integer
+  count results, full interface signature enforcement, magic `__call`
+  fallback, resources/extensions, references/copy-on-write, exact diagnostics,
+  and native lowering remain unsupported.
   `rand()` supports the reached no-argument form only and returns a
   deterministic integer for WordPress placeholder-salt exploration. Min/max
   arguments, random-state compatibility with PHP, seeding, `mt_rand()`/`srand()`
@@ -3467,8 +3477,11 @@
   `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` report the
   current value category without coercion. `is_numeric` returns true for
   integers, floats, and well-formed numeric strings using the same current
-  numeric-string subset as scalar arithmetic. `is_countable` and `is_iterable`
-  return true for arrays and false for the current scalar/null/object values.
+  numeric-string subset as scalar arithmetic. `is_countable` returns true for
+  arrays and objects whose class metadata records `implements Countable`, and
+  false for the current scalar/null/non-`Countable` object values.
+  `is_iterable` returns true for arrays and false for the current
+  scalar/null/object values.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -3490,9 +3503,9 @@
   builtin lookup table for strings. Additional callable forms, the
   callable-name output parameter,
   environment-specific legacy aliases such as `is_real`,
-  extension/resource-aware type checks, `Countable`
-  object/interface semantics, and `Traversable`/generator object semantics are
-  not implemented.
+  extension/resource-aware type checks, full `Countable` interface method
+  enforcement, and `Traversable`/generator object semantics are not
+  implemented.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins. Native lowering folds only direct calls whose name argument is an
@@ -5537,6 +5550,11 @@
 - `min()` outside the current two-or-more integer argument subset: array-form
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table
+  introspection
+- `count()` outside the current array and bounded `Countable` object subset:
+  full interface signature enforcement, magic `__call` fallback,
+  resources/extensions, non-integer object count results, exact diagnostics,
+  references/copy-on-write, and native lowering beyond function-table
   introspection
 - `compact()` outside the current direct string variable-name argument subset:
   array arguments, nested arrays, invalid names, PHP warning behavior for

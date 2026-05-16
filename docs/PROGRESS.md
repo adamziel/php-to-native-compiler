@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 1040, bounded `Countable` object protocol support for the
+  current object model. `is_countable($object)` now returns true for object
+  values whose class metadata records `implements Countable`, and
+  `count($object)` dispatches a visible non-static `count()` method on those
+  objects and accepts an integer result. Arrays keep the existing countable
+  behavior. Non-`Countable` objects, missing `count()` methods, static or
+  inaccessible methods, non-integer count results, interface signature
+  enforcement, magic `__call` fallback, resources/extensions,
+  references/copy-on-write, and native lowering remain unsupported. Verification
+  so far:
+  `cargo test -p phpc --test countable_type_builtin -- --test-threads=1` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1040`.
+
 - Added Milestone 1039, bounded direct `mysqli_query()` `wp_options` replace
   state over the current per-placeholder-connection state island. Exact
   `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`

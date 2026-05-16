@@ -11429,9 +11429,32 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::Array(value) => Ok(Value::Int(value.len() as i64)),
+                    Value::Object(object)
+                        if self
+                            .classes
+                            .implements_interface(object.class_id(), "Countable") =>
+                    {
+                        let value = self.call_countable_count_method(object.clone(), span)?;
+                        match value {
+                            Value::Int(count) => Ok(Value::Int(count)),
+                            other => Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "Countable::count()",
+                                    format!(
+                                        "count method must return int in the current subset, got {}",
+                                        other.type_name()
+                                    ),
+                                ),
+                            )),
+                        }
+                    }
                     _ => Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call("count()", "only arrays are supported"),
+                        RuntimeError::unsupported_call(
+                            "count()",
+                            "only arrays and Countable objects are supported",
+                        ),
                     )),
                 }
             }
@@ -12476,7 +12499,7 @@ impl Interpreter {
             }
             "is_countable" => {
                 expect_arity(name, &args, 1, span)?;
-                Ok(Value::Bool(args[0].is_countable()))
+                Ok(Value::Bool(self.is_countable_value(&args[0])))
             }
             "is_iterable" => {
                 expect_arity(name, &args, 1, span)?;
@@ -14913,6 +14936,61 @@ impl Interpreter {
                     ),
                 )
             })
+    }
+
+    fn is_countable_value(&self, value: &Value) -> bool {
+        match value {
+            Value::Array(_) => true,
+            Value::Object(object) => self
+                .classes
+                .implements_interface(object.class_id(), "Countable"),
+            _ => false,
+        }
+    }
+
+    fn call_countable_count_method(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "count")
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Countable::count()",
+                    "Countable objects must declare count() in the current subset",
+                ),
+            ));
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Countable::count()",
+                    "Countable count method must be non-static in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "count", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_signature(function, 0, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        self.call_user_function_with_this(
+            function,
+            object,
+            Vec::new(),
+            Some(class_id),
+            Some(called_class_id),
+        )
     }
 
     fn array_access_offset_exists(

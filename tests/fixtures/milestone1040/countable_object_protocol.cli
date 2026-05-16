@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1040/countable_object_protocol.php
+exit: 0
+stdout:
+countable|3|plain|2
+--- stdout end ---
+stderr:
+--- stderr end ---

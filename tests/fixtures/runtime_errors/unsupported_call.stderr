@@ -1,2 +1,2 @@
-runtime error at 2:6: unsupported call count(): only arrays are supported
+runtime error at 2:6: unsupported call count(): only arrays and Countable objects are supported
 

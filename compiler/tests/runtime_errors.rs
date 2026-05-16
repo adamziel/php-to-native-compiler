@@ -49,7 +49,7 @@ fn unsupported_builtin_call_has_stable_runtime_error() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call count(): only arrays are supported"
+        "unsupported call count(): only arrays and Countable objects are supported"
     );
 }
 

@@ -9813,6 +9813,14 @@ handled.
   iteration, by-reference `offsetGet()` mutation, indirect-modification notice
   fidelity, protocol/signature enforcement, exact diagnostics,
   references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded `Countable` object protocol support.
+  Milestone 1040 covers `is_countable($object)` for object values whose class
+  metadata records `implements Countable`, and `count($object)` dispatches a
+  visible non-static `count()` method with an integer result. This is not full
+  interface signature enforcement, magic `__call` fallback,
+  `Traversable`/iterator protocol support, inaccessible/static count methods,
+  non-integer count-result coercion, exact diagnostics, references/copy-on-write,
+  or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess chains,
   append compound assignment, ArrayAccess iteration, method enforcement for
