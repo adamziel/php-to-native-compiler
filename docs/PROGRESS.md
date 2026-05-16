@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1025, bounded exact `wp_options` update/readback for the
+  current per-placeholder-connection MySQLi state island. After an exact
+  supported option insert, direct
+  `mysqli_query($handle, "UPDATE wp_options SET option_value = ... WHERE
+  option_name = ...")` now updates an existing recorded option value, sets
+  `mysqli_affected_rows($handle)` to `1`, leaves missing option names as a
+  successful zero-row update, and later exact option-value `SELECT` reads
+  expose the updated value through the existing result/fetch path. This is not
+  broad SQL parsing, escaped quote handling, schema/index behavior,
+  INSERT-on-duplicate behavior, DELETE/REPLACE, transactions, host database
+  execution, warning/error fidelity, PDO, prepared-statement mutation state,
+  or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_update_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1025`.
+
 - Added Milestone 1024, a bounded per-placeholder-connection `wp_options`
   state island for exact WordPress-shaped MySQLi option writes and reads.
   `mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value,

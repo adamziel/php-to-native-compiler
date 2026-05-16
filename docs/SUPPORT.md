@@ -1233,14 +1233,18 @@
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records the string option value in per-placeholder-handle
   state, sets `mysqli_affected_rows($handle)` to `1`, advances deterministic
-  `mysqli_insert_id($handle)`, and lets a later exact
+  `mysqli_insert_id($handle)`, accepts a later exact
+  `UPDATE wp_options SET option_value = ... WHERE option_name = ...` for
+  existing recorded options with `mysqli_affected_rows($handle) === 1`,
+  treats missing option names as successful zero-row updates, and lets a later
+  exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
   path. Missing option names still return an empty placeholder result. This
   state island is not broad SQL parsing, escaping/quoting fidelity, schema or
-  index behavior, UPDATE/DELETE/REPLACE, transactions, host database
-  execution, warning/error fidelity, PDO, prepared-statement mutation state,
-  or native lowering. For the
+  index behavior, INSERT-on-duplicate behavior, DELETE/REPLACE, transactions,
+  host database execution, warning/error fidelity, PDO, prepared-statement
+  mutation state, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -1303,9 +1307,9 @@
   deterministic `true` as a liveness-check boundary without probing a real
   connection or reconnecting.
   Mutation SQL passed to `mysqli_query()` outside the exact `wp_options`
-  insert state island, currently recognized by leading `INSERT`, `UPDATE`,
-  `DELETE`, or `REPLACE`, reports an explicit unsupported diagnostic instead
-  of changing connection or table state.
+  insert/update state island, currently recognized by leading `INSERT`,
+  `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported diagnostic
+  instead of changing connection or table state.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.

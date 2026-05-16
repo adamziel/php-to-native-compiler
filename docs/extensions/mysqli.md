@@ -293,12 +293,16 @@ state island for exact WordPress-shaped option writes and reads:
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
 records the string option value, sets `mysqli_affected_rows($handle)` to `1`,
 and advances deterministic `mysqli_insert_id($handle)`. A later exact
+`UPDATE wp_options SET option_value = ... WHERE option_name = ...` updates an
+existing recorded option with `mysqli_affected_rows($handle) === 1`; missing
+option names are successful zero-row updates. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers; missing option names still return an empty placeholder result. This is
 not broad SQL parsing, escaping/quoting fidelity, schema/index behavior,
-UPDATE/DELETE/REPLACE support, transactions, host database execution, PDO,
-prepared-statement mutation state, warning/error fidelity, or native lowering.
+INSERT-on-duplicate behavior, DELETE/REPLACE support, transactions, host
+database execution, PDO, prepared-statement mutation state, warning/error
+fidelity, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

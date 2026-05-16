@@ -5976,6 +5976,19 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
+        if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if options.contains_key(&option_name) {
+                    options.insert(option_name, option_value);
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if let Some(option_name) = parse_wordpress_option_value_select_query(query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(option_value) = self
@@ -15932,6 +15945,22 @@ fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
         return None;
     }
     Some(values[0].clone())
+}
+
+fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("UPDATE wp_options SET option_value = ")
+        .or_else(|| query.strip_prefix("UPDATE `wp_options` SET `option_value` = "))?;
+    let (value_sql, where_sql) = rest
+        .split_once(" WHERE option_name = ")
+        .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
+    let values = parse_sql_single_quoted_list(value_sql)?;
+    let names = parse_sql_single_quoted_list(where_sql)?;
+    if values.len() != 1 || names.len() != 1 {
+        return None;
+    }
+    Some((names[0].clone(), values[0].clone()))
 }
 
 fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {

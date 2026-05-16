@@ -1162,8 +1162,10 @@ historical blockers and remaining full-support gaps include:
   probe later gained a bounded per-placeholder-handle `wp_options` state
   island in Milestone 1024 for exact synthetic option `INSERT` plus exact
   option-value `SELECT` readback through the existing result/fetch path, with
-  bounded `mysqli_affected_rows()` and `mysqli_insert_id()` metadata. This is
-  still not broad SQL parsing, UPDATE/DELETE/REPLACE, transactions, host
+  bounded `mysqli_affected_rows()` and `mysqli_insert_id()` metadata.
+  Milestone 1025 extends that island to exact option `UPDATE` plus later
+  readback for existing recorded option names. This is still not broad SQL
+  parsing, INSERT-on-duplicate behavior, DELETE/REPLACE, transactions, host
   database execution, PDO, prepared-statement mutation state, or native
   database lowering. The real bootstrap-shim
   probe now advances to

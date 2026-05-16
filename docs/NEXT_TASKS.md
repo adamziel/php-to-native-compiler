@@ -9833,8 +9833,20 @@ handled.
   parsing, escaping/quoting fidelity, schema/index behavior, UPDATE/DELETE/
   REPLACE, transactions, host database execution, warning/error fidelity, PDO,
   prepared-statement mutation state, or native lowering.
+- [x] Runtime/database lane: add bounded exact `wp_options` MySQLi
+  update/readback over the current per-handle state island.
+  Milestone 1025 covers exact direct
+  `UPDATE wp_options SET option_value = ... WHERE option_name = ...` after an
+  exact supported insert. Existing recorded option names update their string
+  value, set `mysqli_affected_rows($handle)` to `1`, and later exact
+  option-value `SELECT` reads expose the updated value through the existing
+  placeholder result/fetch path. Missing option names are successful zero-row
+  updates. This is not broad SQL parsing, escaped quote handling,
+  schema/index behavior, INSERT-on-duplicate behavior, DELETE/REPLACE,
+  transactions, host database execution, warning/error fidelity, PDO,
+  prepared-statement mutation state, or native lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as option UPDATE/readback,
+  audited PHP/WordPress surface, such as option DELETE/readback,
   prepared-statement mutation state, transaction state, broader escaping
   fidelity, host-backed query execution, PDO, or the next `wpdb` state
   consumer, and add the next bounded behavior or explicit runtime boundary
@@ -9844,8 +9856,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `6c936b97 runtime: add object property array access increment decrement`,
-  covering Milestone 1023 before the current Milestone 1024 candidate.
+  `b51a3b15 runtime: add wp options mysqli state island`, covering Milestone
+  1024 before the current Milestone 1025 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
