@@ -297,6 +297,11 @@ and advances deterministic `mysqli_insert_id($handle)`. Exact
 ON DUPLICATE KEY UPDATE ...` option upserts update existing recorded options
 with `mysqli_affected_rows($handle) === 2`, insert missing options with
 `mysqli_affected_rows($handle) === 1`, and advance deterministic
+`mysqli_insert_id($handle)`. Exact
+`REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+option writes replace existing recorded options with
+`mysqli_affected_rows($handle) === 2`, insert missing options with
+`mysqli_affected_rows($handle) === 1`, and advance deterministic
 `mysqli_insert_id($handle)`. A later exact
 `UPDATE wp_options SET option_value = ... WHERE option_name = ...` updates an
 existing recorded option with `mysqli_affected_rows($handle) === 1`; missing
@@ -318,13 +323,14 @@ parser for those direct option shapes accepts the current MySQL-style
 backslash escapes used by `mysqli_real_escape_string()` for quotes, double
 quotes, backslashes, newlines, and carriage returns, plus doubled single
 quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
-character-set/collation fidelity, schema/index behavior, ordering/collation fidelity,
-autoload mutation beyond exact inserts, real unique-index enforcement, no-op
-update affected-row fidelity, DELETE breadth, REPLACE support, real
-transaction isolation/locking/savepoint behavior, host database execution, PDO,
-broad prepared-statement mutation state, warning/error fidelity, or native
-lowering. The current transaction and savepoint helpers can snapshot and
-restore this exact option state only.
+character-set/collation fidelity, schema/index behavior,
+ordering/collation fidelity, autoload mutation beyond exact writes, real
+unique-index enforcement, no-op update affected-row fidelity, real
+`REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
+transaction isolation/locking/savepoint behavior, host database execution,
+PDO, broad prepared-statement mutation state, warning/error fidelity, or
+native lowering. The current transaction and savepoint helpers can snapshot
+and restore this exact option state only.
 
 Prepared statement execution over the same state island supports the exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` query for string

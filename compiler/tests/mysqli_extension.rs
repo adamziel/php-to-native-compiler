@@ -3025,6 +3025,43 @@ echo $home_row["option_value"];
 }
 
 #[test]
+fn mysqli_query_records_current_wordpress_option_replace_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "REPLACE INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://replaced.test', 'no')") ? "replaced" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+echo "|";
+echo mysqli_query($handle, "REPLACE INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes')") ? "inserted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+$home_row = mysqli_fetch_assoc($home);
+echo $home_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "replaced|2|2|https://replaced.test|inserted|1|3|https://home.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_records_escaped_wordpress_option_literals() {
     let execution = run_source(
         r#"<?php
@@ -4498,7 +4535,7 @@ mysqli_query($handle, "SET SESSION sql_mode='ansi'");
     assert_eq!(unsupported.column, 1);
     assert_eq!(
         unsupported.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/update/delete state-island queries are implemented in the current subset; got SET SESSION sql_mode='ansi'"
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/replace/update/delete state-island queries are implemented in the current subset; got SET SESSION sql_mode='ansi'"
     );
 }
 

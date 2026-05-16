@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1039/mysqli_wp_options_direct_replace_state.php
+exit: 0
+stdout:
+replaced|2|2|https://replaced.test|inserted|1|3|https://home.test
+--- stdout end ---
+stderr:
+--- stderr end ---

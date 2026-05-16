@@ -10005,6 +10005,18 @@ handled.
   backslashes, newlines, and carriage returns. This is not broad SQL parsing,
   SQL-mode-aware escaping, character-set/collation fidelity, host database
   execution, PDO, or native lowering.
+- [x] Runtime/database lane: add bounded exact direct `wp_options` MySQLi
+  replace state over the current per-handle state island.
+  Milestone 1039 covers exact direct
+  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+  execution through `mysqli_query()` for single-quoted string option-name,
+  option-value, and autoload values on the same placeholder handle. Existing
+  recorded options replace with connection affected rows set to `2`; missing
+  options insert with affected rows set to `1`. Both paths advance
+  deterministic `mysqli_insert_id($handle)` and are visible to later exact
+  option-value reads. This is not broad SQL parsing, real `REPLACE`/
+  unique-index/delete-trigger/auto-increment fidelity, schema/index behavior,
+  host database execution, PDO, or native lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
   audited PHP/WordPress surface, such as host-backed query execution, PDO, real
   schema/index behavior, nested transactions, broader SQL-mode-aware escaping,
@@ -10015,8 +10027,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c728f4b4 docs: record wp options savepoint gate`, covering
-  Milestone 1037 before the current Milestone 1038 candidate.
+  `fa1e6295 docs: record wp options escaped literal gate`, covering
+  Milestone 1038.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

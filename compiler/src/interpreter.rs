@@ -6327,6 +6327,28 @@ impl Interpreter {
         }
 
         if let Some((option_name, option_value, autoload)) =
+            parse_wordpress_option_replace_query(query)
+        {
+            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                option_name,
+                WordPressOptionState {
+                    value: option_value,
+                    autoload,
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
+            let next_insert_id = self
+                .mysqli_insert_ids
+                .get(&handle_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            self.mysqli_insert_ids.insert(handle_id, next_insert_id);
+            return Ok(Value::Bool(true));
+        }
+
+        if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_insert_query(query)
         {
             self.mysqli_wp_options.entry(handle_id).or_default().insert(
@@ -6485,7 +6507,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_query()",
                 format!(
-                    "only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/update/delete state-island queries are implemented in the current subset; got {query}"
+                    "only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/replace/update/delete state-island queries are implemented in the current subset; got {query}"
                 ),
             ),
         ))
@@ -16327,6 +16349,23 @@ fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, S
         .or_else(|| {
             query.strip_prefix(
                 "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (",
+            )
+        })?
+        .strip_suffix(')')?;
+    let values = parse_sql_single_quoted_list(values)?;
+    if values.len() != 3 {
+        return None;
+    }
+    Some((values[0].clone(), values[1].clone(), values[2].clone()))
+}
+
+fn parse_wordpress_option_replace_query(query: &str) -> Option<(String, String, String)> {
+    let query = query.trim();
+    let values = query
+        .strip_prefix("REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (")
+        .or_else(|| {
+            query.strip_prefix(
+                "REPLACE INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES (",
             )
         })?
         .strip_suffix(')')?;

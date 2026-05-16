@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `fa1e6295 docs: record wp options escaped literal gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1039, bounded direct `REPLACE INTO wp_options`
+  state for the exact direct MySQLi option state island.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1039/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: not yet run after implementation.
+- Current WordPress frontier: exact direct option insert, replace, upsert,
+  update, delete, value-select, and option-row readback state is represented
+  for single-quoted string values on a placeholder MySQLi handle.
+- Remaining semantic gaps: broad SQL parsing, real `REPLACE`/
+  unique-index/delete-trigger/auto-increment fidelity, schema/index behavior,
+  SQL-mode-aware escaping, character-set/collation fidelity, host database
+  execution, PDO, references/copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `c728f4b4 docs: record wp options savepoint gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1038, bounded escaped single-quoted SQL literals

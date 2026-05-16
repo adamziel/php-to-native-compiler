@@ -1248,6 +1248,11 @@
   ON DUPLICATE KEY UPDATE ...` option upserts that update existing recorded
   options with `mysqli_affected_rows($handle) === 2`, insert missing options
   with `mysqli_affected_rows($handle) === 1`, advance deterministic
+  `mysqli_insert_id($handle)`, accepts exact
+  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+  option writes that replace existing recorded options with
+  `mysqli_affected_rows($handle) === 2`, insert missing options with
+  `mysqli_affected_rows($handle) === 1`, and advance deterministic
   `mysqli_insert_id($handle)`, accepts a later exact
   `UPDATE wp_options SET option_value = ... WHERE option_name = ...` for
   existing recorded options with `mysqli_affected_rows($handle) === 1`,
@@ -1273,8 +1278,9 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  real unique-index enforcement, no-op update affected-row fidelity, DELETE
-  breadth, REPLACE, real transaction isolation/locking/savepoint behavior,
+  real unique-index enforcement, no-op update affected-row fidelity, real
+  `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
+  transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
   transaction and savepoint helpers can snapshot and restore this exact option

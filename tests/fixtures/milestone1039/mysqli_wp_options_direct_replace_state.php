@@ -1,0 +1,23 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "REPLACE INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://replaced.test', 'no')") ? "replaced" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+echo "|";
+echo mysqli_query($handle, "REPLACE INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes')") ? "inserted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+$home_row = mysqli_fetch_assoc($home);
+echo $home_row["option_value"];

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1039, bounded direct `mysqli_query()` `wp_options` replace
+  state over the current per-placeholder-connection state island. Exact
+  `REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+  query strings now replace existing recorded option rows with
+  `mysqli_affected_rows($handle)` set to `2`, insert missing options with
+  affected rows set to `1`, advance deterministic `mysqli_insert_id($handle)`,
+  and expose the resulting option values through the existing exact readback
+  paths. This reuses the current bounded single-quoted literal parser, including
+  MySQL-style escaped literal parts. This is not broad SQL parsing, real
+  `REPLACE`/unique-index semantics, delete-trigger behavior, auto-increment
+  fidelity, schema/index behavior, host database execution, PDO, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_replace_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1039`.
+
 - Added Milestone 1038, bounded MySQL-style escaped single-quoted literals for
   the current exact direct `wp_options` state island. The exact direct
   `mysqli_query()` option insert, insert-on-duplicate, update, delete,
