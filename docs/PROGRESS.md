@@ -22,7 +22,9 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone748`, and
   `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `439b275b runtime: clarify array offset reference boundary`.
 
 - Added Milestone 1058, explicit PHP array slot lookup helpers on top of
   `ArraySlot`. `PhpArray::get_slot()` and `get_slot_mut()` now expose the

@@ -32,19 +32,22 @@ injects this file into every prompt. Each Codex pass should update it with:
   `bcccb64c docs: record array slot lookup gate`, pushed to `origin/master`.
 - Task attempted: Milestone 1059, precise direct array-offset reference-source
   runtime boundary over normalized-key `ArraySlot` lookup.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/functions_and_scopes.rs`,
   `tests/fixtures/milestone748/*`, `tests/fixtures/runtime_errors/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `GOAL.MD`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`
   passed with 2 tests.
   `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`
   passed with 14 tests. `cargo run -p phpc -- test tests/fixtures/milestone748`
   passed with 2 fixtures. `cargo run -p phpc -- test tests/fixtures/runtime_errors`
   passed with 164 fixtures. `cargo check -p php_runtime -p phpc`,
-  `cargo fmt --check`, and `git diff --check` passed.
+  `cargo fmt --check`, and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1269 fixture tests, 714 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `439b275b runtime: clarify array offset reference boundary`.
 - Current WordPress frontier: direct array-offset reference sources now reach
   the array slot lookup boundary and fail with a diagnostic naming missing
   array slot reference cells, rather than the generic reference/aliasing

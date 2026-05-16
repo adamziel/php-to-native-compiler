@@ -10264,7 +10264,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `14487d56 runtime: add array slot lookup helpers`, covering Milestone 1058.
+  `439b275b runtime: clarify array offset reference boundary`, covering
+  Milestone 1059.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
