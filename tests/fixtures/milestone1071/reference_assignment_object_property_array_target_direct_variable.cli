@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1071/reference_assignment_object_property_array_target_direct_variable.php
+exit: 0
+stdout:
+Grace|Hedy|Katherine|Katherine|detached|changed|from-slot
+--- stdout end ---
+stderr:
+--- stderr end ---

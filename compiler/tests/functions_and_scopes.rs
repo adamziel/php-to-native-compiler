@@ -1793,27 +1793,81 @@ echo "loaded";
 }
 
 #[test]
-fn reference_assignment_object_property_array_target_executes_as_stable_runtime_boundary() {
-    let error = runtime_error(
+fn reference_assignment_object_property_array_target_aliases_direct_variable_source() {
+    let execution = run_source(
         r#"<?php
 class Catalog {
     public $entries;
 
     public function run() {
-        $entry = 1;
-        $this->entries[$entry] =& $entry;
+        $key = "name";
+        $entry = "Grace";
+        $this->entries[$key] =& $entry;
+        echo $this->entries["name"];
+        echo "|";
+        $entry = "Hedy";
+        echo $this->entries["name"];
+        echo "|";
+        $this->entries["name"] = "Katherine";
+        echo $entry;
+        unset($entry);
+        $entry = "detached";
+        echo "|";
+        echo $this->entries["name"], "|", $entry;
     }
 }
 $catalog = new Catalog();
 $catalog->run();
 "#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Grace|Hedy|Katherine|Katherine|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_array_target_materializes_null_property() {
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $entries;
+}
+$catalog = new Catalog();
+$entry = "root";
+$catalog->entries["slot"] =& $entry;
+$entry = "changed";
+echo $catalog->entries["slot"];
+echo "|";
+$catalog->entries["slot"] = "from-slot";
+echo $entry;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_array_target_aliased_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Catalog {
+    public $entries;
+}
+$catalog = new Catalog();
+$entry = "source";
+$other =& $entry;
+$catalog->entries["slot"] =& $entry;
+"#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 9);
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: references and aliasing are not implemented"
+        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
     );
 }
 

@@ -295,8 +295,14 @@ type VariableCell = Rc<RefCell<Value>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
-    array_name: String,
+    root: ArrayOffsetAliasRoot,
     keys: Vec<ArrayKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArrayOffsetAliasRoot {
+    StaticArray { name: String },
+    PublicObjectProperty { object: String, property: String },
 }
 
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -474,7 +480,9 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         let alias = ArrayOffsetAlias {
-            array_name: array_name.to_string(),
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
+            },
             keys: vec![key],
         };
         self.materialize_array_offset_alias(&alias, span)?;
@@ -498,7 +506,9 @@ impl SymbolTable {
 
         let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
-            array_name: array_name.to_string(),
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
+            },
             keys: vec![key],
         };
         self.materialize_array_offset_alias(&alias, span)?;
@@ -523,7 +533,9 @@ impl SymbolTable {
 
         let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
-            array_name: array_name.to_string(),
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
+            },
             keys,
         };
         self.materialize_array_offset_alias(&alias, span)?;
@@ -566,10 +578,41 @@ impl SymbolTable {
         self.bind_static_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
-                array_name: array_name.to_string(),
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: array_name.to_string(),
+                },
                 keys: vec![key],
             },
         );
+        Ok(())
+    }
+
+    fn bind_object_property_array_offset_to_static_source(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(object_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            keys,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_static_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -602,7 +645,9 @@ impl SymbolTable {
         self.bind_static_to_array_offset_alias(
             source_name,
             ArrayOffsetAlias {
-                array_name: array_name.to_string(),
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: array_name.to_string(),
+                },
                 keys: alias_keys,
             },
         );
@@ -663,45 +708,102 @@ impl SymbolTable {
         alias: &ArrayOffsetAlias,
         span: Span,
     ) -> CompileResult<()> {
-        match self.read_storage_named(&alias.array_name) {
-            Some(Value::Array(mut array)) => {
-                Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
-                self.write_storage_named(&alias.array_name, Value::Array(array));
-                Ok(())
+        let mut array = match self.read_alias_root_value(alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot read offset on {}",
+                        other.type_name()
+                    )),
+                ));
             }
-            Some(Value::Null) | None => {
-                let mut array = PhpArray::new();
-                Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
-                self.write_storage_named(&alias.array_name, Value::Array(array));
-                Ok(())
-            }
-            Some(other) => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(format!(
-                    "cannot read offset on {}",
-                    other.type_name()
-                )),
-            )),
-        }
+        };
+        Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
+        self.write_alias_root_value(alias, Value::Array(array), span)
     }
 
     fn read_array_offset_alias(&self, alias: &ArrayOffsetAlias) -> Option<Value> {
-        match self.read_storage_named(&alias.array_name) {
+        match self.read_alias_root_value(alias, Span::new(0, 0)).ok()? {
             Some(Value::Array(array)) => Self::read_nested_array_offset_alias(&array, &alias.keys),
             _ => None,
         }
     }
 
     fn write_array_offset_alias(&mut self, alias: &ArrayOffsetAlias, value: Value) -> bool {
-        let Some(Value::Array(mut array)) = self.read_storage_named(&alias.array_name) else {
+        let Ok(Some(Value::Array(mut array))) = self.read_alias_root_value(alias, Span::new(0, 0))
+        else {
             return false;
         };
 
         if !Self::write_nested_array_offset_alias(&mut array, &alias.keys, value) {
             return false;
         }
-        self.write_storage_named(&alias.array_name, Value::Array(array));
-        true
+        self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
+            .is_ok()
+    }
+
+    fn read_alias_root_value(
+        &self,
+        alias: &ArrayOffsetAlias,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { name } => Ok(self.read_storage_named(name)),
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                match self.read_storage_named(object) {
+                    Some(Value::Object(object)) => object
+                        .read_public_property(property)
+                        .map(Some)
+                        .map_err(|error| runtime_error(span, error)),
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot read property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_variable(object),
+                    )),
+                }
+            }
+        }
+    }
+
+    fn write_alias_root_value(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        match &alias.root {
+            ArrayOffsetAliasRoot::StaticArray { name } => {
+                self.write_storage_named(name, value);
+                Ok(())
+            }
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
+                match self.read_storage_named(object) {
+                    Some(Value::Object(object)) => object
+                        .write_public_property(property, value)
+                        .map_err(|error| runtime_error(span, error)),
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_variable(object),
+                    )),
+                }
+            }
+        }
     }
 
     fn materialize_nested_array_offset_alias(
@@ -3381,6 +3483,32 @@ impl Interpreter {
                         .collect::<CompileResult<Vec<_>>>()?;
                     scope.append_nested_array_offset_to_static_source(
                         name,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_object_property_array_offset_to_static_source(
+                        object,
+                        property,
                         keys,
                         source_name,
                         span,
