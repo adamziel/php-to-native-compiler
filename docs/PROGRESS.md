@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 986, deterministic direct-variable
+  `mysqli_stmt_bind_param()` plus bound placeholder `mysqli_stmt_execute()`
+  support for exact known statement SQL shapes. The runtime now special-cases
+  direct and string-valued calls so direct scalar/null variable parameter
+  values are snapshotted on active placeholder statements with `s`, `i`, or
+  `d` type markers. `mysqli_stmt_execute()` can now execute the exact
+  seed-post `SELECT ID, post_title FROM wp_posts WHERE ID = ?` shape when
+  bound to `1`, and can report an empty deterministic
+  `SELECT option_value FROM wp_options WHERE option_name = ?` placeholder
+  result. The new fixtures include direct MySQLi and WordPress-shaped `wpdb`
+  smokes; affected legacy `milestone945` and `milestone946` boundary fixtures
+  now record narrower handle-validation diagnostics. This is not true
+  by-reference aliasing, later variable mutation, array parameter execution,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone986`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone945`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone946`.
+
 - Added Milestone 985, deterministic direct-variable
   `mysqli_stmt_bind_result()` plus buffered `mysqli_stmt_fetch()` placeholder
   row copying for active statements. The runtime now special-cases direct and

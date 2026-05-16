@@ -1768,7 +1768,13 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` smoke, without claiming true by-reference aliasing,
   unbuffered statement fetching, bound-parameter execution, real mysqlnd
   cursor behavior, host database state, PHP warning/error fidelity, or native
-  database lowering. Milestone 965 adds explicit
+  database lowering. Milestone 986 adds deterministic direct-variable
+  `mysqli_stmt_bind_param()` plus bound placeholder `mysqli_stmt_execute()`
+  support for exact known statement SQL shapes, including a WordPress-shaped
+  `wpdb` smoke, without claiming true by-reference aliasing, later variable
+  mutation, array parameter execution, mutation SQL, broad SQL execution,
+  host database state, PHP warning/error fidelity, or native database
+  lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

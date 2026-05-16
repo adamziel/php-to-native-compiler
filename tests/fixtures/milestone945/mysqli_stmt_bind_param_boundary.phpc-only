@@ -1,5 +1,7 @@
-This fixture exercises phpc's explicit MySQLi statement parameter-binding
-boundary. System PHP would require a real mysqli statement object and
-by-reference argument binding; phpc only exposes `mysqli_stmt_bind_param()`
-through callable metadata and reports a stable unsupported diagnostic when
-binding execution is reached.
+This fixture exercises phpc's MySQLi statement parameter-binding handle
+validation. System PHP would require a real mysqli statement object and
+by-reference argument binding; phpc only records the reached
+non-statement-object diagnostic here. Supported placeholder parameter binding
+is covered in later fixtures and does not implement true by-reference
+aliasing, later variable mutation, broad SQL execution, or host database
+state.

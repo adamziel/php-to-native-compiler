@@ -235,15 +235,21 @@ database state, PHP warning/error fidelity, or native lowering.
 `mysqli_stmt_execute($statement, $params = null)` executes only the current
 unbound placeholder statement shapes. For the seed-post WordPress SELECT, it
 records deterministic placeholder result rows; `mysqli_stmt_get_result()` then
-returns a placeholder `mysqli_result` containing those rows. Statements with
-bound parameters, array parameter execution, mutations, unknown SELECT
-metadata, real mysqlnd result transfer, host database state, PHP warning/error
-fidelity, and native lowering remain unsupported.
+returns a placeholder `mysqli_result` containing those rows. The exact
+`SELECT ID, post_title FROM wp_posts WHERE ID = ?` shape can also execute
+after `mysqli_stmt_bind_param($statement, "i", $id)` snapshots a direct
+variable value of `1`; the exact
+`SELECT option_value FROM wp_options WHERE option_name = ?` shape currently
+returns an empty deterministic placeholder result. Array parameter execution,
+mutations, unknown SELECT metadata, real mysqlnd result transfer, host
+database state, PHP warning/error fidelity, and native lowering remain
+unsupported.
 
-`mysqli_stmt_bind_param($statement, $types, &...$vars)` is visible through
-callable metadata but remains an explicit runtime boundary because
-by-reference parameter binding, type strings, bound-parameter execution, and
-host database execution are not implemented.
+`mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
+scalar/null variable snapshots for active statements using `s`, `i`, or `d`
+type markers. This is not true by-reference aliasing, later variable
+mutation, array parameter execution, mutation SQL, broad SQL execution, host
+database state, PHP warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable names
 for the current known placeholder statement result shapes.

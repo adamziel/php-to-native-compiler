@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_bind_param()` plus `mysqli_stmt_execute()` path for active
+`mysqli_stmt` objects. System PHP requires a real initialized MySQLi
+connection and by-reference mysqlnd parameter binding; phpc only snapshots
+direct scalar/null variable values for exact known placeholder SQL shapes.
+It does not implement true by-reference aliasing, later variable mutation,
+array parameter execution, mutation SQL, broad SQL execution, host database
+state, PHP warning/error fidelity, or native database lowering.

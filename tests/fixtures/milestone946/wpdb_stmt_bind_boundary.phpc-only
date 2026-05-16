@@ -1,6 +1,7 @@
-This fixture exercises phpc's explicit MySQLi statement binding boundary
+This fixture exercises phpc's MySQLi statement binding handle validation
 through a WordPress-shaped `wpdb` method. System PHP would require a real
 mysqli statement object and by-reference argument binding; phpc only records
-the reached `mysqli_stmt_bind_param()` boundary with a stable unsupported
-diagnostic and does not implement statement objects, type-string validation,
-binding, execution, result state, or host database state.
+the reached non-statement-object diagnostic here. Supported placeholder
+parameter binding is covered in later fixtures and does not implement true
+by-reference aliasing, later variable mutation, broad SQL execution, or host
+database state.

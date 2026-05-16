@@ -9308,19 +9308,33 @@ handled.
   unbuffered statement fetching, bound-parameter execution, real mysqlnd
   cursor behavior, host database state, PHP warning/error fidelity, or native
   database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as
+  active-statement parameter binding/execution, broader escaping charset
+  fidelity, local-infile option effects, or connection multi-result pending
+  queues, and add the next bounded behavior or explicit runtime boundary with
+  tests, CLI fixtures, docs, and native rejection coverage where lowering
+  remains unsupported.
+  Milestone 986 adds deterministic direct-variable
+  `mysqli_stmt_bind_param()` plus bound placeholder `mysqli_stmt_execute()`
+  support for exact known statement SQL shapes, including a WordPress-shaped
+  `wpdb` smoke. This is not true by-reference aliasing, later variable
+  mutation, array parameter execution, mutation SQL, broad SQL execution,
+  host database state, PHP warning/error fidelity, or native database
+  lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as
-  active-statement parameter binding boundaries, broader
-  escaping charset fidelity, local-infile option effects, or connection
-  multi-result pending queues, and add the next bounded behavior or explicit
-  runtime boundary with tests, CLI fixtures, docs, and native rejection
-  coverage where lowering remains unsupported.
+  later-mutation behavior for bound parameters, broader escaping charset
+  fidelity, local-infile option effects, connection multi-result pending
+  queues, or the next real database integration gap, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `964e290b runtime: add mysqli stmt data seek placeholder`, covering
-  Milestone 984 before the current Milestone 985 candidate.
+  `52470df3 runtime: add mysqli stmt bind fetch placeholders`, covering
+  Milestone 985 before the current Milestone 986 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

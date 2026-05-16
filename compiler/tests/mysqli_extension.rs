@@ -592,7 +592,7 @@ mysqli_stmt_error_list($stmt);
 }
 
 #[test]
-fn mysqli_statement_bind_and_execute_are_visible_but_explicit_boundaries() {
+fn mysqli_statement_bind_param_and_execute_have_placeholder_state() {
     let execution = run_source(
         r#"<?php
 $bind = "mysqli_stmt_bind_param";
@@ -604,16 +604,23 @@ echo "|";
 echo function_exists($execute) ? "execute-exists" : "execute-missing";
 echo "|";
 echo is_callable($execute) ? "execute-callable" : "execute-missing";
-$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+$id = 1;
+echo "|";
+echo mysqli_stmt_bind_param($stmt, "i", $id) ? "bound" : "not-bound";
 echo "|";
 echo mysqli_stmt_execute($stmt) ? "executed" : "not-executed";
+$result = mysqli_stmt_get_result($stmt);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|bind-callable|execute-exists|execute-callable|executed"
+        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -631,7 +638,7 @@ mysqli_stmt_bind_param($stmt, "s", $value);
     assert_eq!(bind_error.column, 1);
     assert_eq!(
         bind_error.message,
-        "unsupported call mysqli_stmt_bind_param(): mysqli statement objects, by-reference parameter binding, type strings, and prepared statement execution are not implemented in the current subset"
+        "unsupported call mysqli_stmt_bind_param(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let execute_error = run_source(
@@ -663,7 +670,40 @@ mysqli_stmt_execute($stmt);
     assert_eq!(parameter_error.column, 1);
     assert_eq!(
         parameter_error.message,
-        "unsupported call mysqli_stmt_execute(): bound parameters and array parameter execution are not implemented in the current subset"
+        "unsupported call mysqli_stmt_execute(): bound parameter values are not available for the current placeholder statement"
+    );
+
+    let type_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+$id = 1;
+mysqli_stmt_bind_param($stmt, "b", $id);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(type_error.phase, Phase::Runtime);
+    assert_eq!(type_error.line, 4);
+    assert_eq!(type_error.column, 1);
+    assert_eq!(
+        type_error.message,
+        "unsupported call mysqli_stmt_bind_param(): only s, i, and d parameter type markers are implemented in the current subset, got b"
+    );
+
+    let variable_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_bind_param($stmt, "i", 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(variable_error.phase, Phase::Runtime);
+    assert_eq!(variable_error.line, 3);
+    assert_eq!(variable_error.column, 36);
+    assert_eq!(
+        variable_error.message,
+        "unsupported call mysqli_stmt_bind_param(): parameter bindings must be direct variables in the current subset"
     );
 }
 

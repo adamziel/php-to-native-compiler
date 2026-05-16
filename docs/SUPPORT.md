@@ -995,17 +995,17 @@
   statement. This does not track failed prepares, executions,
   warning-chain objects, error-list entries, affected rows, insert IDs, host
   database state, PHP warning/error fidelity, or native statement lowering.
-  `mysqli_stmt_execute($statement, $params = null)` executes only the current
-  unbound placeholder statement shapes. For the seed-post WordPress SELECT, it
-  records deterministic placeholder result rows, and
-  `mysqli_stmt_get_result($statement)` returns a placeholder `mysqli_result`
-  containing those rows. Statements with bound parameters, array parameter
-  execution, mutations, unknown SELECT metadata, real mysqlnd result transfer,
-  host database state, PHP warning/error fidelity, and native statement
-  lowering remain unsupported.
-  `mysqli_stmt_bind_param($statement, $types, &...$vars)` remains an explicit
-  runtime boundary because by-reference parameter binding, bound-parameter
-  execution, and type-string behavior are not implemented.
+  `mysqli_stmt_execute($statement, $params = null)` executes the current
+  unbound placeholder statement shapes and the exact known bound-parameter
+  placeholder shapes. For the seed-post WordPress SELECT, including the exact
+  `... WHERE ID = ?` form bound to `1`, it records deterministic placeholder
+  result rows, and `mysqli_stmt_get_result($statement)` returns a placeholder
+  `mysqli_result` containing those rows. `mysqli_stmt_bind_param($statement,
+  $types, &...$vars)` records direct scalar/null variable snapshots for
+  active statements using `s`, `i`, or `d` type markers. This is not true
+  by-reference aliasing, later variable mutation, array parameter execution,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -3338,9 +3338,10 @@
   current known statement shapes without bound parameters, array parameter
   execution, mutations, real mysqlnd transfer, host database state, or broad
   SQL execution,
-  `mysqli_stmt_bind_param(...)` is an explicit parameter-binding boundary
-  without by-reference parameter binding, type strings, bound-parameter
-  execution, or host database execution,
+  `mysqli_stmt_bind_param(...)` exposes only direct scalar/null variable
+  snapshots for known placeholder statement SQL shapes without true
+  by-reference aliasing, later variable mutation, array parameter execution,
+  mutation SQL, broad SQL execution, or host database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
   variable placeholder result binding and buffered row copying for current
   known statement result shapes without true by-reference aliasing, unbuffered

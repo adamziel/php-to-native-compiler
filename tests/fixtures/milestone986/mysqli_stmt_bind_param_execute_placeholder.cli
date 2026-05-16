@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone986/mysqli_stmt_bind_param_execute_placeholder.php
+exit: 0
+stdout:
+bound|executed|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

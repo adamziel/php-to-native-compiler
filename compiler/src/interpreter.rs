@@ -137,6 +137,9 @@ struct MysqliPendingResultState {
 struct MysqliStatementState {
     query: Option<String>,
     param_count: usize,
+    bound_parameter_types: Option<String>,
+    bound_parameter_variables: Vec<String>,
+    bound_parameter_values: Vec<Value>,
     executed_result: Option<MysqliPendingResultState>,
     buffered_result: Option<MysqliPendingResultState>,
     buffered_result_cursor: usize,
@@ -4060,6 +4063,9 @@ impl Interpreter {
                     .map(mysqli_placeholder_param_count)
                     .unwrap_or(0),
                 query,
+                bound_parameter_types: None,
+                bound_parameter_variables: Vec::new(),
+                bound_parameter_values: Vec::new(),
                 executed_result: None,
                 buffered_result: None,
                 buffered_result_cursor: 0,
@@ -4653,6 +4659,9 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_prepare()", stmt_id, span)?;
         state.param_count = mysqli_placeholder_param_count(&query);
         state.query = Some(query);
+        state.bound_parameter_types = None;
+        state.bound_parameter_variables.clear();
+        state.bound_parameter_values.clear();
         state.executed_result = None;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
@@ -4747,18 +4756,18 @@ impl Interpreter {
             ));
         }
 
-        let query = {
+        let (query, bound_parameters) = {
             let state = self.mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?;
-            if state.param_count != 0 {
+            if state.param_count != 0 && state.bound_parameter_values.len() != state.param_count {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "mysqli_stmt_execute()",
-                        "bound parameters and array parameter execution are not implemented in the current subset",
+                        "bound parameter values are not available for the current placeholder statement",
                     ),
                 ));
             }
-            state.query.clone()
+            (state.query.clone(), state.bound_parameter_values.clone())
         };
 
         let Some(query) = query else {
@@ -4779,7 +4788,12 @@ impl Interpreter {
             ));
         }
 
-        let result = mysqli_statement_result_for_query("mysqli_stmt_execute()", &query, span)?;
+        let result = mysqli_statement_result_for_query_with_params(
+            "mysqli_stmt_execute()",
+            &query,
+            &bound_parameters,
+            span,
+        )?;
         let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
         state.executed_result = result;
         state.buffered_result = None;
@@ -4988,6 +5002,9 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_reset()", stmt_id, span)?;
         state.query = None;
         state.param_count = 0;
+        state.bound_parameter_types = None;
+        state.bound_parameter_variables.clear();
+        state.bound_parameter_values.clear();
         state.executed_result = None;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
@@ -8174,6 +8191,9 @@ impl Interpreter {
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
+                if key == "mysqli_stmt_bind_param" {
+                    return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
+                }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
                 }
@@ -8235,6 +8255,9 @@ impl Interpreter {
                 }
                 if key == "str_replace" {
                     return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                }
+                if key == "mysqli_stmt_bind_param" {
+                    return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
@@ -8435,6 +8458,72 @@ impl Interpreter {
         }
 
         Ok(Value::String(result))
+    }
+
+    fn call_mysqli_stmt_bind_param_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() < 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_bind_param()",
+                    ArityExpectation::AtLeast(3),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let statement = self.evaluate(&args[0], caller_scope)?;
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_bind_param()", &statement, span)?;
+        let types_value = self.evaluate(&args[1], caller_scope)?;
+        let types =
+            string_builtin_argument("mysqli_stmt_bind_param()", "types", &types_value, span)?;
+        validate_mysqli_stmt_bind_param_types(&types, args.len() - 2, span)?;
+
+        let mut variable_names = Vec::with_capacity(args.len() - 2);
+        let mut variable_values = Vec::with_capacity(args.len() - 2);
+        for arg in &args[2..] {
+            let Expr::Variable(name, _) = arg else {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        "mysqli_stmt_bind_param()",
+                        "parameter bindings must be direct variables in the current subset",
+                    ),
+                ));
+            };
+            let value = caller_scope.read_static(name, arg.span())?;
+            validate_mysqli_stmt_bound_parameter_value(&value, arg.span())?;
+            variable_names.push(name.clone());
+            variable_values.push(value);
+        }
+
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_bind_param()", stmt_id, span)?;
+        if state.param_count != variable_values.len() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_bind_param()",
+                    format!(
+                        "bound parameter count must match current placeholder count {}, got {}",
+                        state.param_count,
+                        variable_values.len()
+                    ),
+                ),
+            ));
+        }
+
+        state.bound_parameter_types = Some(types);
+        state.bound_parameter_variables = variable_names;
+        state.bound_parameter_values = variable_values;
+        state.executed_result = None;
+        state.buffered_result = None;
+        state.buffered_result_cursor = 0;
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_bind_result_direct(
@@ -14163,8 +14252,43 @@ fn mysqli_statement_result_for_query(
     query: &str,
     span: Span,
 ) -> CompileResult<Option<MysqliPendingResultState>> {
+    mysqli_statement_result_for_query_with_params(function, query, &[], span)
+}
+
+fn mysqli_statement_result_for_query_with_params(
+    function: &str,
+    query: &str,
+    params: &[Value],
+    span: Span,
+) -> CompileResult<Option<MysqliPendingResultState>> {
     if let Some(result) = mysqli_pending_result_for_query(query) {
         return Ok(Some(result));
+    }
+
+    if query == "SELECT ID, post_title FROM wp_posts WHERE ID = ?" {
+        if matches!(params, [Value::Int(1)]) {
+            return Ok(Some(MysqliPendingResultState {
+                fields: vec!["ID".to_string(), "post_title".to_string()],
+                rows: vec![vec![
+                    ("ID".to_string(), Value::Int(1)),
+                    (
+                        "post_title".to_string(),
+                        Value::String("Hello world placeholder".to_string()),
+                    ),
+                ]],
+            }));
+        }
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec!["ID".to_string(), "post_title".to_string()],
+            rows: Vec::new(),
+        }));
+    }
+
+    if query == "SELECT option_value FROM wp_options WHERE option_name = ?" {
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec!["option_value".to_string()],
+            rows: Vec::new(),
+        }));
     }
 
     if is_mysqli_select_query(query) {
@@ -14178,6 +14302,59 @@ fn mysqli_statement_result_for_query(
     }
 
     Ok(None)
+}
+
+fn validate_mysqli_stmt_bind_param_types(
+    types: &str,
+    parameter_count: usize,
+    span: Span,
+) -> CompileResult<()> {
+    let type_count = types.chars().count();
+    if type_count != parameter_count {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_bind_param()",
+                format!(
+                    "type string length must match bound parameter count {parameter_count}, got {type_count}"
+                ),
+            ),
+        ));
+    }
+    for ty in types.chars() {
+        if !matches!(ty, 's' | 'i' | 'd') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_bind_param()",
+                    format!(
+                        "only s, i, and d parameter type markers are implemented in the current subset, got {ty}"
+                    ),
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_mysqli_stmt_bound_parameter_value(value: &Value, span: Span) -> CompileResult<()> {
+    if matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_)
+    ) {
+        Ok(())
+    } else {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_bind_param()",
+                format!(
+                    "bound parameter values must be scalar or null in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ))
+    }
 }
 
 fn mysqli_placeholder_param_count(query: &str) -> usize {

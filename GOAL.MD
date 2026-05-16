@@ -500,6 +500,12 @@ statement result, including direct MySQLi and WordPress-shaped `wpdb` smokes,
 without claiming true by-reference aliasing, unbuffered statement fetching,
 bound-parameter execution, real mysqlnd cursor behavior, host database state,
 PHP warning/error fidelity, or native lowering,
+plus deterministic direct-variable `mysqli_stmt_bind_param()` and bound
+`mysqli_stmt_execute()` placeholder support for exact known statement SQL
+shapes, including direct MySQLi and WordPress-shaped `wpdb` smokes, without
+claiming true by-reference aliasing, later variable mutation, array parameter
+execution, mutation SQL, broad SQL execution, host database state, PHP
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

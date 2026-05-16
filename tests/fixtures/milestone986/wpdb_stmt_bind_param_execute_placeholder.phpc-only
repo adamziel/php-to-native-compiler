@@ -1,0 +1,6 @@
+This fixture records deterministic placeholder statement parameter binding and
+execution through a WordPress-shaped `wpdb` object. It covers only direct
+scalar/null variable snapshots over the current exact seed-post placeholder
+SQL shape and does not implement true by-reference aliasing, later variable
+mutation, array parameter execution, mutation SQL, broad SQL execution, host
+database state, PHP warning/error fidelity, or native database lowering.
