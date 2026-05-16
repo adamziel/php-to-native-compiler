@@ -42,6 +42,8 @@ const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering reje
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 const ASSEMBLY_OBJECT_METADATA_REJECTION: &str = "assembly object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
+const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
+const ASSEMBLY_INSTANCEOF_REJECTION: &str = "assembly instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
@@ -727,7 +729,7 @@ impl LlvmGenerator {
             }
             Expr::Call { span, .. } => Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION)),
             Expr::InstanceOf { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, LLVM_INSTANCEOF_REJECTION))
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, LLVM_CLOSURE_REJECTION)),
             Expr::New { span, .. } => {
@@ -3566,7 +3568,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
             }
             Expr::InstanceOf { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLOSURE_REJECTION)),
             Expr::New { span, .. } => {

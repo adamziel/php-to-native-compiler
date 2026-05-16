@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1177/iterable_interface_method_compatibility.php
+exit: 0
+stdout:
+iterator|aggregate
+--- stdout end ---
+stderr:
+--- stderr end ---

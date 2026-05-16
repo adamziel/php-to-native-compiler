@@ -4,6 +4,107 @@
 
 Implemented:
 
+- Added Milestone 1180, a tests/docs queue refresh after the 1176-1179
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1176-1180
+  complete and opens Milestones 1181-1185, public docs describe the
+  parenthesized dynamic `new` parse boundary, bounded `Iterator` and
+  `IteratorAggregate` method-shape checks, dedicated native `instanceof`
+  rejection, and fixture-manifest compatibility probe expectation metadata.
+  This does not change runtime behavior, native lowering, fixture execution,
+  or PHP/WordPress compatibility claims beyond the implemented 1176-1179
+  slices. Full gate passed at checkpoint: `1345` fixture tests, `762` system
+  PHP comparisons, and `583` skipped `phpc-only` fixtures.
+
+- Added Milestone 1179, a deterministic compatibility-manifest audit
+  refinement. `phpc test --list-fixtures-json [fixture-dir]` now emits
+  `contract_version: 7`, and both JSON and text fixture manifests report
+  deterministic compatibility probe expectation artifacts under
+  `compat/<target>/**/*.expected` with path, byte count, and SHA-256 digest.
+  This does not change fixture execution, system PHP comparison behavior,
+  parser/runtime behavior, native lowering, or PHP/WordPress compatibility
+  claims. Unsupported/unchanged audit gaps: the manifests do not execute or
+  validate compatibility probe expectations, parse expected inventory output,
+  compare external WordPress checkouts, validate non-empty `.phpc-only`
+  reasons, inspect unrecognized sidecars, or prove branch-specific
+  compatibility. Verification in the compiler-output lane:
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, direct
+  `cargo run -q -p phpc -- test --list-fixtures-json tests/fixtures` showing
+  `contract_version: 7` and WordPress probe expectation artifacts, direct
+  `cargo run -q -p phpc -- test --list-fixtures tests/fixtures` showing
+  WordPress `probe expectations=2` with per-artifact SHA-256 lines,
+  `cargo run -q -p phpc -- test tests/fixtures/compat`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/compat/php`,
+  `cargo fmt --check`, and `git diff --check` passed. Full gate/checkpoint
+  deferred until integration.
+
+- Added Milestone 1178, a dedicated native `instanceof` rejection for the
+  documented bounded runtime class/interface relationship behavior. `phpc
+  compile --emit-ir` and `--emit-asm` now reject `instanceof` expressions with
+  a diagnostic naming missing native class metadata tables, object handles,
+  inheritance/interface registries, class-name resolution, autoload
+  interaction, references/copy-on-write, and exact native `instanceof`
+  diagnostics instead of using the broader object/class boundary. This does
+  not implement native object handles, class/interface metadata tables,
+  inheritance/interface relationship checks, class-name resolution, autoload
+  interaction, references/copy-on-write, or exact native `instanceof`
+  diagnostics. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary -- --test-threads=1`, `cargo test -p phpc
+  --test syntax_boundaries
+  emit_ir_rejects_instanceof_expression_at_codegen_boundary --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1178/native_instanceof_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1178/native_instanceof_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and `git diff
+  --check` passed in the IR lane. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1177, a bounded internal iterable-interface method-shape
+  registration check. Concrete classes that record `implements Iterator`,
+  including concrete children inheriting that metadata from abstract parents,
+  now fail class registration unless they expose public non-static
+  `current()`, `key()`, `next()`, `rewind()`, and `valid()` methods with no
+  required parameters. Concrete classes that record `implements
+  IteratorAggregate` now fail unless they expose a public non-static
+  `getIterator()` method with no required parameters. Direct concrete
+  `implements Traversable` is a stable runtime boundary until broader engine
+  interface inheritance semantics exist. Compatible implementors continue
+  through the existing `is_iterable()` metadata path. This does not implement
+  object `foreach`, iterator method execution, `IteratorAggregate::getIterator()`
+  dispatch, tentative return-type notices, return-declaration compatibility,
+  full built-in/internal interface signature enforcement, exact PHP `Error`
+  objects, references/copy-on-write, or native object/interface lowering.
+  Verification so far: `cargo test -p phpc --test iterable_type_builtin --
+  --test-threads=1`, `cargo test -p phpc --test object_model --
+  --test-threads=1`, `cargo test -p phpc --test countable_type_builtin --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1177`, `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1177`, direct `phpc run` checks for the compatible
+  and boundary fixtures, `cargo fmt --check`, and `git diff --check` passed
+  in the runtime lane. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1176, a parser diagnostic refinement for unsupported
+  parenthesized dynamic class-name expressions in `new`. Forms such as
+  `new ($class)()` and `new (factory())()` now fail with a dedicated parse
+  diagnostic naming the current supported instantiation forms, missing
+  expression evaluation ordering, autoload interaction, exact PHP diagnostics,
+  and native lowering instead of the broader `expected class name after 'new'`
+  message. This does not change the existing direct-variable
+  `new $class(...)`, named-class, `self`/`parent`/`static`, runtime
+  instantiation, anonymous-class, object, or native support claims.
+  Verification so far: `cargo test -p phpc --test syntax_boundaries
+  dynamic_new -- --test-threads=1`, `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --test-threads=1`, direct `cargo run -q
+  -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_dynamic_new_class_expression.php`
+  returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_dynamic_new_class_expression.php
+  --emit-ir` returning exit `1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_syntax_features`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/unsupported_syntax_features`, `cargo fmt
+  --check`, and `git diff --check` passed in the parser lane. Full
+  gate/checkpoint deferred until integration.
+
 - Added Milestone 1175, a tests/docs queue refresh after the 1171-1174
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1171-1175
   complete and opens Milestones 1176-1180, public docs describe the dedicated

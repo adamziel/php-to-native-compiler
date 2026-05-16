@@ -1,0 +1,1 @@
+phpc reports a stable runtime boundary for the bounded internal Iterator and IteratorAggregate method-shape checks; exact PHP Error objects, tentative return-type notices, broad internal interface enforcement, direct Traversable implementation semantics, and exit status are not implemented.

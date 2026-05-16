@@ -619,8 +619,9 @@
   without parentheses, by resolving to the current, parent, or called class
   before using the same instantiation path. Contextless magic class
   instantiation reports a stable runtime boundary. Arbitrary dynamic class-name
-  expressions, anonymous classes, exact PHP `Error`/`TypeError` objects, and
-  native object lowering remain unsupported.
+  expressions such as `new ($class)()` and `new (factory())()` fail at a
+  dedicated parse boundary; anonymous classes, exact PHP `Error`/`TypeError`
+  objects, and native object lowering remain unsupported.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
@@ -894,9 +895,12 @@
   `count()` method with no required parameters, and false for the current
   scalar/null/non-`Countable` object values.
   `is_iterable` returns true for arrays and objects whose class metadata
-  records `implements Traversable`, `implements Iterator`, or
-  `implements IteratorAggregate`, and false for the current
-  scalar/null/non-iterable object values.
+  records `implements Iterator` or `implements IteratorAggregate`, after the
+  current concrete-class registration check verifies the required public
+  non-static methods with no required parameters, and false for the current
+  scalar/null/non-iterable object values. Direct concrete
+  `implements Traversable` is a stable runtime boundary until broader engine
+  interface inheritance semantics exist.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -1138,7 +1142,9 @@
   parameters. For `Countable` objects, the interpreter dispatches that method
   and accepts an integer result. Tentative return-type notices and
   return-declaration compatibility, non-integer count results, broad internal
-  interface enforcement, magic `__call` fallback, resources/extensions,
+  interface enforcement beyond the current `Countable`, `Iterator`, and
+  `IteratorAggregate` method-shape checks, magic `__call` fallback,
+  resources/extensions,
   references/copy-on-write, exact diagnostics, and native lowering remain
   unsupported.
   `rand()` supports the reached no-argument form only and returns a
@@ -1959,8 +1965,13 @@
   fully-qualified function calls have dedicated diagnostics naming the
   relevant missing import/function-table metadata, namespace-aware lookup or
   fallback behavior, alias handling where applicable, and native lowering.
-- explicit parse diagnostics for unsupported magic class names in `new`
-  expressions such as `new self()`, `new parent()`, and `new static()`
+- bounded magic class names in `new` expressions such as `new self()`,
+  `new parent()`, and `new static()` in active class/method contexts;
+  contextless magic class-name instantiation remains a stable runtime boundary
+- explicit parse diagnostics for unsupported parenthesized dynamic class-name
+  expressions in `new`, such as `new ($class)()` and `new (factory())()`;
+  direct-variable dynamic class names such as `new $class(...)` remain the
+  only dynamic class-name instantiation slice
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
   dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
@@ -2326,16 +2337,19 @@
   compatibility, broader return type covariance/contravariance, full signature
   variance, class or interface type subtyping, type-alias/import resolution,
   union/intersection canonicalization, or exact PHP error-object behavior.
-  Unresolved interface names
-  and built-in/internal interface names remain relationship metadata only. The
+  Unresolved interface names remain relationship metadata only. Most
+  built-in/internal interface names are still metadata-only, except for the
+  bounded `Countable`, `Iterator`, and `IteratorAggregate` concrete-class
+  method-shape registration checks. The
   bounded core interface catalog currently includes `Traversable`,
   `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
   and `Stringable` for `interface_exists()` and `get_declared_interfaces()`.
   `Stringable` has one extra bounded relationship rule: classes with a
   resolved public non-static `__toString()` are treated as `Stringable` for
   `instanceof`, `is_a()`, and `is_subclass_of()` checks. Other core interface
-  names still require explicit `implements` metadata and do not enforce
-  methods or protocol behavior.
+  names still require explicit `implements` metadata; outside the bounded
+  `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks they do
+  not enforce methods or protocol behavior.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity, a single-parent ancestor relationship, or a
   recorded `implements` relationship against the current declared class
@@ -2404,7 +2418,12 @@
   `implements` entry return `false`.
   Dynamic right-hand class operands, namespace-qualified names, `self`/`parent`/`static`
   targets, autoload side effects, exact PHP diagnostics, and native lowering
-  remain unsupported.
+  remain unsupported. Native lowering rejects `instanceof` relationship
+  checks with a dedicated codegen diagnostic before lowering the left operand,
+  because generated code still lacks class metadata tables, object handles,
+  inheritance/interface registries, class-name resolution, autoload
+  interaction, references/copy-on-write, and exact native `instanceof`
+  diagnostics.
   `ClassName::class` expressions return the source-spelled class string without
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
@@ -3464,6 +3483,11 @@
   class metadata tables, object handles, inheritance/interface/trait/enum
   registries, property/method tables, autoload interaction,
   references/copy-on-write, and exact native object-metadata errors.
+  Native `instanceof` lowering has a separate rejection for class/interface
+  relationship checks until generated code has native class metadata tables,
+  object handles, inheritance/interface registries, class-name resolution,
+  autoload interaction, references/copy-on-write, and exact native
+  `instanceof` diagnostics.
   Native object-instantiation lowering has a separate rejection for `new`
   expressions and constructor dispatch until generated code has native object
   allocation, object handles, constructor calls, visibility checks,
@@ -3931,9 +3955,12 @@
   `count()` method with no required parameters, and false for the current
   scalar/null/non-`Countable` object values.
   `is_iterable` returns true for arrays and objects whose class metadata
-  records `implements Traversable`, `implements Iterator`, or
-  `implements IteratorAggregate`, and false for the current
-  scalar/null/non-iterable object values.
+  records `implements Iterator` or `implements IteratorAggregate`, after the
+  current concrete-class registration check verifies the required public
+  non-static methods with no required parameters, and false for the current
+  scalar/null/non-iterable object values. Direct concrete
+  `implements Traversable` is a stable runtime boundary until broader engine
+  interface inheritance semantics exist.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -3955,9 +3982,9 @@
   builtin lookup table for strings. Additional callable forms, the
   callable-name output parameter,
   environment-specific legacy aliases such as `is_real`,
-  extension/resource-aware type checks, full `Countable` interface method
-  enforcement, `foreach` over iterator objects, `Iterator` method execution,
-  `IteratorAggregate::getIterator()`, direct-`Traversable` validation rules,
+  extension/resource-aware type checks, full internal interface signature
+  enforcement, tentative return-type notices, object `foreach`,
+  `Iterator` method execution, `IteratorAggregate::getIterator()` dispatch,
   and generator object semantics are not implemented.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
@@ -5063,24 +5090,30 @@
   byte counts for fixture entries, summaries, recognized orphan sidecars, and
   compatibility-target summaries. Compatibility-target entries also report
   `source-pin.md` path, byte count, and SHA-256 when a target pin file is
-  present. It also reports recognized orphan sidecars that do not have a
-  matching `.php` fixture. It does not parse, execute, or compare fixtures,
-  hash fixture or sidecar payloads, validate that `.phpc-only` reason text is
-  non-empty, inspect non-fixture compatibility metadata beyond
-  `source-pin.md`, or report unrecognized sidecars.
+  present, and deterministic `compat/<target>/**/*.expected` probe
+  expectation artifacts with path, byte count, and SHA-256. It also reports
+  recognized orphan sidecars that do not have a matching `.php` fixture. It
+  does not parse, execute, or compare fixtures, validate compatibility probe
+  expectations, parse expected inventory output, hash fixture or sidecar
+  payloads outside the documented source-pin/probe metadata, validate that
+  `.phpc-only` reason text is non-empty, inspect non-fixture compatibility
+  metadata beyond `source-pin.md` and `.expected` probe artifacts, or report
+  unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 6, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 7, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
   recognized sidecars, and recognized orphan sidecars, PHP-comparison
   eligibility, sibling `.phpc-only` marker text as `phpc_only_reason`, and
   per-target compatibility counts plus optional `source-pin.md` path, byte
-  count, and SHA-256 metadata for `compat/<target>` directories under the
-  fixture root, including targets with no executable `.php` fixtures yet. It
-  does not parse, execute, compare fixtures, report fixture execution results,
-  validate that `.phpc-only` reason text is non-empty, inspect non-fixture
-  compatibility metadata beyond `source-pin.md`, or report unrecognized
-  sidecars.
+  count, SHA-256 metadata, and deterministic `.expected` probe expectation
+  artifact metadata for `compat/<target>` directories under the fixture root,
+  including targets with no executable `.php` fixtures yet. It does not parse,
+  execute, compare fixtures, report fixture execution results, validate
+  compatibility probe expectations, parse expected inventory output, validate
+  that `.phpc-only` reason text is non-empty, inspect non-fixture
+  compatibility metadata beyond `source-pin.md` and `.expected` probe
+  artifacts, or report unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported

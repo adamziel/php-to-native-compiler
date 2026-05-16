@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:54:47Z
+
+- Checkpoint before this task:
+  `7aabe755 runtime: enforce countable method shape`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1176-1180, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI manifest code, focused tests and
+  fixtures for parenthesized dynamic `new` parse diagnostics, bounded
+  `Iterator` and `IteratorAggregate` method-shape registration enforcement,
+  dedicated native `instanceof` rejection, compatibility probe expectation
+  manifest audit metadata, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: enforce iterator method shapes"`
+  passed with `1345` fixture tests, `762` system PHP comparisons, and `583`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: parenthesized dynamic `new` execution ordering and
+  autoload interaction, object `foreach`, iterator method execution,
+  `IteratorAggregate::getIterator()` dispatch, full internal-interface
+  signature enforcement, exact PHP `Error` objects and tentative return-type
+  notices, native object handles and class/interface metadata tables, native
+  `instanceof` lowering, branch-specific PHP comparison matrices, real
+  reference/COW containers, real database and filesystem services, and full
+  WordPress request/plugin/theme flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1181-1184 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T20:39:09Z
 
 - Checkpoint before this task:

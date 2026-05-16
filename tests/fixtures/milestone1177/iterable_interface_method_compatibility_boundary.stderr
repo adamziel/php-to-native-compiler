@@ -1,0 +1,2 @@
+runtime error at 4:1: unsupported class inheritance for ChildIterator: concrete class ChildIterator must implement internal interface methods Iterator::current(), Iterator::key(), Iterator::next(), Iterator::rewind(), Iterator::valid()
+

@@ -54,12 +54,13 @@ variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
 selected folds, and a documented set of native builtin folds.
 
 Anything outside that lowerable subset is rejected before misleading IR is
-emitted. Arrays, objects, ArrayAccess object-offset dispatch, clone expressions,
-include/require expression return semantics, functions, general control flow,
-try/catch/finally exception control, references, copy-on-write, and broad PHP
-coercions remain interpreter-only or unsupported for native lowering. Try blocks
-are rejected through a dedicated native diagnostic until catch matching, catch
-variable binding, finally execution, and stack unwinding have native semantics.
+emitted. Arrays, objects, `instanceof` relationship checks, ArrayAccess
+object-offset dispatch, clone expressions, include/require expression return
+semantics, functions, general control flow, try/catch/finally exception
+control, references, copy-on-write, and broad PHP coercions remain
+interpreter-only or unsupported for native lowering. Try blocks are rejected
+through a dedicated native diagnostic until catch matching, catch variable
+binding, finally execution, and stack unwinding have native semantics.
 The compile mode flag is validated before the input file is read, so invalid
 modes such as `--emit-object` report a stable CLI usage error instead of an
 unrelated file, parse, or codegen diagnostic.
@@ -165,7 +166,9 @@ incorrect native code.
   `instanceof`, including unresolved built-in/internal interface names; the
   current internal-interface enforcement slice is limited to concrete
   `Countable` implementors exposing a public non-static `count()` method with
-  no required parameters
+  no required parameters and concrete `Iterator`/`IteratorAggregate`
+  implementors exposing their required public non-static methods with no
+  required parameters
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -187,6 +190,8 @@ incorrect native code.
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation through the current class table for `new $class(...)`,
+  while parenthesized dynamic class-name expressions such as `new ($class)()`
+  remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
   no-argument instantiation and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method
@@ -219,8 +224,8 @@ incorrect native code.
   presence checks, declared empty-trait metadata,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
-  bounded `is_iterable()` metadata for
-  `Traversable`/`Iterator`/`IteratorAggregate`
+  bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
+  implementors that pass the current method-shape check
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, bounded truthy assertions, object/class metadata, and
   debug-style output
@@ -239,8 +244,8 @@ behavior outside the current `(string)`, `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
-interface method enforcement/catalogs beyond the current `Countable` shape
-check, trait members and trait
+interface method enforcement/catalogs beyond the current `Countable`,
+`Iterator`, and `IteratorAggregate` shape checks, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
@@ -318,8 +323,9 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, array destructuring, objects, static class
-members, ArrayAccess object-offset dispatch, clone expressions,
+Native lowering rejects arrays, array destructuring, objects, `instanceof`
+relationship checks, static class members, ArrayAccess object-offset dispatch,
+clone expressions,
 `exit()`/`die()` termination, user functions, closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, double-quoted string
@@ -357,16 +363,18 @@ also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts for
 fixtures, summaries, orphan sidecars, and compatibility targets. Compatibility
 target entries also report `source-pin.md` path, byte count, and SHA-256 when a
-target pin file is present.
+target pin file is present, plus deterministic `compat/<target>/**/*.expected`
+probe expectation artifacts with path, byte count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 6. The JSON records
+manifest as deterministic JSON with `contract_version` 7. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
 sidecar byte counts, and SHA-256 digests for fixture sources, recognized
 sidecars, and recognized orphan sidecars so comparison opt-outs and committed
 expectation payloads are visible without executing fixtures. When the fixture
 root contains `compat/<target>` directories, the JSON also includes per-target
-compatibility counts and optional `source-pin.md` audit metadata, including
-targets with no executable `.php` fixtures yet.
+compatibility counts, optional `source-pin.md` audit metadata, and `.expected`
+probe expectation artifact metadata, including targets with no executable
+`.php` fixtures yet.
 
 Use these commands while developing:
 

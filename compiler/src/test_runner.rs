@@ -80,10 +80,18 @@ pub struct FixtureManifestCompatibilityTarget {
     pub path: String,
     pub summary: FixtureManifestSummary,
     pub source_pin: Option<FixtureManifestCompatibilitySourcePin>,
+    pub probe_expectations: Vec<FixtureManifestCompatibilityProbeExpectation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixtureManifestCompatibilitySourcePin {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestCompatibilityProbeExpectation {
     pub path: String,
     pub bytes: u64,
     pub sha256: String,
@@ -681,6 +689,7 @@ fn collect_compatibility_targets(
                 target,
                 summary,
                 source_pin: compatibility_target_source_pin(root, &source_pin_path)?,
+                probe_expectations: collect_compatibility_probe_expectations(root, &target_path)?,
             })
         })
         .collect::<CompileResult<Vec<_>>>()
@@ -698,6 +707,59 @@ fn compatibility_target_source_pin(
         })),
         _ => Ok(None),
     }
+}
+
+fn collect_compatibility_probe_expectations(
+    root: &Path,
+    target_path: &Path,
+) -> CompileResult<Vec<FixtureManifestCompatibilityProbeExpectation>> {
+    let mut files = Vec::new();
+    collect_expected_files(target_path, &mut files)?;
+    files.sort();
+
+    files
+        .into_iter()
+        .map(|path| {
+            Ok(FixtureManifestCompatibilityProbeExpectation {
+                path: fixture_manifest_path(root, &path),
+                bytes: file_size(&path)?,
+                sha256: file_sha256(&path)?,
+            })
+        })
+        .collect::<CompileResult<Vec<_>>>()
+}
+
+fn collect_expected_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!(
+                "failed to read compatibility expectation directory {}: {error}",
+                root.display()
+            ),
+        )
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!("failed to read compatibility expectation entry: {error}"),
+            )
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_expected_files(&path, out)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("expected") {
+            out.push(path);
+        }
+    }
+
+    Ok(())
 }
 
 fn compatibility_target_from_manifest_path(path: &str) -> Option<&str> {

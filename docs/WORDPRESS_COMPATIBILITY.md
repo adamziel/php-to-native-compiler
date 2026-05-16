@@ -53,9 +53,10 @@ Normalized output replaces the local WordPress checkout path with
 `<wordpress-root>` and the compiler executable path with `<phpc>`. The committed
 policy lives in `tests/fixtures/compat/wordpress/source-pin.md`, and fixture
 manifest audit output reports that pin file's path, byte count, and SHA-256
-digest without executing WordPress fixtures. The repository also keeps a
-synthetic WordPress-shaped inventory fixture so the output format and current
-direct-`wp-settings.php` bootstrap blocker are tested without vendoring
+digest, plus committed `.expected` probe expectation artifact path, byte count,
+and SHA-256 metadata, without executing WordPress fixtures. The repository also
+keeps a synthetic WordPress-shaped inventory fixture so the output format and
+current direct-`wp-settings.php` bootstrap blocker are tested without vendoring
 WordPress core.
 
 ## Inventory Script
@@ -622,10 +623,12 @@ historical blockers and remaining full-support gaps include:
   `wp-includes/class-wp-hook.php` to
   `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
   corresponding to `$l10n[ $domain ] = &$noop_translations;` in
-  `wp-includes/l10n.php:1428`. This is not interface method enforcement,
-  interface constants, interface inheritance, built-in/internal interface
-  catalogs, variance/signature checks, autoload-triggered interface discovery,
-  exact PHP fatal behavior, native lowering, or WordPress bootstrap support.
+  `wp-includes/l10n.php:1428`. Current later milestones add bounded
+  `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks, but
+  this is still not broad interface method enforcement, interface constants,
+  interface inheritance, built-in/internal interface catalogs,
+  variance/signature checks, autoload-triggered interface discovery, exact PHP
+  fatal behavior, native lowering, or WordPress bootstrap support.
   Milestone 762 implements the bounded object-handle `=&` slice needed for
   that `NOOP_Translations` path: direct variable sources holding current object
   values can be assigned into direct variable or direct array-offset targets.
@@ -1334,14 +1337,19 @@ copy-on-write, and native lowering remain explicit gaps. Milestone 1019 widens
 that to a bounded core interface catalog for `Traversable`,
 `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
 and `Stringable` in `interface_exists()` and `get_declared_interfaces()`,
-while leaving method enforcement, iterator execution, protocol validation,
-broader internal catalogs, exact diagnostics, references/copy-on-write, and
-native lowering explicit gaps. Milestone 1043 adds bounded `is_iterable()`
-metadata recognition for objects that explicitly record `implements
-Traversable`, `implements Iterator`, or `implements IteratorAggregate`, while
-leaving object `foreach`, iterator method execution, `getIterator()`,
-generators, protocol validation, exact diagnostics, references/copy-on-write,
-and native lowering explicit gaps. Milestone 1014 adds bounded direct
+while leaving most method enforcement, iterator execution, protocol
+validation, broader internal catalogs, exact diagnostics,
+references/copy-on-write, and native lowering explicit gaps. Milestone 1043
+adds bounded `is_iterable()` metadata recognition for objects that explicitly
+record `implements Traversable`, `implements Iterator`, or
+`implements IteratorAggregate`; Milestone 1177 narrows that to concrete
+`Iterator`/`IteratorAggregate` implementors that expose the required public
+non-static methods with no required parameters, and makes direct concrete
+`implements Traversable` a stable runtime boundary. Object `foreach`,
+iterator method execution, `getIterator()` dispatch, generators, protocol
+validation beyond those shape checks, exact diagnostics,
+references/copy-on-write, and native lowering remain explicit gaps. Milestone
+1014 adds bounded direct
 object-offset `ArrayAccess` dispatch
 for classes that declare `implements ArrayAccess`, covering direct
 read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while

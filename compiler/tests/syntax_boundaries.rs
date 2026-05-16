@@ -4,7 +4,7 @@ use php_compiler::run_source;
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
@@ -521,6 +521,36 @@ fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
     assert_eq!(
         error.message,
         "unsupported anonymous class: anonymous classes are not implemented"
+    );
+}
+
+#[test]
+fn unsupported_parenthesized_dynamic_new_class_expressions_have_stable_parse_errors() {
+    let cases = [
+        ("<?php\n$class = \"Box\";\n$box = new ($class)();\n", 3, 12),
+        ("<?php\necho new (factory())();\n", 2, 10),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_parenthesized_dynamic_new_class_expression_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$class = \"Box\";\n$box = new ($class)();\n")
+        .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
     );
 }
 
@@ -1174,7 +1204,7 @@ fn emit_ir_rejects_instanceof_expression_at_codegen_boundary() {
         php_compiler::emit_ir_source("<?php\n$is = $object instanceof Widget;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);
 }
 
 #[test]

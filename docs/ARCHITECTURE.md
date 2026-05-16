@@ -482,6 +482,13 @@ requires object handles, ArrayAccess method dispatch, reference/COW semantics,
 and exact PHP diagnostics. Direct `$value[$key]` remains on the generic array
 boundary at codegen time unless later analysis proves `$value` is an
 `ArrayAccess` object.
+`instanceof` expressions have a dedicated native rejection boundary for the
+current class/interface relationship checks. Both LLVM IR emission and the C
+assembly fallback path reject the `instanceof` AST node before lowering the
+left operand, so missing native class metadata tables, object handles,
+inheritance/interface registries, class-name resolution, autoload interaction,
+references/copy-on-write, and exact native diagnostics stay visible instead of
+collapsing into the broader object/class boundary.
 Method-call expressions also have a dedicated native rejection boundary for
 instance calls, named static calls, object/static-receiver calls, `self::`,
 `parent::`, and late-static `static::` calls. Both LLVM IR emission and the C
@@ -1162,9 +1169,11 @@ operands only, direct `is_object` calls fold to `false` for already-lowerable
 scalar/null/string operands only, and direct scalar/null/string
 `get_debug_type` calls fold to the current runtime type-name strings.
 Interpreter `is_iterable()` also recognizes object metadata that records
-`implements Traversable`, `implements Iterator`, or
-`implements IteratorAggregate`; this is not native lowering or object iterator
-execution.
+`implements Iterator` or `implements IteratorAggregate` after concrete class
+registration verifies the required public non-static methods with no required
+parameters. Direct concrete `implements Traversable` remains a runtime
+boundary until broader engine interface inheritance semantics exist; this is
+not native lowering or object iterator execution.
 Direct `is_callable($value)` calls fold when `$value` is an already-lowerable
 string value with a uniform known lookup result in the documented builtin
 table, or when `$value` is an already-lowerable non-string scalar/null value,
@@ -1409,8 +1418,9 @@ constant reads, top-level `const` declarations, `define()`/`constant()`, and
 unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
-Native lowering rejects class declarations, clone expressions, and method-call
-expressions before body, operand, receiver, or argument lowering. Object
+Native lowering rejects class declarations, clone expressions, `instanceof`
+expressions, and method-call expressions before body, operand, receiver, or
+argument lowering. Object
 metadata builtins have a dedicated native rejection before operand or argument
 lowering, except for direct static
 false-folding of
@@ -1663,8 +1673,8 @@ a bounded compatibility check only; full parameter variance, broader return
 type covariance/contravariance, type subtyping, alias/import resolution,
 union/intersection canonicalization, interface inheritance, broad
 built-in/internal interface method enforcement beyond the current
-`Countable::count()` shape check, exact PHP error objects, autoload behavior,
-and native lowering remain separate work. A bounded
+`Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
+objects, autoload behavior, and native lowering remain separate work. A bounded
 core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at
@@ -1673,9 +1683,14 @@ a time: current `ArrayAccess` paths dispatch selected offset methods, current
 `Countable` paths require concrete implementors to expose a public non-static
 `count()` method with no required parameters, let `is_countable($object)`
 recognize recorded `implements Countable` metadata, and let `count($object)`
-dispatch that method with an integer result. Full internal interface signature
-enforcement, tentative return-type notices, broad protocol composition,
-references/copy-on-write, exact diagnostics, and native lowering remain
+dispatch that method with an integer result. Current `Iterator` and
+`IteratorAggregate` paths require concrete implementors to expose their
+required public non-static methods with no required parameters so
+`is_iterable($object)` can observe those metadata relationships. Full internal
+interface signature enforcement, tentative return-type notices, object
+`foreach`, iterator method execution, `IteratorAggregate::getIterator()`
+dispatch, broad protocol composition, references/copy-on-write, exact
+diagnostics, and native lowering remain
 separate runtime work.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is

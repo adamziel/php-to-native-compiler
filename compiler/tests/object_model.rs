@@ -1919,7 +1919,18 @@ if (is_a("ChildService", "Hookable", true)) {
     echo "string:inherits-interface\n";
 }
 
-final class WP_Hook implements Iterator, ArrayAccess {}
+final class WP_Hook implements Iterator, ArrayAccess {
+    #[ReturnTypeWillChange]
+    public function current() { return null; }
+    #[ReturnTypeWillChange]
+    public function key() { return null; }
+    #[ReturnTypeWillChange]
+    public function next() { return null; }
+    #[ReturnTypeWillChange]
+    public function rewind() { return null; }
+    #[ReturnTypeWillChange]
+    public function valid() { return false; }
+}
 $hook = new WP_Hook();
 if (is_a($hook, "Iterator")) {
     echo "unresolved-builtin:iterator\n";

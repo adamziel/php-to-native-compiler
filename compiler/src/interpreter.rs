@@ -19054,6 +19054,8 @@ fn register_class_members(
     .map_err(|error| runtime_error(class.span, error))?;
     validate_core_countable_method_implementation(classes, method_signatures, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
+    validate_core_iterable_method_implementation(classes, method_signatures, id, class)
+        .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
 }
@@ -19230,6 +19232,130 @@ fn validate_core_countable_method_implementation(
     }
 
     Ok(())
+}
+
+fn validate_core_iterable_method_implementation(
+    classes: &PhpClassTable,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract {
+        return Ok(());
+    }
+
+    let interface_names = implemented_interface_names(classes, class_id);
+    let implements_iterator = interface_names
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Iterator"));
+    let implements_iterator_aggregate = interface_names
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case("IteratorAggregate"));
+    if interface_names
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Traversable"))
+        && !implements_iterator
+        && !implements_iterator_aggregate
+    {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            &class.name,
+            format!(
+                "concrete class {} cannot directly implement internal interface Traversable; implement Iterator or IteratorAggregate in the current subset",
+                class.name
+            ),
+        ));
+    }
+
+    if implements_iterator {
+        validate_core_interface_required_methods(
+            classes,
+            method_signatures,
+            class_id,
+            class,
+            "Iterator",
+            &["current", "key", "next", "rewind", "valid"],
+        )?;
+    }
+
+    if implements_iterator_aggregate {
+        validate_core_interface_required_methods(
+            classes,
+            method_signatures,
+            class_id,
+            class,
+            "IteratorAggregate",
+            &["getIterator"],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn validate_core_interface_required_methods(
+    classes: &PhpClassTable,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class_id: ClassId,
+    class: &ClassDecl,
+    interface_name: &str,
+    method_names: &[&str],
+) -> RuntimeResult<()> {
+    let mut missing = Vec::new();
+    for method_name in method_names {
+        let Some((declaring_class_id, declaring_class_name, class_method)) =
+            find_public_method(classes, class_id, method_name)
+        else {
+            missing.push(format!("{interface_name}::{method_name}()"));
+            continue;
+        };
+
+        if class_method.is_static() {
+            return Err(RuntimeError::unsupported_class_inheritance(
+                &class.name,
+                format!(
+                    "concrete class {} must implement internal interface method {interface_name}::{method_name}() as non static method; found static {}::{}()",
+                    class.name,
+                    declaring_class_name,
+                    class_method.name()
+                ),
+            ));
+        }
+
+        let class_required = public_method_required_param_count(
+            method_signatures,
+            class,
+            class_id,
+            declaring_class_id,
+            method_name,
+        );
+        if class_required > 0 {
+            return Err(RuntimeError::unsupported_class_inheritance(
+                &class.name,
+                format!(
+                    "method {}::{}() cannot require parameters for internal interface method {interface_name}::{method_name}()",
+                    declaring_class_name,
+                    class_method.name()
+                ),
+            ));
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!(
+            "concrete class {} must implement internal interface {method_word} {method_list}",
+            class.name
+        ),
+    ))
 }
 
 fn validate_interface_parameter_type_compatibility(

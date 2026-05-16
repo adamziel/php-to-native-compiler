@@ -6,19 +6,31 @@ const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array li
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 #[test]
-fn is_iterable_matches_current_array_and_traversable_object_subset() {
+fn is_iterable_matches_current_array_and_iterator_object_subset() {
     let execution = run_source(
         r#"<?php
 class Box {}
-class DirectTraversable implements Traversable {}
-class CustomIterator implements Iterator {}
-class Aggregate implements IteratorAggregate {}
+class CustomIterator implements Iterator {
+    #[ReturnTypeWillChange]
+    public function current() { return null; }
+    #[ReturnTypeWillChange]
+    public function key() { return null; }
+    #[ReturnTypeWillChange]
+    public function next() { return null; }
+    #[ReturnTypeWillChange]
+    public function rewind() { return null; }
+    #[ReturnTypeWillChange]
+    public function valid() { return false; }
+}
+class Aggregate implements IteratorAggregate {
+    #[ReturnTypeWillChange]
+    public function getIterator() { return null; }
+}
 
 $box = new Box();
-$direct = new DirectTraversable();
 $iterator = new CustomIterator();
 $aggregate = new Aggregate();
-$values = [null, false, true, 0, 3.5, "", [], [1], $box, $direct, $iterator, $aggregate];
+$values = [null, false, true, 0, 3.5, "", [], [1], $box, $iterator, $aggregate];
 foreach ($values as $value) {
     echo is_iterable($value) ? "1" : "0";
 }
@@ -29,8 +41,113 @@ echo $call([]) ? "1" : "0", $call("x") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "000000110111\n10");
+    assert_eq!(execution.stdout, "00000011011\n10");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn iterable_internal_interface_method_shape_is_enforced_for_concrete_classes() {
+    let iterator_error = run_source(
+        r#"<?php
+class Marker implements Iterator {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(iterator_error.phase, Phase::Runtime);
+    assert_eq!(iterator_error.line, 2);
+    assert_eq!(iterator_error.column, 1);
+    assert_eq!(
+        iterator_error.message,
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface methods Iterator::current(), Iterator::key(), Iterator::next(), Iterator::rewind(), Iterator::valid()"
+    );
+
+    let aggregate_error = run_source(
+        r#"<?php
+class Marker implements IteratorAggregate {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(aggregate_error.phase, Phase::Runtime);
+    assert_eq!(aggregate_error.line, 2);
+    assert_eq!(aggregate_error.column, 1);
+    assert_eq!(
+        aggregate_error.message,
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface method IteratorAggregate::getIterator()"
+    );
+
+    let static_error = run_source(
+        r#"<?php
+class Marker implements Iterator {
+    public static function current() {}
+    public function key() {}
+    public function next() {}
+    public function rewind() {}
+    public function valid() {}
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(static_error.phase, Phase::Runtime);
+    assert_eq!(static_error.line, 2);
+    assert_eq!(static_error.column, 1);
+    assert_eq!(
+        static_error.message,
+        "unsupported class inheritance for Marker: concrete class Marker must implement internal interface method Iterator::current() as non static method; found static Marker::current()"
+    );
+
+    let required_param_error = run_source(
+        r#"<?php
+class Marker implements IteratorAggregate {
+    public function getIterator($mode) {}
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(required_param_error.phase, Phase::Runtime);
+    assert_eq!(required_param_error.line, 2);
+    assert_eq!(required_param_error.column, 1);
+    assert_eq!(
+        required_param_error.message,
+        "unsupported class inheritance for Marker: method Marker::getIterator() cannot require parameters for internal interface method IteratorAggregate::getIterator()"
+    );
+
+    let inherited_error = run_source(
+        r#"<?php
+abstract class Base implements Iterator {}
+class Child extends Base {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(inherited_error.phase, Phase::Runtime);
+    assert_eq!(inherited_error.line, 3);
+    assert_eq!(inherited_error.column, 1);
+    assert_eq!(
+        inherited_error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement internal interface methods Iterator::current(), Iterator::key(), Iterator::next(), Iterator::rewind(), Iterator::valid()"
+    );
+}
+
+#[test]
+fn direct_traversable_implementation_is_a_stable_runtime_boundary() {
+    let error = run_source(
+        r#"<?php
+class Marker implements Traversable {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Marker: concrete class Marker cannot directly implement internal interface Traversable; implement Iterator or IteratorAggregate in the current subset"
+    );
 }
 
 #[test]
@@ -62,7 +179,18 @@ fn emit_ir_rejects_array_is_iterable_until_native_array_lowering_exists() {
 fn emit_ir_rejects_object_is_iterable_until_native_object_lowering_exists() {
     let error = emit_ir_source(
         r#"<?php
-class CustomIterator implements Iterator {}
+class CustomIterator implements Iterator {
+    #[ReturnTypeWillChange]
+    public function current() { return null; }
+    #[ReturnTypeWillChange]
+    public function key() { return null; }
+    #[ReturnTypeWillChange]
+    public function next() { return null; }
+    #[ReturnTypeWillChange]
+    public function rewind() { return null; }
+    #[ReturnTypeWillChange]
+    public function valid() { return false; }
+}
 echo is_iterable(new CustomIterator()) ? 1 : 0;
 "#,
     )

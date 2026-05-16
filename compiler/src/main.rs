@@ -8,9 +8,10 @@ use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
-    fixture_manifest, run_fixture_dir_with_options, FixtureManifestCompatibilityTarget,
-    FixtureManifestEntry, FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
-    PhpVersionManifest, PhpVersionManifestEntry, TestSummary,
+    fixture_manifest, run_fixture_dir_with_options, FixtureManifestCompatibilityProbeExpectation,
+    FixtureManifestCompatibilityTarget, FixtureManifestEntry, FixtureManifestOrphanSidecar,
+    FixtureManifestSummary, FixtureRunOptions, PhpVersionManifest, PhpVersionManifestEntry,
+    TestSummary,
 };
 
 fn main() -> ExitCode {
@@ -210,6 +211,12 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         }
         for target in &manifest.compatibility_targets {
             println!("{}", render_fixture_manifest_compatibility_target(target));
+            for probe_expectation in &target.probe_expectations {
+                println!(
+                    "{}",
+                    render_fixture_manifest_compatibility_probe_expectation(probe_expectation)
+                );
+            }
         }
         return Ok(0);
     }
@@ -368,9 +375,14 @@ fn render_fixture_manifest_compatibility_target(
             )
         })
         .unwrap_or_else(|| " source-pin path=- bytes=- sha256=-".to_string());
+    let probe_expectation_bytes = target
+        .probe_expectations
+        .iter()
+        .map(|probe_expectation| probe_expectation.bytes)
+        .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -386,14 +398,25 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.stderr_bytes,
         target.summary.exit_bytes,
         target.summary.phpc_only_bytes,
+        target.probe_expectations.len(),
+        probe_expectation_bytes,
         source_pin
+    )
+}
+
+fn render_fixture_manifest_compatibility_probe_expectation(
+    probe_expectation: &FixtureManifestCompatibilityProbeExpectation,
+) -> String {
+    format!(
+        "compatibility probe expectation: {} bytes={} sha256={}",
+        probe_expectation.path, probe_expectation.bytes, probe_expectation.sha256
     )
 }
 
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 6,\n");
+    output.push_str("  \"contract_version\": 7,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -611,10 +634,32 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
                     "        \"sha256\": {}\n",
                     json_string_literal(&source_pin.sha256)
                 ));
-                output.push_str("      }\n");
+                output.push_str("      },\n");
             }
-            None => output.push_str("null\n"),
+            None => output.push_str("null,\n"),
         }
+        output.push_str("      \"probe_expectations\": [\n");
+        for (probe_index, probe_expectation) in target.probe_expectations.iter().enumerate() {
+            output.push_str("        {\n");
+            output.push_str(&format!(
+                "          \"path\": {},\n",
+                json_string_literal(&probe_expectation.path)
+            ));
+            output.push_str(&format!(
+                "          \"bytes\": {},\n",
+                probe_expectation.bytes
+            ));
+            output.push_str(&format!(
+                "          \"sha256\": {}\n",
+                json_string_literal(&probe_expectation.sha256)
+            ));
+            output.push_str("        }");
+            if probe_index + 1 < target.probe_expectations.len() {
+                output.push(',');
+            }
+            output.push('\n');
+        }
+        output.push_str("      ]\n");
         output.push_str("    }");
         if index + 1 < manifest.compatibility_targets.len() {
             output.push(',');
