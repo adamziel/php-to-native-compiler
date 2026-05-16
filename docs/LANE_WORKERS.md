@@ -221,7 +221,11 @@ Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
 593, 598, 603, 608, 613, and 618 closed recent runtime slots, and Milestones 569,
 573, 588, 591, 596, 601, 606, 611, and 616 closed recent IR/lowering slots.
-Milestones 604, 609, 614, and 619 closed recent tests/docs queue refreshes. The
-next batch should again
-keep one active milestone per lane and should use separate worktrees and
-separate `CARGO_TARGET_DIR` values when workers run in parallel.
+Milestones 604, 609, 614, and 619 closed recent tests/docs queue refreshes.
+Milestone 1094 closed the runtime clone/reference-slot mirroring slice,
+Milestone 1095 closed the promoted constructor property parameter parse
+boundary, Milestone 1096 closed the native reference-assignment rejection
+boundary, and Milestone 1097 closed fixture-runner compare-summary coverage.
+The next batch should again keep one active milestone per lane and should use
+separate worktrees and separate `CARGO_TARGET_DIR` values when workers run in
+parallel.

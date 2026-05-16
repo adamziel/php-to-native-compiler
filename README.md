@@ -184,7 +184,9 @@ incorrect native code.
   dynamic property-name reads/writes for existing public slots and `stdClass`
   public dynamic slots when property-name values are strings or integers,
   `clone $object` for current object values without declared `__clone`
-  methods, using fresh object handles and shallow-copied property slots,
+  methods, using fresh object handles, shallow-copied property slots, and
+  bounded public-property reference-slot mirroring for direct-variable clone
+  assignments,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata, declared empty-trait metadata,
@@ -229,7 +231,7 @@ visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 property defaults beyond the current untyped constant-expression instance
-property slice,
+property slice, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 magic methods beyond direct missing-property
@@ -284,7 +286,10 @@ include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, dynamic calls, `assert()`,
 runtime constant tables, PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
-in generated code.
+in generated code. Statement-form reference assignment has its own native
+rejection boundary for direct variable, array-offset, object-property,
+function/method/static-call, magic `__get`, and `ArrayAccess` source or target
+shapes.
 
 ### Tests And Fixtures
 

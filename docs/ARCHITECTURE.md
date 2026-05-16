@@ -36,15 +36,19 @@ symbol-table alias metadata, not general runtime reference containers. A direct
 variable may route to one or more direct array-offset aliases; this lets the
 current runtime mirror the bounded PHP behavior where copying a direct array
 or declared public object-property array that contains a referenced direct slot
-preserves that slot's reference identity across a copied direct array.
+preserves that slot's reference identity across a copied direct array. Direct
+object-variable clone assignments also mirror public object-property alias
+metadata from the cloned source variable to the target variable, so the current
+bounded reference-slot model can keep public property slots shared across a
+fresh object handle for the covered `clone $object` assignment shape.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
-object name. Arbitrary nested copied reference slots, object-property reference
-sources, ArrayAccess
-references, reference array literals, exact alias destruction ordering, and
-native lowering still require the future runtime reference/COW value model.
+object name. Arbitrary nested copied reference slots, non-public or magic clone
+alias mirroring, ArrayAccess references, reference array literals, exact alias
+destruction ordering, and native lowering still require the future runtime
+reference/COW value model.
 
 ## Compiler Crate
 
@@ -419,6 +423,14 @@ on PHP semantics first.
 Tradeoff: Milestone 1 native lowering is smaller than interpreter support. The
 backend must return a codegen error for unsupported constructs rather than
 pretend to compile them.
+Statement-form reference assignment has a dedicated native rejection boundary,
+separate from general mutation lowering. `Stmt::ReferenceAssign` is rejected
+before lowering its source or target operands in both LLVM IR emission and the
+C assembly fallback path, including direct variable, array-offset,
+object-property, function-call, method-call, static-call, magic `__get`, and
+`ArrayAccess`-shaped sources or targets. Real support depends on native
+reference containers, alias-aware symbol tables, copy-on-write, object/property
+alias roots, and exact diagnostic behavior.
 
 Current assembly emission order:
 
@@ -1530,7 +1542,8 @@ parent-to-child slot order.
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
 and private names as `\0ClassName\0name` using the declaring class name.
-Dynamic properties, non-constant or typed property defaults, trait/interface properties, and
+Dynamic properties, non-constant or typed property defaults, promoted
+constructor properties, trait/interface properties, and
 non-public property visibility-context behavior beyond same-declaring-class
 private access and class/ancestor protected access remain outside the current
 object model.

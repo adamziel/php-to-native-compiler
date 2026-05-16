@@ -198,6 +198,12 @@ impl Parser {
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
+                if self.check(is_promoted_property_parameter_start) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_promoted_property_parameter_message(),
+                    ));
+                }
                 let type_decl = if self.check(is_parameter_type_start) {
                     Some(self.parse_type_decl(unsupported_parameter_type_message())?)
                 } else {
@@ -5695,6 +5701,17 @@ fn is_parameter_type_start(kind: &TokenKind) -> bool {
             | TokenKind::True
             | TokenKind::False
     )
+}
+
+fn is_promoted_property_parameter_start(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Public | TokenKind::Protected | TokenKind::Private | TokenKind::Readonly
+    )
+}
+
+fn unsupported_promoted_property_parameter_message() -> &'static str {
+    "unsupported promoted property parameter: constructor property promotion is not implemented"
 }
 
 fn unsupported_parameter_type_message() -> &'static str {

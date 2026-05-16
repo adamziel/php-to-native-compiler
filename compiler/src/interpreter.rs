@@ -1037,6 +1037,47 @@ impl SymbolTable {
         }
     }
 
+    fn mirror_public_object_property_aliases_from_clone(
+        &mut self,
+        target_object_name: &str,
+        source_object_name: &str,
+    ) {
+        if target_object_name == source_object_name {
+            return;
+        }
+
+        let additions: Vec<(String, ArrayOffsetAlias)> = self
+            .array_offset_aliases
+            .iter()
+            .flat_map(|(alias_name, aliases)| {
+                aliases.iter().filter_map(move |alias| match &alias.root {
+                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                        if object == source_object_name =>
+                    {
+                        Some((
+                            alias_name.clone(),
+                            ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                                    object: target_object_name.to_string(),
+                                    property: property.clone(),
+                                },
+                                keys: alias.keys.clone(),
+                            },
+                        ))
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
+
+        for (alias_name, alias) in additions {
+            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+        }
+    }
+
     fn sync_array_offset_aliases_for_static_root(&mut self, root_name: &str) {
         let syncs: Vec<(String, Value)> = self
             .array_offset_aliases
@@ -4996,6 +5037,16 @@ impl Interpreter {
                             }
                         }
                         _ => {}
+                    }
+                }
+                if !target_is_alias && matches!(value, Value::Object(_)) {
+                    if let Expr::Clone { expr, .. } = expr {
+                        if let Expr::Variable(source_name, _) = expr.as_ref() {
+                            scope.mirror_public_object_property_aliases_from_clone(
+                                name,
+                                source_name,
+                            );
+                        }
                     }
                 }
                 Ok(value)

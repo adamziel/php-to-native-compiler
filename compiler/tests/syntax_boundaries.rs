@@ -3,6 +3,7 @@ use php_compiler::run_source;
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
@@ -492,6 +493,51 @@ fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_promoted_property_parameters_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nclass User {\n    public function __construct(public string $name) {}\n}\n",
+            3,
+            33,
+        ),
+        (
+            "<?php\nclass User {\n    public function __construct(private $id) {}\n}\n",
+            3,
+            33,
+        ),
+        (
+            "<?php\nclass User {\n    public function __construct(protected readonly string $name) {}\n}\n",
+            3,
+            33,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported promoted property parameter: constructor property promotion is not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_promoted_property_parameters_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nclass User {\n    public function __construct(public string $name) {}\n}\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported promoted property parameter: constructor property promotion is not implemented"
+    );
+}
+
+#[test]
 fn malformed_clone_expression_has_stable_parse_errors() {
     let cases = [
         (
@@ -893,7 +939,7 @@ fn emit_ir_rejects_reference_assignment_at_codegen_boundary() {
         php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
 }
 
 #[test]

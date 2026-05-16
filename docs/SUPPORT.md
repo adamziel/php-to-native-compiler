@@ -150,7 +150,13 @@
   assignment preserves whole-property aliases but detaches narrower
   array-offset aliases into the previous property array before storing the
   replacement value; whole-object-variable reassignment still removes stale
-  property-root alias metadata before later copies. Arbitrary nested copied reference slots,
+  property-root alias metadata before later copies. When a direct variable is
+  assigned `clone $object` from another direct object variable, existing public
+  object-property and public object-property array-offset alias metadata is
+  mirrored to the cloned variable so writes through the original property, the
+  clone property, or the alias observe the same bounded reference slot for the
+  covered public-property slice. Arbitrary nested copied reference slots,
+  non-public clone alias mirroring, magic-property clone alias mirroring,
   reference array literals, ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct public
@@ -1950,6 +1956,7 @@
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
   anonymous class expressions,
+  promoted constructor property parameters,
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
@@ -2240,12 +2247,15 @@
   arguments. `clone $object` expressions evaluate the operand, require a
   current object value,
   allocate a fresh process-local object handle, shallow-copy the object's
-  current property slots, and return the cloned object. Object-valued
-  properties keep their existing handles under the current no-reference and
-  no-copy-on-write model. Classes that declare `__clone`, non-object operands,
-  private/protected clone-method visibility behavior, destructor/reuse
-  behavior, exact PHP `Error` objects, partial-output behavior, references,
-  copy-on-write, and native lowering remain unsupported.
+  current property slots, mirror the current bounded public-property
+  reference-slot metadata for direct-variable `clone $object` assignments, and
+  return the cloned object. Object-valued properties keep their existing
+  handles under the current no-copy-on-write model. Classes that declare
+  `__clone`, non-object operands, clone expressions outside direct-variable
+  assignments for reference-slot mirroring, private/protected clone-method
+  visibility behavior, destructor/reuse behavior, exact PHP `Error` objects,
+  partial-output behavior, full references, copy-on-write, and native lowering
+  remain unsupported.
   `$value instanceof Name` executes for the current bounded runtime slice:
   non-object left operands return `false`, object operands check declared class
   metadata, the current single-parent chain, and recorded `implements`
@@ -2768,6 +2778,13 @@
   and linked native execution, heap-owned strings, arrays, objects, resources,
   references/copy-on-write, stack frames, diagnostics, and WordPress host state
   remain unsupported in native lowering.
+  Statement-form reference assignment is an explicit native codegen boundary:
+  `phpc compile --emit-ir` and `--emit-asm` reject direct variable,
+  array-offset, object-property, function-call, method-call, static-call,
+  magic `__get`, and `ArrayAccess` reference sources or targets before
+  lowering source operands or invoking an assembly backend. Native support
+  still needs reference containers, alias-aware symbol tables, copy-on-write,
+  object/property alias roots, and exact native diagnostics.
   Native binary arithmetic currently lowers `+`, `-`, and `*` when both
   operands are already same-type lowerable floats, or when both operands are
   lowerable integers and the integer result is statically proven not to
@@ -4676,6 +4693,7 @@
   abstract-method implementation enforcement, final inheritance/method
   enforcement, readonly class semantics, readonly properties, typed property
   storage and enforcement,
+  promoted constructor properties,
   property initialization rules beyond the current untyped constant-expression
   default subset, inheritance interactions,
   multiple properties in one declaration, per-property defaults in
@@ -4834,7 +4852,9 @@
   dynamic PHP features.
 - A fixture can opt out of system PHP comparison with a sibling `.phpc-only`
   marker file when the committed `phpc` behavior intentionally differs from
-  system PHP, such as stable project-specific runtime diagnostics.
+  system PHP, such as stable project-specific runtime diagnostics. The
+  `phpc test --compare-php` CLI summary reports compared and skipped counts so
+  these opt-outs stay visible in fixture-runner output.
 
 ## Unsupported
 
@@ -4875,6 +4895,7 @@
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
   autoload-triggered parent class resolution,
+  promoted constructor properties,
   typed property storage/enforcement, non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,

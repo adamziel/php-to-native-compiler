@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
 fn phpc_run_still_handles_current_mutation_subset() {
@@ -44,13 +45,46 @@ if (isset($missing)) {
 }
 
 #[test]
+fn phpc_run_still_handles_current_reference_assignment_subset() {
+    let execution = run_source(
+        r#"<?php
+class MagicBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+$value = "start";
+$alias =& $value;
+$alias = "direct";
+echo $value, "\n";
+
+$items = ["slot" => "array"];
+$arrayAlias =& $items["slot"];
+$arrayAlias = "array-updated";
+echo $items["slot"], "\n";
+
+$storage = "magic";
+$box = new MagicBox();
+$magicAlias =& $box->missing;
+$magicAlias = "magic-updated";
+echo $storage;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "direct\narray-updated\nmagic-updated");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
     for source in [
         "<?php\n$value = 1;\n$value += 2;\n",
         "<?php\n$value = null;\n$value ??= 2;\n",
         "<?php\n$value = 1;\n$value++;\n",
         "<?php\n$value = 1;\necho ($value = 2);\n",
-        "<?php\n$a = 1;\n$b = 2;\n$a =& $b;\n",
         "<?php\n$value = 1;\necho ($value += 2);\n",
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",
@@ -62,6 +96,42 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_reference_assignment_forms_with_specific_boundary() {
+    for source in [
+        "<?php\n$a = 1;\n$b = 2;\n$a =& $b;\n",
+        "<?php\n$alias =& $items[0];\n",
+        "<?php\n$alias =& $items[];\n",
+        "<?php\n$alias =& $box->items[0];\n",
+        "<?php\n$property = \"items\";\n$alias =& $box->$property;\n",
+        "<?php\n$alias =& $box->missing;\n",
+        "<?php\n$alias =& identity($value);\n",
+        "<?php\n$alias =& $box->identity($value);\n",
+        "<?php\n$alias =& Box::identity($value);\n",
+        "<?php\n$alias =& self::identity($value);\n",
+        "<?php\n$class = \"Box\";\n$alias =& $class::identity($value);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_reference_assignment_before_lowering_source_operands() {
+    for source in [
+        "<?php\n$alias =& $items[missing_call()];\n",
+        "<?php\n$alias =& $box->items[missing_call()];\n",
+        "<?php\n$alias =& identity(missing_call());\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
     }
 }
 
@@ -82,11 +152,50 @@ fn emit_ir_rejects_mutation_before_lowering_nested_operands() {
 }
 
 #[test]
+fn emit_asm_rejects_reference_assignment_before_backend_execution() {
+    let error = emit_asm_source("<?php\n$alias =& $box->missing;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
+}
+
+#[test]
 fn emit_asm_rejects_mutation_before_backend_execution() {
     let error = emit_asm_source("<?php\n$value = 1;\n$value += 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+}
+
+#[test]
+fn native_reference_assignment_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1096/native_reference_assignment_boundary.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1096/native_reference_assignment_boundary_emit_ir.cli"),
+    )
+    .expect("native reference-assignment CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
 }
 
 #[test]

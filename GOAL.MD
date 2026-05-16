@@ -102,7 +102,8 @@ bounded append direct-array, object-property, and string-keyed `$GLOBALS`
 array-offset reference sources, plus stable ArrayAccess reference-source
 boundaries that name the missing by-reference `offsetGet()`/reference-container
 work, plus bounded magic `__get` reference sources for missing direct object
-properties when `__get()` returns a direct variable by reference.
+properties when `__get()` returns a direct variable by reference, plus bounded
+clone reference-slot mirroring for direct-variable public property aliases.
 The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global

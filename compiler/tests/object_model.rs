@@ -3344,6 +3344,44 @@ var_dump($box_child === $copy_child);
 }
 
 #[test]
+fn clone_expression_mirrors_public_property_reference_slots() {
+    let source = r#"<?php
+class Box {
+    public $items = [];
+}
+
+$box = new Box();
+$box->items["slot"] = "original";
+$slot =& $box->items["slot"];
+
+$copy = clone $box;
+$copy->items["slot"] = "copy-slot";
+echo $slot, "|", $box->items["slot"], "|", $copy->items["slot"], "\n";
+
+$slot = "alias-slot";
+echo $slot, "|", $box->items["slot"], "|", $copy->items["slot"], "\n";
+
+$copy->items = ["slot" => "detached"];
+echo $slot, "|", $box->items["slot"], "|", $copy->items["slot"], "\n";
+
+$items =& $box->items;
+$copy2 = clone $box;
+$copy2->items["slot"] = "whole-property";
+echo $items["slot"], "|", $box->items["slot"], "|", $copy2->items["slot"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "copy-slot|copy-slot|copy-slot\n\
+alias-slot|alias-slot|alias-slot\n\
+alias-slot|alias-slot|detached\n\
+whole-property|whole-property|whole-property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 

@@ -4,6 +4,90 @@
 
 Implemented:
 
+- Added Milestone 1097, deterministic compiler-output/CLI coverage for the
+  fixture-runner comparison summary contract. `phpc test --compare-php` now has
+  an integration test that installs a fake `php` binary on `PATH`, runs one
+  comparable fixture plus one sibling `.phpc-only` fixture, and asserts the CLI
+  reports both `1 compared` and `1 skipped` while both committed `phpc`
+  expectations pass. This does not change fixture execution semantics, system
+  PHP comparison behavior, comparison normalization, PHP-version-specific
+  diagnostics, or runtime/native support. Verification so far:
+  `cargo test -p phpc --test php_comparison
+  cli_compare_php_summary_counts_phpc_only_skips_with_fake_php --
+  --test-threads=1`, `cargo fmt --check`, `cargo test -p phpc --test
+  php_comparison -- --test-threads=1`, and scoped `git diff --check` passed
+  in the compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1096, a dedicated native reference-assignment rejection
+  boundary. `phpc compile --emit-ir` and `--emit-asm` now reject
+  statement-form `=&` through a specific codegen diagnostic instead of the
+  broader mutation boundary, before lowering direct variable, array-offset,
+  object-property, function-call, method-call, static-call, magic `__get`, or
+  `ArrayAccess`-shaped reference sources or targets. This does not implement
+  native reference containers, alias-aware symbol tables, copy-on-write,
+  object/property alias roots, source-operand lowering for reference
+  assignment, backend execution for `=&`, or exact native PHP diagnostics.
+  Verification so far: `cargo test -p phpc --test native_mutation_boundary
+  reference_assignment -- --test-threads=1`, `cargo test -p phpc --test
+  native_mutation_boundary -- --test-threads=1`, `cargo test -p phpc --test
+  syntax_boundaries emit_ir_rejects_reference_assignment_at_codegen_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_object_property_unset_lowering -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1096`, `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1096`, direct
+  `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1096/native_reference_assignment_boundary.php
+  --emit-ir` returned exit `1` with the pinned codegen diagnostic, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the IR lane. Full gate
+  deferred until integration.
+
+- Added Milestone 1095, a parser/syntax-boundary diagnostic for unsupported
+  promoted constructor property parameters. Parameter-list visibility and
+  `readonly` tokens such as `public string $name`, `private $id`, and
+  `protected readonly string $name` now fail with a stable parse diagnostic
+  before AST/runtime construction instead of falling through to a generic
+  parameter-name error. This does not implement constructor property
+  promotion, constructor initialization ordering, typed or readonly property
+  enforcement, reflection metadata, exact PHP diagnostics, or native lowering.
+  Verification so far: `cargo test -p phpc --test syntax_boundaries
+  unsupported_promoted_property_parameters_have_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_promoted_property_parameters_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test unsupported_syntax_features_cli
+  -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_syntax_features`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/unsupported_syntax_features`, direct `phpc run`
+  and `phpc compile --emit-ir` checks for the new fixture returned the
+  expected parse error and exit `1`, `cargo fmt --check`, `cargo test -p phpc
+  --test syntax_boundaries -- --test-threads=1`, and scoped `git diff
+  --check` passed in the parser lane. Full gate deferred until integration.
+
+- Added Milestone 1094, a bounded clone/reference-slot mirroring slice.
+  Direct-variable assignments of the form `$copy = clone $object;` now mirror
+  existing public object-property and public object-property array-offset alias
+  metadata from the direct source object variable onto the cloned direct target
+  variable. Writes through a covered alias, the original public property slot,
+  or the cloned public property slot now observe the same bounded reference
+  slot, while whole-property replacement on one object still detaches narrower
+  array-offset aliases for that replaced property root. This does not implement
+  clone alias mirroring for non-direct clone expressions, non-public property
+  aliases, magic-property aliases, ArrayAccess references, declared `__clone`
+  dispatch, private/protected clone-method visibility behavior, full PHP
+  reference containers, copy-on-write containers, exact alias destruction
+  ordering, or native lowering. Verification so far: local PHP probes for
+  public property and nested public-property array reference slots across
+  clone, `cargo fmt --check`, `cargo test -p phpc --test object_model
+  clone_expression_mirrors_public_property_reference_slots --
+  --test-threads=1`, `cargo test -p phpc --test object_model
+  clone_expression -- --test-threads=1`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_public_object_property --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1094`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1094 --compare-php`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1089`, direct `phpc run` for the new fixture, and
+  scoped `git diff --check` passed in the runtime lane. Full gate deferred
+  until integration.
+
 - Added Milestone 1093, a bounded magic `__get` reference-source slice.
   Statement-form `$alias =& $object->missing;` and
   `$alias =& $object->$property;` now alias a direct variable target to the

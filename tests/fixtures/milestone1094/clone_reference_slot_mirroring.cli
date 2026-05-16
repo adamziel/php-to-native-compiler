@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1094/clone_reference_slot_mirroring.php
+copy-slot|copy-slot|copy-slot
+alias-slot|alias-slot|alias-slot
+alias-slot|alias-slot|detached
+whole-property|whole-property|whole-property

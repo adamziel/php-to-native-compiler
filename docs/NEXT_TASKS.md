@@ -10706,6 +10706,52 @@ handled.
   non-public magic-property behavior, full PHP reference containers,
   copy-on-write containers, exact notices, or native lowering.
 
+## Milestone 1094: Clone Reference-Slot Mirroring
+
+- [x] Runtime/value-model lane: add bounded public-property
+  reference-slot mirroring for direct clone assignments. `$copy = clone
+  $object;` mirrors existing public object-property and public object-property
+  array-offset alias metadata from the direct source object variable to the
+  direct clone target, so writes through the alias, original property path, or
+  clone property path observe the same bounded reference slot. This is not
+  clone alias mirroring for non-direct clone expressions, non-public property
+  aliases, magic-property aliases, ArrayAccess references, declared `__clone`
+  dispatch, private/protected clone-method visibility behavior, full PHP
+  reference containers, copy-on-write containers, exact alias destruction
+  ordering, or native lowering.
+
+## Milestone 1095: Promoted Property Parameter Boundary
+
+- [x] Parser/syntax-boundary lane: add a stable parse diagnostic for
+  unsupported promoted constructor property parameters such as
+  `public string $name`, `private $id`, and
+  `protected readonly string $name` in parameter lists. This keeps constructor
+  property promotion out of the AST/runtime until property declaration,
+  constructor initialization ordering, typed/readonly property enforcement,
+  reflection metadata, exact PHP diagnostics, and native lowering are
+  implemented.
+
+## Milestone 1096: Native Reference-Assignment Boundary
+
+- [x] IR/lowering lane: give statement-form `=&` a dedicated native codegen
+  rejection boundary for `phpc compile --emit-ir` and `--emit-asm`, separate
+  from the broader mutation boundary. The rejection fires before lowering
+  direct variable, array-offset, object-property, function-call, method-call,
+  static-call, magic `__get`, or `ArrayAccess` reference sources or targets.
+  This is not native reference containers, alias-aware symbol tables,
+  copy-on-write, object/property alias roots, source-operand lowering,
+  backend execution for `=&`, or exact native PHP diagnostics.
+
+## Milestone 1097: Fixture Runner Summary Contract
+
+- [x] Compiler-output/CLI lane: add deterministic `phpc test --compare-php`
+  CLI coverage proving that compared fixtures and sibling `.phpc-only`
+  opt-outs are both reflected in the summary counts. The test uses a fake
+  `php` binary on `PATH` so the contract is independent of the host PHP
+  installation. This does not change fixture execution semantics, system PHP
+  comparison behavior, comparison normalization, PHP-version-specific
+  diagnostics, or runtime/native support.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

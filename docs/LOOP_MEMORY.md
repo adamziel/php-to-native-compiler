@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T17:05:00Z
+
+- Checkpoint before this task:
+  `c15fadc2 runtime: add magic get reference sources`, pushed to
+  `origin/master`.
+- Task attempted: four parallel lane batch from separate worktrees. Runtime
+  lane added bounded clone reference-slot mirroring for direct
+  `$copy = clone $object;` assignments over public object-property alias
+  metadata. Parser lane added a stable parse boundary for promoted constructor
+  property parameters. IR/lowering lane split statement-form `=&` into a
+  dedicated native codegen rejection boundary. Compiler-output lane added
+  deterministic fake-`php` coverage for `phpc test --compare-php` compared
+  and skipped summary counts.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/native_mutation_boundary.rs`,
+  `compiler/tests/php_comparison.rs`, new fixtures under
+  `tests/fixtures/milestone1094`, `tests/fixtures/milestone1096`, and
+  `tests/fixtures/unsupported_syntax_features`, plus `README.md`,
+  `GOAL.MD`, `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: each lane reported focused checks passing in its own
+  worktree and target directory. Integration focused checks and serialized
+  checkpoint gate are pending in the main workspace.
+- Remaining semantic gaps: full PHP references, copy-on-write containers,
+  alias mirroring outside the direct public-property clone slice,
+  constructor property promotion execution, native reference lowering, exact
+  PHP diagnostics, and WordPress SAPI/database/filesystem/request fidelity
+  remain missing.
+- Next concrete task: run integrated focused checks, run the serialized
+  checkpoint gate, commit, push, then start the next parallel lane batch from
+  the new clean checkpoint.
+
 ## Loop Event 2026-05-16T16:27:15Z
 
 - Checkpoint before this task:
