@@ -186,8 +186,10 @@ incorrect native code.
   methods, using fresh object handles and shallow-copied property slots,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
-  including declared interface metadata, declared empty-trait metadata, and
-  declared unit-enum metadata
+  including declared interface metadata, declared empty-trait metadata,
+  declared unit-enum metadata, bounded `is_countable()`/`count()` for
+  `Countable`, and bounded `is_iterable()` metadata for
+  `Traversable`/`Iterator`/`IteratorAggregate`
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, bounded truthy assertions, object/class metadata, and
   debug-style output

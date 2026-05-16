@@ -1046,7 +1046,13 @@ catalog for `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`,
 `ArrayAccess`, `Countable`, and `Stringable` in `interface_exists()` and
 `get_declared_interfaces()`, while leaving method enforcement, iterator
 execution, protocol validation, broader internal catalogs, exact diagnostics,
-references/copy-on-write, and native lowering explicit gaps. Milestone 1020
+references/copy-on-write, and native lowering explicit gaps. Milestone 1043
+adds bounded `is_iterable()` metadata recognition for objects that explicitly
+record `implements Traversable`, `implements Iterator`, or
+`implements IteratorAggregate`, while leaving object `foreach`, iterator
+method execution, `getIterator()`, generators, protocol validation, exact
+diagnostics, references/copy-on-write, and native lowering explicit gaps.
+Milestone 1020
 adds bounded direct object-property `ArrayAccess` dispatch when a visible
 property value is an `ArrayAccess` object, covering single-key read/write,
 `isset`, `empty`, `??`, and `unset` while leaving nested chains, append,

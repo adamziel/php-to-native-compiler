@@ -9826,6 +9826,14 @@ handled.
   `Traversable`/iterator protocol support, inaccessible/static count methods,
   non-integer count-result coercion, exact diagnostics, references/copy-on-write,
   or native lowering.
+- [x] Object semantics lane: add bounded `is_iterable()` metadata support for
+  iterator-like objects.
+  Milestone 1043 covers `is_iterable($object)` for object values whose class
+  metadata records `implements Traversable`, `implements Iterator`, or
+  `implements IteratorAggregate`. This is not object `foreach`, `Iterator`
+  method execution, `IteratorAggregate::getIterator()`, generators,
+  direct-`Traversable` validation rules, protocol/signature enforcement, exact
+  diagnostics, references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess chains,
   append compound assignment, ArrayAccess iteration, method enforcement for

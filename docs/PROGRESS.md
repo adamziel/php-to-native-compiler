@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 1043, bounded `is_iterable($object)` metadata support for
+  objects whose class metadata records `implements Traversable`,
+  `implements Iterator`, or `implements IteratorAggregate`. Arrays keep the
+  existing iterable behavior, and scalar/null/plain-object values remain
+  false. This is metadata recognition only: `foreach` over iterator objects,
+  `Iterator` method execution, `IteratorAggregate::getIterator()`, generator
+  semantics, direct-`Traversable` PHP validation rules, interface signature
+  enforcement, by-reference iteration, references/copy-on-write, exact
+  diagnostics, and native lowering remain unsupported. Verification so far:
+  `cargo test -p phpc --test iterable_type_builtin -- --test-threads=1` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1043`.
+
 - Added Milestone 1042, bounded short array destructuring assignment as an
   alias for the existing positional statement-form `list(...)` subset.
   `[$a, $b] = expr;` now parses to the same direct-variable list assignment

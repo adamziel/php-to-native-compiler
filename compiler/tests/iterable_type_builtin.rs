@@ -3,15 +3,22 @@ use php_compiler::{emit_ir_source, run_source};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 #[test]
-fn is_iterable_matches_current_array_only_subset() {
+fn is_iterable_matches_current_array_and_traversable_object_subset() {
     let execution = run_source(
         r#"<?php
 class Box {}
+class DirectTraversable implements Traversable {}
+class CustomIterator implements Iterator {}
+class Aggregate implements IteratorAggregate {}
 
 $box = new Box();
-$values = [null, false, true, 0, 3.5, "", [], [1], $box];
+$direct = new DirectTraversable();
+$iterator = new CustomIterator();
+$aggregate = new Aggregate();
+$values = [null, false, true, 0, 3.5, "", [], [1], $box, $direct, $iterator, $aggregate];
 foreach ($values as $value) {
     echo is_iterable($value) ? "1" : "0";
 }
@@ -22,7 +29,7 @@ echo $call([]) ? "1" : "0", $call("x") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "000000110\n10");
+    assert_eq!(execution.stdout, "000000110111\n10");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -49,6 +56,20 @@ fn emit_ir_rejects_array_is_iterable_until_native_array_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_ARRAY_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_object_is_iterable_until_native_object_lowering_exists() {
+    let error = emit_ir_source(
+        r#"<?php
+class CustomIterator implements Iterator {}
+echo is_iterable(new CustomIterator()) ? 1 : 0;
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }
 
 #[test]

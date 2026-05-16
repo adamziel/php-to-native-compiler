@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `89cc1bf5 docs: record short array destructuring gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1043, bounded `is_iterable($object)` metadata
+  support for `Traversable`, `Iterator`, and `IteratorAggregate` objects.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/iterable_type_builtin.rs`, `tests/fixtures/milestone1043/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`,
+  `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test iterable_type_builtin -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1043`, and
+  `git diff --check` passed.
+- Current WordPress frontier: object metadata for iterator-like interfaces can
+  make `is_iterable($object)` true without claiming object iteration.
+- Remaining semantic gaps: object `foreach`, `Iterator` method execution,
+  `IteratorAggregate::getIterator()`, generators, direct-`Traversable` PHP
+  validation rules, protocol/signature enforcement, exact diagnostics,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: rerun focused checks after docs, then the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1b65aba5 docs: record wp options autoload readback gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1042, bounded statement-form short `[...]`

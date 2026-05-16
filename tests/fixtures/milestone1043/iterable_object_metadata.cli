@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1043/iterable_object_metadata.php
+exit: 0
+stdout:
+00000011011
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -628,8 +628,10 @@
   numeric-string subset as scalar arithmetic. `is_countable` returns true for
   arrays and objects whose class metadata records `implements Countable`, and
   false for the current scalar/null/non-`Countable` object values.
-  `is_iterable` returns true for arrays and false for the current
-  scalar/null/object values.
+  `is_iterable` returns true for arrays and objects whose class metadata
+  records `implements Traversable`, `implements Iterator`, or
+  `implements IteratorAggregate`, and false for the current
+  scalar/null/non-iterable object values.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -3484,8 +3486,10 @@
   numeric-string subset as scalar arithmetic. `is_countable` returns true for
   arrays and objects whose class metadata records `implements Countable`, and
   false for the current scalar/null/non-`Countable` object values.
-  `is_iterable` returns true for arrays and false for the current
-  scalar/null/object values.
+  `is_iterable` returns true for arrays and objects whose class metadata
+  records `implements Traversable`, `implements Iterator`, or
+  `implements IteratorAggregate`, and false for the current
+  scalar/null/non-iterable object values.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -3508,8 +3512,9 @@
   callable-name output parameter,
   environment-specific legacy aliases such as `is_real`,
   extension/resource-aware type checks, full `Countable` interface method
-  enforcement, and `Traversable`/generator object semantics are not
-  implemented.
+  enforcement, `foreach` over iterator objects, `Iterator` method execution,
+  `IteratorAggregate::getIterator()`, direct-`Traversable` validation rules,
+  and generator object semantics are not implemented.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins. Native lowering folds only direct calls whose name argument is an

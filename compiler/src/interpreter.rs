@@ -12520,7 +12520,7 @@ impl Interpreter {
             }
             "is_iterable" => {
                 expect_arity(name, &args, 1, span)?;
-                Ok(Value::Bool(args[0].is_iterable()))
+                Ok(Value::Bool(self.is_iterable_value(&args[0])))
             }
             "is_callable" => {
                 if !(1..=2).contains(&args.len()) {
@@ -14961,6 +14961,21 @@ impl Interpreter {
             Value::Object(object) => self
                 .classes
                 .implements_interface(object.class_id(), "Countable"),
+            _ => false,
+        }
+    }
+
+    fn is_iterable_value(&self, value: &Value) -> bool {
+        match value {
+            Value::Array(_) => true,
+            Value::Object(object) => {
+                let class_id = object.class_id();
+                self.classes.implements_interface(class_id, "Traversable")
+                    || self.classes.implements_interface(class_id, "Iterator")
+                    || self
+                        .classes
+                        .implements_interface(class_id, "IteratorAggregate")
+            }
             _ => false,
         }
     }

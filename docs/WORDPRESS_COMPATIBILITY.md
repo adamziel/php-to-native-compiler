@@ -1301,7 +1301,12 @@ that to a bounded core interface catalog for `Traversable`,
 and `Stringable` in `interface_exists()` and `get_declared_interfaces()`,
 while leaving method enforcement, iterator execution, protocol validation,
 broader internal catalogs, exact diagnostics, references/copy-on-write, and
-native lowering explicit gaps. Milestone 1014 adds bounded direct
+native lowering explicit gaps. Milestone 1043 adds bounded `is_iterable()`
+metadata recognition for objects that explicitly record `implements
+Traversable`, `implements Iterator`, or `implements IteratorAggregate`, while
+leaving object `foreach`, iterator method execution, `getIterator()`,
+generators, protocol validation, exact diagnostics, references/copy-on-write,
+and native lowering explicit gaps. Milestone 1014 adds bounded direct
 object-offset `ArrayAccess` dispatch
 for classes that declare `implements ArrayAccess`, covering direct
 read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while

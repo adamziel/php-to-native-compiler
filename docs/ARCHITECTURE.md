@@ -888,6 +888,10 @@ numeric-string grammar proves the result statically. Direct `is_countable` and
 operands only, direct `is_object` calls fold to `false` for already-lowerable
 scalar/null/string operands only, and direct scalar/null/string
 `get_debug_type` calls fold to the current runtime type-name strings.
+Interpreter `is_iterable()` also recognizes object metadata that records
+`implements Traversable`, `implements Iterator`, or
+`implements IteratorAggregate`; this is not native lowering or object iterator
+execution.
 Direct `is_callable($value)` calls fold when `$value` is an already-lowerable
 string value with a uniform known lookup result in the documented builtin
 table, or when `$value` is an already-lowerable non-string scalar/null value,
