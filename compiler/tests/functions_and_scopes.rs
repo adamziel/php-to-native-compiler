@@ -2154,6 +2154,68 @@ echo $alias[0];
 }
 
 #[test]
+fn reference_assignment_dynamic_public_object_property_source_aliases_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $value = "initial";
+}
+
+$box = new Box();
+$property = "value";
+$alias =& $box->$property;
+$alias = "from-alias";
+echo $box->value;
+echo "|";
+$box->$property = "from-property";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-property");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_dynamic_stdclass_property_source_materializes_missing_slot() {
+    let execution = run_source(
+        r#"<?php
+$box = new stdClass();
+$property = "created";
+$alias =& $box->$property;
+echo $alias === null ? "null" : "not-null";
+echo "|";
+$alias = "from-alias";
+echo $box->created;
+echo "|";
+$box->$property = "from-property";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "null|from-alias|from-property");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_dynamic_declared_object_missing_property_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+$property = "missing";
+$alias =& $box->$property;
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
 fn reference_assignment_object_property_array_offset_source_aliases_direct_slot() {
     let execution = run_source(
         r#"<?php

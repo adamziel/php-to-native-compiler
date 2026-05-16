@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T16:06:12Z
+
+- Checkpoint before this task:
+  `6c77ca77 docs: record public property reference source gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1090, bounded dynamic public object-property
+  reference-source aliases. `$alias =& $object->$property;` now binds a direct
+  variable alias target to an evaluated public property name on a direct object
+  variable when the property expression resolves to a string or integer.
+  Existing public declared slots and existing dynamic public slots use the
+  same public-property alias route as named property sources, and allowed
+  dynamic-property objects such as `stdClass` materialize a missing selected
+  property as `null` before binding.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1090/dynamic_public_object_property_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: local PHP 8.2.29 probes for dynamic public
+  object-property reference sources, `cargo fmt --check`, `cargo test -p
+  phpc --test functions_and_scopes reference_assignment_dynamic --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1090 --compare-php`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_public_object_property --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property -- --test-threads=1`, `cargo test -p
+  phpc --test object_model dynamic_property -- --test-threads=1`, and `cargo
+  check -p php_runtime -p phpc` passed.
+- Remaining semantic gaps: dynamic-property sources on non-direct object
+  expressions, missing dynamic properties on classes that do not allow dynamic
+  public slots, magic `__get` by-reference behavior, non-public property
+  source aliases, non-variable reference targets, ArrayAccess reference
+  sources, full PHP reference containers, copy-on-write containers, exact
+  alias destruction ordering, and native lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate, commit, push, then
+  choose the next reference/COW or WordPress-support gap from
+  `docs/NEXT_TASKS.md`.
+
 ## Loop Event 2026-05-16T15:58:34Z
 
 - Checkpoint before this task:

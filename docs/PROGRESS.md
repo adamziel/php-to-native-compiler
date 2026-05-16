@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 1090, a bounded dynamic public object-property
+  reference-source slice. Statement-form `$alias =& $object->$property;` now
+  aliases a direct variable target to the evaluated public property name on a
+  direct object variable when the dynamic name resolves to a string or integer.
+  Existing public declared slots and existing dynamic public slots route
+  through the same public-property alias root as named property sources, and
+  allowed dynamic public property objects such as `stdClass` materialize a
+  missing selected property as `null` before binding, matching the covered PHP
+  behavior. Whole dynamic-property assignment also detaches narrower
+  public-property array-offset aliases into the previous property array before
+  storing the replacement value. This does not implement dynamic-property
+  sources on non-direct object expressions, dynamic missing properties on
+  classes that do not allow dynamic public slots, magic `__get` by-reference
+  behavior, non-public property source aliases, non-variable reference targets,
+  ArrayAccess reference sources, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, or native
+  lowering. Verification so far: local PHP 8.2.29 probes for dynamic public
+  object-property reference sources, `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_dynamic -- --test-threads=1`, `cargo run -q -p phpc
+  -- test tests/fixtures/milestone1090 --compare-php`, `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_public_object_property --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property -- --test-threads=1`, `cargo test -p
+  phpc --test object_model dynamic_property -- --test-threads=1`, and
+  `cargo check -p php_runtime -p phpc` passed.
+
 - Added Milestone 1089, a bounded direct public object-property reference-source
   alias slice. Statement-form `$alias =& $object->property;` now aliases a
   direct variable target to the named declared public property on a direct

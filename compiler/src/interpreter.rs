@@ -722,6 +722,54 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_dynamic_object_property(
+        &mut self,
+        target: &str,
+        object_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            keys: Vec::new(),
+        };
+
+        match self.read_storage_named(object_name) {
+            Some(Value::Object(object)) => match object.read_public_property(property) {
+                Ok(_) => {}
+                Err(error)
+                    if matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. }) =>
+                {
+                    object
+                        .write_dynamic_public_property(property, Value::Null)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Err(error) => return Err(runtime_error(span, error)),
+            },
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+            None => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object_name),
+                ));
+            }
+        }
+
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
         self.bind_static_to_array_offset_aliases(target, vec![alias]);
     }
@@ -4220,6 +4268,25 @@ impl Interpreter {
                             .evaluate_direct_variable_reference_source_value(source, span, scope)?;
                         scope.write_static(name, value);
                     }
+                } else if let ReferenceSource::Property {
+                    expr:
+                        Expr::DynamicProperty {
+                            target, property, ..
+                        },
+                    ..
+                } = source
+                {
+                    if let Expr::Variable(object, _) = target.as_ref() {
+                        let property =
+                            self.evaluate_dynamic_property_name(property, span, scope)?;
+                        scope.bind_static_to_dynamic_object_property(
+                            name, object, &property, span,
+                        )?;
+                    } else {
+                        let value = self
+                            .evaluate_direct_variable_reference_source_value(source, span, scope)?;
+                        scope.write_static(name, value);
+                    }
                 } else if let ReferenceSource::MethodCall { expr, .. } = source {
                     let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
                     scope.bind_static_to_cell(name, cell);
@@ -4924,10 +4991,19 @@ impl Interpreter {
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
                 let value = self.evaluate(expr, scope)?;
                 match scope.read_static(object, *span)? {
-                    Value::Object(object) => object
-                        .write_dynamic_public_property(&property, value.clone())
-                        .map(|()| value)
-                        .map_err(|error| runtime_error(*span, error)),
+                    Value::Object(object_value) => {
+                        let alias_fallbacks =
+                            scope.public_object_property_root_alias_fallbacks(object, &property);
+                        object_value
+                            .write_dynamic_public_property(&property, value.clone())
+                            .map_err(|error| runtime_error(*span, error))?;
+                        scope.remove_public_object_property_root_from_array_offset_aliases(
+                            object,
+                            &property,
+                            &alias_fallbacks,
+                        );
+                        Ok(value)
+                    }
                     other => Err(runtime_error(
                         *span,
                         RuntimeError::invalid_property_access(format!(

@@ -91,7 +91,9 @@ values without aliasing, and bounded direct/dynamic object-property
 modeling true property uninitialization, plus bounded copied reference-slot
 metadata for direct arrays and declared public object-property arrays copied
 into direct variables, and bounded direct public object-property reference
-sources such as `$alias =& $object->property`, and bounded direct
+sources such as `$alias =& $object->property`, bounded dynamic public
+object-property reference sources such as `$alias =& $object->$property` for
+direct object variables, and bounded direct
 object-property array-offset
 reference sources such as `$alias =& $object->items[$key]`, plus bounded
 nested direct-array and object-property array-offset reference sources, plus

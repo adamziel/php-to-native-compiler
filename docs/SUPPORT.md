@@ -157,11 +157,18 @@
   object-property reference sources such as `$alias =& $object->property;`
   alias a direct variable target to the named declared public property on a
   direct object variable. Writes through the alias or direct property path
-  observe the same scalar or array value. Dynamic property source aliases,
-  magic `__get` by-reference behavior, non-public property source aliases,
-  non-direct object expressions, non-variable reference targets, ArrayAccess
-  sources, full reference containers, copy-on-write, exact alias destruction
-  ordering, and native lowering remain unsupported. Direct
+  observe the same scalar or array value. Dynamic public object-property
+  reference sources such as `$alias =& $object->$property;` execute for direct
+  variable targets and direct object variables when the property expression
+  evaluates to a string or integer public property name. Existing declared or
+  dynamic public properties alias through the same public-property root, and
+  allowed dynamic-property objects such as `stdClass` materialize a missing
+  selected property as `null` before binding. Dynamic-property sources on
+  non-direct object expressions, missing dynamic properties on classes that do
+  not allow dynamic public slots, magic `__get` by-reference behavior,
+  non-public property source aliases, non-variable reference targets,
+  ArrayAccess sources, full reference containers, copy-on-write, exact alias
+  destruction ordering, and native lowering remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`

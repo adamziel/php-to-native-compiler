@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+from-alias|from-property|null|from-dynamic|from-slot
+--- stdout end ---
+stderr:
+--- stderr end ---

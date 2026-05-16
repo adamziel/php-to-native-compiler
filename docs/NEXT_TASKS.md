@@ -10638,6 +10638,23 @@ handled.
   tests, 739
   system PHP comparisons, and 555 skipped PHP comparisons.
 
+## Milestone 1090: Dynamic Public Property Reference Sources
+
+- [x] Runtime/value-model lane: add a bounded dynamic public object-property
+  reference-source slice. `$alias =& $object->$property;` parses and executes
+  when the alias target is a direct variable, the source object is a direct
+  variable, and the evaluated property name is a string or integer public
+  property name. Existing declared public properties and existing dynamic
+  public properties alias through the same public-property root route, and
+  allowed dynamic-property objects such as `stdClass` materialize a missing
+  selected property as `null` before binding. This is not dynamic-property
+  source support for non-direct object expressions, missing dynamic properties
+  on classes that do not allow dynamic public slots, magic `__get`
+  by-reference behavior, non-public property source aliases, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

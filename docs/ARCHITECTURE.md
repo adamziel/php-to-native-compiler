@@ -297,7 +297,14 @@ selected slot. Direct public object-property sources such as
 `$alias =& $object->property;` bind the target name to the named declared
 public property root. Whole-property writes preserve those root aliases, while
 property array-offset aliases detach to the previous property array when the
-whole property is replaced. Direct public object-property array-offset sources
+whole property is replaced. Dynamic public object-property sources such as
+`$alias =& $object->$property;` reuse that same root route when the target
+object is a direct variable, the property expression evaluates to a string or
+integer name, and the selected property is public; allowed dynamic-property
+objects such as `stdClass` materialize a missing selected property as `null`
+before binding. Dynamic whole-property writes also detach narrower
+property-array aliases before replacing the selected public property value.
+Direct public object-property array-offset sources
 follow the same bounded root route for named declared public properties:
 `$alias =& $object->items[$key];`,
 `$alias =& $object->items[$outer][$inner];`,
@@ -307,10 +314,10 @@ reference sources such as `$alias =& $GLOBALS["bag"][];` and
 `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
 selected slot under the real global symbol table. `$GLOBALS[]` append
 sources, non-string root keys, recursive `$GLOBALS` materialization,
-dynamic/magic/non-public property sources, non-direct object expressions,
-non-variable reference targets, `ArrayAccess` sources, full reference
-containers, copy-on-write, exact alias destruction ordering, and native
-lowering remain future work.
+dynamic-property sources on non-direct object expressions, magic or
+non-public property sources, non-variable reference targets, `ArrayAccess`
+sources, full reference containers, copy-on-write, exact alias destruction
+ordering, and native lowering remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
