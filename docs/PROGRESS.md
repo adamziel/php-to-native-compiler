@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 1075, a bounded direct-array by-reference `foreach`
+  current-slot unset/reinsert slice. While a supported direct-array
+  by-reference foreach body is executing, `unset($items[$key])` for the active
+  slot now detaches the loop value variable onto the removed value before the
+  array slot is removed. If the same key is reinserted later in the same body,
+  reads and writes through the loop variable continue to affect only the
+  detached old value until a later iteration rebinds the loop variable to the
+  reinserted tail slot. This matches the tested PHP behavior for direct current
+  slot unset/reinsert, including later visitation of the reinserted tail entry.
+  This remains limited to direct array variables and direct value variables.
+  It does not implement full PHP reference containers, copy-on-write,
+  non-direct iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
+  broad array reordering/replacement during iteration, or native lowering.
+  Verification so far: local PHP 8.2.29 probes for unset/reinsert current-slot
+  behavior and break-after-unset behavior,
+  `cargo test -p phpc --test foreach -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1075 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`,
+  `cargo check -p php_runtime -p phpc`, and `cargo fmt --check`.
+
 - Added Milestone 1074, a bounded direct-array by-reference `foreach`
   mutation-fidelity slice. The interpreter no longer snapshots the initial key
   list for the supported direct-array-variable form. Each iteration binds the

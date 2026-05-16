@@ -10466,6 +10466,18 @@ handled.
   array/object/`ArrayAccess` offset loop variables, exact
   removed-and-reinserted current-slot reference identity, broad array
   reordering/replacement semantics, or native lowering.
+
+## Milestone 1075: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct-array by-reference
+  `foreach` current-slot unset/reinsert slice. In the current subset, unsetting
+  the active direct array slot detaches the loop value variable onto the
+  removed value, so same-key reinsertion during that body does not retarget the
+  value variable until a later iteration reaches the reinserted tail entry.
+  This is not full PHP reference containers, copy-on-write, non-direct
+  iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
+  broad array reordering/replacement semantics, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
@@ -10478,7 +10490,7 @@ handled.
 
 - The latest committed checkpoint is
   `4ccd4cbb runtime: advance foreach reference slot iteration`, covering
-  Milestone 1074.
+  Milestone 1074. Milestone 1075 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

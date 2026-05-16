@@ -172,6 +172,36 @@ foreach ($items as $key => $item) {
 }
 
 #[test]
+fn foreach_by_reference_unset_current_slot_detaches_loop_variable() {
+    let source = r#"<?php
+$items = ["a" => 1, "b" => 2];
+
+foreach ($items as $key => &$item) {
+    echo $key, ":", $item, "|";
+    if ($key === "a") {
+        unset($items["a"]);
+        $items["a"] = 10;
+        echo "after=", $item, "|";
+        $item = 11;
+        echo "assigned=", $items["a"], "|";
+    }
+}
+unset($item);
+echo "\n";
+foreach ($items as $key => $item) {
+    echo $key, ":", $item, "|";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "a:1|after=1|assigned=10|b:2|a:10|after=10|assigned=10|\nb:2|a:10|"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_lingers_as_last_direct_array_slot_after_loop() {
     let source = r#"<?php
 $items = ["a", "b", "c"];

@@ -117,11 +117,19 @@ struct Interpreter {
     call_depth: usize,
     next_object_id: i64,
     next_closure_id: i64,
+    active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     stdout: String,
     exit_signal: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActiveForeachReference {
+    array_name: String,
+    value_name: String,
+    key: ArrayKey,
 }
 
 #[derive(Clone)]
@@ -488,6 +496,21 @@ impl SymbolTable {
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
         self.routed_storage(target).borrow_mut().remove(target);
         self.array_offset_aliases.insert(target.to_string(), alias);
+    }
+
+    fn is_static_bound_to_array_offset(
+        &self,
+        target: &str,
+        array_name: &str,
+        key: &ArrayKey,
+    ) -> bool {
+        matches!(
+            self.array_offset_aliases.get(target),
+            Some(ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray { name },
+                keys,
+            }) if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+        )
     }
 
     fn bind_array_offset_to_static_source(
@@ -1191,6 +1214,7 @@ impl Interpreter {
             call_depth: 0,
             next_object_id: 1,
             next_closure_id: 1,
+            active_foreach_references: Vec::new(),
             function_context: Vec::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
@@ -1795,9 +1819,17 @@ impl Interpreter {
                             entry_key.clone(),
                             *span,
                         )?;
-                        let flow = self.execute_statements(body, scope)?;
+                        self.active_foreach_references.push(ActiveForeachReference {
+                            array_name: array_name.clone(),
+                            value_name: value.clone(),
+                            key: entry_key.clone(),
+                        });
+                        let flow_result = self.execute_statements(body, scope);
+                        self.active_foreach_references.pop();
+                        let flow = flow_result?;
 
-                        let value_still_bound = scope.read_named(value).is_some();
+                        let value_still_bound =
+                            scope.is_static_bound_to_array_offset(value, &array_name, &entry_key);
                         let next_position = match scope.read_static(&array_name, *span)? {
                             Value::Array(array) => {
                                 let current_position = array
@@ -2506,11 +2538,29 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let key = self.evaluate_array_key(index, scope)?;
+        let foreach_detach = self
+            .active_foreach_references
+            .iter()
+            .rev()
+            .find(|active| active.array_name == name && active.key == key)
+            .and_then(|active| {
+                scope
+                    .is_static_bound_to_array_offset(&active.value_name, name, &key)
+                    .then(|| {
+                        scope
+                            .read_named(&active.value_name)
+                            .map(|value| (active.value_name.clone(), value))
+                    })
+                    .flatten()
+            });
 
         match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
-                array.remove(key);
+                array.remove(key.clone());
                 scope.write_static(name, Value::Array(array));
+                if let Some((value_name, value)) = foreach_detach {
+                    scope.bind_static_to_cell(&value_name, value_cell(value));
+                }
                 Ok(())
             }
             Some(Value::Object(object)) => {

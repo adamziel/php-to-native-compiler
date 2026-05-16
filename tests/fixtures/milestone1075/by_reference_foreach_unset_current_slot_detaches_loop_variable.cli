@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1075/by_reference_foreach_unset_current_slot_detaches_loop_variable.php
+exit: 0
+stdout:
+a:1|after=1|assigned=10|b:2|a:10|after=10|assigned=10|
+b:2|a:10|
+--- stdout end ---
+stderr:
+--- stderr end ---

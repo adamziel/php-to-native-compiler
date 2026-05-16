@@ -278,15 +278,17 @@ ordered array, writes the key variable by value, routes the value variable to
 the active direct array slot for the body, and advances using the current array
 order instead of an initial key snapshot. Appended elements and newly inserted
 tail entries are visited by the same loop, and direct writes to the current
-slot are visible through the loop variable. After loop completion, the value
-variable remains routed to the last successfully iterated existing slot until
-`unset($value)` detaches it. Empty array iteration creates no lingering route.
-This intentionally avoids claiming full mutation-during-iteration fidelity,
-exact removed-and-reinserted current-slot reference identity, broad array
-reordering/replacement semantics, non-direct iterable support,
-object/`Traversable` iteration, destructuring targets,
-array/object/`ArrayAccess` offset loop variables, full reference containers,
-or PHP copy-on-write.
+slot are visible through the loop variable. If the active direct array slot is
+unset during the body, the value variable is detached onto the removed value;
+a same-key reinsertion in that body does not retarget the value variable until
+a later iteration reaches the reinserted tail entry. After loop completion, the
+value variable remains routed to the last successfully iterated existing slot
+until `unset($value)` detaches it. Empty array iteration creates no lingering
+route. This intentionally avoids claiming full mutation-during-iteration
+fidelity, broad array reordering/replacement semantics, non-direct iterable
+support, object/`Traversable` iteration, destructuring targets,
+array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
+full reference containers, or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property

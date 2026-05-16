@@ -792,7 +792,9 @@ Reconciliation into concrete workstreams:
   boundary, a bounded direct-array-variable by-reference `foreach` path that
   routes the loop value variable to the active direct array slot, visits
   appended/new tail entries, observes direct writes to the current slot, and
-  preserves lingering post-loop reference behavior for the last iterated slot,
+  detaches the loop variable onto the removed old value when the active slot is
+  unset before same-key reinsertion, while preserving lingering post-loop
+  reference behavior for the last iterated slot,
   private `ArrayEntry` value accessors backed by an explicit
   clone-by-value `ArraySlot` wrapper with an internal `ArraySlotCell` that
   has stable internal identity and shared-handle groundwork while preserving

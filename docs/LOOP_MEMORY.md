@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T19:05:00Z
+
+- Checkpoint before this task:
+  `a5eec907 docs: record foreach reference slot iteration gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1075, bounded direct-array by-reference `foreach`
+  current-slot unset/reinsert detachment.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/foreach.rs`,
+  `tests/fixtures/milestone1075/by_reference_foreach_unset_current_slot_detaches_loop_variable.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  local PHP 8.2.29 probes compared unset/reinsert current-slot behavior and
+  break-after-unset behavior. `cargo test -p phpc --test foreach --
+  --test-threads=1` passed with 15 tests.
+  `cargo run -p phpc -- test tests/fixtures/milestone1075 --compare-php` and
+  `cargo run -p phpc -- test tests/fixtures/milestone1074 --compare-php`
+  passed. `cargo check -p php_runtime -p phpc` and `cargo fmt --check`
+  passed.
+- Current WordPress frontier: when the active direct array slot is unset inside
+  a supported by-reference foreach body, the loop value variable detaches onto
+  the removed old value. Same-key reinsertion during that body no longer
+  hijacks the loop value variable before a later iteration reaches the
+  reinserted tail entry.
+- Remaining semantic gaps: full PHP reference containers, copy-on-write,
+  non-direct iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
+  broad array reordering/replacement during iteration, existing alias groups,
+  source names already routed through array-offset aliases, `$GLOBALS`,
+  dynamic/magic/non-public properties, nested/object offset aliases, native
+  lowering, exact mutation ordering, alias rebinding, and by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity remain missing.
+- Next concrete task: finish verification, checkpoint Milestone 1075, then
+  choose the next reference/COW gap or native-lowering boundary with PHP
+  comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T18:20:00Z
 
 - Checkpoint before this task:
