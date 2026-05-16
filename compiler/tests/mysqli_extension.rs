@@ -1066,7 +1066,7 @@ mysqli_stmt_field_count($stmt);
 }
 
 #[test]
-fn mysqli_statement_positioning_is_boundary_and_attributes_are_placeholder_state() {
+fn mysqli_statement_positioning_and_attributes_have_placeholder_state() {
     let execution = run_source(
         r#"<?php
 $data_seek = "mysqli_stmt_data_seek";
@@ -1116,17 +1116,24 @@ echo ":";
 echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE);
 echo ":";
 echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_PREFETCH_ROWS);
+$seek = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($seek);
+mysqli_stmt_store_result($seek);
+echo "|";
+echo mysqli_stmt_num_rows($seek);
+mysqli_stmt_data_seek($seek, 0);
+echo ":seeked";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|data-seek-callable|attr-get-exists|attr-get-callable|attr-set-exists|attr-set-callable|0:1:2:0:1:2:4|0:0:0|set-update:set-cursor:set-prefetch|1:1:8"
+        "yes|data-seek-callable|attr-get-exists|attr-get-callable|attr-set-exists|attr-set-callable|0:1:2:0:1:2:4|0:0:0|set-update:set-cursor:set-prefetch|1:1:8|1:seeked"
     );
     assert_eq!(execution.exit_code, 0);
 
-    let data_seek_error = run_source(
+    let data_seek_handle_error = run_source(
         r#"<?php
 $stmt = mysqli_init();
 mysqli_stmt_data_seek($stmt, 0);
@@ -1134,12 +1141,47 @@ mysqli_stmt_data_seek($stmt, 0);
     )
     .unwrap_err();
 
-    assert_eq!(data_seek_error.phase, Phase::Runtime);
-    assert_eq!(data_seek_error.line, 3);
-    assert_eq!(data_seek_error.column, 1);
+    assert_eq!(data_seek_handle_error.phase, Phase::Runtime);
+    assert_eq!(data_seek_handle_error.line, 3);
+    assert_eq!(data_seek_handle_error.column, 1);
     assert_eq!(
-        data_seek_error.message,
-        "unsupported call mysqli_stmt_data_seek(): mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset"
+        data_seek_handle_error.message,
+        "unsupported call mysqli_stmt_data_seek(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let data_seek_unbuffered_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($stmt);
+mysqli_stmt_data_seek($stmt, 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(data_seek_unbuffered_error.phase, Phase::Runtime);
+    assert_eq!(data_seek_unbuffered_error.line, 4);
+    assert_eq!(data_seek_unbuffered_error.column, 1);
+    assert_eq!(
+        data_seek_unbuffered_error.message,
+        "unsupported call mysqli_stmt_data_seek(): buffered statement result state is not available in the current subset"
+    );
+
+    let data_seek_range_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_execute($stmt);
+mysqli_stmt_store_result($stmt);
+mysqli_stmt_data_seek($stmt, 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(data_seek_range_error.phase, Phase::Runtime);
+    assert_eq!(data_seek_range_error.line, 5);
+    assert_eq!(data_seek_range_error.column, 1);
+    assert_eq!(
+        data_seek_range_error.message,
+        "unsupported call mysqli_stmt_data_seek(): offset 1 is outside the current buffered statement row range 1"
     );
 
     let attr_get_error = run_source(

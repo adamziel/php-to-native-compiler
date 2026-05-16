@@ -489,6 +489,11 @@ attribute and cursor-type constants and a WordPress-shaped `wpdb` smoke,
 without claiming real mysqlnd cursor behavior, prefetch behavior, max-length
 metadata recalculation, host database state, PHP warning/error fidelity, or
 native lowering,
+plus bounded `mysqli_stmt_data_seek()` placeholder cursor state for active
+buffered statement results, including direct MySQLi and WordPress-shaped
+`wpdb` smokes, without claiming `mysqli_stmt_fetch()`, bound-result fetching,
+by-reference output-buffer mutation, real mysqlnd cursor behavior, host
+database rows, PHP warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

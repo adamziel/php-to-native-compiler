@@ -268,9 +268,15 @@ or `0` before buffering and after `mysqli_stmt_free_result($statement)`.
 by-reference result binding, output buffer mutation, cursor advancement over
 bound buffers, and host database rows are not implemented.
 
-`mysqli_stmt_data_seek($statement, $offset)` remains an explicit runtime
-boundary because buffered statement result cursors and offset seeking are not
-implemented.
+`mysqli_stmt_data_seek($statement, $offset)` records an in-range placeholder
+cursor offset for active statements after the current deterministic
+`mysqli_stmt_execute()` and `mysqli_stmt_store_result()` path has buffered a
+placeholder result. It returns `null` on that bounded path and reports stable
+unsupported diagnostics for non-statement handles, unbuffered statements,
+non-int offsets, negative offsets, and out-of-range offsets. This is not
+`mysqli_stmt_fetch()`, bound-result fetching, by-reference output-buffer
+mutation, real mysqlnd cursor behavior, host database state, PHP
+warning/error fidelity, or native lowering.
 
 `mysqli_stmt_attr_get($statement, $attribute)` and
 `mysqli_stmt_attr_set($statement, $attribute, $value)` expose deterministic

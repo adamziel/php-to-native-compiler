@@ -1,6 +1,7 @@
 This fixture exercises a WordPress-shaped `wpdb` method that reaches phpc's
-explicit MySQLi statement data-seek boundary. System PHP would require a real
-mysqli statement object, buffered result cursor, offset seeking, and statement
-result state; phpc only records the reached `mysqli_stmt_data_seek()` boundary
-with a stable unsupported diagnostic and does not implement statement objects
-or host database state.
+MySQLi statement data-seek handle validation. System PHP would require a real
+mysqli statement object, buffered result cursor, and mysqlnd statement state;
+phpc only records the reached non-statement-object diagnostic here. Supported
+placeholder statement data-seek state is covered in later fixtures and does
+not implement bound-result fetching, by-reference output-buffer mutation, real
+cursor behavior, or host database state.

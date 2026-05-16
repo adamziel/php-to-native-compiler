@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_data_seek()` state for active buffered `mysqli_stmt` objects.
+System PHP requires a real initialized MySQLi connection and mysqlnd
+statement cursor state; phpc only records an in-range buffered placeholder
+cursor offset and does not implement bound-result fetching, by-reference
+output-buffer mutation, real mysqlnd cursor behavior, host database state,
+PHP warning/error fidelity, or native database lowering.

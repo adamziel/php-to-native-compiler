@@ -139,6 +139,7 @@ struct MysqliStatementState {
     param_count: usize,
     executed_result: Option<MysqliPendingResultState>,
     buffered_result: Option<MysqliPendingResultState>,
+    buffered_result_cursor: usize,
     attributes: HashMap<i64, Value>,
 }
 
@@ -4060,6 +4061,7 @@ impl Interpreter {
                 query,
                 executed_result: None,
                 buffered_result: None,
+                buffered_result_cursor: 0,
                 attributes: HashMap::new(),
             },
         );
@@ -4758,6 +4760,8 @@ impl Interpreter {
         let Some(query) = query else {
             let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
             state.executed_result = None;
+            state.buffered_result = None;
+            state.buffered_result_cursor = 0;
             return Ok(Value::Bool(false));
         };
 
@@ -4775,6 +4779,7 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
         state.executed_result = result;
         state.buffered_result = None;
+        state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
     }
 
@@ -4829,9 +4834,11 @@ impl Interpreter {
         let state = self.mysqli_statement_state_mut("mysqli_stmt_store_result()", stmt_id, span)?;
         let Some(result) = state.executed_result.clone() else {
             state.buffered_result = None;
+            state.buffered_result_cursor = 0;
             return Ok(Value::Bool(false));
         };
         state.buffered_result = Some(result);
+        state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
     }
 
@@ -4904,18 +4911,38 @@ impl Interpreter {
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_free_result()", &args[0], span)?;
         let state = self.mysqli_statement_state_mut("mysqli_stmt_free_result()", stmt_id, span)?;
         state.buffered_result = None;
+        state.buffered_result_cursor = 0;
         Ok(Value::Null)
     }
 
-    fn call_mysqli_stmt_data_seek(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_data_seek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_data_seek", args, 2, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_data_seek()",
-                "mysqli statement objects, buffered result cursors, offset seeking, and statement result state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_data_seek()", &args[0], span)?;
+        let offset = expect_mysqli_stmt_data_seek_offset(&args[1], span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_data_seek()", stmt_id, span)?;
+        let Some(result) = state.buffered_result.as_ref() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_data_seek()",
+                    "buffered statement result state is not available in the current subset",
+                ),
+            ));
+        };
+        if offset >= result.rows.len() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_stmt_data_seek()",
+                    format!(
+                        "offset {offset} is outside the current buffered statement row range {}",
+                        result.rows.len()
+                    ),
+                ),
+            ));
+        }
+        state.buffered_result_cursor = offset;
+        Ok(Value::Null)
     }
 
     fn call_mysqli_stmt_attr_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4959,6 +4986,7 @@ impl Interpreter {
         state.param_count = 0;
         state.executed_result = None;
         state.buffered_result = None;
+        state.buffered_result_cursor = 0;
         state.attributes.clear();
         Ok(Value::Bool(true))
     }
@@ -14231,6 +14259,31 @@ fn mysqli_stmt_attribute_default(attribute: i64) -> i64 {
         PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH | PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS => 0,
         _ => 0,
     }
+}
+
+fn expect_mysqli_stmt_data_seek_offset(value: &Value, span: Span) -> CompileResult<usize> {
+    let Value::Int(offset) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_data_seek()",
+                format!(
+                    "offset argument must be int in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if *offset < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_data_seek()",
+                format!("offset must be non-negative in the current subset, got {offset}"),
+            ),
+        ));
+    }
+    Ok(*offset as usize)
 }
 
 fn string_builtin_argument(

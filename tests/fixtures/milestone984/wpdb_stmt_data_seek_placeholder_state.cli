@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone984/wpdb_stmt_data_seek_placeholder_state.php
+exit: 0
+stdout:
+1|seeked|0
+--- stdout end ---
+stderr:
+--- stderr end ---

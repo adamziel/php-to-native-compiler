@@ -1757,6 +1757,11 @@ historical blockers and remaining full-support gaps include:
   cursor-type constants plus a WordPress-shaped `wpdb` smoke, without claiming
   real mysqlnd cursor behavior, prefetch behavior, max-length metadata
   recalculation, host database state, PHP warning/error fidelity, or native
+  database lowering. Milestone 984 adds bounded `mysqli_stmt_data_seek()`
+  placeholder cursor state for active buffered statement results, including a
+  WordPress-shaped `wpdb` smoke, without claiming `mysqli_stmt_fetch()`,
+  bound-result fetching, by-reference output-buffer mutation, real mysqlnd
+  cursor behavior, host database rows, PHP warning/error fidelity, or native
   database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

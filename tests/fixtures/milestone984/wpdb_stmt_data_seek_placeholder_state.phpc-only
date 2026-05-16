@@ -1,0 +1,5 @@
+This fixture records deterministic placeholder statement data-seek state
+through a WordPress-shaped `wpdb` object. It covers only active buffered
+placeholder statement results and does not implement bound-result fetching,
+by-reference output-buffer mutation, real mysqlnd cursor behavior, host
+database state, PHP warning/error fidelity, or native database lowering.

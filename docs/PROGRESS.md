@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 984, bounded `mysqli_stmt_data_seek()` placeholder cursor
+  state for active buffered `mysqli_stmt` results. After the current unbound
+  seed-post statement execution path is buffered with
+  `mysqli_stmt_store_result()`, `mysqli_stmt_data_seek($stmt, 0)` now records
+  an in-range placeholder cursor offset and returns `null`; non-statement
+  handles, unbuffered statements, non-int offsets, negative offsets, and
+  out-of-range offsets remain stable unsupported diagnostics. The new
+  fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes; the
+  affected legacy `milestone957` and `milestone958` boundary fixtures now
+  record the narrower handle-validation diagnostic. This is not
+  `mysqli_stmt_fetch()`, bound-result fetching, by-reference output-buffer
+  mutation, real mysqlnd cursor behavior, host database state, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_positioning_and_attributes_have_placeholder_state -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone984`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone957`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone958`.
+
 - Added Milestone 983, deterministic `mysqli_stmt_attr_get()` and
   `mysqli_stmt_attr_set()` placeholder state for active `mysqli_stmt` objects.
   The runtime now exposes PHP-matching statement attribute and cursor-type
