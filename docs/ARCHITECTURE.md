@@ -228,17 +228,19 @@ variable name. `$array[] =& $value;` works for the same direct root/source
 shape by appending through the runtime array append cursor and routing the
 source name to the selected auto key. `$array[$outer][$inner] =& $value;`
 works for explicit nested direct-array targets by routing the source name to a
-normalized key path under the direct array root. The interpreter materializes
-missing explicit keys, missing intermediate containers, and undefined or
-`null` target roots through the direct-offset and nested-array materialization
-paths, copies the current source value into the selected slot, then routes the
-source name to that slot. Writes through either the source variable or direct
-array offset observe the same selected value, and `unset($value)` detaches only
-the source name. Undefined source variables start as `null` before binding.
-Existing direct alias groups, source names already routed through array-offset
-aliases, `$GLOBALS`, PHP's deprecated false-root conversion, other non-array
-roots, nested append reference targets, object-property/`ArrayAccess`
-reference targets, non-direct sources, object-property array targets,
+normalized key path under the direct array root. `$array[$outer][] =& $value;`
+uses the same key-path route after appending through the runtime array append
+cursor at the selected nested parent. The interpreter materializes missing
+explicit keys, missing intermediate containers, and undefined or `null` target
+roots through the direct-offset and nested-array materialization paths, copies
+the current source value into the selected slot, then routes the source name to
+that slot. Writes through either the source variable or direct array offset
+observe the same selected value, and `unset($value)` detaches only the source
+name. Undefined source variables start as `null` before binding. Existing
+direct alias groups, source names already routed through array-offset aliases,
+`$GLOBALS`, PHP's deprecated false-root conversion, other non-array roots,
+object-property/`ArrayAccess` reference targets, non-direct sources,
+object-property array targets,
 non-static `self::`/`parent::`/`static::`/dynamic-static sources, magic method
 reference sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native

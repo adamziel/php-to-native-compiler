@@ -10383,18 +10383,34 @@ handled.
   object-property/`ArrayAccess` targets, non-direct sources, full PHP reference
   containers, copy-on-write, exact alias rebinding/mutation ordering, or native
   lowering.
+
+## Milestone 1070: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded nested direct array-append
+  reference-target slice for unaliased direct variable sources. In the current
+  subset, `$array[$outer][] =& $value;` works when the root is a direct array
+  variable, every parent offset is explicit, and the source is a direct
+  unaliased variable name. Missing parent containers and undefined or `null`
+  target roots materialize through the nested-array path, the runtime append
+  cursor selects the nested auto key, undefined source variables begin as
+  `null`, writes through the source variable and appended nested direct offset
+  observe the same selected value, and `unset($value)` detaches only the source
+  name. This is not existing alias groups, source names already routed through
+  array-offset aliases, `$GLOBALS`, object-property/`ArrayAccess` targets,
+  non-direct sources, full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  nested append targets, object-property/`ArrayAccess` reference targets,
-  nested/object offset aliases, remaining by-reference `foreach` fidelity,
-  array/object copy-on-write split behavior, or native lowering boundaries, and
-  add the next bounded behavior or explicit diagnostic with PHP comparison
-  coverage where applicable.
+  object-property/`ArrayAccess` reference targets, nested/object offset
+  aliases, remaining by-reference `foreach` fidelity, array/object
+  copy-on-write split behavior, or native lowering boundaries, and add the next
+  bounded behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d6221b4a runtime: add nested array reference targets`, covering Milestone
-  1069.
+  `a6f81e86 runtime: add nested append reference targets`, covering Milestone
+  1070.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

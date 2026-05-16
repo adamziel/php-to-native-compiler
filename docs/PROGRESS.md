@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 1070, a bounded nested direct array-append reference-target
+  slice for direct variable sources. Statement-form
+  `$array[$outer][] =& $value;` now works when the root is a direct array
+  variable, every parent offset is explicit, and the source is an unaliased
+  direct variable name. The interpreter materializes missing parent containers
+  and undefined or `null` target roots as arrays, appends through the runtime
+  array append cursor at the selected nested parent, records the selected auto
+  key in the internal alias key path, and routes the source name to that
+  appended nested slot. Undefined source variables are treated as `null` before
+  binding, writes through the source variable and appended nested direct offset
+  observe the same selected value, and `unset($value)` detaches the source name
+  while leaving the nested slot value alive. Existing direct alias groups,
+  source names already routed through array-offset aliases, `$GLOBALS`,
+  object-property/`ArrayAccess` reference targets, non-direct sources, full PHP
+  reference containers, copy-on-write, exact mutation ordering/alias rebinding,
+  and native lowering remain unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1070 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1069 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1068 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1067 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1274 fixture
+  tests, 720 system PHP comparisons, and 554 skipped comparisons, then
+  committed `a6f81e86 runtime: add nested append reference targets`.
+
 - Added Milestone 1069, a bounded nested direct array-offset reference-target
   slice for direct variable sources. Statement-form
   `$array[$outer][$inner] =& $value;` now parses as a nested assignment target
