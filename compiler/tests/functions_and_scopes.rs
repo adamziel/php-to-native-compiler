@@ -3204,7 +3204,7 @@ echo first(...$items);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported argument unpacking: variadic calls are not implemented"
+        "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
     );
 }
 

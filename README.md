@@ -116,8 +116,9 @@ incorrect native code.
   values,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
-  type enforcement, while parenthesized DNF-shaped type declarations remain a
-  parse boundary
+  type enforcement, while parenthesized DNF-shaped type declarations and
+  call-site argument unpacking such as `handler(...$args)` remain parse
+  boundaries
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
@@ -337,6 +338,8 @@ direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
+direct `getcwd()` current-directory calls,
+direct `realpath(...)` path-resolution calls,
 PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
@@ -371,7 +374,10 @@ manifest reports deterministic source and recognized sidecar byte counts,
 including `.cli` snapshot exercise files, for fixtures, summaries, orphan
 sidecars, and compatibility targets, plus CLI exercise gap counts for fixtures
 without `.cli` snapshot sidecars and `.phpc-only` reason gap counts for
-markers whose text is empty or whitespace-only. Text orphan sidecar rows
+markers whose text is empty or whitespace-only. It also reports aggregate,
+per-target, and per-fixture missing recognized expectation sidecars for the
+`.stdout`, `.stderr`, `.exit`, and `.cli` fixture contract files without
+requiring or creating those files. Text orphan sidecar rows
 include SHA-256 digests. Text manifests also report unrecognized sidecar-like
 siblings whose extension is not part of the fixture contract but whose
 corresponding `.php` fixture exists. Compatibility target entries also report
@@ -380,18 +386,21 @@ plus deterministic
 `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
 count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 12. The JSON records
+manifest as deterministic JSON with `contract_version` 13. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
 sidecar byte counts, recognized orphan sidecar byte counts, CLI exercise gap
-counts, `.phpc-only` reason gap counts, unrecognized sidecar counts and byte
-totals for files with matching `.php` fixtures, and SHA-256 digests for fixture
-sources, recognized sidecars, recognized orphan sidecars, and those
+counts, missing recognized expectation sidecar metadata for `.stdout`,
+`.stderr`, `.exit`, and `.cli`, `.phpc-only` reason gap counts, unrecognized
+sidecar counts and byte totals for files with matching `.php` fixtures, and
+SHA-256 digests for fixture sources, recognized sidecars, recognized orphan
+sidecars, and those
 unrecognized sidecar-like siblings so comparison opt-outs and committed
 expectation and `.cli` exercise payloads are visible without executing fixtures
 or CLI snapshots. When the fixture root contains `compat/<target>` directories,
 the JSON also includes per-target compatibility counts, per-target CLI exercise
-gap counts, per-target `.phpc-only` reason gap counts, per-target unrecognized
-sidecar counts and byte totals, optional `source-pin.md` audit metadata, and
+gap counts, per-target missing recognized expectation sidecar counts,
+per-target `.phpc-only` reason gap counts, per-target unrecognized sidecar
+counts and byte totals, optional `source-pin.md` audit metadata, and
 `.expected` probe expectation artifact metadata, including targets with no
 executable `.php` fixtures yet.
 

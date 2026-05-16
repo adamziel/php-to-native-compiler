@@ -39,6 +39,7 @@ pub struct FixtureManifestSummary {
     pub exit_expectations: usize,
     pub cli_exercises: usize,
     pub cli_exercise_gaps: usize,
+    pub missing_expectation_sidecars: usize,
     pub phpc_only_markers: usize,
     pub phpc_only_reason_gaps: usize,
     pub orphan_sidecars: usize,
@@ -63,6 +64,7 @@ pub struct FixtureManifestEntry {
     pub has_exit: bool,
     pub has_cli: bool,
     pub phpc_only: bool,
+    pub missing_expectation_sidecars: Vec<String>,
     pub stdout_bytes: Option<u64>,
     pub stderr_bytes: Option<u64>,
     pub exit_bytes: Option<u64>,
@@ -158,6 +160,12 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
         let stderr_bytes = optional_file_size(&path.with_extension("stderr"))?;
         let exit_bytes = optional_file_size(&path.with_extension("exit"))?;
         let cli_bytes = optional_file_size(&path.with_extension("cli"))?;
+        let missing_expectation_sidecars = missing_expectation_sidecars(
+            stdout_bytes.is_some(),
+            stderr_bytes.is_some(),
+            exit_bytes.is_some(),
+            cli_bytes.is_some(),
+        );
         let phpc_only_bytes = optional_file_size(&path.with_extension("phpc-only"))?;
         entries.push(FixtureManifestEntry {
             path: fixture_manifest_path(root, &path),
@@ -168,6 +176,7 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
             has_exit: exit_bytes.is_some(),
             has_cli: cli_bytes.is_some(),
             phpc_only: phpc_only_reason.is_some(),
+            missing_expectation_sidecars,
             stdout_bytes,
             stderr_bytes,
             exit_bytes,
@@ -206,6 +215,10 @@ impl FixtureManifestSummary {
         let mut summary = Self {
             total: entries.len(),
             cli_exercise_gaps: entries.iter().filter(|entry| !entry.has_cli).count(),
+            missing_expectation_sidecars: entries
+                .iter()
+                .map(|entry| entry.missing_expectation_sidecars.len())
+                .sum(),
             orphan_sidecars: orphan_sidecars.len(),
             unrecognized_sidecars: unrecognized_sidecars.len(),
             orphan_sidecar_bytes: orphan_sidecars.iter().map(|sidecar| sidecar.bytes).sum(),
@@ -252,6 +265,23 @@ impl FixtureManifestSummary {
 
         summary
     }
+}
+
+fn missing_expectation_sidecars(
+    has_stdout: bool,
+    has_stderr: bool,
+    has_exit: bool,
+    has_cli: bool,
+) -> Vec<String> {
+    [
+        ("stdout", has_stdout),
+        ("stderr", has_stderr),
+        ("exit", has_exit),
+        ("cli", has_cli),
+    ]
+    .into_iter()
+    .filter_map(|(kind, present)| (!present).then_some(kind.to_string()))
+    .collect()
 }
 
 pub fn run_fixture_dir(root: &Path) -> CompileResult<TestSummary> {

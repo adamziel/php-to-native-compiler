@@ -16110,6 +16110,47 @@ impl Interpreter {
                     )),
                 }
             }
+            "realpath" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "realpath()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+
+                        let filesystem_path = local_filesystem_metadata_path(path);
+                        let Ok(resolved) = fs::canonicalize(&filesystem_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        let resolved = resolved.into_os_string().into_string().map_err(|_| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "realpath()",
+                                    "resolved path must be valid UTF-8 in the current subset",
+                                ),
+                            )
+                        })?;
+                        Ok(Value::String(resolved))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "realpath()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "getcwd" => {
                 expect_arity(name, &args, 0, span)?;
                 let path = std::env::current_dir().map_err(|error| {
@@ -20391,6 +20432,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "realpath"
             | "getcwd"
             | "is_dir"
             | "is_file"

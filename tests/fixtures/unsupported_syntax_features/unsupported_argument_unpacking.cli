@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php:3:12: unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering
+--- stderr end ---

@@ -299,7 +299,7 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} missing expectation sidecars={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
@@ -309,6 +309,7 @@ fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
         summary.phpc_only_reason_gaps,
         summary.cli_exercises,
         summary.cli_exercise_gaps,
+        summary.missing_expectation_sidecars,
         summary.orphan_sidecars,
         summary.unrecognized_sidecars,
         summary.source_bytes,
@@ -350,12 +351,14 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         .as_ref()
         .map(|reason| format!(" phpc-only-reason={}", text_field_value(reason)))
         .unwrap_or_default();
+    let missing_expectation_sidecars = text_list(&entry.missing_expectation_sidecars);
 
     format!(
-        "{} expectations={} cli-exercise={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
+        "{} expectations={} cli-exercise={} missing-expectation-sidecars={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
         entry.path,
         expectations,
         if entry.has_cli { "yes" } else { "no" },
+        missing_expectation_sidecars,
         comparison,
         reason,
         entry.source_bytes,
@@ -403,7 +406,7 @@ fn render_fixture_manifest_compatibility_target(
         .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={} probe expectations={} bytes={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} missing expectation sidecars={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -416,6 +419,7 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.phpc_only_reason_gaps,
         target.summary.cli_exercises,
         target.summary.cli_exercise_gaps,
+        target.summary.missing_expectation_sidecars,
         target.summary.orphan_sidecars,
         target.summary.unrecognized_sidecars,
         target.summary.source_bytes,
@@ -444,7 +448,7 @@ fn render_fixture_manifest_compatibility_probe_expectation(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 12,\n");
+    output.push_str("  \"contract_version\": 13,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -484,6 +488,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     output.push_str(&format!(
         "    \"cli_exercise_gaps\": {},\n",
         manifest.summary.cli_exercise_gaps
+    ));
+    output.push_str(&format!(
+        "    \"missing_expectation_sidecars\": {},\n",
+        manifest.summary.missing_expectation_sidecars
     ));
     output.push_str(&format!(
         "    \"phpc_only_reason_gaps\": {},\n",
@@ -543,6 +551,14 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
                 output.push_str(", ");
             }
             output.push_str(&json_string_literal(expectation));
+        }
+        output.push_str("],\n");
+        output.push_str("      \"missing_expectation_sidecars\": [");
+        for (sidecar_index, sidecar) in entry.missing_expectation_sidecars.iter().enumerate() {
+            if sidecar_index > 0 {
+                output.push_str(", ");
+            }
+            output.push_str(&json_string_literal(sidecar));
         }
         output.push_str("],\n");
         output.push_str("      \"file_bytes\": {\n");
@@ -662,6 +678,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         output.push_str(&format!(
             "        \"cli_exercise_gaps\": {},\n",
             target.summary.cli_exercise_gaps
+        ));
+        output.push_str(&format!(
+            "        \"missing_expectation_sidecars\": {},\n",
+            target.summary.missing_expectation_sidecars
         ));
         output.push_str(&format!(
             "        \"phpc_only_reason_gaps\": {},\n",
@@ -945,6 +965,14 @@ fn text_field_value(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn text_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(",")
+    }
 }
 
 fn text_optional_u64(value: Option<u64>) -> String {

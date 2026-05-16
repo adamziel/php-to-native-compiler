@@ -545,6 +545,54 @@ fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_argument_unpacking_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nfunction handler($value) {}\n$args = ['post'];\nhandler(...$args);\n",
+            4,
+            9,
+        ),
+        (
+            "<?php\nclass Hooks { public function add($hook) {} }\n$hooks = new Hooks();\n$args = ['init'];\n$hooks->add(...$args);\n",
+            5,
+            13,
+        ),
+        (
+            "<?php\nclass Hooks { public static function add($hook) {} }\n$args = ['init'];\nHooks::add(...$args);\n",
+            4,
+            12,
+        ),
+        (
+            "<?php\nclass Hook { public function __construct($hook) {} }\n$args = ['init'];\n$hook = new Hook(...$args);\n",
+            4,
+            18,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_argument_unpacking_at_parse_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$args = ['init'];\nhandler(...$args);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+    );
+}
+
+#[test]
 fn unsupported_static_arrow_functions_have_stable_parse_errors() {
     let cases = [
         ("<?php\n$handler = static fn ($value) => $value;\n", 2, 12),

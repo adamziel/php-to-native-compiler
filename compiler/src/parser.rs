@@ -4690,10 +4690,9 @@ impl Parser {
             TokenKind::Ellipsis if matches!(self.peek_next().kind, TokenKind::RParen) => {
                 Err(self.error_at(token.span, unsupported_first_class_callable_message()))
             }
-            TokenKind::Ellipsis => Err(self.error_at(
-                token.span,
-                "unsupported argument unpacking: variadic calls are not implemented",
-            )),
+            TokenKind::Ellipsis => {
+                Err(self.error_at(token.span, unsupported_argument_unpacking_message()))
+            }
             TokenKind::Ampersand => Err(self.error_at(
                 token.span,
                 "unsupported reference argument: references are not implemented",
@@ -6085,6 +6084,10 @@ fn unsupported_reference_assignment_source_message() -> &'static str {
 
 fn unsupported_first_class_callable_message() -> &'static str {
     "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+}
+
+fn unsupported_argument_unpacking_message() -> &'static str {
+    "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
 }
 
 fn unsupported_static_arrow_function_message() -> &'static str {
