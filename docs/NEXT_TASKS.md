@@ -9114,19 +9114,32 @@ handled.
   object and string savepoint names. This is not real host transaction state,
   savepoint creation/release/validation, rollback-to-savepoint behavior,
   warning/error fidelity, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as `mysqli_ssl_set()`,
   `mysqli_set_opt()`/`mysqli_options()` alias behavior,
   `mysqli_escape_string()` alias behavior, or broader result metadata fields,
   and add the next bounded behavior or explicit runtime boundary with tests,
   CLI fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 971 implements `mysqli_set_opt()` as the current
+  `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` bool/int alias of `mysqli_options()`, and
+  `mysqli_escape_string()` as the deterministic scalar/null escaping alias of
+  `mysqli_real_escape_string()`. This is not real client option negotiation,
+  result type conversion changes, connection charset-sensitive escaping,
+  binary/invalid string fidelity, host database state, warning/error fidelity,
+  or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as `mysqli_ssl_set()`, broader
+  `mysqli_options()` option catalogs, broader escaping charset fidelity, or
+  result metadata fields, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `cfe8ab95 runtime: add mysqli fetch all column placeholders`, covering
-  Milestone 969 before the current Milestone 970 candidate.
+  `e4688c6a runtime: add mysqli savepoint placeholders`, covering
+  Milestone 970 before the current Milestone 971 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

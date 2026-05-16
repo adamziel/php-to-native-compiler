@@ -1395,9 +1395,14 @@ fn mysqli_options_accepts_current_int_and_float_native_placeholder_option() {
     let execution = run_source(
         r#"<?php
 $call = "mysqli_options";
+$alias = "mysqli_set_opt";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo function_exists($alias) ? "alias-exists" : "alias-missing";
+echo "|";
+echo is_callable($alias) ? "alias-callable" : "alias-missing";
 $handle = mysqli_init();
 echo "|";
 echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? MYSQLI_OPT_INT_AND_FLOAT_NATIVE : "missing";
@@ -1405,11 +1410,18 @@ echo "|";
 echo mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true) ? "set" : "failed";
 echo "|";
 echo $call($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1) ? "set" : "failed";
+echo "|";
+echo mysqli_set_opt($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, false) ? "alias-set" : "failed";
+echo "|";
+echo $alias($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 0) ? "dynamic-alias" : "failed";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|201|set|set");
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|alias-exists|alias-callable|201|set|set|alias-set|dynamic-alias"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -1801,9 +1813,14 @@ fn mysqli_real_escape_string_escapes_current_scalar_subset() {
     let execution = run_source(
         r#"<?php
 $call = "mysqli_real_escape_string";
+$alias = "mysqli_escape_string";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo function_exists($alias) ? "alias-exists" : "alias-missing";
+echo "|";
+echo is_callable($alias) ? "alias-callable" : "alias-missing";
 $handle = mysqli_init();
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 $data = "quote'\"\\\n\r";
@@ -1815,11 +1832,18 @@ echo "|";
 echo mysqli_real_escape_string($handle, 42);
 echo "|";
 echo mysqli_real_escape_string($handle, null);
+echo "|";
+echo mysqli_escape_string($handle, $data);
+echo "|";
+echo $alias($handle, true);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, r#"yes|callable|quote\'\"\\\n\r|1|42|"#);
+    assert_eq!(
+        execution.stdout,
+        r#"yes|callable|alias-exists|alias-callable|quote\'\"\\\n\r|1|42||quote\'\"\\\n\r|1"#
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -2262,6 +2286,36 @@ mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
     assert_eq!(
         bad_value.message,
         "unsupported call mysqli_options(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
+    );
+
+    let bad_alias_option = run_source(
+        r#"<?php
+mysqli_set_opt(mysqli_init(), 0, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_alias_option.phase, Phase::Runtime);
+    assert_eq!(bad_alias_option.line, 2);
+    assert_eq!(bad_alias_option.column, 1);
+    assert_eq!(
+        bad_alias_option.message,
+        "unsupported call mysqli_set_opt(): only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got 0"
+    );
+
+    let bad_alias_value = run_source(
+        r#"<?php
+mysqli_set_opt(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_alias_value.phase, Phase::Runtime);
+    assert_eq!(bad_alias_value.line, 2);
+    assert_eq!(bad_alias_value.column, 1);
+    assert_eq!(
+        bad_alias_value.message,
+        "unsupported call mysqli_set_opt(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
     );
 }
 
@@ -3572,6 +3626,37 @@ mysqli_real_escape_string($handle, ["value"]);
         bad_data.message,
         "unsupported call mysqli_real_escape_string(): data argument arrays are not implemented in the current subset"
     );
+
+    let bad_alias_handle = run_source(
+        r#"<?php
+mysqli_escape_string("not-a-handle", "value");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_alias_handle.phase, Phase::Runtime);
+    assert_eq!(bad_alias_handle.line, 2);
+    assert_eq!(bad_alias_handle.column, 1);
+    assert_eq!(
+        bad_alias_handle.message,
+        "unsupported call mysqli_escape_string(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_alias_data = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_escape_string($handle, ["value"]);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_alias_data.phase, Phase::Runtime);
+    assert_eq!(bad_alias_data.line, 3);
+    assert_eq!(bad_alias_data.column, 1);
+    assert_eq!(
+        bad_alias_data.message,
+        "unsupported call mysqli_escape_string(): data argument arrays are not implemented in the current subset"
+    );
 }
 
 #[test]
@@ -3782,6 +3867,8 @@ echo function_exists("mysqli_close") ? "1" : "0";
 echo is_callable("mysqli_close") ? "1" : "0";
 echo function_exists("mysqli_options") ? "1" : "0";
 echo is_callable("mysqli_options") ? "1" : "0";
+echo function_exists("mysqli_set_opt") ? "1" : "0";
+echo is_callable("mysqli_set_opt") ? "1" : "0";
 echo function_exists("mysqli_connect_errno") ? "1" : "0";
 echo is_callable("mysqli_connect_errno") ? "1" : "0";
 echo function_exists("mysqli_connect_error") ? "1" : "0";
@@ -3904,6 +3991,8 @@ echo function_exists("mysqli_select_db") ? "1" : "0";
 echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_real_escape_string") ? "1" : "0";
 echo is_callable("mysqli_real_escape_string") ? "1" : "0";
+echo function_exists("mysqli_escape_string") ? "1" : "0";
+echo is_callable("mysqli_escape_string") ? "1" : "0";
 echo function_exists("mysqli_fetch_object") ? "1" : "0";
 echo is_callable("mysqli_fetch_object") ? "1" : "0";
 echo function_exists("mysqli_fetch_assoc") ? "1" : "0";
@@ -3972,7 +4061,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 220, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 224, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4100,6 +4189,18 @@ mysqli_close(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_set_opt(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
 "#,
     )
     .unwrap_err();
@@ -5012,6 +5113,18 @@ mysqli_select_db(mysqli_init(), "wordpress");
     let error = emit_ir_source(
         r#"<?php
 mysqli_real_escape_string(mysqli_init(), "value");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_escape_string(mysqli_init(), "value");
 "#,
     )
     .unwrap_err();

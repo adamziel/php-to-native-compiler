@@ -518,7 +518,7 @@
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`,
   `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`,
-  `mysqli_options`, `mysqli_connect_errno`, `mysqli_connect_error`,
+  `mysqli_options`, `mysqli_set_opt`, `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
   `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
@@ -545,7 +545,8 @@
   `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
-  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`,
+  `mysqli_real_escape_string`, `mysqli_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_all`, `mysqli_fetch_column`,
@@ -897,11 +898,12 @@
   deterministic `true` without closing a host connection, invalidating the
   placeholder object, releasing server resources, or changing later placeholder
   metadata calls.
-  `mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` accepts
-  bool or int values and returns deterministic `true`; the option constant is
-  exposed with PHP's integer value `201`. It does not negotiate or apply real
-  client options, change result type conversion, mutate connection state, or
-  affect later placeholder result rows.
+  `mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` and its
+  `mysqli_set_opt()` alias accept bool or int values and return deterministic
+  `true`; the option constant is exposed with PHP's integer value `201`. They
+  do not negotiate or apply real client options, change result type
+  conversion, mutate connection state, or affect later placeholder result
+  rows.
   `mysqli_connect_errno()` and `mysqli_connect_error()` expose deterministic
   clean connect-error state, `0` and `null`, without tracking failed connection
   attempts, host extension state, report-mode behavior, or exact PHP warning
@@ -1080,11 +1082,12 @@
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
-  `mysqli_real_escape_string($handle, $data)` accepts the placeholder handle
-  and a scalar/null string-convertible value, returning deterministic
-  MySQL-style escaping for NUL, newline, carriage return, backslash, single
-  quote, double quote, and Ctrl-Z characters for the reached
-  `wpdb::_real_escape()` option lookup path.
+  `mysqli_real_escape_string($handle, $data)` and its
+  `mysqli_escape_string()` alias accept the placeholder handle and a
+  scalar/null string-convertible value, returning deterministic MySQL-style
+  escaping for NUL, newline, carriage return, backslash, single quote, double
+  quote, and Ctrl-Z characters for the reached `wpdb::_real_escape()` option
+  lookup path.
   Host connections, real mysqli resources/objects, real query execution,
   general non-empty result sets, real row/field metadata,
   real affected-row/insert-id state, connection charset state, binary or
@@ -2581,7 +2584,8 @@
   `mysqli_real_query`, `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
-  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`,
+  `mysqli_real_escape_string`, `mysqli_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_all`, `mysqli_fetch_column`,
@@ -2929,7 +2933,7 @@
   `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
-  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
+  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
@@ -3099,7 +3103,7 @@
   `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
-  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
+  `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
@@ -3192,7 +3196,7 @@
   `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_all`,
   `mysqli_fetch_column`, `mysqli_fetch_field`, `mysqli_fetch_fields`,
   `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
@@ -3314,7 +3318,7 @@
   only deterministic zero clean-state metadata; `mysqli_ping(...)` returns only
   deterministic placeholder liveness success; `mysqli_select_db(...)`
   returns only deterministic success for the placeholder handle;
-  `mysqli_real_escape_string(...)` returns
+  `mysqli_real_escape_string(...)`/`mysqli_escape_string(...)` return
   only deterministic escaping over the placeholder handle and current
   scalar/null string-convertible values; direct `mysqli_connect(...)` calls
   are still a stable unsupported runtime boundary, and direct native
@@ -3328,6 +3332,7 @@
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
   `mysqli_field_count(...)`/
+  `mysqli_options(...)`/`mysqli_set_opt(...)`/
   `mysqli_get_connection_stats(...)`/`mysqli_get_links_stats(...)`/
   `mysqli_get_client_stats(...)`/`mysqli_thread_safe(...)`/
   `mysqli_stmt_init(...)`/`mysqli_prepare(...)`/
@@ -3357,7 +3362,7 @@
   `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_error_list(...)`/`mysqli_sqlstate(...)`/
   `mysqli_warning_count(...)`/`mysqli_info(...)`/`mysqli_get_warnings(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
-  `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
+  `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/`mysqli_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
   `mysqli_fetch_row(...)`/`mysqli_fetch_array(...)`/
   `mysqli_fetch_all(...)`/`mysqli_fetch_column(...)`/
@@ -5013,9 +5018,10 @@
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
+  `mysqli_options()`/`mysqli_set_opt()`/
   `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_stmt_prepare()`/`mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/`mysqli_stmt_error_list()`/`mysqli_stmt_bind_param()`/`mysqli_stmt_bind_result()`/`mysqli_stmt_execute()`/`mysqli_stmt_get_result()`/`mysqli_stmt_close()`/`mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`/`mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/`mysqli_stmt_fetch()`/`mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/`mysqli_stmt_free_result()`/`mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()`/`mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()`/`mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/`mysqli_stmt_insert_id()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_savepoint()`/`mysqli_release_savepoint()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
-  `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/`mysqli_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/

@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 971, `mysqli_set_opt()` and `mysqli_escape_string()` alias
+  behavior over the current placeholder MySQLi surface. `mysqli_set_opt()`
+  shares the bounded `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` bool/int option path
+  with `mysqli_options()`, while `mysqli_escape_string()` shares the
+  deterministic scalar/null escaping path with `mysqli_real_escape_string()`.
+  Native metadata lookup knows both alias names while direct native lowering
+  remains rejected. This is not real client option negotiation, result type
+  conversion changes, connection charset-sensitive escaping, binary/invalid
+  string fidelity, host database state, warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_real_escape_string -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone971`.
+
 - Added Milestone 970, deterministic `mysqli_savepoint()` and
   `mysqli_release_savepoint()` placeholder transaction helpers. Both names are
   visible through function/callability metadata, accept the placeholder

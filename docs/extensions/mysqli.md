@@ -7,7 +7,7 @@ Status: boundary only.
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
 `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
 `mysqli_character_set_name`, `mysqli_stat`,
-`mysqli_field_count`, `mysqli_close`, `mysqli_options`,
+`mysqli_field_count`, `mysqli_close`, `mysqli_options`, `mysqli_set_opt`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
 `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
@@ -34,7 +34,8 @@ Status: boundary only.
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
 `mysqli_get_warnings`, `mysqli_affected_rows`,
-`mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
+`mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`,
+`mysqli_real_escape_string`, `mysqli_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_all`, `mysqli_fetch_column`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`,
@@ -136,11 +137,11 @@ deterministic `true`. It does not close a host connection, invalidate the
 placeholder object, release server resources, or affect later placeholder
 metadata calls.
 
-`mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` accepts bool
-or int values and returns deterministic `true`. The option constant is exposed
-with PHP's integer value `201`. This does not negotiate or apply real client
-options, change result type conversion, mutate connection state, or affect
-later placeholder result rows.
+`mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` and its
+`mysqli_set_opt()` alias accept bool or int values and return deterministic
+`true`. The option constant is exposed with PHP's integer value `201`. This
+does not negotiate or apply real client options, change result type conversion,
+mutate connection state, or affect later placeholder result rows.
 
 `mysqli_connect_errno()` and `mysqli_connect_error()` return deterministic
 clean connect-error state, `0` and `null`. They do not track failed connection
@@ -403,6 +404,13 @@ database-backed WordPress queries, and real metadata exist.
 `mysqli_select_db($handle, $database)` accepts the placeholder object and a
 string or null database name, returning deterministic `true`. It does not
 select or validate a real database.
+
+`mysqli_real_escape_string($handle, $data)` and its `mysqli_escape_string()`
+alias accept the placeholder object and a scalar/null string-convertible value,
+returning deterministic MySQL-style escaping for NUL, newline, carriage return,
+backslash, single quote, double quote, and Ctrl-Z characters. They do not
+inspect a real connection charset, model binary/invalid string behavior, track
+connection state, or provide exact MySQL client-library escaping fidelity.
 
 `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` accept the
 placeholder object and return deterministic `0` for the clean placeholder

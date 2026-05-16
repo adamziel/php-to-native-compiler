@@ -414,6 +414,11 @@ plus deterministic `mysqli_savepoint()` and `mysqli_release_savepoint()`
 placeholder transaction helpers without claiming real host transaction state,
 savepoint creation/release/validation, rollback-to-savepoint behavior,
 warning/error fidelity, or native lowering,
+plus `mysqli_set_opt()` and `mysqli_escape_string()` aliases over the current
+placeholder option-setting and escaping paths without claiming real client
+option negotiation, result type conversion changes, connection
+charset-sensitive escaping, binary/invalid string fidelity, host database
+state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

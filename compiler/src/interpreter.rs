@@ -4383,15 +4383,29 @@ impl Interpreter {
     }
 
     fn call_mysqli_options(&self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("mysqli_options", args, 3, span)?;
-        expect_mysqli_handle("mysqli_options()", &args[0], span)?;
+        self.call_mysqli_option_setter("mysqli_options", args, span)
+    }
+
+    fn call_mysqli_set_opt(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_mysqli_option_setter("mysqli_set_opt", args, span)
+    }
+
+    fn call_mysqli_option_setter(
+        &self,
+        function: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let call_name = callable_name(function);
+        expect_arity(function, args, 3, span)?;
+        expect_mysqli_handle(&call_name, &args[0], span)?;
         match &args[1] {
             Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE) => {}
             Value::Int(option) => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "mysqli_options()",
+                        call_name.clone(),
                         format!(
                             "only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got {option}"
                         ),
@@ -4402,7 +4416,7 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "mysqli_options()",
+                        call_name.clone(),
                         format!(
                             "option must be int in the current subset, got {}",
                             value.type_name()
@@ -4416,7 +4430,7 @@ impl Interpreter {
             value => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "mysqli_options()",
+                    call_name,
                     format!(
                         "value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got {}",
                         value.type_name()
@@ -5425,12 +5439,26 @@ impl Interpreter {
     }
 
     fn call_mysqli_real_escape_string(&self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("mysqli_real_escape_string", args, 2, span)?;
+        self.call_mysqli_escape_string_impl("mysqli_real_escape_string", args, span)
+    }
+
+    fn call_mysqli_escape_string(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_mysqli_escape_string_impl("mysqli_escape_string", args, span)
+    }
+
+    fn call_mysqli_escape_string_impl(
+        &self,
+        function: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let call_name = callable_name(function);
+        expect_arity(function, args, 2, span)?;
         let Value::Object(handle) = &args[0] else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "mysqli_real_escape_string()",
+                    call_name.clone(),
                     format!(
                         "first argument must be mysqli object in the current subset, got {}",
                         args[0].type_name()
@@ -5442,7 +5470,7 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "mysqli_real_escape_string()",
+                    call_name.clone(),
                     format!(
                         "first argument must be mysqli object in the current subset, got {} object",
                         handle.class_name()
@@ -5455,7 +5483,7 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "mysqli_real_escape_string()",
+                    call_name,
                     "data argument arrays are not implemented in the current subset",
                 ),
             ));
@@ -10296,6 +10324,7 @@ impl Interpreter {
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
             "mysqli_close" => self.call_mysqli_close(&args, span),
             "mysqli_options" => self.call_mysqli_options(&args, span),
+            "mysqli_set_opt" => self.call_mysqli_set_opt(&args, span),
             "mysqli_connect_errno" => self.call_mysqli_connect_errno(&args, span),
             "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
             "mysqli_error_list" => self.call_mysqli_error_list(&args, span),
@@ -10357,6 +10386,7 @@ impl Interpreter {
             "mysqli_ping" => self.call_mysqli_ping(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
+            "mysqli_escape_string" => self.call_mysqli_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
             "mysqli_fetch_assoc" => self.call_mysqli_fetch_assoc(&args, span),
             "mysqli_fetch_row" => self.call_mysqli_fetch_row(&args, span),
@@ -13305,6 +13335,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_field_count"
             | "mysqli_close"
             | "mysqli_options"
+            | "mysqli_set_opt"
             | "mysqli_connect_errno"
             | "mysqli_connect_error"
             | "mysqli_error_list"
@@ -13366,6 +13397,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_ping"
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
+            | "mysqli_escape_string"
             | "mysqli_fetch_object"
             | "mysqli_fetch_assoc"
             | "mysqli_fetch_row"

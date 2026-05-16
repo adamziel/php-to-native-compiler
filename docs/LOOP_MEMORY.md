@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `e4688c6a runtime: add mysqli savepoint placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 971, `mysqli_set_opt()` and
+  `mysqli_escape_string()` alias behavior over the current placeholder MySQLi
+  surface.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone971/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension mysqli_real_escape_string -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone971`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder MySQLi option-setting and escaping
+  now expose PHP's alias names in addition to the underlying helper names.
+- Remaining semantic gaps: real client option negotiation, result type
+  conversion changes, connection charset-sensitive escaping,
+  binary/invalid-string fidelity, host database state, warning/error fidelity,
+  and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next audited MySQLi helper gap
+  such as SSL setup, broader option catalogs, or broader escaping fidelity.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `cfe8ab95 runtime: add mysqli fetch all column placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 970, deterministic `mysqli_savepoint()` and
@@ -50,9 +81,10 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: real host transaction state, savepoint
   creation/release/validation, rollback-to-savepoint behavior, warning/error
   fidelity, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next audited MySQLi helper gap
-  such as SSL setup or alias behavior.
+- Checkpoint result: committed and pushed
+  `e4688c6a runtime: add mysqli savepoint placeholders`.
+- Next concrete task: inspect the next audited MySQLi helper gap such as SSL
+  setup or alias behavior.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
