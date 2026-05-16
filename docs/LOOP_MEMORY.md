@@ -33,18 +33,20 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1077, bounded nested/append string-keyed
   `$GLOBALS` reference targets for direct unaliased variable sources.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/superglobals.rs`,
   `tests/fixtures/milestone1077/globals_nested_reference_targets.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   local PHP 8.2.29 probes compared nested `$GLOBALS` reference targets,
   function-local nested sources, and nested append targets.
   `cargo test -p phpc --test superglobals -- --test-threads=1` passed with 11
   tests. `cargo run -p phpc -- test tests/fixtures/milestone1077
   --compare-php` and `cargo run -p phpc -- test tests/fixtures/milestone1076
-  --compare-php` passed.
+  --compare-php` passed. The serialized checkpoint gate passed with 1282
+  fixture tests, 727 system PHP comparisons, and 555 skipped comparisons, then
+  committed `aec28701 runtime: add nested globals reference targets`.
 - Current WordPress frontier: nested string-keyed `$GLOBALS` reference targets
   such as `$GLOBALS["bag"]["slot"] =& $value;` and nested append targets such
   as `$GLOBALS["list"][] =& $value;` now bind selected root-global array slots
@@ -62,9 +64,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   dynamic/magic/non-public properties, nested/object offset aliases, native
   lowering, exact mutation ordering, alias rebinding, and by-reference
   `ArrayAccess::offsetGet()` indirect-modification fidelity remain missing.
-- Next concrete task: finish verification, checkpoint Milestone 1077, then
-  choose the next reference/COW gap or native-lowering boundary with PHP
-  comparison coverage where applicable.
+- Next concrete task: choose the next reference/COW gap or native-lowering
+  boundary with PHP comparison coverage where applicable.
 
 ## Loop Event 2026-05-16T19:35:00Z
 

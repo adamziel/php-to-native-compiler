@@ -21,11 +21,14 @@ Implemented:
   sources, source names already routed through array-offset aliases, recursive
   `$GLOBALS` array materialization, full PHP reference containers,
   copy-on-write, exact alias rebinding/mutation ordering, and native lowering
-  remain unsupported. Verification so far: local PHP 8.2.29 probes for nested
+  remain unsupported. Verification: local PHP 8.2.29 probes for nested
   `$GLOBALS` reference targets, function-local nested sources, and nested
   append targets, `cargo test -p phpc --test superglobals -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone1077 --compare-php`, and
   `cargo run -p phpc -- test tests/fixtures/milestone1076 --compare-php`.
+  The serialized checkpoint gate passed with 1282 fixture tests, 727 system PHP
+  comparisons, and 555 skipped comparisons, then committed
+  `aec28701 runtime: add nested globals reference targets`.
 
 - Added Milestone 1076, a bounded direct string-keyed `$GLOBALS` reference
   target slice for direct variable sources. Statement-form

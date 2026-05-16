@@ -10517,8 +10517,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c07ce1f4 runtime: add globals reference targets`, covering Milestone 1076.
-  Milestone 1077 is in progress and not checkpointed yet.
+  `aec28701 runtime: add nested globals reference targets`, covering Milestone
+  1077.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
