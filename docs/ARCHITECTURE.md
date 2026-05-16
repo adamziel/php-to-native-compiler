@@ -170,8 +170,11 @@ Implemented now:
   `value_cloned()`, `value_mut()`, `set_value()`, and `into_value()`) that
   delegate through an explicit clone-by-value `ArraySlot`. `ArraySlot` owns a
   private `ArraySlotCell` and clones by allocating a fresh cell with a cloned
-  value, preserving the current eager array value semantics while isolating
-  the storage object that future slot/reference-cell work must replace;
+  value. Each cell has a stable internal `ArraySlotCellId`, but slot/cell
+  equality remains value-based so current PHP array equality and clone behavior
+  do not depend on storage identity. This preserves the current eager array
+  value semantics while isolating the storage object that future
+  slot/reference-cell work must replace;
   `PhpArray::get_slot()` and `get_slot_mut()` expose normalized-key slot
   lookup without introducing aliasing
 

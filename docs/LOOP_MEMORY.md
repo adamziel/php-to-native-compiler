@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `df53b807 docs: record array slot cell gate`, pushed to `origin/master`.
+- Task attempted: Milestone 1061, stable internal identity for array slot
+  cells without changing value equality or clone-by-value behavior.
+- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime array_slot_cell -- --test-threads=1` passed with
+  2 tests. `cargo test -p php_runtime -- --test-threads=1` passed with 111
+  tests. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed.
+- Current WordPress frontier: array slot cells now have stable internal
+  identities that future reference/rebinding work can target, while
+  same-value slots still compare by value and slot cloning still creates a
+  distinct cell.
+- Remaining semantic gaps: cell identity is not yet shared reference storage;
+  direct `$alias =& $array[$key]`, missing-offset reference materialization,
+  array/object offset aliases, exact by-reference `foreach`, lingering
+  references, copy-on-write, mutation-during-iteration fidelity, and native
+  lowering remain missing.
+- Next concrete task: add an internal cell rebinding or shared-cell constructor
+  primitive behind `ArraySlot` while keeping public by-value array writes
+  unchanged.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `51be02de docs: record array offset reference boundary gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1060, private `ArraySlotCell` layer under

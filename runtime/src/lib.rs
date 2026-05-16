@@ -1648,6 +1648,10 @@ impl ArraySlot {
         }
     }
 
+    pub fn cell_id(&self) -> ArraySlotCellId {
+        self.cell.id()
+    }
+
     pub fn value(&self) -> &Value {
         self.cell.value()
     }
@@ -1669,18 +1673,43 @@ impl ArraySlot {
     }
 }
 
-#[derive(Debug, PartialEq)]
+static NEXT_ARRAY_SLOT_CELL_ID: AtomicI64 = AtomicI64::new(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ArraySlotCellId(i64);
+
+impl ArraySlotCellId {
+    pub fn as_i64(self) -> i64 {
+        self.0
+    }
+}
+
+#[derive(Debug)]
 struct ArraySlotCell {
+    id: ArraySlotCellId,
     value: Value,
+}
+
+impl PartialEq for ArraySlotCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
 }
 
 impl ArraySlotCell {
     fn new(value: Value) -> Self {
-        Self { value }
+        Self {
+            id: ArraySlotCellId(NEXT_ARRAY_SLOT_CELL_ID.fetch_add(1, AtomicOrdering::Relaxed)),
+            value,
+        }
     }
 
     fn clone_by_value(&self) -> Self {
         Self::new(self.value.clone())
+    }
+
+    fn id(&self) -> ArraySlotCellId {
+        self.id
     }
 
     fn value(&self) -> &Value {
@@ -4293,6 +4322,11 @@ mod tests {
         let slot = ArraySlot::new(Value::String("original".to_string()));
         let mut cloned = slot.clone();
 
+        assert_ne!(
+            slot.cell_id(),
+            cloned.cell_id(),
+            "slot cloning must allocate a distinct cell id until PHP reference cells exist"
+        );
         assert!(
             !ptr::addr_eq(&slot.cell, &cloned.cell),
             "slot cloning must allocate an independent cell until PHP reference cells exist"
@@ -4302,6 +4336,17 @@ mod tests {
 
         assert_eq!(slot.value(), &Value::String("original".to_string()));
         assert_eq!(cloned.value(), &Value::String("clone".to_string()));
+    }
+
+    #[test]
+    fn array_slot_cell_identity_does_not_change_value_equality() {
+        let left = ArraySlot::new(Value::Int(7));
+        let right = ArraySlot::new(Value::Int(7));
+
+        assert_ne!(left.cell_id(), right.cell_id());
+        assert_eq!(left, right);
+        assert!(left.cell_id().as_i64() > 0);
+        assert!(right.cell_id().as_i64() > 0);
     }
 
     #[test]

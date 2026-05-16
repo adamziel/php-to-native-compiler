@@ -10265,6 +10265,17 @@ handled.
   direct array-offset references, missing-offset reference materialization,
   copy-on-write, exact by-reference `foreach`, object-property offsets, or
   native lowering.
+
+## Milestone 1061: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add stable internal identity for array slot
+  cells without changing observable value equality. `ArraySlotCell` now carries
+  an `ArraySlotCellId`, `ArraySlot::cell_id()` exposes it, cloning a slot
+  allocates a distinct cell id with a cloned value, and focused runtime tests
+  prove distinct same-value slots still compare equal. This is not shared
+  reference cells, direct array-offset references, missing-offset reference
+  materialization, copy-on-write, exact by-reference `foreach`,
+  object-property offsets, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference

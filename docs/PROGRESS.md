@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1061, stable internal identity for array slot cells without
+  changing value equality or clone-by-value behavior. Each `ArraySlotCell` now
+  receives an `ArraySlotCellId`, `ArraySlot::cell_id()` exposes that identity,
+  and the slot clone path still allocates a distinct cell id with a cloned
+  value. `ArraySlotCell` equality remains value-based so existing PHP array
+  equality and fixture behavior do not start depending on internal storage
+  identity. Added focused runtime tests proving cloned slots get distinct cell
+  identities and that two same-value slots compare equal even when their cell
+  ids differ. This does not implement shared reference cells, direct
+  array-offset references, missing-offset reference materialization,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering. Verification so far:
+  `cargo test -p php_runtime array_slot_cell -- --test-threads=1`,
+  `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1060, a private `ArraySlotCell` layer under `ArraySlot`.
   `ArraySlot` now owns an internal cell object and delegates all value access,
   mutation, cloning, and extraction through that cell. Its custom clone path
