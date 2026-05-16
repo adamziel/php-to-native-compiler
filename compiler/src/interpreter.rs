@@ -468,6 +468,31 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_global_name_to_static_source(
+        &mut self,
+        global_name: &str,
+        source: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.array_offset_aliases.contains_key(source) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "$GLOBALS",
+                    "reference binding through $GLOBALS offsets requires a direct unaliased variable source",
+                ),
+            ));
+        }
+
+        let source_cell = self
+            .read_cell(source)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(source)))?;
+        self.global_storage()
+            .borrow_mut()
+            .insert(global_name.to_string(), source_cell);
+        Ok(())
+    }
+
     fn bind_static_to_cell(&mut self, target: &str, cell: VariableCell) {
         self.array_offset_aliases.remove(target);
         self.routed_storage(target)
@@ -3469,13 +3494,17 @@ impl Interpreter {
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "$GLOBALS",
-                                "reference binding through $GLOBALS offsets is not implemented",
-                            ),
-                        ));
+                        let Some(global_name) = globals_offset_name(&key) else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "$GLOBALS",
+                                    "only string-keyed direct offset reference bindings are implemented",
+                                ),
+                            ));
+                        };
+                        scope.bind_global_name_to_static_source(global_name, source_name, span)?;
+                        return Ok(());
                     }
                     scope.bind_array_offset_to_static_source(name, key, source_name, span)?;
                     return Ok(());

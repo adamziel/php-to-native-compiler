@@ -10478,19 +10478,32 @@ handled.
   iterables, object/`Traversable` iteration, foreach destructuring,
   array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
   broad array reordering/replacement semantics, or native lowering.
+
+## Milestone 1076: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct string-keyed `$GLOBALS`
+  reference-target slice for direct unaliased variable sources. In the current
+  subset, `$GLOBALS["name"] =& $value;` binds the named root global symbol to
+  the source variable cell at top level and from function scope. Writes through
+  the source variable, direct global variable, and `$GLOBALS` offset observe
+  the same value, and `unset($value)` detaches only the source name. This is
+  not non-string keys, append/nested `$GLOBALS` reference targets, non-direct
+  sources, recursive `$GLOBALS` materialization, full PHP reference
+  containers, copy-on-write, exact alias rebinding/mutation ordering, or
+  native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
-  reference targets, `$GLOBALS` reference target semantics, by-reference
-  `ArrayAccess::offsetGet()` indirect-modification fidelity, or native lowering
-  boundaries, and add the next bounded behavior or explicit diagnostic with PHP
-  comparison coverage where applicable.
+  reference targets, remaining `$GLOBALS` reference target semantics,
+  by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
+  native lowering boundaries, and add the next bounded behavior or explicit
+  diagnostic with PHP comparison coverage where applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
   `9051cb76 runtime: detach foreach reference on current slot unset`, covering
-  Milestone 1075.
+  Milestone 1075. Milestone 1076 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

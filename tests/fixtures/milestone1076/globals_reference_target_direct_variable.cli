@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1076/globals_reference_target_direct_variable.php
+exit: 0
+stdout:
+first|first|second|second|third|third
+changed|changed|global-write
+kept|new
+--- stdout end ---
+stderr:
+--- stderr end ---

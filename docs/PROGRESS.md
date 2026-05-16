@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 1076, a bounded direct string-keyed `$GLOBALS` reference
+  target slice for direct variable sources. Statement-form
+  `$GLOBALS["target"] =& $value;` now binds the named root global symbol to the
+  source variable cell when the target key is a direct string-keyed
+  `$GLOBALS` offset and the source is a direct unaliased variable name. This
+  works at top level and from function scope, so a function-local variable can
+  seed a root global alias that remains alive after the function returns.
+  Writes through the source variable, the direct global variable, and
+  `$GLOBALS["target"]` observe the same value; `unset($value)` detaches only
+  the source name while the root global remains alive. Non-string keys,
+  `$GLOBALS` append/nested reference targets, source names already routed
+  through array-offset aliases, non-direct sources such as object properties,
+  recursive `$GLOBALS` array materialization, full PHP reference containers,
+  copy-on-write, exact alias rebinding/mutation ordering, and native lowering
+  remain unsupported. Verification so far: local PHP 8.2.29 probes for
+  top-level, function-local, and unset-detach `$GLOBALS` reference targets,
+  `cargo test -p phpc --test superglobals -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1076 --compare-php`, and
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_source_copies_current_container_value -- --test-threads=1`.
+
 - Added Milestone 1075, a bounded direct-array by-reference `foreach`
   current-slot unset/reinsert slice. While a supported direct-array
   by-reference foreach body is executing, `unset($items[$key])` for the active

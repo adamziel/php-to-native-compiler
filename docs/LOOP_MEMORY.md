@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T19:35:00Z
+
+- Checkpoint before this task:
+  `039ad0fd docs: record foreach current unset gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1076, bounded direct string-keyed `$GLOBALS`
+  reference targets for direct unaliased variable sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/superglobals.rs`,
+  `tests/fixtures/milestone1076/globals_reference_target_direct_variable.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  local PHP 8.2.29 probes compared top-level, function-local, and unset-detach
+  `$GLOBALS["name"] =& $value` behavior.
+  `cargo test -p phpc --test superglobals -- --test-threads=1` passed with 8
+  tests. `cargo run -p phpc -- test tests/fixtures/milestone1076
+  --compare-php` passed. `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_object_property_source_copies_current_container_value --
+  --test-threads=1` passed, preserving the existing non-direct source copy
+  behavior.
+- Current WordPress frontier: direct string-keyed `$GLOBALS` reference targets
+  can now bind root global symbols to direct unaliased source variable cells at
+  top level and from function scope. Writes through the source name, the direct
+  global variable, and the `$GLOBALS` offset observe the same value; unsetting
+  the source name detaches only that name.
+- Remaining semantic gaps: non-string `$GLOBALS` keys, append/nested
+  `$GLOBALS` reference targets, non-direct `$GLOBALS` reference sources,
+  recursive `$GLOBALS` materialization, full PHP reference containers,
+  copy-on-write, non-direct iterables, object/`Traversable` iteration,
+  foreach destructuring, array/object/`ArrayAccess` offset loop variables,
+  nested-offset loop values, broad array reordering/replacement during
+  iteration, existing alias groups, source names already routed through
+  array-offset aliases, dynamic/magic/non-public properties, nested/object
+  offset aliases, native lowering, exact mutation ordering, alias rebinding,
+  and by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity
+  remain missing.
+- Next concrete task: finish verification, checkpoint Milestone 1076, then
+  choose the next reference/COW gap or native-lowering boundary with PHP
+  comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T19:05:00Z
 
 - Checkpoint before this task:

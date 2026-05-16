@@ -248,9 +248,9 @@ name to that slot. Writes through either the source variable or the supported
 direct array/object-property offset observe the same selected value, and
 `unset($value)` detaches only the source name. Undefined source variables
 start as `null` before binding. Existing direct alias groups, source names
-already routed through array-offset aliases, `$GLOBALS`, PHP's deprecated
-false-root conversion, other non-array roots, dynamic/magic/non-public
-property targets, non-direct sources, non-static
+already routed through array-offset aliases, PHP's deprecated false-root
+conversion, other non-array roots, dynamic/magic/non-public property targets,
+non-direct sources, non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native
@@ -259,6 +259,16 @@ offset targets such as `$bag[$key] =& $value;` and property-held
 `$holder->bag[$key] =& $value;` are an explicit runtime boundary with a stable
 diagnostic, reflecting PHP's fatal behavior for assigning by reference to an
 object array dimension while avoiding engine-specific notice/fatal text.
+Direct string-keyed `$GLOBALS` reference targets also have a narrow route:
+`$GLOBALS["name"] =& $value;` binds the named root global symbol to a direct
+unaliased source variable cell, including from function scope. Writes through
+the source name, the direct global variable, and the string-keyed `$GLOBALS`
+offset observe the same value, and unsetting the source name detaches only
+that name. Non-string `$GLOBALS` keys, append/nested `$GLOBALS` reference
+targets, source names already routed through array-offset aliases, non-direct
+sources, recursive `$GLOBALS` materialization, full reference containers,
+copy-on-write, exact mutation ordering, and native lowering remain future
+work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

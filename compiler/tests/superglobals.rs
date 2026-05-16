@@ -96,6 +96,67 @@ echo "|", $GLOBALS["wp_object_cache"];
 }
 
 #[test]
+fn globals_direct_string_offsets_bind_reference_targets_to_direct_sources() {
+    let execution = run_source(
+        r#"<?php
+$value = "first";
+$GLOBALS["target"] =& $value;
+echo $target, "|", $GLOBALS["target"], "|";
+$value = "second";
+echo $target, "|", $GLOBALS["target"], "|";
+$GLOBALS["target"] = "third";
+echo $value, "|", $target;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|first|second|second|third|third");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_reference_targets_can_bind_function_local_sources_to_root() {
+    let execution = run_source(
+        r#"<?php
+function bind_target() {
+    $value = "local";
+    $GLOBALS["target"] =& $value;
+    $value = "changed";
+    echo $GLOBALS["target"], "|";
+}
+
+bind_target();
+echo $target, "|";
+$target = "global-write";
+echo $GLOBALS["target"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed|global-write");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_reference_targets_detach_when_source_name_is_unset() {
+    let execution = run_source(
+        r#"<?php
+$value = "first";
+$GLOBALS["target"] =& $value;
+unset($value);
+$value = "new";
+echo $GLOBALS["target"], "|", $value, "|";
+$GLOBALS["target"] = "global";
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|new|new");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
     let error = runtime_error("<?php\necho $_GET;\n");
 
