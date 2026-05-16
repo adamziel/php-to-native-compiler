@@ -942,13 +942,24 @@ echo "|";
 echo function_exists($free_result) ? "free-result-exists" : "free-result-missing";
 echo "|";
 echo is_callable($free_result) ? "free-result-callable" : "free-result-missing";
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_stmt_field_count($stmt);
+echo "|";
+$result = mysqli_stmt_result_metadata($stmt);
+echo get_class($result);
+echo "|";
+echo mysqli_fetch_field_direct($result, 1)->name;
+echo "|";
+mysqli_stmt_free_result($stmt);
+echo "freed";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|metadata-callable|field-count-exists|field-count-callable|free-result-exists|free-result-callable"
+        "yes|metadata-callable|field-count-exists|field-count-callable|free-result-exists|free-result-callable|2|mysqli_result|post_title|freed"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -965,7 +976,7 @@ mysqli_stmt_result_metadata($stmt);
     assert_eq!(metadata_error.column, 1);
     assert_eq!(
         metadata_error.message,
-        "unsupported call mysqli_stmt_result_metadata(): mysqli statement objects, statement result metadata objects, and field metadata transfer are not implemented in the current subset"
+        "unsupported call mysqli_stmt_result_metadata(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let field_count_error = run_source(
@@ -981,7 +992,7 @@ mysqli_stmt_field_count($stmt);
     assert_eq!(field_count_error.column, 1);
     assert_eq!(
         field_count_error.message,
-        "unsupported call mysqli_stmt_field_count(): mysqli statement objects, statement result metadata, and statement field-count state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_field_count(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let free_result_error = run_source(
@@ -997,7 +1008,23 @@ mysqli_stmt_free_result($stmt);
     assert_eq!(free_result_error.column, 1);
     assert_eq!(
         free_result_error.message,
-        "unsupported call mysqli_stmt_free_result(): mysqli statement objects, statement result buffers, and statement result cleanup state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_free_result(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let unknown_select_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID FROM wp_posts");
+mysqli_stmt_field_count($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unknown_select_error.phase, Phase::Runtime);
+    assert_eq!(unknown_select_error.line, 3);
+    assert_eq!(unknown_select_error.column, 1);
+    assert_eq!(
+        unknown_select_error.message,
+        "unsupported call mysqli_stmt_field_count(): statement result metadata is implemented only for current WordPress placeholder SELECT shapes"
     );
 }
 

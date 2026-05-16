@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone979/wpdb_stmt_result_metadata_placeholder.php
+exit: 0
+stdout:
+2|post_title
+--- stdout end ---
+stderr:
+--- stderr end ---

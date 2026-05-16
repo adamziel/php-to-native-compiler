@@ -459,6 +459,13 @@ MySQLi calls and a WordPress-shaped `wpdb` smoke, without claiming
 failed-prepare tracking, statement execution diagnostics, warning-chain
 objects, real error-list entries, affected-row metadata, insert-id metadata,
 host database state, PHP warning/error fidelity, or native lowering,
+plus deterministic `mysqli_stmt_result_metadata()`,
+`mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()` behavior for the
+current seed-post WordPress SELECT field metadata shape through direct MySQLi
+and WordPress-shaped `wpdb` smokes, without claiming prepared binding,
+statement execution, statement result rows, mysqlnd result transfer, broad SQL
+metadata, host database metadata, PHP warning/error fidelity, or native
+lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

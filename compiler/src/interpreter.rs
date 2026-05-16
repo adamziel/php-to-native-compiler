@@ -4799,37 +4799,51 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_stmt_result_metadata(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_result_metadata(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_result_metadata", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_result_metadata()",
-                "mysqli statement objects, statement result metadata objects, and field metadata transfer are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_result_metadata()", &args[0], span)?;
+        let Some(query) = self
+            .mysqli_statement_state("mysqli_stmt_result_metadata()", stmt_id, span)?
+            .query
+            .as_deref()
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let Some(result) =
+            mysqli_statement_result_for_query("mysqli_stmt_result_metadata()", query, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+        self.create_mysqli_result_placeholder(span, result.fields, Vec::new())
     }
 
     fn call_mysqli_stmt_field_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_field_count", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_field_count()",
-                "mysqli statement objects, statement result metadata, and statement field-count state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_field_count()", &args[0], span)?;
+        let Some(query) = self
+            .mysqli_statement_state("mysqli_stmt_field_count()", stmt_id, span)?
+            .query
+            .as_deref()
+        else {
+            return Ok(Value::Int(0));
+        };
+        let Some(result) =
+            mysqli_statement_result_for_query("mysqli_stmt_field_count()", query, span)?
+        else {
+            return Ok(Value::Int(0));
+        };
+        Ok(Value::Int(result.fields.len() as i64))
     }
 
     fn call_mysqli_stmt_free_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_free_result", args, 1, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_free_result()",
-                "mysqli statement objects, statement result buffers, and statement result cleanup state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_free_result()", &args[0], span)?;
+        self.mysqli_statement_state("mysqli_stmt_free_result()", stmt_id, span)?;
+        Ok(Value::Null)
     }
 
     fn call_mysqli_stmt_data_seek(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -13896,6 +13910,28 @@ fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultSta
     }
 
     None
+}
+
+fn mysqli_statement_result_for_query(
+    function: &str,
+    query: &str,
+    span: Span,
+) -> CompileResult<Option<MysqliPendingResultState>> {
+    if let Some(result) = mysqli_pending_result_for_query(query) {
+        return Ok(Some(result));
+    }
+
+    if is_mysqli_select_query(query) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "statement result metadata is implemented only for current WordPress placeholder SELECT shapes",
+            ),
+        ));
+    }
+
+    Ok(None)
 }
 
 fn mysqli_placeholder_param_count(query: &str) -> usize {

@@ -246,20 +246,24 @@ is an explicit runtime boundary. Reached calls report stable unsupported
 diagnostics because mysqlnd result transfer, result metadata, execution state,
 and host database rows are not implemented.
 
+`mysqli_stmt_field_count($statement)` reports deterministic field counts for
+the current placeholder statement result metadata shapes, including the
+seed-post WordPress SELECT shape. `mysqli_stmt_result_metadata($statement)`
+returns a placeholder `mysqli_result` carrying deterministic field metadata
+for that seed-post SELECT shape, returns `false` for statements without result
+fields, and rejects unknown SELECT metadata with a stable unsupported
+diagnostic. `mysqli_stmt_free_result($statement)` validates the active
+placeholder statement and returns `null`. This is not prepared binding,
+statement execution, statement result rows, mysqlnd result transfer, broad SQL
+metadata, host database metadata, PHP warning/error fidelity, or native
+lowering.
+
 `mysqli_stmt_store_result($statement)`, `mysqli_stmt_num_rows($statement)`,
 and `mysqli_stmt_fetch($statement)` are visible through callable metadata but
 are explicit runtime boundaries. Reached calls report stable unsupported
 diagnostics because statement objects, buffered result storage, statement
 row-count metadata, cursor advancement, bound result buffers, and host
 database rows are not implemented.
-
-`mysqli_stmt_result_metadata($statement)`,
-`mysqli_stmt_field_count($statement)`, and
-`mysqli_stmt_free_result($statement)` are visible through callable metadata but
-are explicit runtime boundaries. Reached calls report stable unsupported
-diagnostics because statement objects, statement result metadata objects,
-field metadata transfer, field-count state, result buffers, and statement
-result cleanup state are not implemented.
 
 `mysqli_stmt_data_seek($statement, $offset)`,
 `mysqli_stmt_attr_get($statement, $attribute)`, and

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone979/mysqli_stmt_result_metadata_placeholder.php
+exit: 0
+stdout:
+2|mysqli_result|ID|post_title|freed
+--- stdout end ---
+stderr:
+--- stderr end ---

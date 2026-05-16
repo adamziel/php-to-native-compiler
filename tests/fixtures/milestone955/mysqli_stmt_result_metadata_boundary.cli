@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone955/mysqli_stmt_result_metadata_boundary.php:3:1: unsupported call mysqli_stmt_result_metadata(): mysqli statement objects, statement result metadata objects, and field metadata transfer are not implemented in the current subset
+runtime error at tests/fixtures/milestone955/mysqli_stmt_result_metadata_boundary.php:3:1: unsupported call mysqli_stmt_result_metadata(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 --- stderr end ---

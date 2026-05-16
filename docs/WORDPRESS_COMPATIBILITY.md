@@ -1727,7 +1727,14 @@ historical blockers and remaining full-support gaps include:
   affected-row, and insert-id reads, without claiming failed-prepare tracking,
   statement execution diagnostics, warning-chain objects, real error-list
   entries, affected-row metadata, insert-id metadata, host database state, PHP
-  warning/error fidelity, or native database lowering. Milestone 965 adds explicit
+  warning/error fidelity, or native database lowering. Milestone 979 adds
+  deterministic `mysqli_stmt_result_metadata()`,
+  `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()` behavior for
+  the current seed-post WordPress SELECT field metadata shape, including a
+  WordPress-shaped `wpdb` smoke, without claiming prepared binding, statement
+  execution, statement result rows, mysqlnd result transfer, broad SQL
+  metadata, host database metadata, PHP warning/error fidelity, or native
+  database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

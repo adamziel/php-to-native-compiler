@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone956/wpdb_stmt_field_count_boundary.php:12:16: unsupported call mysqli_stmt_field_count(): mysqli statement objects, statement result metadata, and statement field-count state are not implemented in the current subset
+runtime error at tests/fixtures/milestone956/wpdb_stmt_field_count_boundary.php:12:16: unsupported call mysqli_stmt_field_count(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 --- stderr end ---

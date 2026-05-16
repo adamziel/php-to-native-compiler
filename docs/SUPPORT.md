@@ -1005,6 +1005,17 @@
   but reached calls report stable unsupported diagnostics because mysqlnd
   result transfer, result metadata, execution state, and host database rows
   are not implemented.
+  `mysqli_stmt_field_count($statement)` reports deterministic field counts for
+  the current placeholder statement result metadata shapes.
+  `mysqli_stmt_result_metadata($statement)` returns placeholder
+  `mysqli_result` field metadata for the current seed-post WordPress SELECT
+  shape, returns `false` for statements without result fields, and rejects
+  unknown SELECT metadata with a stable unsupported diagnostic.
+  `mysqli_stmt_free_result($statement)` validates the active placeholder
+  statement and returns `null`. This is not prepared binding, statement
+  execution, statement result rows, mysqlnd result transfer, broad SQL
+  metadata, host database metadata, PHP warning/error fidelity, or native
+  statement lowering.
   `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
   deterministic `true` without emitting MySQL DBUG trace output, inspecting
   host client-library debug state, inspecting sockets, or reading host
@@ -3312,15 +3323,15 @@
   `mysqli_stmt_get_result(...)` is an explicit statement result boundary
   without mysqlnd result transfer, result metadata, execution state, or host
   database rows,
+  `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
+  `mysqli_stmt_free_result(...)` expose only deterministic placeholder field
+  metadata and cleanup for current known statement SELECT shapes without
+  prepared binding, statement execution, statement result rows, mysqlnd result
+  transfer, broad SQL metadata, or host database metadata,
   `mysqli_stmt_store_result(...)`/`mysqli_stmt_num_rows(...)`/
   `mysqli_stmt_fetch(...)` are explicit statement result/cursor boundaries
   without statement objects, buffered result storage, statement row-count
   metadata, cursor advancement, bound result buffers, or host database rows,
-  `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
-  `mysqli_stmt_free_result(...)` are explicit statement result
-  metadata/cleanup boundaries without statement objects, statement result
-  metadata objects, field metadata transfer, field-count state, result
-  buffers, or statement result cleanup state,
   `mysqli_stmt_data_seek(...)`/`mysqli_stmt_attr_get(...)`/
   `mysqli_stmt_attr_set(...)` are explicit statement positioning/attribute
   boundaries without statement objects, buffered result cursor state, offset

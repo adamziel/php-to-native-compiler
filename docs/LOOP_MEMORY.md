@@ -29,6 +29,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b63c63e9 runtime: add mysqli stmt clean diagnostics`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 979, deterministic placeholder
+  `mysqli_stmt_result_metadata()`, `mysqli_stmt_field_count()`, and
+  `mysqli_stmt_free_result()` behavior for the current seed-post WordPress
+  SELECT field metadata shape, with direct MySQLi and WordPress-shaped `wpdb`
+  smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone979/*`,
+  affected legacy statement-result-metadata fixture snapshots in
+  `tests/fixtures/milestone955` and `tests/fixtures/milestone956`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_metadata -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone979`;
+  and `cargo run -p phpc -- test --compare-php` for `milestone955` and
+  `milestone956`. All passed; the new fixtures are `phpc-only` and skipped
+  for system PHP comparison.
+- Current WordPress frontier: placeholder prepared statements can now expose
+  deterministic field-count and result-metadata objects for the current
+  seed-post SELECT shape through a WordPress-shaped `wpdb` metadata method.
+- Remaining semantic gaps: prepared binding, statement execution, statement
+  result rows, mysqlnd result transfer, broad SQL metadata, host database
+  metadata, PHP warning/error fidelity, and native database lowering remain
+  missing.
+- Next concrete task: run formatting, focused MySQLi metadata tests, and the
+  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  active-statement binding/execution boundaries, result buffering/fetching,
+  broader escaping charset fidelity, local-infile option effects, or
+  multi-result pending queues.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `41f8e051 runtime: add mysqli stmt lifecycle placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 978, deterministic clean diagnostic metadata for
@@ -59,11 +95,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   metadata, insert-id metadata, prepared binding, execution, result state,
   host database state, PHP warning/error fidelity, and native database
   lowering remain missing.
-- Next concrete task: run formatting, focused MySQLi metadata tests, and the
-  serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
-  active-statement binding/execution boundaries, result buffering, broader
-  escaping charset fidelity, local-infile option effects, or multi-result
-  pending queues.
+- Checkpoint result: committed and pushed
+  `b63c63e9 runtime: add mysqli stmt clean diagnostics`.
+- Next concrete task: inspect active-statement result metadata, active
+  binding/execution boundaries, result buffering, broader escaping charset
+  fidelity, local-infile option effects, or multi-result pending queues.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

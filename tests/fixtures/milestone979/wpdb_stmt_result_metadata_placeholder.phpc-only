@@ -1,0 +1,5 @@
+This fixture records deterministic placeholder statement result metadata
+through a WordPress-shaped `wpdb` object. It covers only the current
+seed-post SELECT field metadata shape and does not implement prepared binding,
+execution, result rows, host database metadata, PHP warning/error fidelity, or
+native database lowering.

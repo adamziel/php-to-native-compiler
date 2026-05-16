@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_result_metadata()` and `mysqli_stmt_field_count()` support for
+the current seed-post WordPress SELECT shape. System PHP requires a real
+initialized MySQLi connection and prepared statement metadata; phpc only maps
+the known placeholder query shape to deterministic field metadata and does not
+implement prepared binding, execution, result rows, host database metadata,
+PHP warning/error fidelity, or native database lowering.

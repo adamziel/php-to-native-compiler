@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 979, deterministic `mysqli_stmt_result_metadata()`,
+  `mysqli_stmt_field_count()`, and `mysqli_stmt_free_result()` behavior for
+  active placeholder statements prepared with the current seed-post WordPress
+  SELECT shape. `mysqli_stmt_field_count()` now reports the deterministic
+  field count, `mysqli_stmt_result_metadata()` returns a placeholder
+  `mysqli_result` carrying the `ID` and `post_title` field metadata, and
+  `mysqli_stmt_free_result()` validates the active statement and returns
+  `null`. Non-result statements return `0`/`false`; unknown SELECT metadata
+  remains an explicit unsupported boundary. This is not prepared binding,
+  statement execution, statement result rows, mysqlnd transfer, broad SQL
+  metadata, host database metadata, PHP warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_result_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone979`, and
+  `cargo run -p phpc -- test --compare-php` for the affected `milestone955`
+  and `milestone956` fixture groups.
+
 - Added Milestone 978, deterministic clean diagnostic metadata for the current
   placeholder `mysqli_stmt` lifecycle. For active placeholder statements,
   `mysqli_stmt_errno()` returns `0`, `mysqli_stmt_error()` returns an empty
