@@ -10243,6 +10243,17 @@ handled.
   independent slot values. This is not shared reference cells, direct
   array-offset references, copy-on-write, exact by-reference `foreach`,
   object-property offsets, or native lowering.
+
+## Milestone 1059: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: route direct array-offset reference-assignment
+  sources through the new array slot lookup boundary before rejecting. In the
+  current subset, `$alias =& $array[$key];` evaluates the key, reads the direct
+  array variable, reaches normalized-key `ArraySlot` lookup, and reports a
+  stable diagnostic naming the missing array slot reference cells. This is not
+  shared reference cells, missing-offset reference materialization,
+  copy-on-write, exact by-reference `foreach`, object-property offsets, or
+  native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference

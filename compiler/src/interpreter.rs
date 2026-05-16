@@ -2901,7 +2901,10 @@ impl Interpreter {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
             ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
-            ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
+            ReferenceSource::ArrayIndex { name, index, .. } => {
+                return self.reject_array_offset_reference_source(name, index, span, scope);
+            }
+            ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -2933,7 +2936,10 @@ impl Interpreter {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
             ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
-            ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
+            ReferenceSource::ArrayIndex { name, index, .. } => {
+                return self.reject_array_offset_reference_source(name, index, span, scope);
+            }
+            ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -2952,6 +2958,37 @@ impl Interpreter {
                     "reference assignment",
                     "references and aliasing are not implemented",
                 ),
+            )),
+        }
+    }
+
+    fn reject_array_offset_reference_source(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let key = self.evaluate_array_key(index, scope)?;
+        let value = scope.read_static(name, span)?;
+
+        match value {
+            Value::Array(array) => {
+                let _slot = array.get_slot(key);
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "array-offset reference sources require array slot reference cells, which are not implemented",
+                    ),
+                ))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot read offset on {}",
+                    other.type_name()
+                )),
             )),
         }
     }

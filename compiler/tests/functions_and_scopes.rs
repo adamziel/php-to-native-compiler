@@ -1329,7 +1329,7 @@ $alias =& $items[0];
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: references and aliasing are not implemented"
+        "unsupported call reference assignment: array-offset reference sources require array slot reference cells, which are not implemented"
     );
 }
 

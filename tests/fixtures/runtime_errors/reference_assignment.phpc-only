@@ -1,1 +1,1 @@
-phpc supports only direct variable-to-variable reference assignment cells; array-offset reference sources remain an explicit runtime boundary.
+phpc supports only direct variable-to-variable reference assignment cells; array-offset reference sources reach array slot lookup but remain an explicit runtime boundary until array slot reference cells exist.

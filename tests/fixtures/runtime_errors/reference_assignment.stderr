@@ -1,2 +1,2 @@
-runtime error at 3:1: unsupported call reference assignment: references and aliasing are not implemented
+runtime error at 3:1: unsupported call reference assignment: array-offset reference sources require array slot reference cells, which are not implemented
 

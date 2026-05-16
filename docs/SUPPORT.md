@@ -94,8 +94,10 @@
   reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names, PHP reference-container edge cases,
-  copy-on-write, and native lowering remain unsupported and report stable
-  reference-assignment runtime diagnostics when reached.
+  copy-on-write, and native lowering remain unsupported. Direct array-offset
+  reference sources such as `$alias =& $array[$key];` now evaluate the key and
+  reach normalized-key array slot lookup before reporting a stable diagnostic
+  that array slot reference cells are not implemented.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

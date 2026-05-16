@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 1059, a precise direct array-offset reference-source
+  runtime boundary that now reaches array slot lookup before rejecting.
+  Statement-form `$alias =& $items[$key];` still does not create a PHP alias,
+  but the interpreter now evaluates the offset key, reads the direct array
+  variable, touches the normalized-key `ArraySlot` lookup path, and reports a
+  stable diagnostic naming the missing array slot reference cells instead of
+  the older broad "references and aliasing" boundary. The existing parser
+  registration test for unexecuted function bodies remains covered, and the
+  affected CLI fixtures now document that direct array-offset reference
+  sources reach slot lookup but remain unsupported. This does not implement
+  array slot reference cells, copy-on-write, missing-offset reference
+  materialization, object-property offset aliases, exact by-reference
+  `foreach`, or native lowering. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone748`, and
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1058, explicit PHP array slot lookup helpers on top of
   `ArraySlot`. `PhpArray::get_slot()` and `get_slot_mut()` now expose the
   storage object for a normalized key, and `ArrayEntry` exposes internal

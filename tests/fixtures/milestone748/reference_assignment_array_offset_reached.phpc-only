@@ -1,1 +1,1 @@
-phpc parses by-reference assignment from direct array offsets as a runtime boundary; it does not implement PHP reference aliases or copy-on-write.
+phpc parses by-reference assignment from direct array offsets as a runtime boundary that reaches array slot lookup; it does not implement PHP array slot reference cells, aliases, or copy-on-write.

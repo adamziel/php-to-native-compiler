@@ -186,6 +186,9 @@ mutable cells, so `$alias =& $value;` can bind both direct names to the same
 cell in the current scope/global-routing model. Assignment through either name
 updates the other, and `unset($alias)` or `unset($value)` removes only that
 name binding while the cell remains alive through any remaining alias. Direct
+array-offset reference sources evaluate their key and reach normalized-key
+`ArraySlot` lookup before reporting the current explicit missing array slot
+reference-cell diagnostic; they do not bind aliases yet. Direct
 variable sources holding object values can also be assigned into direct array
 offsets under the existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function

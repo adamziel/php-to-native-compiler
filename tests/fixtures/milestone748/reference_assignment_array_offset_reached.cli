@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone748/reference_assignment_array_offset_reached.php:3:1: unsupported call reference assignment: references and aliasing are not implemented
+runtime error at tests/fixtures/milestone748/reference_assignment_array_offset_reached.php:3:1: unsupported call reference assignment: array-offset reference sources require array slot reference cells, which are not implemented
 --- stderr end ---
