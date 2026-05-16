@@ -10052,8 +10052,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8fc6c0f9 runtime: add wp options autoload readback`, covering
-  Milestone 1041.
+  `a744a875 parser: add short array destructuring assignment`, covering
+  Milestone 1042.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
