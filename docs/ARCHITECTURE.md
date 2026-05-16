@@ -1566,6 +1566,8 @@ extension functions/constants, extension versions, or dynamic loading.
 The current `mysqli_connect()` path is a placeholder-handle boundary used to
 get past WordPress-shaped procedural connection code; it does not mark the
 `mysqli` extension loaded and does not provide executable host database
-behavior. PDO is currently a visibility boundary only: `pdo`/`pdo_mysql`
-extension names and `PDO`/`PDOStatement` class metadata are exposed, while
-`new PDO(...)` remains an explicit unsupported host-database boundary.
+behavior. PDO is currently a visibility/metadata boundary only:
+`pdo`/`pdo_mysql` extension names, `PDO`/`PDOStatement` class metadata, and a
+bounded public integer `PDO` constant catalog for common error-mode,
+fetch-mode, and MySQL init-command checks are exposed, while `new PDO(...)`
+remains an explicit unsupported host-database boundary.

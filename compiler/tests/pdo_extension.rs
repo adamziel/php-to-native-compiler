@@ -39,6 +39,45 @@ new PDO("mysql:host=localhost;dbname=wordpress", "user", "password");
 }
 
 #[test]
+fn pdo_core_constants_are_visible_without_connection_support() {
+    let execution = run_source(
+        r#"<?php
+echo defined("PDO::ATTR_ERRMODE") ? "defined" : "missing";
+echo "|";
+echo PDO::ATTR_ERRMODE;
+echo ":";
+echo PDO::ERRMODE_EXCEPTION;
+echo ":";
+echo PDO::FETCH_ASSOC;
+echo ":";
+echo PDO::FETCH_NUM;
+echo ":";
+echo PDO::FETCH_BOTH;
+echo ":";
+echo PDO::MYSQL_ATTR_INIT_COMMAND;
+echo "|";
+echo constant("PDO::ATTR_DEFAULT_FETCH_MODE");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "defined|3:2:2:3:4:1002|19");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = run_source(
+        r#"<?php
+echo PDO::ATTR_TIMEOUT;
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 9);
+    assert_eq!(error.message, "undefined constant PDO::ATTR_TIMEOUT");
+}
+
+#[test]
 fn emit_ir_folds_pdo_metadata_but_rejects_pdo_instantiation() {
     let ir = emit_ir_source(
         r#"<?php
@@ -72,5 +111,17 @@ new PDO("mysql:host=localhost;dbname=wordpress", "user", "password");
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+echo PDO::ATTR_ERRMODE;
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 9);
     assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }

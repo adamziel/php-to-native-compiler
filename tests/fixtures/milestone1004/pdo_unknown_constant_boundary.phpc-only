@@ -1,0 +1,2 @@
+This fixture records phpc's bounded PDO constant catalog instead of comparing
+against host PHP's installed PDO extension set.

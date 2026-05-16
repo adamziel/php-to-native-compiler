@@ -1,0 +1,1 @@
+runtime error at tests/fixtures/milestone1004/pdo_unknown_constant_boundary.php:2:9: undefined constant PDO::ATTR_TIMEOUT

@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1004, bounded PDO core class constants over the current
+  visibility boundary. The metadata-only `PDO` seed now exposes a small
+  public integer constant catalog for current error-mode, fetch-mode, and
+  MySQL init-command checks: `ATTR_ERRMODE`, `ERRMODE_SILENT`,
+  `ERRMODE_WARNING`, `ERRMODE_EXCEPTION`, `ATTR_DEFAULT_FETCH_MODE`,
+  `FETCH_ASSOC`, `FETCH_NUM`, `FETCH_BOTH`, and
+  `MYSQL_ATTR_INIT_COMMAND`. Direct `PDO::CONST`,
+  `defined("PDO::CONST")`, and `constant("PDO::CONST")` can observe those
+  values through `phpc run`; unknown PDO constants still fail with the
+  existing undefined-constant diagnostic, and native lowering keeps rejecting
+  class-constant access. This is not a full PDO constant catalog,
+  `PDOException`, PDO attributes, error-mode behavior, DSN parsing, host
+  database connection, statement preparation/execution, result fetching,
+  transactions, persistent connections, PHP warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test pdo_extension -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1004`.
+
 - Added Milestone 1003, bounded PDO/pdo_mysql visibility with an explicit PDO
   connection boundary. The deterministic extension registry now reports
   `pdo` and `pdo_mysql` as present, the core class table seeds metadata-only

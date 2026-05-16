@@ -438,6 +438,7 @@ impl Interpreter {
         let mut static_properties = HashMap::new();
         let instance_property_defaults = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
+        seed_core_class_constant_runtime_tables(&classes, &mut class_constants);
         for stmt in &program.statements {
             match stmt {
                 Stmt::Function(function) if !function.is_nested => {
@@ -14102,6 +14103,37 @@ fn register_class_member_runtime_tables(
             }
             ClassMember::Property(_) => {}
         }
+    }
+}
+
+fn seed_core_class_constant_runtime_tables(
+    classes: &PhpClassTable,
+    class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
+) {
+    let Some(pdo_id) = classes.lookup_class_id("PDO") else {
+        return;
+    };
+    for (name, value) in [
+        ("ATTR_ERRMODE", 3),
+        ("ERRMODE_SILENT", 0),
+        ("ERRMODE_WARNING", 1),
+        ("ERRMODE_EXCEPTION", 2),
+        ("ATTR_DEFAULT_FETCH_MODE", 19),
+        ("FETCH_ASSOC", 2),
+        ("FETCH_NUM", 3),
+        ("FETCH_BOTH", 4),
+        ("MYSQL_ATTR_INIT_COMMAND", 1002),
+    ] {
+        let span = Span::new(1, 1);
+        class_constants.insert(
+            (pdo_id, name.to_string()),
+            ClassConstantDecl {
+                name: name.to_string(),
+                visibility: ClassVisibility::Public,
+                value: Expr::Int(value, span),
+                span,
+            },
+        );
     }
 }
 

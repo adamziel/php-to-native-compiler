@@ -606,10 +606,12 @@ proof, PHP warning/error fidelity, mysqlnd behavior, or native lowering, plus
 bounded PDO/pdo_mysql visibility that reports deterministic extension metadata,
 seeds metadata-only `PDO` and `PDOStatement` core classes, and rejects reached
 `new PDO(...)` connection attempts with an explicit unsupported boundary,
-without claiming DSN parsing, host database connection, authentication, PDO
-driver behavior, statement preparation/execution, result fetching,
-transactions, attributes, error modes, `PDOException`, persistent connections,
-or native database lowering, plus
+plus a bounded public integer `PDO` class-constant catalog for current
+error-mode, fetch-mode, and MySQL init-command metadata checks, without
+claiming a full PDO constant catalog, DSN parsing, host database connection,
+authentication, PDO driver behavior, statement preparation/execution, result
+fetching, transactions, attributes, error-mode behavior, `PDOException`,
+persistent connections, or native database lowering, plus
 deterministic `mysqli_info()` clean
 statement-information metadata, now wired through a synthetic
 WordPress-shaped `wpdb` query-info bookkeeping smoke, plus deterministic

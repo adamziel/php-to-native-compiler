@@ -1388,10 +1388,16 @@
   `get_declared_traits` returns a zero-indexed array of traits declared in the
   current program in declaration order,
   `PDO` and `PDOStatement` are metadata-only core class seeds. They are visible
-  through `class_exists()` and `get_declared_classes()`, but `new PDO(...)`
-  reports an explicit unsupported object-instantiation boundary because PDO
-  connections, drivers, statements, and host database state are not implemented.
-  and `print_r` can render current minimal object values
+  through `class_exists()` and `get_declared_classes()`. `PDO` exposes a
+  bounded public integer class-constant catalog for `ATTR_ERRMODE`,
+  `ERRMODE_SILENT`, `ERRMODE_WARNING`, `ERRMODE_EXCEPTION`,
+  `ATTR_DEFAULT_FETCH_MODE`, `FETCH_ASSOC`, `FETCH_NUM`, `FETCH_BOTH`, and
+  `MYSQL_ATTR_INIT_COMMAND`, including direct `PDO::CONST`,
+  `defined("PDO::CONST")`, and `constant("PDO::CONST")` lookup. Unknown PDO
+  constants remain undefined, and `new PDO(...)` reports an explicit
+  unsupported object-instantiation boundary because PDO connections, drivers,
+  statements, and host database state are not implemented. `print_r` can
+  render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, modulo by zero, non-numeric string
   arithmetic, and

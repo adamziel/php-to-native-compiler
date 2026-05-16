@@ -1,0 +1,2 @@
+This fixture uses phpc's deterministic PDO metadata boundary. Host PHP may not
+load the same PDO driver constants in every comparison environment.

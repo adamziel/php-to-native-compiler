@@ -1822,9 +1822,26 @@ impl PhpClassTable {
         classes
             .declare_class("mysqli_stmt")
             .expect("core class table should contain mysqli_result before mysqli_stmt");
-        classes
+        let pdo_id = classes
             .declare_class("PDO")
             .expect("core class table should contain mysqli_stmt before PDO");
+        let pdo = classes
+            .get_mut(pdo_id)
+            .expect("declared PDO class id should resolve");
+        for constant in [
+            "ATTR_ERRMODE",
+            "ERRMODE_SILENT",
+            "ERRMODE_WARNING",
+            "ERRMODE_EXCEPTION",
+            "ATTR_DEFAULT_FETCH_MODE",
+            "FETCH_ASSOC",
+            "FETCH_NUM",
+            "FETCH_BOTH",
+            "MYSQL_ATTR_INIT_COMMAND",
+        ] {
+            pdo.add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("PDO core metadata should not duplicate constants");
+        }
         classes
             .declare_class("PDOStatement")
             .expect("core class table should contain PDO before PDOStatement");
@@ -7133,6 +7150,23 @@ mod tests {
         assert_eq!(pdo.id().index(), 5);
         assert!(pdo.parent_id().is_none());
         assert!(pdo.properties().is_empty());
+        assert_eq!(
+            pdo.constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "ATTR_ERRMODE",
+                "ERRMODE_SILENT",
+                "ERRMODE_WARNING",
+                "ERRMODE_EXCEPTION",
+                "ATTR_DEFAULT_FETCH_MODE",
+                "FETCH_ASSOC",
+                "FETCH_NUM",
+                "FETCH_BOTH",
+                "MYSQL_ATTR_INIT_COMMAND"
+            ]
+        );
         assert!(pdo.methods().is_empty());
 
         let pdo_statement = classes.lookup_class("pdostatement").unwrap();

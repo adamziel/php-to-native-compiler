@@ -9571,6 +9571,21 @@ handled.
   authentication, PDO driver behavior, statement preparation/execution, result
   fetching, transactions, attributes, error modes, `PDOException`, persistent
   connections, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi/PDO metadata gap
+  from the audited PHP surface, such as PDO class constants, `PDOException`,
+  real reference aliasing around bound parameters/results, broader escaping
+  charset fidelity, mutation SQL state, transaction state, host-backed query
+  execution, or the next real database integration gap, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
+  Milestone 1004 adds a bounded public integer `PDO` class-constant catalog
+  for current error-mode, fetch-mode, and MySQL init-command metadata checks:
+  `ATTR_ERRMODE`, `ERRMODE_SILENT`, `ERRMODE_WARNING`,
+  `ERRMODE_EXCEPTION`, `ATTR_DEFAULT_FETCH_MODE`, `FETCH_ASSOC`, `FETCH_NUM`,
+  `FETCH_BOTH`, and `MYSQL_ATTR_INIT_COMMAND`. This is not a full PDO
+  constant catalog, `PDOException`, PDO attributes, error-mode behavior, DSN
+  parsing, host database connections, statement execution, transactions,
+  warning/error fidelity, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9582,8 +9597,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d80b619b runtime: add mysqli connect placeholder boundary`, covering
-  Milestone 1002 before the current Milestone 1003 candidate.
+  `d9435803 runtime: add pdo visibility boundary`, covering Milestone 1003
+  before the current Milestone 1004 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

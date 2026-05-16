@@ -1451,7 +1451,12 @@ historical blockers and remaining full-support gaps include:
   without claiming DSN parsing, host database connections, authentication, PDO
   driver behavior, statement preparation/execution, result fetching,
   transactions, attributes, error modes, `PDOException`, persistent
-  connections, or native database lowering. Milestone 911 adds deterministic
+  connections, or native database lowering. Milestone 1004 adds a bounded
+  public integer `PDO` class-constant catalog for current error-mode,
+  fetch-mode, and MySQL init-command metadata checks, without claiming a full
+  PDO constant catalog, PDO attributes, error-mode behavior, `PDOException`,
+  statement execution, host database state, warning/error fidelity, or native
+  database lowering. Milestone 911 adds deterministic
   `mysqli_info()` clean statement-information metadata without real SQL
   statement-info tracking, mutation summaries, host database state,
   warning/error fidelity, or native database lowering. Milestone 912 wires

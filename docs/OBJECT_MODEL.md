@@ -119,7 +119,8 @@ The model follows the PHP lookup rules needed by the first object slice:
   inherited static property reads/writes share the declaring class slot unless
   a child redeclares the property;
 - the core class table seeds metadata-only `Exception`, `stdClass`, `PDO`, and
-  `PDOStatement` entries;
+  `PDOStatement` entries, with `PDO` exposing a bounded public integer
+  constant catalog for current metadata checks;
 - object values initialize inherited and exact-class non-static instance
   properties to `null` while preserving declaring class id/name for each slot;
   compatible inherited public/protected redeclarations share one slot with the

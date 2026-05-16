@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `d9435803 runtime: add pdo visibility boundary`, pushed to `origin/master`.
+- Task attempted: Milestone 1004, bounded public integer `PDO` core class
+  constants for the current PDO visibility boundary.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/pdo_extension.rs`, `tests/fixtures/milestone1004/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/pdo_mysql.md`,
+  `docs/NEXT_TASKS.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test pdo_extension -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1004`
+  passed. The new PDO constant fixtures are `phpc-only` and skipped for
+  system PHP comparison.
+- Current WordPress frontier: PDO-dependent code can now observe a bounded
+  deterministic PDO error-mode/fetch-mode/MySQL-init constant catalog before
+  failing at the existing explicit connection boundary.
+- Remaining semantic gaps: the full PDO constant catalog, `PDOException`, PDO
+  attributes, error-mode behavior, DSN parsing, host database connections,
+  authentication, statement preparation/execution, result fetching,
+  transactions, persistent connections, PHP warning/error fidelity, and native
+  database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d80b619b runtime: add mysqli connect placeholder boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1003, bounded PDO/pdo_mysql visibility with
