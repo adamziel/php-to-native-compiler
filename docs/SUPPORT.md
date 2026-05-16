@@ -905,6 +905,16 @@
   do not negotiate or apply real client options, change result type
   conversion, mutate connection state, or affect later placeholder result
   rows.
+  The current placeholder option catalog also exposes and accepts
+  `MYSQLI_OPT_CONNECT_TIMEOUT`, `MYSQLI_OPT_READ_TIMEOUT`,
+  `MYSQLI_OPT_NET_CMD_BUFFER_SIZE`, and `MYSQLI_OPT_NET_READ_BUFFER_SIZE` with
+  integer values; `MYSQLI_INIT_COMMAND` and `MYSQLI_OPT_LOAD_DATA_LOCAL_DIR`
+  with string values; and `MYSQLI_OPT_LOCAL_INFILE`,
+  `MYSQLI_OPT_SSL_VERIFY_SERVER_CERT`, and
+  `MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS` with bool or int values. These
+  return deterministic `true` without storing options, affecting
+  connect/query/result behavior, validating paths, running init commands,
+  toggling local infile handling, or changing timeout/network behavior.
   `mysqli_ssl_set($handle, $key, $certificate, $ca_certificate, $ca_path,
   $cipher_algos)` accepts the placeholder object and string or null SSL option
   arguments, returning deterministic `true` without validating files,

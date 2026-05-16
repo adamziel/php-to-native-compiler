@@ -1692,7 +1692,13 @@ historical blockers and remaining full-support gaps include:
   `mysqli_ssl_set()` placeholder setup without claiming TLS configuration,
   file validation, SSL negotiation during `mysqli_real_connect()`, connection
   state mutation, host client-library inspection, warning/error fidelity, or
-  native database lowering. Milestone 965 adds explicit
+  native database lowering. Milestone 973 adds broader deterministic
+  `mysqli_options()`/`mysqli_set_opt()` option catalog coverage for
+  timeout/network, init-command, local-infile, SSL-verify, and
+  expired-password option constants without claiming real option storage,
+  timeout/network behavior, local-infile behavior, init command execution,
+  path validation, result type conversion changes, connection state mutation,
+  warning/error fidelity, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

@@ -1414,13 +1414,23 @@ echo "|";
 echo mysqli_set_opt($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, false) ? "alias-set" : "failed";
 echo "|";
 echo $alias($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 0) ? "dynamic-alias" : "failed";
+echo "|";
+echo mysqli_options($handle, MYSQLI_OPT_CONNECT_TIMEOUT, 5) ? "connect-timeout" : "failed";
+echo "|";
+echo mysqli_options($handle, MYSQLI_OPT_READ_TIMEOUT, 7) ? "read-timeout" : "failed";
+echo "|";
+echo mysqli_options($handle, MYSQLI_INIT_COMMAND, "SET NAMES utf8mb4") ? "init-command" : "failed";
+echo "|";
+echo mysqli_options($handle, MYSQLI_OPT_LOCAL_INFILE, true) ? "local-infile" : "failed";
+echo "|";
+echo mysqli_options($handle, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, false) ? "ssl-verify" : "failed";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|alias-exists|alias-callable|201|set|set|alias-set|dynamic-alias"
+        "yes|callable|alias-exists|alias-callable|201|set|set|alias-set|dynamic-alias|connect-timeout|read-timeout|init-command|local-infile|ssl-verify"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -2281,7 +2291,7 @@ mysqli_options("not-a-handle", MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
 
     let bad_option = run_source(
         r#"<?php
-mysqli_options(mysqli_init(), 0, true);
+mysqli_options(mysqli_init(), 999, true);
 "#,
     )
     .unwrap_err();
@@ -2291,7 +2301,7 @@ mysqli_options(mysqli_init(), 0, true);
     assert_eq!(bad_option.column, 1);
     assert_eq!(
         bad_option.message,
-        "unsupported call mysqli_options(): only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got 0"
+        "unsupported call mysqli_options(): unsupported mysqli option in the current subset, got 999"
     );
 
     let bad_value = run_source(
@@ -2306,12 +2316,12 @@ mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
     assert_eq!(bad_value.column, 1);
     assert_eq!(
         bad_value.message,
-        "unsupported call mysqli_options(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
+        "unsupported call mysqli_options(): value must be bool or int for the selected mysqli option in the current subset, got string"
     );
 
     let bad_alias_option = run_source(
         r#"<?php
-mysqli_set_opt(mysqli_init(), 0, true);
+mysqli_set_opt(mysqli_init(), 999, true);
 "#,
     )
     .unwrap_err();
@@ -2321,7 +2331,7 @@ mysqli_set_opt(mysqli_init(), 0, true);
     assert_eq!(bad_alias_option.column, 1);
     assert_eq!(
         bad_alias_option.message,
-        "unsupported call mysqli_set_opt(): only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got 0"
+        "unsupported call mysqli_set_opt(): unsupported mysqli option in the current subset, got 999"
     );
 
     let bad_alias_value = run_source(
@@ -2336,7 +2346,37 @@ mysqli_set_opt(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
     assert_eq!(bad_alias_value.column, 1);
     assert_eq!(
         bad_alias_value.message,
-        "unsupported call mysqli_set_opt(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
+        "unsupported call mysqli_set_opt(): value must be bool or int for the selected mysqli option in the current subset, got string"
+    );
+
+    let bad_timeout_value = run_source(
+        r#"<?php
+mysqli_options(mysqli_init(), MYSQLI_OPT_CONNECT_TIMEOUT, "5");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_timeout_value.phase, Phase::Runtime);
+    assert_eq!(bad_timeout_value.line, 2);
+    assert_eq!(bad_timeout_value.column, 1);
+    assert_eq!(
+        bad_timeout_value.message,
+        "unsupported call mysqli_options(): value must be int for the selected mysqli option in the current subset, got string"
+    );
+
+    let bad_command_value = run_source(
+        r#"<?php
+mysqli_options(mysqli_init(), MYSQLI_INIT_COMMAND, false);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_command_value.phase, Phase::Runtime);
+    assert_eq!(bad_command_value.line, 2);
+    assert_eq!(bad_command_value.column, 1);
+    assert_eq!(
+        bad_command_value.message,
+        "unsupported call mysqli_options(): value must be string for the selected mysqli option in the current subset, got bool"
     );
 }
 
@@ -4102,7 +4142,16 @@ echo defined("MYSQLI_ASSOC") ? "1" : "0";
 echo defined("MYSQLI_NUM") ? "1" : "0";
 echo defined("MYSQLI_BOTH") ? "1" : "0";
 echo defined("MYSQLI_ASYNC") ? "1" : "0";
+echo defined("MYSQLI_OPT_CONNECT_TIMEOUT") ? "1" : "0";
+echo defined("MYSQLI_OPT_LOCAL_INFILE") ? "1" : "0";
+echo defined("MYSQLI_OPT_LOAD_DATA_LOCAL_DIR") ? "1" : "0";
+echo defined("MYSQLI_INIT_COMMAND") ? "1" : "0";
+echo defined("MYSQLI_OPT_READ_TIMEOUT") ? "1" : "0";
+echo defined("MYSQLI_OPT_NET_CMD_BUFFER_SIZE") ? "1" : "0";
+echo defined("MYSQLI_OPT_NET_READ_BUFFER_SIZE") ? "1" : "0";
 echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
+echo defined("MYSQLI_OPT_SSL_VERIFY_SERVER_CERT") ? "1" : "0";
+echo defined("MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_GRANT") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_LOG") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_TABLES") ? "1" : "0";
@@ -4117,7 +4166,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 226, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 235, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

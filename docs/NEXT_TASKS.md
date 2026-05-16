@@ -9140,18 +9140,31 @@ handled.
   during `mysqli_real_connect()`, connection state mutation, host
   client-library inspection, warning/error fidelity, or native database
   lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as broader `mysqli_options()` option
   catalogs, broader escaping charset fidelity, `mysqli_real_connect()` SSL
   interaction, or result metadata fields, and add the next bounded behavior or
   explicit runtime boundary with tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
+  Milestone 973 implements a broader deterministic `mysqli_options()`/
+  `mysqli_set_opt()` option catalog for timeout/network integer options, init
+  command and local-data-dir string options, and local-infile/SSL/expired
+  password bool-or-int options. This is not real option storage,
+  timeout/network behavior, local-infile behavior, init command execution,
+  path validation, result type conversion changes, connection state mutation,
+  warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as broader escaping charset fidelity,
+  `mysqli_real_connect()` SSL/option interaction, local-infile option effects,
+  or result metadata fields, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `20560b7b runtime: add mysqli alias placeholders`, covering
-  Milestone 971 before the current Milestone 972 candidate.
+  `8811bdde runtime: add mysqli ssl setup placeholder`, covering
+  Milestone 972 before the current Milestone 973 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

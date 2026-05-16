@@ -423,6 +423,12 @@ plus deterministic `mysqli_ssl_set()` placeholder setup without claiming TLS
 configuration, file validation, SSL negotiation during `mysqli_real_connect()`,
 connection state mutation, host client-library inspection, warning/error
 fidelity, or native lowering,
+plus broader deterministic `mysqli_options()`/`mysqli_set_opt()` option
+catalog coverage for timeout/network, init-command, local-infile, SSL-verify,
+and expired-password option constants without claiming real option storage,
+timeout/network behavior, local-infile behavior, init command execution, path
+validation, result type conversion changes, connection state mutation,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -4421,15 +4421,67 @@ impl Interpreter {
         expect_arity(function, args, 3, span)?;
         expect_mysqli_handle(&call_name, &args[0], span)?;
         match &args[1] {
-            Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE) => {}
+            Value::Int(
+                PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE
+                | PHP_MYSQLI_OPT_LOCAL_INFILE
+                | PHP_MYSQLI_OPT_SSL_VERIFY_SERVER_CERT
+                | PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS,
+            ) => {
+                if !matches!(args[2], Value::Bool(_) | Value::Int(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            call_name,
+                            format!(
+                                "value must be bool or int for the selected mysqli option in the current subset, got {}",
+                                args[2].type_name()
+                            ),
+                        ),
+                    ));
+                }
+                return Ok(Value::Bool(true));
+            }
+            Value::Int(
+                PHP_MYSQLI_OPT_CONNECT_TIMEOUT
+                | PHP_MYSQLI_OPT_READ_TIMEOUT
+                | PHP_MYSQLI_OPT_NET_CMD_BUFFER_SIZE
+                | PHP_MYSQLI_OPT_NET_READ_BUFFER_SIZE,
+            ) => {
+                if !matches!(args[2], Value::Int(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            call_name,
+                            format!(
+                                "value must be int for the selected mysqli option in the current subset, got {}",
+                                args[2].type_name()
+                            ),
+                        ),
+                    ));
+                }
+                return Ok(Value::Bool(true));
+            }
+            Value::Int(PHP_MYSQLI_INIT_COMMAND | PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR) => {
+                if !matches!(args[2], Value::String(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            call_name,
+                            format!(
+                                "value must be string for the selected mysqli option in the current subset, got {}",
+                                args[2].type_name()
+                            ),
+                        ),
+                    ));
+                }
+                return Ok(Value::Bool(true));
+            }
             Value::Int(option) => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         call_name.clone(),
-                        format!(
-                            "only MYSQLI_OPT_INT_AND_FLOAT_NATIVE is supported in the current subset, got {option}"
-                        ),
+                        format!("unsupported mysqli option in the current subset, got {option}"),
                     ),
                 ));
             }
@@ -4445,19 +4497,6 @@ impl Interpreter {
                     ),
                 ));
             }
-        }
-        match &args[2] {
-            Value::Bool(_) | Value::Int(_) => Ok(Value::Bool(true)),
-            value => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    call_name,
-                    format!(
-                        "value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got {}",
-                        value.type_name()
-                    ),
-                ),
-            )),
         }
     }
 
@@ -13548,7 +13587,16 @@ const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
 const PHP_MYSQLI_ASYNC: i64 = 8;
+const PHP_MYSQLI_OPT_CONNECT_TIMEOUT: i64 = 0;
+const PHP_MYSQLI_OPT_LOCAL_INFILE: i64 = 8;
+const PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR: i64 = 43;
+const PHP_MYSQLI_INIT_COMMAND: i64 = 3;
+const PHP_MYSQLI_OPT_READ_TIMEOUT: i64 = 11;
+const PHP_MYSQLI_OPT_NET_CMD_BUFFER_SIZE: i64 = 202;
+const PHP_MYSQLI_OPT_NET_READ_BUFFER_SIZE: i64 = 203;
 const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
+const PHP_MYSQLI_OPT_SSL_VERIFY_SERVER_CERT: i64 = 21;
+const PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS: i64 = 37;
 const PHP_MYSQLI_REFRESH_GRANT: i64 = 1;
 const PHP_MYSQLI_REFRESH_LOG: i64 = 2;
 const PHP_MYSQLI_REFRESH_TABLES: i64 = 4;
@@ -13605,7 +13653,20 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
         "MYSQLI_ASYNC" => Some(Value::Int(PHP_MYSQLI_ASYNC)),
+        "MYSQLI_OPT_CONNECT_TIMEOUT" => Some(Value::Int(PHP_MYSQLI_OPT_CONNECT_TIMEOUT)),
+        "MYSQLI_OPT_LOCAL_INFILE" => Some(Value::Int(PHP_MYSQLI_OPT_LOCAL_INFILE)),
+        "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR" => Some(Value::Int(PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR)),
+        "MYSQLI_INIT_COMMAND" => Some(Value::Int(PHP_MYSQLI_INIT_COMMAND)),
+        "MYSQLI_OPT_READ_TIMEOUT" => Some(Value::Int(PHP_MYSQLI_OPT_READ_TIMEOUT)),
+        "MYSQLI_OPT_NET_CMD_BUFFER_SIZE" => Some(Value::Int(PHP_MYSQLI_OPT_NET_CMD_BUFFER_SIZE)),
+        "MYSQLI_OPT_NET_READ_BUFFER_SIZE" => Some(Value::Int(PHP_MYSQLI_OPT_NET_READ_BUFFER_SIZE)),
         "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => Some(Value::Int(PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE)),
+        "MYSQLI_OPT_SSL_VERIFY_SERVER_CERT" => {
+            Some(Value::Int(PHP_MYSQLI_OPT_SSL_VERIFY_SERVER_CERT))
+        }
+        "MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS" => {
+            Some(Value::Int(PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS))
+        }
         "MYSQLI_REFRESH_GRANT" => Some(Value::Int(PHP_MYSQLI_REFRESH_GRANT)),
         "MYSQLI_REFRESH_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_LOG)),
         "MYSQLI_REFRESH_TABLES" => Some(Value::Int(PHP_MYSQLI_REFRESH_TABLES)),

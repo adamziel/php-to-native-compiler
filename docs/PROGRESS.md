@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 973, a broader deterministic MySQLi option catalog for
+  `mysqli_options()` and `mysqli_set_opt()`. The runtime now exposes and
+  validates placeholder values for `MYSQLI_OPT_CONNECT_TIMEOUT`,
+  `MYSQLI_OPT_READ_TIMEOUT`, `MYSQLI_OPT_NET_CMD_BUFFER_SIZE`,
+  `MYSQLI_OPT_NET_READ_BUFFER_SIZE`, `MYSQLI_INIT_COMMAND`,
+  `MYSQLI_OPT_LOAD_DATA_LOCAL_DIR`, `MYSQLI_OPT_LOCAL_INFILE`,
+  `MYSQLI_OPT_SSL_VERIFY_SERVER_CERT`, and
+  `MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS`, in addition to the existing
+  `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` slice. Native constant/function metadata
+  knows the names while direct native lowering remains rejected. This is not
+  real option storage, timeout/network behavior, local-infile behavior, init
+  command execution, path validation, result type conversion changes,
+  connection state mutation, warning/error fidelity, or native database
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone973`.
+
 - Added Milestone 972, deterministic `mysqli_ssl_set()` placeholder behavior.
   The helper is visible through function/callability metadata, accepts the
   placeholder `mysqli` object plus string or null SSL option arguments, and
