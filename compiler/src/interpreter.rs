@@ -106,6 +106,7 @@ struct Interpreter {
     mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
     mysqli_options: HashMap<i64, HashMap<i64, Value>>,
     mysqli_wp_options: HashMap<i64, HashMap<String, WordPressOptionState>>,
+    mysqli_transactions: HashMap<i64, MysqliTransactionState>,
     mysqli_affected_rows: HashMap<i64, i64>,
     mysqli_insert_ids: HashMap<i64, i64>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
@@ -127,6 +128,11 @@ struct Interpreter {
 struct WordPressOptionState {
     value: String,
     autoload: String,
+}
+
+#[derive(Clone)]
+struct MysqliTransactionState {
+    wp_options_snapshot: Option<HashMap<String, WordPressOptionState>>,
 }
 
 #[derive(Debug, Clone)]
@@ -616,6 +622,7 @@ impl Interpreter {
             mysqli_pending_result_queues: HashMap::new(),
             mysqli_options: HashMap::new(),
             mysqli_wp_options: HashMap::new(),
+            mysqli_transactions: HashMap::new(),
             mysqli_affected_rows: HashMap::new(),
             mysqli_insert_ids: HashMap::new(),
             mysqli_statements: HashMap::new(),
@@ -5957,10 +5964,10 @@ impl Interpreter {
         ))
     }
 
-    fn call_mysqli_autocommit(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_autocommit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_autocommit", args, 2, span)?;
-        expect_mysqli_handle("mysqli_autocommit()", &args[0], span)?;
-        let Value::Bool(_) = &args[1] else {
+        let handle_id = expect_mysqli_handle_id("mysqli_autocommit()", &args[0], span)?;
+        let Value::Bool(mode) = &args[1] else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -5972,10 +5979,20 @@ impl Interpreter {
                 ),
             ));
         };
+        if *mode {
+            self.mysqli_transactions.remove(&handle_id);
+        } else {
+            self.begin_mysqli_transaction_snapshot(handle_id);
+        }
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_begin_transaction(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_begin_transaction(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         if !(1..=3).contains(&args.len()) {
             return Err(runtime_error(
                 span,
@@ -5986,7 +6003,7 @@ impl Interpreter {
                 ),
             ));
         }
-        expect_mysqli_handle("mysqli_begin_transaction()", &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_begin_transaction()", &args[0], span)?;
         if let Some(flags) = args.get(1) {
             match flags {
                 Value::Int(0) => {}
@@ -6032,6 +6049,8 @@ impl Interpreter {
                 }
             }
         }
+        self.begin_mysqli_transaction_snapshot(handle_id);
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 
@@ -6101,13 +6120,38 @@ impl Interpreter {
         Ok(())
     }
 
-    fn call_mysqli_commit(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn begin_mysqli_transaction_snapshot(&mut self, handle_id: i64) {
+        if self.mysqli_transactions.contains_key(&handle_id) {
+            return;
+        }
+        let wp_options_snapshot = self.mysqli_wp_options.get(&handle_id).cloned();
+        self.mysqli_transactions.insert(
+            handle_id,
+            MysqliTransactionState {
+                wp_options_snapshot,
+            },
+        );
+    }
+
+    fn call_mysqli_commit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.expect_mysqli_transaction_completion_args("mysqli_commit", args, span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_commit()", &args[0], span)?;
+        self.mysqli_transactions.remove(&handle_id);
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_rollback(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_rollback(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.expect_mysqli_transaction_completion_args("mysqli_rollback", args, span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_rollback()", &args[0], span)?;
+        if let Some(transaction) = self.mysqli_transactions.remove(&handle_id) {
+            if let Some(options) = transaction.wp_options_snapshot {
+                self.mysqli_wp_options.insert(handle_id, options);
+            } else {
+                self.mysqli_wp_options.remove(&handle_id);
+            }
+        }
+        self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
     }
 

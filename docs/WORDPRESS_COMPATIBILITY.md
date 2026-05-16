@@ -1191,9 +1191,14 @@ historical blockers and remaining full-support gaps include:
   insert-on-duplicate shapes for the same string parameter shape, with
   affected rows `2` for existing recorded options, affected rows `1` for
   missing options, and deterministic insert-id metadata.
+  Milestone 1036 adds bounded transaction snapshots for this exact option
+  state island: `mysqli_begin_transaction()` and `mysqli_autocommit(false)`
+  capture per-handle option state, `mysqli_rollback()` restores it, and
+  `mysqli_commit()`/`mysqli_autocommit(true)` keep later changes.
   This is still not broad SQL parsing, ordering/collation fidelity,
   real unique-index enforcement, no-op update affected-row fidelity,
-  transactions, host database execution, PDO, or native database lowering. The real bootstrap-shim
+  real transaction isolation/locking/savepoints, host database execution, PDO,
+  or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

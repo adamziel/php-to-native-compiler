@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b65adb57 docs: record wp options direct upsert gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1036, bounded transaction snapshots for the exact
+  per-placeholder-handle `wp_options` MySQLi state island.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1036/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test mysqli_extension mysqli_transactions_restore_current_wordpress_option_state -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1036`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1035`
+  passed.
+- Current WordPress frontier: `mysqli_begin_transaction()` and
+  `mysqli_autocommit(false)` can capture the current exact option-state
+  snapshot, `mysqli_rollback()` can restore it, and `mysqli_commit()` plus
+  `mysqli_autocommit(true)` keep later option-state changes on the same
+  placeholder handle.
+- Remaining semantic gaps: real host transaction state, savepoints, nested
+  transactions, isolation/locking, auto-increment rollback fidelity, broad SQL
+  execution, host database execution, warning/error fidelity, PDO,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `0e8a3969 docs: record wp options prepared upsert gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1035, bounded exact direct `wp_options` MySQLi

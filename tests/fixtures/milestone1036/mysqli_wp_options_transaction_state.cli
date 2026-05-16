@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1036/mysqli_wp_options_transaction_state.php
+exit: 0
+stdout:
+rollback|https://example.test|0|commit|https://committed.test|https://autocommit.test
+--- stdout end ---
+stderr:
+--- stderr end ---

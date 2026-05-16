@@ -2716,6 +2716,50 @@ echo $rollback($handle, 0, null) ? "dynamic-rollback" : "failed";
 }
 
 #[test]
+fn mysqli_transactions_restore_current_wordpress_option_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_begin_transaction($handle);
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://rolled-back.test' WHERE option_name = 'siteurl'");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes')");
+echo mysqli_rollback($handle) ? "rollback" : "failed";
+echo "|";
+$site = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$site_row = mysqli_fetch_assoc($site);
+echo $site_row["option_value"];
+echo "|";
+$home = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'home' LIMIT 1");
+echo mysqli_num_rows($home);
+mysqli_begin_transaction($handle);
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://committed.test' WHERE option_name = 'siteurl'");
+echo "|";
+echo mysqli_commit($handle) ? "commit" : "failed";
+echo "|";
+$committed = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$committed_row = mysqli_fetch_assoc($committed);
+echo $committed_row["option_value"];
+mysqli_autocommit($handle, false);
+mysqli_query($handle, "UPDATE wp_options SET option_value = 'https://autocommit.test' WHERE option_name = 'siteurl'");
+mysqli_autocommit($handle, true);
+echo "|";
+$auto = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$auto_row = mysqli_fetch_assoc($auto);
+echo $auto_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "rollback|https://example.test|0|commit|https://committed.test|https://autocommit.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_savepoint_helpers_accept_current_placeholder_shape() {
     let execution = run_source(
         r#"<?php

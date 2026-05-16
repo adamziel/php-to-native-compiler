@@ -316,9 +316,11 @@ preserve the requested name order and skip missing names. Missing option names
 still return an empty placeholder result. This is not broad SQL parsing,
 escaping/quoting fidelity, schema/index behavior, ordering/collation fidelity,
 autoload mutation beyond exact inserts, real unique-index enforcement, no-op
-update affected-row fidelity, DELETE breadth, REPLACE support, transactions,
-host database execution, PDO, broad prepared-statement mutation state,
-warning/error fidelity, or native lowering.
+update affected-row fidelity, DELETE breadth, REPLACE support, real
+transaction isolation/locking/savepoint behavior, host database execution, PDO,
+broad prepared-statement mutation state, warning/error fidelity, or native
+lowering. The current transaction helpers can snapshot and restore this exact
+option state only.
 
 Prepared statement execution over the same state island supports the exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
@@ -451,22 +453,28 @@ zeroed server-status metadata. It does not query real counters, thread/table
 state, uptime, live connection status, or server state.
 
 `mysqli_autocommit($handle, bool $mode)` accepts the placeholder object and a
-boolean mode, returning deterministic `true`. It does not mutate real
-autocommit state, start or end transactions, commit, roll back, emit
-warnings/errors, or touch host database state.
+boolean mode, returning deterministic `true`; for the current exact
+`wp_options` state island, `false` captures a per-handle option-state snapshot
+and `true` keeps later option-state changes. It does not mutate real host
+autocommit state, execute SQL transactions, emit warnings/errors, or touch
+host database state.
 
 `mysqli_begin_transaction($handle, 0, $name)` accepts the placeholder object,
 optional flags value `0`, and optional null/string transaction names, returning
-deterministic `true`. It does not start real transaction state, mutate
-autocommit state, commit, roll back, create savepoints, emit warnings/errors,
-or touch host database state.
+deterministic `true`; for the current exact `wp_options` state island it
+captures a per-handle option-state snapshot for later rollback. It does not
+start real server transaction state, mutate host autocommit state, commit or
+roll back host rows, create savepoints, emit warnings/errors, or touch host
+database state.
 
 `mysqli_commit($handle, 0, $name)` and
 `mysqli_rollback($handle, 0, $name)` accept the placeholder object, optional
 flags value `0`, and optional null/string transaction names, returning
-deterministic `true`. They do not commit, roll back, mutate real transaction or
-autocommit state, handle savepoints, emit warnings/errors, or touch host
-database state.
+deterministic `true`. For the current exact `wp_options` state island, commit
+keeps option-state changes and rollback restores the captured per-handle
+option-state snapshot. They do not commit, roll back, or isolate real host
+database state, mutate real transaction/autocommit state, handle savepoints,
+emit warnings/errors, or touch host database state.
 
 `mysqli_savepoint($handle, $name)` and
 `mysqli_release_savepoint($handle, $name)` accept the placeholder object and a

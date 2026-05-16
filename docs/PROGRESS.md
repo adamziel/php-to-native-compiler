@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1036, bounded MySQLi transaction snapshots for the current
+  per-placeholder-connection `wp_options` state island.
+  `mysqli_begin_transaction($handle)` and `mysqli_autocommit($handle, false)`
+  now capture the current exact option-state snapshot for that placeholder
+  handle, `mysqli_rollback($handle)` restores the captured option rows or
+  removes transaction-created option state, and `mysqli_commit($handle)` plus
+  `mysqli_autocommit($handle, true)` keep the changed option state. The
+  transaction helpers still return deterministic `true` for the current
+  placeholder argument shapes and do not touch a host database. This is not
+  real server transaction state, savepoints, nested transactions,
+  isolation/locking, auto-increment rollback fidelity, warning/error fidelity,
+  broad SQL execution, PDO, or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_transactions_restore_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1036`.
+
 - Added Milestone 1035, bounded direct `mysqli_query()` `wp_options`
   insert-on-duplicate state over the current per-placeholder-connection MySQLi
   state island. Exact

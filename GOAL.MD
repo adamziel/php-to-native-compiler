@@ -1293,11 +1293,16 @@ The repository already has a working Rust workspace with:
   expose affected-row metadata. Exact prepared option insert-on-duplicate
   shapes now update existing recorded options with affected rows `2`, insert
   missing options with affected rows `1`, and expose deterministic insert
-  IDs, and exact prepared option deletes now remove existing recorded option values
-  for string option-name parameters and expose affected-row metadata,
+  IDs, and exact prepared option deletes now remove existing recorded option
+  values for string option-name parameters and expose affected-row metadata.
+  Bounded transaction snapshots now let `mysqli_begin_transaction()` and
+  `mysqli_autocommit(false)` capture the exact per-handle option state,
+  `mysqli_rollback()` restore it, and `mysqli_commit()`/
+  `mysqli_autocommit(true)` keep changed option state,
   without claiming broad SQL parsing, ordering/collation fidelity,
   real unique-index enforcement, no-op update affected-row fidelity,
-  transactions, host database execution, PDO, or native lowering.
+  real transaction isolation/locking/savepoints, host database execution, PDO,
+  or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
   direct nested array-offset and object-property array-offset `empty(...)`
@@ -1690,15 +1695,16 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1035 is the active checkpoint candidate: exact direct
-  `wp_options` MySQLi insert-on-duplicate state now records single-quoted
-  string option-name, option-value, and autoload values on the same placeholder
-  handle, updates existing recorded options with affected rows `2`, inserts
-  missing options with affected rows `1`, and records deterministic insert
-  IDs, while broad SQL parsing, escaping/quoting fidelity, schema/index
-  behavior, ordering/collation fidelity, real unique-index enforcement, no-op
-  update affected-row fidelity, transactions, host database execution,
-  warning/error fidelity, PDO, and native lowering remain open.
+- Milestone 1036 is the active checkpoint candidate: bounded MySQLi
+  transaction snapshots now cover the current exact per-handle `wp_options`
+  state island. `mysqli_begin_transaction()` and `mysqli_autocommit(false)`
+  capture option state, `mysqli_rollback()` restores it, and
+  `mysqli_commit()`/`mysqli_autocommit(true)` keep later changes, while broad
+  SQL parsing, escaping/quoting fidelity, schema/index behavior,
+  ordering/collation fidelity, real unique-index enforcement, no-op update
+  affected-row fidelity, real transaction isolation/locking/savepoints, host
+  database execution, warning/error fidelity, PDO, and native lowering remain
+  open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

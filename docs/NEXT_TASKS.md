@@ -9968,9 +9968,22 @@ handled.
   real unique-index enforcement, no-op update affected-row fidelity, escaped
   quote handling, transactions, host database execution, PDO, or native
   lowering.
-- [ ] Runtime/database lane: inspect the next real database-state gap from the
+- [x] Runtime/database lane: inspect the next real database-state gap from the
   audited PHP/WordPress surface, such as transaction state, broader escaping
   fidelity, host-backed query execution, PDO, real schema/index behavior, or
+  the next `wpdb` state consumer, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
+  Milestone 1036 covers bounded transaction snapshots for the current exact
+  per-handle `wp_options` state island: `mysqli_begin_transaction()` and
+  `mysqli_autocommit(false)` capture option state, `mysqli_rollback()`
+  restores it, and `mysqli_commit()`/`mysqli_autocommit(true)` keep later
+  changes. This is not real host transaction state, savepoints,
+  isolation/locking, auto-increment rollback fidelity, broad SQL execution,
+  PDO, or native lowering.
+- [ ] Runtime/database lane: inspect the next real database-state gap from the
+  audited PHP/WordPress surface, such as broader escaping fidelity,
+  host-backed query execution, PDO, real schema/index behavior, savepoints, or
   the next `wpdb` state consumer, and add the next bounded behavior or
   explicit runtime boundary with tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
@@ -9978,8 +9991,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0e8a3969 docs: record wp options prepared upsert gate`, covering
-  Milestone 1034 before the current Milestone 1035 candidate.
+  `b65adb57 docs: record wp options direct upsert gate`, covering
+  Milestone 1035 before the current Milestone 1036 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
