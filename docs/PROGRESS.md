@@ -13,13 +13,15 @@ Implemented:
   reject under the function-call boundary. This does not implement real
   request body state, stream contexts, offsets/lengths, include paths, local
   filesystem reads, warning fidelity, `open_basedir`, or native lowering.
-  Verification so far:
+  Verification:
   `cargo test -p phpc --test file_get_contents_builtin -- --test-threads=1`,
   `cargo run -q -p phpc -- test tests/fixtures/milestone1083 --compare-php`,
   `cargo check -p php_runtime -p phpc`, `git diff --check`, and
   `cargo run -q -p phpc -- run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/xmlrpc.php`,
   which exited 0 with no stdout/stderr under the current deterministic
-  placeholder assumptions.
+  placeholder assumptions. The serialized checkpoint gate passed with 1288
+  fixture tests, 733 system PHP comparisons, and 555 skipped PHP comparisons
+  before commit `36733d05 runtime: add php input file get contents`.
 
 - Added Milestone 1082, a bounded dynamic variable class-name instantiation
   slice for the reached WordPress XML-RPC parse blocker. `new $class(...)` now

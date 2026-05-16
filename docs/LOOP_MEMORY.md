@@ -31,27 +31,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `d4aa5a2e docs: record dynamic variable class gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `36733d05 runtime: add php input file get contents`.
 - Task attempted: Milestone 1083, bounded `file_get_contents('php://input')`
   empty request-body placeholder for the reached WordPress XML-RPC runtime
   blocker.
-- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+- Files changed: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
   `compiler/tests/file_get_contents_builtin.rs`,
   `tests/fixtures/milestone1083/file_get_contents_php_input.*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
   `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check`, `cargo test -p phpc --test file_get_contents_builtin --
   --test-threads=1`, `cargo run -q -p phpc -- test
   tests/fixtures/milestone1083 --compare-php`, `cargo check -p php_runtime -p
   phpc`, and `git diff --check` passed. The local WordPress 6.9.4 `xmlrpc.php`
   probe exited 0 with no stdout/stderr under current deterministic placeholder
-  assumptions.
+  assumptions. The serialized checkpoint gate passed with 1288 fixture tests,
+  733 system PHP comparisons, and 555 skipped PHP comparisons before commit
+  `36733d05 runtime: add php input file get contents`.
 - Remaining semantic gaps: real request body state, stream contexts,
   offsets/lengths, include-path lookup, local filesystem reads, warning
   fidelity, `open_basedir`, real XML-RPC request handling, and native lowering
   remain missing.
-- Next concrete task: run the serialized checkpoint gate for Milestone 1083 if
-  the tree stays coherent.
+- Next concrete task: choose the next reference/COW or WordPress entry-flow
+  blocker from `docs/NEXT_TASKS.md`; for XML-RPC, move from empty request-body
+  CLI success toward real request-body/SAPI coverage only with explicit
+  fixtures and unsupported boundaries.
 
 ## Loop Event 2026-05-16T23:25:00Z
 
