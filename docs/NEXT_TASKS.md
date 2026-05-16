@@ -10063,11 +10063,28 @@ handled.
   explicit runtime boundary with tests, CLI fixtures, docs, and native
   rejection coverage where lowering remains unsupported.
 
+## Milestone 1045: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: replace the current direct-variable
+  by-reference parameter copy-back path with shared caller/callee variable
+  cells during function and method execution. Supplied direct-variable
+  by-reference parameters now observe caller-visible writes before return, and
+  `unset($param)` detaches only the callee local name. This is not full PHP
+  reference containers, array/object offset references, reference returns,
+  by-reference `foreach`, copy-on-write, non-variable arguments, broader
+  callback reference behavior, or native lowering.
+- [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
+  audited PHP/WordPress surface, such as array-offset reference cells,
+  by-reference return values, by-reference `foreach`, object-property
+  references, source/target rebinding, or array copy-on-write, and add the next
+  bounded behavior or explicit runtime boundary with PHP comparison fixtures.
+
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
   `df45ac16 native: render helper signatures by pointer width`, covering
-  Milestone 1044.
+  Milestone 1044. A Milestone 1045 by-reference parameter alias-cell slice is
+  implemented in the working tree and awaiting checkpoint.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -35,10 +35,12 @@
   an optional by-reference parameter use that parameter's default value in the
   callee local scope without creating an alias. Calls that provide a
   by-reference parameter are supported only for direct variable arguments: the
-  caller's current value is copied into the callee local parameter and the
-  callee's final parameter value is copied back to the caller variable after
-  execution. This is a bounded output-parameter path, not true alias binding
-  during execution.
+  callee local parameter shares the caller's variable cell during execution, so
+  writes through the parameter are visible to other reads of the caller
+  variable before the function returns. `unset($param)` detaches only the
+  callee's local parameter name; later local writes do not mutate the caller
+  variable. This is still a bounded direct-variable alias path, not full PHP
+  reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`
@@ -53,10 +55,10 @@
   current object values may also be assigned into direct array offsets under
   the existing object-handle value model. Array-offset and method-call
   sources, direct array-offset targets for array values, object-property array
-  targets, by-reference `foreach`, reference returns, by-reference parameter
-  aliasing during execution, source/target rebinding beyond direct names, PHP
-  reference-container edge cases, copy-on-write, and native lowering remain
-  unsupported and report
+  targets, by-reference `foreach`, reference returns, reference-parameter
+  forms beyond direct variable arguments, source/target rebinding beyond direct
+  names, PHP reference-container edge cases, copy-on-write, and native lowering
+  remain unsupported and report
   `unsupported call reference assignment: references and aliasing are not
   implemented` when reached.
 - assignment statements, plus expression-position direct static-variable
@@ -4676,8 +4678,8 @@
 - variadic parameters outside the bounded final-parameter by-value slice, and
   variadic argument unpacking
 - provided reference parameter invocation outside direct variable arguments,
-  true alias binding for reference parameters, reference returns, executable
-  reference assignments, reference assignments from nested
+  reference returns, executable reference assignments beyond direct
+  variable-to-variable aliases, reference assignments from nested
   offsets/properties/static members/function calls, by-reference iteration, and
   broader by-reference calls
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,

@@ -498,6 +498,50 @@ echo mutate($value), "|", $value;
 }
 
 #[test]
+fn direct_variable_reference_parameter_shares_caller_cell_during_execution() {
+    let execution = run_source(
+        r#"<?php
+function observe() {
+    global $value;
+    echo "seen=", $value, "|";
+}
+function mutate(&$param) {
+    $param = 2;
+    observe();
+    $param = 3;
+}
+$value = 1;
+mutate($value);
+echo "final=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seen=2|final=3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_reference_parameter_detaches_local_name_from_caller_cell() {
+    let execution = run_source(
+        r#"<?php
+function detach(&$param) {
+    unset($param);
+    $param = 9;
+    echo "local=", $param, "|";
+}
+$value = 1;
+detach($value);
+echo "caller=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "local=9|caller=1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_invocation_rejects_non_variable_arguments() {
     let error = runtime_error(
         r#"<?php

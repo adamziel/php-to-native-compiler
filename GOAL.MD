@@ -780,9 +780,11 @@ Reconciliation into concrete workstreams:
 - **Reference/COW value model:** replace the bounded copy/copy-back and
   no-alias reference slices with reference cells, alias-aware symbol slots,
   array/object copy-on-write, by-reference foreach semantics, and mutation
-  ordering tests. Current artifact: documented runtime boundaries and focused
-  reference fixtures. Missing artifact: runtime reference container and COW
-  tests that compare against PHP.
+  ordering tests. Current artifact: direct variable-to-variable alias cells,
+  direct-variable by-reference parameter alias cells during calls, documented
+  runtime boundaries, and focused reference fixtures. Missing artifact: full
+  runtime reference containers, array/object offset aliases, by-reference
+  returns/foreach, and COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact
@@ -1283,8 +1285,11 @@ The repository already has a working Rust workspace with:
   Bounded `ksort($array, SORT_NUMERIC)` covers the reached hook-priority
   ordering path. Omitted optional by-reference parameters with defaults can now
   execute without reference binding. Direct-variable by-reference parameters
-  copy the callee's final value back to the caller, covering the reached
-  `WP_Object_Cache::get(..., $found)` output shape. Bounded
+  now share the caller's variable cell during function/method execution, so
+  writes are visible before return and `unset($param)` detaches the callee name
+  without mutating the caller variable. This covers the reached
+  `WP_Object_Cache::get(..., $found)` output shape more faithfully than the
+  previous final-value copy-back path. Bounded
   `mysqli_real_escape_string()` covers the reached `wpdb::_real_escape()`
   option lookup path over the placeholder MySQLi handle. Bounded deterministic
   `rand()` covers the reached `wpdb::placeholder_escape()` salt path. Bounded

@@ -191,9 +191,12 @@ a function or method reports a stable runtime boundary before any return value
 or alias binding is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
-provided direct-variable by-reference arguments use a bounded copy-in/copy-back
-path for output-parameter style calls. This deliberately does not model true
-alias binding during execution, reference containers, or copy-on-write.
+provided direct-variable by-reference arguments bind the callee parameter name
+to the caller's variable cell for the duration of the call. Writes through the
+parameter are visible before the function returns, and `unset($param)` detaches
+only the callee's local name from the shared cell. This deliberately does not
+model full PHP reference containers, by-reference array/object offsets,
+reference returns, by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax is likewise represented only far enough to
 preserve a stable runtime boundary when reached; it does not mutate array slots
 through aliases, preserve lingering loop-variable references, or implement PHP

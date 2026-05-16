@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1045, direct-variable by-reference parameter alias cells for
+  the current user function and instance method call subset. Supplied
+  by-reference parameters now bind the callee parameter name to the caller's
+  variable cell during execution instead of copying the final value back only
+  after return, so writes through the parameter are visible to other reads of
+  the caller variable before the function returns. `unset($param)` detaches the
+  callee's local parameter name from that shared cell, and later local writes
+  no longer mutate the caller variable. Omitted optional by-reference
+  parameters still use defaults without aliasing. Non-variable arguments,
+  array/object offset aliases, reference returns, by-reference `foreach`,
+  full PHP reference containers, copy-on-write, and native lowering remain
+  unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_parameter -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1045`.
+
 - Added Milestone 1044, target-pointer-width-aware native runtime helper
   signature rendering for the scalar echo ABI probe. The compiler-side probe
   now renders helper return and capacity types from an explicit native runtime

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1045/reference_parameter_alias_cell.php
+exit: 0
+stdout:
+seen=2|final=3
+local=9|caller=3
+--- stdout end ---
+stderr:
+--- stderr end ---

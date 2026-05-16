@@ -418,6 +418,12 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_cell(&mut self, target: &str, cell: VariableCell) {
+        self.routed_storage(target)
+            .borrow_mut()
+            .insert(target.to_string(), cell);
+    }
+
     fn read_cell(&self, name: &str) -> Option<VariableCell> {
         self.routed_storage(name).borrow().get(name).cloned()
     }
@@ -444,7 +450,7 @@ fn value_cell(value: Value) -> VariableCell {
 #[derive(Debug, Clone)]
 struct ReferenceBinding {
     param_name: String,
-    caller_name: String,
+    caller_cell: VariableCell,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -11013,10 +11019,13 @@ impl Interpreter {
                         ),
                     ));
                 };
-                values.push(caller_scope.read_static(caller_name, arg.span())?);
+                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                    runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
+                })?;
+                values.push(caller_cell.borrow().clone());
                 reference_bindings.push(ReferenceBinding {
                     param_name: param.name.clone(),
-                    caller_name: caller_name.clone(),
+                    caller_cell,
                 });
             } else {
                 values.push(self.evaluate(arg, caller_scope)?);
@@ -11049,7 +11058,7 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
-        reference_scope: Option<&mut SymbolTable>,
+        _reference_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -11071,6 +11080,14 @@ impl Interpreter {
                 }
                 local_scope.write_static(&param.name, Value::Array(rest));
                 break;
+            }
+
+            if let Some(binding) = reference_bindings
+                .iter()
+                .find(|binding| binding.param_name == param.name)
+            {
+                local_scope.bind_static_to_cell(&param.name, binding.caller_cell.clone());
+                continue;
             }
 
             let value = if let Some(arg) = args.get(index) {
@@ -11119,14 +11136,6 @@ impl Interpreter {
         }
 
         let flow = flow?;
-        if let Some(reference_scope) = reference_scope {
-            for binding in reference_bindings {
-                if let Some(value) = local_scope.read_named(&binding.param_name) {
-                    reference_scope.write_static(&binding.caller_name, value);
-                }
-            }
-        }
-
         match flow {
             Flow::Normal => Ok(Value::Null),
             Flow::Break { span, .. } => Err(runtime_error(
