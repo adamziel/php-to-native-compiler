@@ -10572,9 +10572,9 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `089ce8e4 runtime: preserve object property reference array copies`,
-  covering Milestone 1084. The serialized checkpoint gate passed with 1289
-  fixture tests, 734
+  `89b944f3 runtime: add object property reference sources`, covering
+  Milestone 1085. The serialized checkpoint gate passed with 1290 fixture
+  tests, 735
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations

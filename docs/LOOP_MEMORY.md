@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `1a192bb8 docs: record object property reference array copy gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `89b944f3 runtime: add object property reference sources`.
 - Task attempted: Milestone 1085, bounded direct object-property array-offset
   reference sources. `$alias =& $object->items[$key];` now parses and executes
   when the alias target is a direct variable, the object source is a direct
@@ -46,17 +48,22 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test functions_and_scopes
   reference_assignment_object_property_array_offset_source --
   --test-threads=1`, and `cargo run -q -p phpc -- test
-  tests/fixtures/milestone1085 --compare-php` passed.
+  tests/fixtures/milestone1085 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed. The
+  serialized checkpoint gate passed with 1290 fixture tests, 735 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `89b944f3 runtime: add object property reference sources`.
 - Remaining semantic gaps: nested object-property offset sources,
   dynamic/magic/non-public property reference sources, non-direct object
   expressions, non-variable reference targets, ArrayAccess reference sources,
   full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, and native lowering remain missing.
-- Next concrete task: run the full functions/scopes regression, object-model
-  regression, `cargo check -p php_runtime -p phpc`, `git diff --check`, then
-  the serialized checkpoint gate with
-  `tools/checkpoint.sh "runtime: add object property reference sources"` if the
-  focused checks pass.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-17T00:20:00Z
 

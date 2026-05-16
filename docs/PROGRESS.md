@@ -23,7 +23,14 @@ Implemented:
   `cargo test -p phpc --test functions_and_scopes
   reference_assignment_object_property_array_offset_source --
   --test-threads=1`, and `cargo run -q -p phpc -- test
-  tests/fixtures/milestone1085 --compare-php`.
+  tests/fixtures/milestone1085 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`. The
+  serialized checkpoint gate passed with 1290 fixture tests, 735 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `89b944f3 runtime: add object property reference sources`.
 
 - Added Milestone 1084, a bounded object-property array-copy/reference-element
   slice. When a declared public object property array contains a covered
