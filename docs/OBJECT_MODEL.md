@@ -69,8 +69,9 @@ without triggering autoloading. `class_exists()` reports true for declared
 enums in the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
 interfaces and top-level traits in declaration order. Simple public instance
-methods from one already-declared trait may be composed into a class with
-`use TraitName;` and called through ordinary object method dispatch.
+methods from already-declared traits may be composed into a class with
+`use TraitName;`, repeated simple trait-use declarations, or
+`use TraitA, TraitB;` and called through ordinary object method dispatch.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -383,7 +384,7 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
-multiple/adapted trait use inside classes, trait aliases, visibility changes,
+adapted or conflicting trait use inside classes, trait aliases, visibility changes,
 `insteadof`, `__TRAIT__`, nested/conditional trait registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,

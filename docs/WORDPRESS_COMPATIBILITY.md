@@ -123,6 +123,27 @@ executable evidence for the current bounded database/bootstrap path only; it
 does not claim real MySQL connectivity, WordPress credentials, broad SQL,
 full `wpdb`, plugin/theme loading, request/SAPI fidelity, or native support.
 
+After Milestone 1229, the synthetic harness also includes an
+`option.php`-shaped alloptions bootstrap smoke. The generated bootstrap shim
+and `wp-blog-header.php` front-controller path instantiate a minimal `wpdb`,
+seed autoloaded and non-autoloaded `wp_options` rows through the current
+placeholder `mysqli_query()` state island, query the exact supported
+`SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+'on', 'auto-on', 'auto' )` shape through a `wpdb::get_results()` wrapper, build
+an alloptions array, and emit the autoloaded `siteurl` value
+(`stdout_bytes: 13` in normalized output). This is executable evidence for a
+later bounded option-bootstrap point only; it does not claim persistent object
+cache behavior, real database connectivity, arbitrary SQL, broad `wpdb`, full
+WordPress option APIs, plugin/theme loading, request/SAPI fidelity, or native
+support.
+
+After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
+auto-global array and routes direct function-scope reads/writes through the
+root symbol table. This supports executable WordPress-shaped cookie guards such
+as missing `wordpress_test_cookie` checks in the current request scaffold only;
+it does not parse browser cookies, populate SAPI request cookies, merge
+`$_REQUEST`, send cookies, or claim request fidelity.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
@@ -130,8 +151,11 @@ WordPress entrypoint without `ABSPATH`. The bootstrap-shim probe and the
 `wp-blog-header.php` front-controller probe now exit `0` under the current
 deterministic placeholder database and CLI assumptions. The baseline synthetic
 smokes keep no-stdout coverage, and the Milestone 1224 `wpdb` option smoke
-records the database-backed `db-ok` output byte count separately. Known
-historical blockers and remaining full-support gaps include:
+records the database-backed `db-ok` output byte count separately. The Milestone
+1229 alloptions smoke records a later option-bootstrap byte count separately
+after exercising an autoload-filtered `wp_options` row query through a
+minimal `wpdb::get_results()` wrapper. Known historical blockers and remaining
+full-support gaps include:
 
 - include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice. The

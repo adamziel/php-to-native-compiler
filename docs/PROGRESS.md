@@ -4,6 +4,100 @@
 
 Implemented:
 
+- Added Milestone 1230, a WordPress-focused queue refresh and checkpoint for
+  the 1226-1229 implementation batch. `docs/NEXT_TASKS.md` now marks
+  Milestones 1226-1230 complete and opens Milestones 1231-1235 around the
+  same largest WordPress blockers: trait/interface semantics beyond simple
+  composition, reference/COW fidelity, request/SAPI/filesystem behavior, and
+  `wpdb`/bootstrap evidence. `docs/LANE_WORKERS.md` records the next split.
+  Full gate passed at checkpoint: `1366` fixture tests, `778` system PHP
+  comparisons, and `588` skipped `phpc-only` fixtures.
+
+- Added Milestone 1229, a later WordPress database/bootstrap evidence slice.
+  The WordPress inventory CLI test suite now includes a synthetic
+  `option.php`-shaped alloptions bootstrap smoke after the existing
+  `class-wpdb.php` path. The generated bootstrap shim and
+  `wp-blog-header.php` front-controller instantiate a minimal `wpdb`, seed
+  autoloaded and non-autoloaded `wp_options` rows through the current
+  placeholder `mysqli_query()` state island, issue the exact supported
+  `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+  'on', 'auto-on', 'auto' )` query through a `wpdb::get_results()` wrapper,
+  build an alloptions array, and emit the autoloaded `siteurl` value
+  (`stdout_bytes: 13` in normalized inventory output). The direct
+  `wp-settings.php` probe remains visible as the expected invalid-entrypoint
+  `ABSPATH` failure. This improves executable WordPress evidence without
+  claiming persistent object-cache behavior, real database connectivity,
+  arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes, real
+  request/SAPI state, references/copy-on-write, or native lowering. Focused
+  compatibility verification passed:
+  `CARGO_TARGET_DIR=target/focused-1229-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  with `5` tests. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1228, a bounded WordPress request-state cookie slice.
+  `phpc run` now materializes `$_COOKIE` as an empty ordered array during
+  interpreter startup and treats it as an auto-global routed through the root
+  symbol table, so direct function-scope reads and writes observe the same
+  request cookie bag. The focused fixture covers a WordPress-shaped
+  `wordpress_test_cookie` guard starting absent and then being written from a
+  function. This does not implement browser cookie parsing, SAPI request
+  imports, `variables_order`, `$_REQUEST` merging, `setcookie()`/header
+  emission, `$GLOBALS` alias fidelity, references/copy-on-write, exact warning
+  behavior, or native lowering. Focused request lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1228-request CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test
+  superglobals -- --test-threads=1` with `17` tests; direct `phpc run
+  tests/fixtures/milestone1228/cookie_superglobal.php` returned
+  `array|empty|WP Cookie check` with exit `0`; `phpc test
+  tests/fixtures/milestone1228` passed with `1` fixture; `phpc test
+  --compare-php tests/fixtures/milestone1228` matched system PHP with `1`
+  comparison and `0` skips. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1226, a bounded WordPress trait/interface composition slice.
+  Class bodies now accept simple comma-separated trait use declarations such as
+  `use HasBoot, HasLabel;` when every trait is already declared and contains
+  only supported public instance methods. The interpreter composes each trait's
+  methods onto the consuming class metadata, stores executable method bodies
+  under the consuming class id, exposes them through ordinary instance method
+  dispatch and `get_class_methods()`/`method_exists()`, and lets those composed
+  methods satisfy the current interface method-presence enforcement. The
+  existing repeated simple trait-use declaration path is documented alongside
+  the new comma-separated form. Unsupported edges remain: adaptation blocks,
+  aliases, visibility changes, `insteadof`, conflicting method composition,
+  trait properties/constants, static/abstract/final or non-public trait
+  methods, `__TRAIT__`, conditional/nested trait registration,
+  references/copy-on-write, exact PHP diagnostics, and native lowering.
+  Focused verification passed with `CARGO_TARGET_DIR=target/focused-1226-traits
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p
+  phpc --test object_model trait -- --test-threads=1`; direct `phpc run
+  tests/fixtures/milestone1226/multiple_trait_use.php`; `phpc test
+  tests/fixtures/milestone1226`; and `phpc test --compare-php
+  tests/fixtures/milestone1226`. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1227, a bounded WordPress reference/COW runtime slice for
+  string-keyed `$GLOBALS` reference targets whose source name is already routed
+  through the current covered array-offset alias metadata. Shapes such as
+  `$items["slot"] =& $entry; $GLOBALS["bag"]["slot"] =& $entry;` now merge the
+  selected global slot into the same bounded alias group, so writes through the
+  source name, peer aliases, original array slot, direct global variable path,
+  and `$GLOBALS` nested slot observe the same value. Nested by-value writes
+  through supported `$GLOBALS` paths now sync covered aliases after updating
+  the root global symbol table. This remains symbol-table alias metadata, not
+  full PHP reference containers or copy-on-write. Unsupported edges remain:
+  non-string `$GLOBALS` roots, `$GLOBALS[] =& $value`, non-direct sources,
+  recursive `$GLOBALS` materialization, superglobal aliasing, included-file
+  scope fidelity, exact mutation/destruction ordering, full reference
+  containers, copy-on-write containers, and native lowering. Focused runtime
+  verification passed with `CARGO_TARGET_DIR=target/focused-1227-refcow
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`:
+  `cargo test -p phpc --test functions_and_scopes
+  rebinds_array_offset_alias_group -- --test-threads=1` passed with `3`
+  tests; direct `phpc run
+  tests/fixtures/milestone1227/globals_array_alias_group.php` matched direct
+  system PHP output; and fixture/PHP comparison for
+  `tests/fixtures/milestone1227` passed. Full gate/checkpoint deferred until
+  integration.
+
 - Added Milestone 1225, a WordPress-focused tests/docs queue refresh after the
   1221-1224 implementation batch. `docs/NEXT_TASKS.md` now marks Milestones
   1221-1225 complete and opens Milestones 1226-1230 around the next large

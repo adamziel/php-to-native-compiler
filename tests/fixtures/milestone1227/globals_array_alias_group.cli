@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1227/globals_array_alias_group.php

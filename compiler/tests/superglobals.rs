@@ -132,6 +132,29 @@ echo $_SERVER["HTTP_HOST"];
 }
 
 #[test]
+fn cookie_superglobal_is_materialized_as_empty_auto_global_array() {
+    let execution = run_source(
+        r#"<?php
+echo is_array($_COOKIE) ? "array" : "missing";
+echo "|";
+echo isset($_COOKIE["wordpress_test_cookie"]) ? "cookie" : "empty";
+
+function seed_cookie() {
+    $_COOKIE["wordpress_test_cookie"] = "WP Cookie check";
+}
+
+seed_cookie();
+echo "|";
+echo $_COOKIE["wordpress_test_cookie"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "array|empty|WP Cookie check");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn globals_direct_string_offsets_route_function_scope_writes_to_root() {
     let execution = run_source(
         r#"<?php

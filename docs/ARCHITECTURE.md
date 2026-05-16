@@ -30,6 +30,11 @@ root-symbol-table route for the reached WordPress object-cache bootstrap
 assignment. This is still a materialized-symbol-table model, not PHP's full
 reference-backed alias, recursive `$GLOBALS` array, copy-on-write, dynamic
 global-name, or included-file scope model.
+`$_COOKIE` is seeded as an empty ordered array in the same root symbol table
+and routes direct function-scope reads and writes through that root storage.
+This is deterministic request-state scaffolding only: it does not parse browser
+cookie headers, populate values from the host SAPI, merge `$_REQUEST`, emit
+cookies, or model `variables_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -135,13 +140,14 @@ a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
 enforcement.
 Top-level trait declarations are parsed as metadata for empty traits and
-simple public instance methods. A class body may use one already-declared trait
-with `use TraitName;`; the interpreter composes that trait's public instance
-methods onto the consuming class metadata and stores the executable method body
-under the consuming class id, so ordinary instance method dispatch works
-through `phpc run`. Trait properties/constants, static/abstract/final or
-non-public trait methods, multiple trait names in one `use`, adaptation blocks,
-aliases, visibility changes, `insteadof`, `__TRAIT__` context,
+simple public instance methods. A class body may use already-declared traits
+with `use TraitName;`, repeated simple trait-use declarations, or one simple
+comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
+composes those trait public instance methods onto the consuming class metadata
+and stores the executable method bodies under the consuming class id, so
+ordinary instance method dispatch works through `phpc run`. Trait
+properties/constants, static/abstract/final or non-public trait methods,
+adaptation blocks, aliases, visibility changes, `insteadof`, `__TRAIT__` context,
 references/copy-on-write, nested or conditional trait declarations, and native
 trait lowering remain explicit boundaries.
 
@@ -322,17 +328,19 @@ static method. Missing static methods that would dispatch through magic
 unsupported-call diagnostic; magic reference-return dispatch is not modeled.
 Direct array-offset reference targets also have narrow execution paths:
 `$array[$key] =& $value;` works when the target root is a direct array
-variable, the offset is explicit, and the source is an unaliased direct
-variable name. `$array[] =& $value;` works for the same direct root/source
-shape by appending through the runtime array append cursor and routing the
-source name to the selected auto key. `$array[$outer][$inner] =& $value;`
-works for explicit nested direct-array targets by routing the source name to a
-normalized key path under the direct array root. `$array[$outer][] =& $value;`
-uses the same key-path route after appending through the runtime array append
-cursor at the selected nested parent. Direct public object-property
+variable, the offset is explicit, and the source is a covered direct source
+name: unaliased, part of a direct variable-to-variable alias group, or already
+routed through covered array-offset alias metadata. `$array[] =& $value;`
+works for the same direct root/source shape by appending through the runtime
+array append cursor and routing the source group to the selected auto key.
+`$array[$outer][$inner] =& $value;` works for explicit nested direct-array
+targets by routing the source group to a normalized key path under the direct
+array root. `$array[$outer][] =& $value;` uses the same key-path route after
+appending through the runtime array append cursor at the selected nested
+parent. Direct public object-property
 array-offset targets have a similarly bounded route:
-`$object->items[$key] =& $value;` can bind an unaliased direct source variable
-to an explicit offset inside a declared public property on a direct object
+`$object->items[$key] =& $value;` can bind a covered direct source variable to
+an explicit offset inside a declared public property on a direct object
 variable. `$object->items[] =& $value;` and
 `$object->groups[$key][] =& $value;` append through the same public-property
 root route and bind the source name to the selected property-array auto key.
@@ -350,10 +358,9 @@ object-property array is copied into a direct static variable, alias metadata
 for referenced property slots is mirrored onto the copied static array so
 writes through the source variable, the property slot, or the copied slot
 synchronize for the covered key path. Undefined source variables start as
-`null` before binding. Existing direct alias groups, source names already
-routed through array-offset aliases, PHP's deprecated false-root conversion,
-other non-array roots, dynamic/magic/non-public
-property targets, non-direct sources, non-static
+`null` before binding. PHP's deprecated false-root conversion, other non-array
+roots, dynamic/magic/non-public property targets, non-direct sources,
+non-static
 `self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
 sources, full PHP reference containers, broader by-reference
 `foreach` fidelity, mutation-ordering guarantees, alias rebinding, native
@@ -404,18 +411,22 @@ through a stable boundary because faithful support requires by-reference
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
-root-global array slot to a direct unaliased source variable cell, including
-from function scope. Missing root globals, `null` root globals, and missing
-intermediate containers materialize as arrays for the nested/append forms, and
-append targets use the runtime array append cursor under the selected root
-global array. Writes through the source name, the direct global variable path,
-and the supported string-keyed `$GLOBALS` offset path observe the same value,
-and unsetting the source name detaches only that name. Nested by-value writes
-through supported string-keyed `$GLOBALS` paths route through the root global
-symbol table. Non-string root keys, `$GLOBALS[] =& $value`, source names
-already routed through array-offset aliases, non-direct sources, recursive
-`$GLOBALS` materialization, full reference containers, copy-on-write, exact
-mutation ordering, and native lowering remain future work.
+root-global array slot to a direct source variable cell, including from
+function scope. The source may be unaliased, part of a direct
+variable-to-variable alias group, or already routed through covered
+array-offset alias metadata; for the array-offset source shape, the selected
+`$GLOBALS` slot is merged into the same bounded alias group. Missing root
+globals, `null` root globals, and missing intermediate containers materialize
+as arrays for the nested/append forms, and append targets use the runtime
+array append cursor under the selected root global array. Writes through the
+source name, the direct global variable path, the supported string-keyed
+`$GLOBALS` offset path, and other covered alias-group slots observe the same
+value, and unsetting the source name detaches only that name. Nested by-value
+writes through supported string-keyed `$GLOBALS` paths route through the root
+global symbol table and sync covered aliases. Non-string root keys,
+`$GLOBALS[] =& $value`, non-direct sources, recursive `$GLOBALS`
+materialization, full reference containers, copy-on-write, exact mutation
+ordering, and native lowering remain future work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

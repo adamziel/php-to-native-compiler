@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:15:43Z
+
+- Checkpoint before this task:
+  `7cd9e175 runtime: add trait composition`, pushed to `origin/master`.
+- Task attempted: Milestones 1226-1230, four WordPress-focused implementation
+  lanes plus queue refresh.
+- Files changed: parser/object-model support for simple comma-separated
+  class-body trait-use composition, runtime reference alias sync for
+  string-keyed `$GLOBALS` reference targets joining covered array-offset alias
+  groups, deterministic empty `$_COOKIE` root superglobal request state,
+  synthetic WordPress `wpdb` alloptions bootstrap evidence, focused tests and
+  fixtures, stale trait-use diagnostic fixture snapshots, plus `README.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed for trait/object-model,
+  reference/COW, request superglobals, WordPress inventory, and milestone
+  fixtures/PHP comparisons. The first checkpoint gate exposed a terminal
+  newline mismatch in the updated unsupported trait-use stderr fixture; after
+  normalizing that fixture, `tools/checkpoint.sh "runtime: extend WordPress
+  compatibility slices"` passed with `1366` fixture tests, `778` system PHP
+  comparisons, and `588` skipped `phpc-only` fixtures before the scoped
+  checkpoint commit `b8be6471 runtime: extend WordPress compatibility slices`.
+- Remaining semantic gaps: trait adaptation blocks, aliases, visibility
+  changes, `insteadof`, conflict resolution, trait properties/constants,
+  static/abstract/final or non-public trait methods, full reference/COW
+  containers, recursive `$GLOBALS`, included-file scope fidelity, real
+  request/SAPI imports and `$_REQUEST`, include-path/open_basedir/stat-cache/
+  stream fidelity, real database connections, broad SQL/`wpdb`, plugins/themes,
+  real WordPress request state, and native object/filesystem/database lowering
+  remain implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, close completed lane
+  agents, then start Milestones 1231-1234 in separate worktrees focused on the
+  same largest WordPress blockers.
+
 ## Loop Event 2026-05-16T23:02:02Z
 
 - Checkpoint before this task:

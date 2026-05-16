@@ -1,4 +1,6 @@
 <?php
 class Box {
-    use Labels, Hooks;
+    use Labels {
+        Labels::label as title;
+    }
 }

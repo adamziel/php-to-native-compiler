@@ -2480,6 +2480,50 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_composes_multiple_public_instance_traits_from_one_declaration() {
+    let source = r#"<?php
+interface Bootable {
+    public function boot();
+}
+
+trait HasBoot {
+    public function boot() {
+        return "boot:" . get_class($this);
+    }
+}
+
+trait HasLabel {
+    public function label($value = "default") {
+        return "label:" . $value;
+    }
+}
+
+class Plugin implements Bootable {
+    use HasBoot, HasLabel;
+}
+
+$plugin = new Plugin();
+echo $plugin->boot(), "\n";
+echo $plugin->label("ok"), "\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "boot:Plugin\nlabel:ok\nArray\n(\n    [0] => boot\n    [1] => label\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("boot").is_some());
+    assert!(class.method("label").is_some());
+}
+
+#[test]
 fn class_trait_use_requires_already_declared_trait() {
     let error = runtime_error(
         r#"<?php
@@ -7088,12 +7132,14 @@ class Box {
         (
             r#"<?php
 class Box {
-    use Labels, Hooks;
+    use Labels {
+        Labels::label as title;
+    }
 }
 "#,
             3,
-            15,
-            "unsupported trait use: multiple traits in one class-body use declaration are not implemented",
+            16,
+            "unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented",
         ),
         (
             r#"<?php

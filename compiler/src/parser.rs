@@ -423,7 +423,7 @@ impl Parser {
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("class member");
             if self.check(|kind| matches!(kind, TokenKind::Use)) {
-                trait_uses.push(self.parse_class_trait_use()?);
+                trait_uses.extend(self.parse_class_trait_use()?);
             } else {
                 members.push(self.parse_class_member()?);
             }
@@ -516,20 +516,32 @@ impl Parser {
         })
     }
 
-    fn parse_class_trait_use(&mut self) -> CompileResult<TraitUseDecl> {
+    fn parse_class_trait_use(&mut self) -> CompileResult<Vec<TraitUseDecl>> {
         let span = self.consume_keyword(TokenKind::Use, "expected 'use'")?.span;
-        let name = self.consume_class_like_name("expected trait name after 'use'")?;
-        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_multiple_trait_use_message(),
-            ));
+        let mut trait_uses = Vec::new();
+        loop {
+            let name = self.consume_class_like_name("expected trait name after 'use'")?;
+            trait_uses.push(TraitUseDecl { name, span });
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| {
+                matches!(
+                    kind,
+                    TokenKind::Semicolon | TokenKind::LBrace | TokenKind::Eof
+                )
+            }) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "expected trait name after ',' in trait use",
+                ));
+            }
         }
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
             return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after trait use")?;
-        Ok(TraitUseDecl { name, span })
+        Ok(trait_uses)
     }
 
     fn parse_interface(&mut self) -> CompileResult<Stmt> {
@@ -6339,11 +6351,7 @@ fn unsupported_asymmetric_property_visibility_message() -> &'static str {
 }
 
 fn unsupported_trait_use_message() -> &'static str {
-    "unsupported trait use: only a single simple class-body trait use without adaptations is implemented"
-}
-
-fn unsupported_multiple_trait_use_message() -> &'static str {
-    "unsupported trait use: multiple traits in one class-body use declaration are not implemented"
+    "unsupported trait use: only simple class-body trait use without adaptations is implemented"
 }
 
 fn unsupported_trait_adaptation_message() -> &'static str {

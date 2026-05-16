@@ -1585,6 +1585,81 @@ echo $value, "|", $other;
 }
 
 #[test]
+fn reference_assignment_array_target_rebinds_array_offset_alias_group() {
+    let execution = run_source(
+        r#"<?php
+$entry = "source";
+$items["slot"] =& $entry;
+$other =& $entry;
+$copy["slot"] =& $entry;
+$entry = "from-entry";
+echo $items["slot"], "|", $copy["slot"], "|", $other, "|";
+$copy["slot"] = "from-copy";
+echo $entry, "|", $items["slot"], "|", $other;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "from-entry|from-entry|from-entry|from-copy|from-copy|from-copy"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_globals_target_rebinds_array_offset_alias_group() {
+    let execution = run_source(
+        r#"<?php
+$entry = "source";
+$items["slot"] =& $entry;
+$other =& $entry;
+$GLOBALS["bag"]["slot"] =& $entry;
+$entry = "from-entry";
+echo $items["slot"], "|", $bag["slot"], "|", $other, "|";
+$other = "from-other";
+echo $items["slot"], "|", $GLOBALS["bag"]["slot"], "|", $entry, "|";
+$GLOBALS["bag"]["slot"] = "from-global";
+echo $entry, "|", $items["slot"], "|", $other;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "from-entry|from-entry|from-entry|from-other|from-other|from-other|from-global|from-global|from-global"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_target_rebinds_array_offset_alias_group() {
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $entries;
+}
+$catalog = new Catalog();
+$entry = "source";
+$items["slot"] =& $entry;
+$other =& $entry;
+$catalog->entries["slot"] =& $entry;
+$entry = "from-entry";
+echo $items["slot"], "|", $catalog->entries["slot"], "|", $other, "|";
+$catalog->entries["slot"] = "from-property";
+echo $entry, "|", $items["slot"], "|", $other;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "from-entry|from-entry|from-entry|from-property|from-property|from-property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php

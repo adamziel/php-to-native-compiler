@@ -225,8 +225,9 @@ incorrect native code.
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata with concrete-class public method
   presence checks, declared trait metadata for empty traits and simple public
-  instance trait methods, simple class-body `use TraitName;` composition for
-  one already-declared trait without adaptations or conflicts,
+  instance trait methods, simple class-body `use TraitName;` and
+  `use TraitA, TraitB;` composition for already-declared traits without
+  adaptations or conflicts,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -252,7 +253,7 @@ actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
 interface method enforcement/catalogs beyond the current `Countable`,
 `Iterator`, and `IteratorAggregate` shape checks, trait properties/constants,
-static/abstract/final or non-public trait methods, multiple/adapted trait
+static/abstract/final or non-public trait methods, adapted or conflicting trait
 composition, aliases, visibility changes, `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
@@ -297,13 +298,14 @@ resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 
-By-reference assignment syntax has bounded value-model slices: direct variable
-sources holding current object or array values may be assigned into direct
-variables, and direct variable sources holding current object values may also be
-assigned into direct array offsets. These paths store the current value/object
-handle rather than creating PHP reference cells. Other reached `=&` assignments
-still fail with a stable unsupported diagnostic until reference containers,
-alias rebinding, mutation ordering, and copy-on-write exist.
+By-reference assignment syntax has bounded value-model slices for direct
+variables, direct array offsets, object-property array offsets, and
+string-keyed `$GLOBALS` targets. Covered `$GLOBALS` targets can now join a
+source variable that is already routed through covered array-offset alias
+metadata, so writes through the global slot and the original slot observe the
+same value. These paths are still symbol-table alias metadata rather than full
+PHP reference containers; broader alias rebinding, exact mutation ordering, and
+copy-on-write remain unsupported.
 By-reference function and method return declarations also parse as runtime
 boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.

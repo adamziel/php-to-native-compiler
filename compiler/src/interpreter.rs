@@ -221,7 +221,7 @@ enum ArrayFilterMode {
 }
 
 fn is_auto_global_name(name: &str) -> bool {
-    name == "_SERVER"
+    matches!(name, "_SERVER" | "_COOKIE")
 }
 
 fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
@@ -1080,6 +1080,31 @@ impl SymbolTable {
         }
     }
 
+    fn sync_array_offset_aliases_for_global_root(&mut self, global_name: &str) {
+        let syncs: Vec<(String, Value)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let touched_alias = aliases.iter().find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::GlobalArray { name } if name == global_name
+                    )
+                })?;
+                self.read_array_offset_alias(touched_alias)
+                    .map(|value| (alias_name.clone(), value))
+            })
+            .collect();
+
+        for (alias_name, value) in syncs {
+            if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
+                if !self.write_array_offset_aliases(&aliases, value) {
+                    self.array_offset_aliases.remove(&alias_name);
+                }
+            }
+        }
+    }
+
     fn bind_array_offset_to_static_source(
         &mut self,
         array_name: &str,
@@ -1391,16 +1416,6 @@ impl SymbolTable {
             ));
         }
 
-        if self.array_offset_aliases.contains_key(source_name) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "array-offset reference targets require a direct unaliased variable source",
-                ),
-            ));
-        }
-
         Ok(())
     }
 
@@ -1409,6 +1424,30 @@ impl SymbolTable {
         source_name: &str,
         alias: ArrayOffsetAlias,
     ) {
+        if let Some(existing_aliases) = self.array_offset_aliases.get(source_name).cloned() {
+            let mut aliases = existing_aliases.clone();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+
+            let names: Vec<String> = self
+                .array_offset_aliases
+                .iter()
+                .filter_map(|(candidate, candidate_aliases)| {
+                    if *candidate_aliases == existing_aliases {
+                        Some(candidate.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for name in names {
+                self.bind_static_to_array_offset_aliases(&name, aliases.clone());
+            }
+            return;
+        }
+
         let names = self.direct_names_sharing_cell(source_name);
         let names = if names.is_empty() {
             vec![source_name.to_string()]
@@ -2041,6 +2080,10 @@ impl Interpreter {
         self.global_symbols
             .borrow_mut()
             .insert("_SERVER".to_string(), value_cell(Value::Array(server)));
+        self.global_symbols.borrow_mut().insert(
+            "_COOKIE".to_string(),
+            value_cell(Value::Array(PhpArray::new())),
+        );
     }
 
     fn initialize_static_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
@@ -5229,6 +5272,7 @@ impl Interpreter {
                         ));
                     };
                     scope.write_global_name(global_name, value.clone());
+                    scope.sync_array_offset_aliases_for_global_root(global_name);
                     return Ok(value);
                 }
                 let mut slot = scope
@@ -5518,6 +5562,7 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::write_nested_array_value(array, &keys, value, span)?;
                 scope.write_global_name(&global_name, slot);
+                scope.sync_array_offset_aliases_for_global_root(&global_name);
                 Ok(())
             }
             other => Err(runtime_error(
@@ -5805,6 +5850,7 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::append_nested_array_value(array, &keys, value, span)?;
                 scope.write_global_name(&global_name, slot);
+                scope.sync_array_offset_aliases_for_global_root(&global_name);
                 Ok(())
             }
             other => Err(runtime_error(

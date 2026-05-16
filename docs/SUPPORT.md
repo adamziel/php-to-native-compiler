@@ -208,22 +208,22 @@
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
   execute when the target root is a direct array variable and the source is a
-  direct variable name that is either unaliased or already part of a direct
-  variable-to-variable alias group. Explicit-offset targets normalize evaluated
-  keys with the current array key rules; existing and missing keys work. Append
-  targets use the runtime array append cursor and bind the source name, plus
-  any direct names sharing that source cell, to the selected auto key. Nested
-  explicit and nested append targets materialize missing intermediate
-  containers and bind the source direct-name group to the selected normalized
-  key path. Undefined or `null` target roots materialize as arrays, and
-  undefined source variables begin as `null` before binding. Writes through any
-  direct source-group name and the direct array offset observe the same selected
-  value, and `unset($value)` detaches only that source name. Source names
-  already routed through array-offset aliases, `$GLOBALS`, PHP's deprecated
-  false-root conversion, other non-array roots, object-property/`ArrayAccess`
-  targets, non-direct sources, full PHP reference containers, copy-on-write,
-  exact alias rebinding/mutation ordering, and native lowering remain
-  unsupported. Direct public object-property
+  direct variable name that is unaliased, already part of a direct
+  variable-to-variable alias group, or already routed through the current
+  covered array-offset alias metadata. Explicit-offset targets normalize
+  evaluated keys with the current array key rules; existing and missing keys
+  work. Append targets use the runtime array append cursor and bind the source
+  name, plus any direct names sharing that source cell or covered alias route,
+  to the selected auto key. Nested explicit and nested append targets
+  materialize missing intermediate containers and bind the source group to the
+  selected normalized key path. Undefined or `null` target roots materialize as
+  arrays, and undefined source variables begin as `null` before binding. Writes
+  through any covered source-group name and the direct array offset observe the
+  same selected value, and `unset($value)` detaches only that source name.
+  `$GLOBALS`, PHP's deprecated false-root conversion, other non-array roots,
+  object-property/`ArrayAccess` targets, non-direct sources, full PHP reference
+  containers, copy-on-write, exact alias rebinding/mutation ordering, and native
+  lowering remain unsupported. Direct public object-property
   array-offset and array-append reference targets such as
   `$object->items[$key] =& $value;`, `$object->items[] =& $value;`,
   `$object->groups[$outer][$inner] =& $value;`, and
@@ -231,15 +231,15 @@
   direct object variable, the property is a declared public property reachable
   through the current public property access path, every parent offset is
   explicit for append-at-depth, and the source is a direct variable name that
-  is either unaliased or already part of a direct variable-to-variable alias
-  group. A `null` public property and missing parent containers materialize as
-  arrays, append targets use the runtime array append cursor, writes through
-  any direct source-group name and the direct object-property array offset
-  observe the same selected value, and `unset($value)` detaches only that source
-  name. Source names already routed through array-offset aliases, `$GLOBALS`,
-  dynamic/magic/non-public properties, non-direct sources, full PHP reference
-  containers, copy-on-write, exact alias rebinding/mutation ordering, and
-  native lowering remain unsupported.
+  is unaliased, already part of a direct variable-to-variable alias group, or
+  already routed through the current covered array-offset alias metadata. A
+  `null` public property and missing parent containers materialize as arrays,
+  append targets use the runtime array append cursor, writes through any
+  covered source-group name and the direct object-property array offset observe
+  the same selected value, and `unset($value)` detaches only that source name.
+  `$GLOBALS`, dynamic/magic/non-public properties, non-direct sources, full PHP
+  reference containers, copy-on-write, exact alias rebinding/mutation ordering,
+  and native lowering remain unsupported.
   ArrayAccess object reference targets such as `$bag[$key] =& $value;` and
   property-held `$holder->bag[$key] =& $value;` report a stable runtime
   boundary because PHP fatals when assigning by reference to an object array
@@ -534,16 +534,19 @@
   Direct string-keyed `$GLOBALS['name'] =& $value`,
   `$GLOBALS['bag']['slot'] =& $value`, and `$GLOBALS['list'][] =& $value`
   reference targets bind the selected root global symbol or root-global array
-  slot to a direct unaliased source variable cell, including from function
-  scope. Writes through the source variable, direct global variable path, and
-  supported `$GLOBALS` offset path observe the same value, and
-  `unset($value)` detaches only the source name. Nested by-value writes through
-  supported string-keyed `$GLOBALS` paths route through the root global symbol
-  table. Full PHP `$GLOBALS` array materialization, recursive `$GLOBALS`
-  contents, non-string keyed `$GLOBALS` access, `$GLOBALS[] =& $value`,
-  source names already routed through array-offset aliases, non-direct sources,
-  dynamic global names, exact warning/notice behavior, included-file scope
-  interactions, copy-on-write, and native lowering remain unsupported.
+  slot to a direct source variable cell, including from function scope. The
+  source may be unaliased, part of a direct variable-to-variable alias group,
+  or already routed through the current covered array-offset alias metadata;
+  in that last shape, the selected `$GLOBALS` slot joins the same bounded
+  alias group. Writes through the source variable, direct global variable path,
+  supported `$GLOBALS` offset path, and other covered alias-group slots observe
+  the same value, and `unset($value)` detaches only the source name. Nested
+  by-value writes through supported string-keyed `$GLOBALS` paths route through
+  the root global symbol table and sync covered aliases. Full PHP `$GLOBALS`
+  array materialization, recursive `$GLOBALS` contents, non-string keyed
+  `$GLOBALS` access, `$GLOBALS[] =& $value`, non-direct sources, dynamic global
+  names, exact warning/notice behavior, included-file scope interactions,
+  copy-on-write, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
@@ -555,6 +558,13 @@
   copy-on-write, mutation-ordering fidelity, `variables_order`, cookies,
   uploads, sessions, other superglobals, exact warning behavior, and native
   lowering remain unsupported.
+- `$_COOKIE` is seeded as a bounded root superglobal for `phpc run` with an
+  empty ordered array. Direct function-scope reads and writes of `$_COOKIE`
+  route through the root symbol table without a `global $_COOKIE` declaration.
+  Browser cookie parsing, SAPI request imports, `variables_order`,
+  `$_REQUEST` merging, cookie emission through headers, `$GLOBALS` aliasing,
+  references, copy-on-write, exact warning behavior, and native lowering remain
+  unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -2120,10 +2130,10 @@
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
   static interface methods, trait properties/constants, static/abstract/final
-  or non-public trait methods, multiple traits in one class-body use,
-  adaptation blocks, conflict resolution, aliases, visibility adaptations,
-  `insteadof`, `__TRAIT__` context, references/copy-on-write, and native
-  trait lowering, backed enum declarations and enum members beyond
+  or non-public trait methods, adaptation blocks, conflict resolution,
+  aliases, visibility adaptations, `insteadof`, `__TRAIT__` context,
+  references/copy-on-write, and native trait lowering, backed enum declarations
+  and enum members beyond
   bare cases,
   unsupported class modifier combinations, readonly class declarations before
   readonly class metadata, typed-property enforcement, initialization/write
@@ -4554,8 +4564,12 @@
   declared interface names in declaration order. Other built-in/internal
   interface entries are not represented.
   `get_declared_traits()` returns a zero-indexed array containing only the
-  current parsed program's empty top-level trait names in declaration order.
-  Built-in/internal trait entries are not represented.
+  current parsed program's top-level trait names in declaration order,
+  including traits with supported public instance methods. Simple class-body
+  `use TraitName;`, repeated simple trait-use declarations, and
+  `use TraitA, TraitB;` compose already-declared public instance trait methods
+  onto the consuming class metadata without adaptations or conflict
+  resolution. Built-in/internal trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -5077,7 +5091,7 @@
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
   trait properties/constants, static/abstract/final and non-public trait
-  methods, multiple trait composition, trait conflict resolution, aliases,
+  methods, conflicting trait composition, trait conflict resolution, aliases,
   visibility changes, adaptation blocks, `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
@@ -5362,9 +5376,8 @@
   root-symbol reads/writes, nested by-value writes, and the bounded direct-
   variable reference-target slices: recursive `$GLOBALS` materialization,
   dynamic global names, `$GLOBALS[] =& $value`, non-direct reference sources,
-  source names already routed through array-offset aliases, superglobals,
-  included-file scope interactions, copy-on-write, exact warning/notice
-  behavior, and native lowering
+  superglobals, included-file scope interactions, copy-on-write, exact
+  warning/notice behavior, and native lowering
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters
@@ -6393,7 +6406,12 @@
   complete server key catalogs, `$GLOBALS` aliasing, references/copy-on-write,
   mutation-ordering fidelity, `variables_order`, exact warning behavior, and
   native lowering
-- other superglobals such as `$_GET`, `$_POST`, `$_COOKIE`, `$_FILES`,
+- `$_COOKIE` behavior beyond the current deterministic empty array seed and
+  direct root-symbol routing: browser cookie parsing, request/SAPI imports,
+  `variables_order`, `$_REQUEST` merging, cookie emission through headers,
+  `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
+  exact warning behavior, and native lowering
+- other superglobals such as `$_GET`, `$_POST`, `$_FILES`,
   `$_REQUEST`, `$_ENV`, `$_SESSION`, and `$GLOBALS`
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,

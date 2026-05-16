@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+boot:Plugin|label:ok|boot-method|trait
+--- stdout end ---
+stderr:
+--- stderr end ---
