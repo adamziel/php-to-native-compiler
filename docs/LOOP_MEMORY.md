@@ -26,6 +26,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T22:20:00Z
+
+- Checkpoint before this task:
+  `1d0aea46 docs: record ignore user abort gate`, pushed to `origin/master`.
+- Task attempted: Milestone 1080, bounded direct static array-copy preservation
+  for direct array-offset reference elements.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_reference_literals.rs`,
+  `tests/fixtures/milestone1080/array_copy_reference_elements.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `cargo test -p phpc --test array_reference_literals
+  -- --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1080 --compare-php`, `cargo check -p php_runtime -p
+  phpc`, `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  and `cargo test -p phpc --test foreach -- --test-threads=1` passed.
+- Remaining semantic gaps: runtime reference containers, nested/object copied
+  reference slots, reference array literals, ArrayAccess reference containers,
+  exact alias destruction ordering, full array/object copy-on-write, and native
+  lowering remain missing.
+- Next concrete task: run `git diff --check`, then the serialized checkpoint
+  gate for Milestone 1080 if the tree stays coherent.
+
 ## Loop Event 2026-05-16T21:45:00Z
 
 - Checkpoint before this task:

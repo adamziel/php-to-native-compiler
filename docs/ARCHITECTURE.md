@@ -31,6 +31,17 @@ assignment. This is still a materialized-symbol-table model, not PHP's full
 reference-backed alias, recursive `$GLOBALS` array, copy-on-write, dynamic
 global-name, or included-file scope model.
 
+Array-offset references in the interpreter are currently represented as
+symbol-table alias metadata, not general runtime reference containers. A direct
+variable may route to one or more direct array-offset aliases; this lets the
+current runtime mirror the bounded PHP behavior where copying a direct array
+that contains a referenced direct slot preserves that slot's reference identity
+across the copied array. Whole-variable assignment to a direct array root drops
+stale aliases for that root before the new value is stored. Nested/object
+copied reference slots, ArrayAccess references, reference array literals, exact
+alias destruction ordering, and native lowering still require the future
+runtime reference/COW value model.
+
 ## Compiler Crate
 
 `compiler/` contains:

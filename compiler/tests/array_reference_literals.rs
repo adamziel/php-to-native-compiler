@@ -25,6 +25,59 @@ echo "|", $items[0], "|", $items["name"];
 }
 
 #[test]
+fn array_copies_preserve_direct_reference_element_identity() {
+    let execution = run_source(
+        r#"<?php
+$value = "x";
+$left = [];
+$left["slot"] =& $value;
+$right = $left;
+$right["slot"] = "b";
+echo $value, "|", $left["slot"], "|", $right["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "b|b|b");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn copied_reference_elements_sync_through_source_alias_and_copied_slot() {
+    let execution = run_source(
+        r#"<?php
+$left = ["slot" => "x"];
+$alias =& $left["slot"];
+$right = $left;
+$alias = "y";
+echo $right["slot"], "|", $left["slot"];
+$right["slot"] = "z";
+echo "|", $alias, "|", $left["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "y|y|z|z");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_copies_without_references_remain_copy_on_write_values() {
+    let execution = run_source(
+        r#"<?php
+$left = ["slot" => "x"];
+$right = $left;
+$right["slot"] = "b";
+echo $left["slot"], "|", $right["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "x|b");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reference_keys_remain_explicitly_unsupported() {
     let error = parse_error(
         r#"<?php

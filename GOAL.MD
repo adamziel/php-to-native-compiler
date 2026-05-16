@@ -749,10 +749,11 @@ The current project state therefore reconciles into two facts:
 - Ready today: an expanding interpreter/runtime compatibility subset, a narrow
   native scalar lowering subset, stable rejection boundaries, system-PHP
   comparison fixtures, WordPress inventory/smoke harnesses, and many
-  WordPress-shaped bootstrap/database placeholder slices.
+  WordPress-shaped bootstrap/database placeholder slices, including bounded
+  direct reference-element preservation when a direct array variable is copied.
 - Missing before the goal is complete: real PHP reference/copy-on-write
-  semantics, full object and error behavior, real multi-file/autoload/source
-  mapping behavior, broad standard-library and extension services,
+  semantics beyond the bounded direct slices, full object and error behavior,
+  real multi-file/autoload/source mapping behavior, broad standard-library and extension services,
   host-backed database/filesystem/web runtime state, committed WordPress core
   application-flow coverage, and native runtime integration beyond scalar
   snapshots.
@@ -782,9 +783,9 @@ Reconciliation into concrete workstreams:
   fixture runner plus optional system PHP comparison. Missing artifact:
   versioned conformance manifest and suite.
 - **Reference/COW value model:** replace the bounded copy/copy-back and
-  no-alias reference slices with reference cells, alias-aware symbol slots,
-  array/object copy-on-write, by-reference foreach semantics, and mutation
-  ordering tests. Current artifact: direct variable-to-variable alias cells,
+  path-based reference slices with runtime reference cells, alias-aware symbol
+  slots, array/object copy-on-write, by-reference foreach semantics, and
+  mutation ordering tests. Current artifact: direct variable-to-variable alias cells,
   direct-variable by-reference parameter alias cells during function, method,
   and constructor calls, a bounded direct-variable reference-return assignment
   path for direct free-function, direct object method, and direct named static

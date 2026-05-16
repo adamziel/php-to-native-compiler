@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1080, a bounded direct array-copy/reference-element slice.
+  The interpreter now keeps array-offset alias groups for direct static array
+  roots, mirrors those aliases when a direct array variable is copied into
+  another direct variable, and synchronizes writes through either copied slot
+  or the source alias for the covered direct key paths. This makes
+  `$left["slot"] =& $value; $right = $left; $right["slot"] = "b";` update
+  `$value`, `$left["slot"]`, and `$right["slot"]` consistently with PHP while
+  preserving ordinary copy-on-write value behavior for arrays without
+  reference elements. Whole-variable reassignment removes stale root aliases
+  so later plain array copies do not inherit old reference metadata. This does
+  not implement runtime reference containers, nested/object copied reference
+  slots, reference array literals, ArrayAccess reference containers, exact PHP
+  alias destruction ordering, or native lowering. Verification so far:
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1080 --compare-php`,
+  `cargo check -p php_runtime -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  and `cargo test -p phpc --test foreach -- --test-threads=1`.
+
 - Added Milestone 1079, a bounded `ignore_user_abort()` SAPI/connection-state
   placeholder for the reached WordPress `wp-cron.php` entry flow. The
   interpreter now exposes `ignore_user_abort()` through function/callability

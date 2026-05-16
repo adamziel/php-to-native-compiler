@@ -103,7 +103,16 @@
   selected slot, and `unset($alias)` detaches only the alias name. Non-array
   roots, nested offsets, object-property offsets, `ArrayAccess` offsets, exact
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
-  native lowering remain unsupported. Direct array-offset reference targets
+  native lowering remain unsupported. When a direct static array variable with
+  a covered direct array-offset reference alias is copied into another direct
+  static variable, the copied slot remains tied to the same bounded alias
+  group: writes through the source alias, the original array slot, or the
+  copied array slot update the same value for that direct key path. Plain
+  arrays without reference elements still copy by value under the current
+  array model. Nested/object copied reference slots, reference array literals,
+  ArrayAccess reference containers, exact alias destruction ordering, full PHP
+  reference containers, and native lowering remain unsupported. Direct
+  array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
   execute when the target root is a direct array variable and the source is a

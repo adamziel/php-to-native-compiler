@@ -297,7 +297,7 @@ struct SymbolTable {
     symbols: SymbolStorage,
     global_symbols: Option<SymbolStorage>,
     imported_globals: HashSet<String>,
-    array_offset_aliases: HashMap<String, ArrayOffsetAlias>,
+    array_offset_aliases: HashMap<String, Vec<ArrayOffsetAlias>>,
 }
 
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
@@ -396,8 +396,10 @@ impl SymbolTable {
     }
 
     fn read_named(&self, name: &str) -> Option<Value> {
-        if let Some(alias) = self.array_offset_aliases.get(name) {
-            return self.read_array_offset_alias(alias);
+        if let Some(aliases) = self.array_offset_aliases.get(name) {
+            return aliases
+                .first()
+                .and_then(|alias| self.read_array_offset_alias(alias));
         }
 
         self.read_storage_named(name)
@@ -411,8 +413,8 @@ impl SymbolTable {
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
-        if let Some(alias) = self.array_offset_aliases.get(name).cloned() {
-            if self.write_array_offset_alias(&alias, value.clone()) {
+        if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
+            if self.write_array_offset_aliases(&aliases, value.clone()) {
                 return;
             }
             self.array_offset_aliases.remove(name);
@@ -455,9 +457,11 @@ impl SymbolTable {
         source: &str,
         span: Span,
     ) -> CompileResult<()> {
-        if let Some(alias) = self.array_offset_aliases.get(source).cloned() {
-            self.materialize_array_offset_alias(&alias, span)?;
-            self.bind_static_to_array_offset_alias(target, alias);
+        if let Some(aliases) = self.array_offset_aliases.get(source).cloned() {
+            for alias in &aliases {
+                self.materialize_array_offset_alias(alias, span)?;
+            }
+            self.bind_static_to_array_offset_aliases(target, aliases);
             return Ok(());
         }
 
@@ -522,8 +526,17 @@ impl SymbolTable {
     }
 
     fn bind_static_to_array_offset_alias(&mut self, target: &str, alias: ArrayOffsetAlias) {
+        self.bind_static_to_array_offset_aliases(target, vec![alias]);
+    }
+
+    fn bind_static_to_array_offset_aliases(
+        &mut self,
+        target: &str,
+        aliases: Vec<ArrayOffsetAlias>,
+    ) {
         self.routed_storage(target).borrow_mut().remove(target);
-        self.array_offset_aliases.insert(target.to_string(), alias);
+        self.array_offset_aliases
+            .insert(target.to_string(), aliases);
     }
 
     fn is_static_bound_to_array_offset(
@@ -534,11 +547,116 @@ impl SymbolTable {
     ) -> bool {
         matches!(
             self.array_offset_aliases.get(target),
-            Some(ArrayOffsetAlias {
-                root: ArrayOffsetAliasRoot::StaticArray { name },
-                keys,
-            }) if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+            Some(aliases) if aliases.iter().any(|alias| matches!(
+                alias,
+                ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name },
+                    keys,
+                } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+            ))
         )
+    }
+
+    fn is_array_offset_alias_name(&self, name: &str) -> bool {
+        self.array_offset_aliases.contains_key(name)
+    }
+
+    fn remove_static_root_from_array_offset_aliases(&mut self, root_name: &str) {
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let fallback_value = existing_aliases
+                .iter()
+                .find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
+                    )
+                })
+                .and_then(|alias| self.read_array_offset_alias(alias));
+            let aliases: Vec<_> = existing_aliases
+                .into_iter()
+                .filter(|alias| {
+                    !matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
+                    )
+                })
+                .collect();
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                if let Some(value) = fallback_value {
+                    self.write_storage_named(&alias_name, value);
+                }
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn mirror_static_array_offset_aliases_from_copy(
+        &mut self,
+        target_name: &str,
+        source_name: &str,
+    ) {
+        if target_name == source_name {
+            return;
+        }
+
+        let additions: Vec<(String, ArrayOffsetAlias)> = self
+            .array_offset_aliases
+            .iter()
+            .flat_map(|(alias_name, aliases)| {
+                aliases.iter().filter_map(move |alias| match &alias.root {
+                    ArrayOffsetAliasRoot::StaticArray { name } if name == source_name => Some((
+                        alias_name.clone(),
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: target_name.to_string(),
+                            },
+                            keys: alias.keys.clone(),
+                        },
+                    )),
+                    _ => None,
+                })
+            })
+            .collect();
+
+        for (alias_name, alias) in additions {
+            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
+            if !aliases.contains(&alias) {
+                aliases.push(alias);
+            }
+        }
+    }
+
+    fn sync_array_offset_aliases_for_static_root(&mut self, root_name: &str) {
+        let syncs: Vec<(String, Value)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(alias_name, aliases)| {
+                let touched_alias = aliases.iter().find(|alias| {
+                    matches!(
+                        &alias.root,
+                        ArrayOffsetAliasRoot::StaticArray { name } if name == root_name
+                    )
+                })?;
+                self.read_array_offset_alias(touched_alias)
+                    .map(|value| (alias_name.clone(), value))
+            })
+            .collect();
+
+        for (alias_name, value) in syncs {
+            if let Some(aliases) = self.array_offset_aliases.get(&alias_name).cloned() {
+                if !self.write_array_offset_aliases(&aliases, value) {
+                    self.array_offset_aliases.remove(&alias_name);
+                }
+            }
+        }
     }
 
     fn bind_array_offset_to_static_source(
@@ -925,6 +1043,16 @@ impl SymbolTable {
         }
         self.write_alias_root_value(alias, Value::Array(array), Span::new(0, 0))
             .is_ok()
+    }
+
+    fn write_array_offset_aliases(&mut self, aliases: &[ArrayOffsetAlias], value: Value) -> bool {
+        if aliases.is_empty() {
+            return false;
+        }
+
+        aliases
+            .iter()
+            .all(|alias| self.write_array_offset_alias(alias, value.clone()))
     }
 
     fn read_alias_root_value(
@@ -4047,7 +4175,16 @@ impl Interpreter {
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.evaluate(expr, scope)?;
+                let target_is_alias = scope.is_array_offset_alias_name(name);
+                if !target_is_alias {
+                    scope.remove_static_root_from_array_offset_aliases(name);
+                }
                 scope.write_static(name, value.clone());
+                if !target_is_alias && matches!(value, Value::Array(_)) {
+                    if let Expr::Variable(source_name, _) = expr {
+                        scope.mirror_static_array_offset_aliases_from_copy(name, source_name);
+                    }
+                }
                 Ok(value)
             }
             AssignTarget::List { names, span } => {
@@ -4121,6 +4258,7 @@ impl Interpreter {
                     }
                 }
                 scope.write_static(name, slot);
+                scope.sync_array_offset_aliases_for_static_root(name);
 
                 Ok(value)
             }
@@ -4309,6 +4447,7 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::write_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
+                scope.sync_array_offset_aliases_for_static_root(name);
                 Ok(())
             }
             other => Err(runtime_error(

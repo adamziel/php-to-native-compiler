@@ -10522,20 +10522,16 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1079: WordPress Entry-Flow Continuation
+## Milestone 1080: Direct Array-Copy Reference Elements
 
-- [x] Runtime/builtin lane: add a bounded `ignore_user_abort()` placeholder for
-  the reached WordPress `wp-cron.php` entry flow. In the current subset, the
-  builtin returns the previous deterministic setting as `0` or `1`, treats no
-  argument and `null` as a read/no-op, and accepts current scalar setting
-  values using PHP truthiness. This is not real client disconnect state,
-  web-server/SAPI connection-abort behavior, FastCGI/LiteSpeed request
-  finishing, cron locking/spawning, exact `TypeError` behavior, or native
-  lowering.
+- [x] Runtime/value-model lane: add the bounded direct static array-copy case
+  where an array copied from a direct variable preserves direct array-offset
+  reference element identity for the copied slot, while plain arrays without
+  reference elements keep current copy-by-value behavior.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  nested/object offset aliases, remaining by-reference `foreach` fidelity,
-  array/object copy-on-write split behavior, dynamic/magic/non-public property
-  reference targets, remaining `$GLOBALS` reference target semantics,
+  nested/object copied reference slots, remaining by-reference `foreach`
+  fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
+  property reference targets, remaining `$GLOBALS` reference target semantics,
   by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
   native lowering boundaries, and add the next bounded behavior or explicit
   diagnostic with PHP comparison coverage where applicable.
