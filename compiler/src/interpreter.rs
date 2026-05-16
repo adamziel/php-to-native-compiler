@@ -2685,6 +2685,9 @@ impl Interpreter {
                 } = source
                 {
                     scope.bind_static_to_static(name, source_name, span)?;
+                } else if let ReferenceSource::MethodCall { expr, .. } = source {
+                    let cell = self.evaluate_reference_return_call_cell(expr, span, scope)?;
+                    scope.bind_static_to_cell(name, cell);
                 } else {
                     let value =
                         self.evaluate_direct_variable_reference_source_value(source, span, scope)?;
@@ -2736,6 +2739,28 @@ impl Interpreter {
                 }
             }
             _ => Err(unsupported()),
+        }
+    }
+
+    fn evaluate_reference_return_call_cell(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        match expr {
+            Expr::Call {
+                name,
+                args,
+                span: call_span,
+            } => self.call_reference_return_function(name, args, *call_span, scope),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "only direct function-call reference-return sources are implemented in the current subset",
+                ),
+            )),
         }
     }
 
@@ -10970,6 +10995,182 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
         )
+    }
+
+    fn call_reference_return_function(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let callable = self.lookup_direct_function_call(name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
+        })?;
+        let Callable::User(function) = callable else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(name),
+                    "builtin functions cannot be used as reference-return sources in the current subset",
+                ),
+            ));
+        };
+
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+
+        self.call_reference_return_function_with_checked_values(
+            function,
+            values,
+            reference_bindings,
+        )
+    }
+
+    fn call_reference_return_function_with_checked_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        reference_bindings: Vec<ReferenceBinding>,
+    ) -> CompileResult<VariableCell> {
+        self.function_context.push(function.name.clone());
+        let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
+        for (index, param) in function.params.iter().enumerate() {
+            if param.is_variadic {
+                let mut rest = PhpArray::new();
+                for arg in args.iter().skip(index) {
+                    rest.append(arg.clone())
+                        .map_err(|error| runtime_error(param.span, error))?;
+                }
+                local_scope.write_static(&param.name, Value::Array(rest));
+                break;
+            }
+
+            if let Some(binding) = reference_bindings
+                .iter()
+                .find(|binding| binding.param_name == param.name)
+            {
+                local_scope.bind_static_to_cell(&param.name, binding.caller_cell.clone());
+                continue;
+            }
+
+            let value = if let Some(arg) = args.get(index) {
+                arg.clone()
+            } else {
+                let default = param
+                    .default
+                    .as_ref()
+                    .expect("arity check ensures missing params have defaults");
+                let mut default_scope = SymbolTable::new();
+                match self.evaluate(default, &mut default_scope) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.function_context.pop();
+                        return Err(error);
+                    }
+                }
+            };
+            local_scope.write_static(&param.name, value);
+        }
+
+        self.call_depth += 1;
+        self.active_static_locals.push(Vec::new());
+        let result = self.execute_reference_return_statements(function, &mut local_scope);
+        let static_names = self.active_static_locals.pop().unwrap_or_default();
+        let function_key = function.name.to_ascii_lowercase();
+        for name in static_names {
+            if let Some(value) = local_scope.read_named(&name) {
+                self.static_locals
+                    .insert((function_key.clone(), name), value.clone());
+            }
+        }
+        self.call_depth -= 1;
+        self.function_context.pop();
+
+        result
+    }
+
+    fn execute_reference_return_statements(
+        &mut self,
+        function: &FunctionDecl,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        for stmt in &function.body {
+            self.tick(stmt.span())?;
+            if let Stmt::Return { value, span } = stmt {
+                let Some(Expr::Variable(name, variable_span)) = value else {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference returns are only implemented for direct variable return expressions",
+                        ),
+                    ));
+                };
+                return scope.read_cell(name).ok_or_else(|| {
+                    runtime_error(*variable_span, RuntimeError::undefined_variable(name))
+                });
+            }
+
+            match self.execute_statement(stmt, scope)? {
+                Flow::Normal => {}
+                Flow::Return(_) => {
+                    return Err(runtime_error(
+                        stmt.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference returns through nested control flow are not implemented",
+                        ),
+                    ));
+                }
+                Flow::Break { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+                    ));
+                }
+                Flow::Continue { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue cannot be used outside a loop",
+                        ),
+                    ));
+                }
+                Flow::Exit(_) => {
+                    return Err(runtime_error(
+                        stmt.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "exit during reference-return evaluation is not implemented",
+                        ),
+                    ));
+                }
+                Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
+            }
+        }
+
+        Err(runtime_error(
+            function.span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference-return functions must return a direct variable in the current subset",
+            ),
+        ))
     }
 
     fn call_user_function_with_values(
@@ -19868,6 +20069,28 @@ fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> Co
         ));
     }
 
+    if function.return_type.is_some()
+        || function
+            .params
+            .iter()
+            .any(|param| param.type_decl.is_some())
+    {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "parameter and return type enforcement is not implemented",
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_supported_reference_return_function_metadata(
+    function: &FunctionDecl,
+    span: Span,
+) -> CompileResult<()> {
     if function.return_type.is_some()
         || function
             .params

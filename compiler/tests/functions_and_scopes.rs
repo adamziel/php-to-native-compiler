@@ -889,6 +889,49 @@ echo "registered";
 }
 
 #[test]
+fn direct_variable_reference_return_assignment_binds_returned_cell() {
+    let execution = run_source(
+        r#"<?php
+function &identity(&$value) {
+    return $value;
+}
+
+$value = 1;
+$alias =& identity($value);
+$alias = 2;
+echo "value=", $value, "|";
+$value = 3;
+echo "alias=", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "value=2|alias=3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_reference_return_alias_detaches_only_local_name() {
+    let execution = run_source(
+        r#"<?php
+function &identity(&$value) {
+    return $value;
+}
+
+$value = 1;
+$alias =& identity($value);
+unset($alias);
+$alias = 9;
+echo "alias=", $alias, "|value=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "alias=9|value=1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_return_invocation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -1140,7 +1183,7 @@ $parser->run();
     assert_eq!(error.column, 9);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: references and aliasing are not implemented"
+        "unsupported call reference assignment: only direct function-call reference-return sources are implemented in the current subset"
     );
 }
 
@@ -1236,7 +1279,7 @@ echo "|", $GLOBALS["posts"][0];
 fn reference_assignment_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php
-$alias =& make_value();
+$alias =& $box->items[0];
 "#,
     );
 
@@ -1244,7 +1287,7 @@ $alias =& make_value();
     assert_eq!(error.column, 11);
     assert_eq!(
         error.message,
-        "unsupported reference assignment: only direct variable, direct array-offset, object-property, and method-call reference sources are parsed before reference semantics exist"
+        "unsupported reference assignment: only direct variable, direct array-offset, object-property, function-call, and method-call reference sources are parsed before reference semantics exist"
     );
 }
 

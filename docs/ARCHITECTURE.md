@@ -180,15 +180,19 @@ cell in the current scope/global-routing model. Assignment through either name
 updates the other, and `unset($alias)` or `unset($value)` removes only that
 name binding while the cell remains alive through any remaining alias. Direct
 variable sources holding object values can also be assigned into direct array
-offsets under the existing object-handle value model. Array-offset and
-method-call sources, direct array-offset targets for array values,
-object-property array targets, source/target rebinding beyond direct names,
-full PHP reference containers, by-reference `foreach`, mutation-ordering
-guarantees, and copy-on-write remain future runtime work.
+offsets under the existing object-handle value model. Direct free-function
+call sources have a narrow reference-return execution path when the function
+declares `&`, returns a direct variable, and is used as a statement-form
+reference-assignment source; the target name is bound to the returned variable
+cell. Array-offset and method-call sources, direct array-offset targets for
+array values, object-property array targets, source/target rebinding beyond
+direct names, full PHP reference containers, by-reference `foreach`,
+mutation-ordering guarantees, and copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
-function metadata so declaration-contained code can register, but invoking such
-a function or method reports a stable runtime boundary before any return value
-or alias binding is produced.
+function metadata so declaration-contained code can register. Normal invocation
+of reference-return functions and all method reference-return sources still
+report stable runtime boundaries before any return value or alias binding is
+produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
@@ -196,8 +200,8 @@ to the caller's variable cell for the duration of current user-function,
 instance-method, and constructor calls. Writes through the parameter are
 visible before the call returns, and `unset($param)` detaches only the callee's
 local name from the shared cell. This deliberately does not model full PHP
-reference containers, by-reference array/object offsets, reference returns,
-by-reference `foreach`, or copy-on-write.
+reference containers, by-reference array/object offsets, broader reference
+returns, by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax is likewise represented only far enough to
 preserve a stable runtime boundary when reached; it does not mutate array slots
 through aliases, preserve lingering loop-variable references, or implement PHP

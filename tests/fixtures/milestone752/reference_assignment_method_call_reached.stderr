@@ -1,2 +1,2 @@
-runtime error at 8:9: unsupported call reference assignment: references and aliasing are not implemented
+runtime error at 8:9: unsupported call reference assignment: only direct function-call reference-return sources are implemented in the current subset
 

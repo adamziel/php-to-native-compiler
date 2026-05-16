@@ -26,11 +26,17 @@
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
 - by-reference function and method return declarations such as
-  `function &identity(...)` and `public function &make(...)` parse as runtime
-  boundaries. Guarded or declaration-contained declarations can be loaded, but
-  if execution invokes one of them, `phpc run` reports `unsupported call
-  <name>(): reference returns are not implemented`. This does not create PHP
-  reference-return binding, alias cells, or copy-on-write containers.
+  `function &identity(...)` and `public function &make(...)` parse. Guarded or
+  declaration-contained declarations can be loaded. The executing subset is
+  limited to statement-form reference assignment from a direct free-function
+  call whose function returns a direct variable by reference, for example
+  `$alias =& identity($value);` with
+  `function &identity(&$value) { return $value; }`. In that shape, the
+  assigned alias binds to the returned variable cell and `unset($alias)`
+  detaches only the alias name. Normal invocation such as `identity($value)`,
+  method-call reference-return sources, non-direct return expressions,
+  nested-control-flow returns, full PHP reference containers, copy-on-write,
+  and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -43,9 +49,10 @@
   caller variable. This is still a bounded direct-variable alias path, not full
   PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
-  `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
-  object-property array-offset targets such as `$object->items[$key] =& $value`
-  parses in statement position for direct variable, direct array-offset, and
+  `$alias =& $array[$key];`, `$alias =& identity($value);`,
+  `$alias =& $object->method();`, and direct object-property array-offset
+  targets such as `$object->items[$key] =& $value` parses in statement
+  position for direct variable, direct array-offset, direct function-call, and
   method-call sources plus the documented direct object-property array-offset
   target shape. The executing subset includes direct variable-to-variable
   sources and targets in the current scope/global-routing model:
@@ -54,14 +61,15 @@
   `unset($value)` detaches only that name without deleting the shared cell
   while another alias still points at it. Direct variable sources holding
   current object values may also be assigned into direct array offsets under
-  the existing object-handle value model. Array-offset and method-call
-  sources, direct array-offset targets for array values, object-property array
-  targets, by-reference `foreach`, reference returns, reference-parameter
-  forms beyond direct variable arguments, source/target rebinding beyond direct
-  names, PHP reference-container edge cases, copy-on-write, and native lowering
-  remain unsupported and report
-  `unsupported call reference assignment: references and aliasing are not
-  implemented` when reached.
+  the existing object-handle value model. Direct free-function call sources are
+  executable only for the bounded direct-variable reference-return shape
+  documented above. Array-offset and method-call sources, direct array-offset
+  targets for array values, object-property array targets, by-reference
+  `foreach`, broader reference returns, reference-parameter forms beyond
+  direct variable arguments, source/target rebinding beyond direct names, PHP
+  reference-container edge cases, copy-on-write, and native lowering remain
+  unsupported and report stable reference-assignment runtime diagnostics when
+  reached.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

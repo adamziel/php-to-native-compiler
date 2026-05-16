@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `9d535aa4 runtime: bind constructor reference parameters`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1047, bounded direct-variable reference-return
+  assignment cells for direct free-function calls.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1047/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt` was run after `cargo fmt --check` reported wrapping drift.
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  passed.
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1047`
+  passed with 1 fixture and 1 system PHP comparison.
+- Current WordPress frontier: reference-return declarations now have one
+  executable alias-cell path when used as a direct free-function
+  reference-assignment source returning a direct variable.
+- Remaining semantic gaps: normal reference-return invocation, method-call
+  reference-return sources, non-direct return expressions, nested-control-flow
+  returns, array/object offset references, by-reference `foreach`, full PHP
+  reference containers, copy-on-write, and native lowering remain missing.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, and the
+  serialized checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add direct reference return cells"` if the
+  full gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1d2cbebe docs: record reference parameter alias gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1046, direct-variable by-reference constructor
