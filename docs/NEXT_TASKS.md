@@ -10276,12 +10276,21 @@ handled.
   reference cells, direct array-offset references, missing-offset reference
   materialization, copy-on-write, exact by-reference `foreach`,
   object-property offsets, or native lowering.
-- [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
-  audited PHP/WordPress surface, such as array-offset reference cells,
-  object-property references, source/target rebinding, exact by-reference
-  `foreach`, magic reference-return dispatch internals, or array copy-on-write,
-  and add the next bounded behavior or explicit runtime boundary with PHP
-  comparison fixtures.
+
+## Milestone 1062: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add an internal shared-cell primitive behind
+  `ArraySlot` while preserving public by-value writes. `ArraySlot` now stores
+  its private cell behind a shared handle, normal slot cloning still allocates
+  a distinct cloned-value cell, and public writes detach from any shared cell
+  before mutation. This is not PHP-visible array-offset aliasing, missing-offset
+  reference materialization, copy-on-write, exact by-reference `foreach`,
+  object-property offsets, or native lowering.
+- [ ] Runtime/value-model lane: route one bounded PHP-visible direct
+  array-offset reference-source slice onto real array slot reference cells,
+  such as `$alias =& $array[$key];` for existing direct array keys, while
+  keeping missing offsets, nested/object offsets, by-reference `foreach`, COW,
+  and native lowering as explicit unsupported boundaries.
 
 ## Latest Completed Checkpoint
 

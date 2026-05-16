@@ -97,7 +97,9 @@
   copy-on-write, and native lowering remain unsupported. Direct array-offset
   reference sources such as `$alias =& $array[$key];` now evaluate the key and
   reach normalized-key array slot lookup before reporting a stable diagnostic
-  that array slot reference cells are not implemented.
+  that array slot reference cells are not implemented. The runtime now has
+  internal array slot-cell identity and shared-handle groundwork, but no
+  interpreter path exposes that as PHP-visible array-offset aliasing.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

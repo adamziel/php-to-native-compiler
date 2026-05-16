@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T12:17:12Z
+
+- Checkpoint before this task:
+  `12d31fae docs: record array slot cell identity gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1062, internal shared-cell primitive behind
+  `ArraySlot` while preserving current public by-value writes.
+- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `GOAL.MD`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime array_slot -- --test-threads=1` passed with 4
+  tests. `cargo test -p php_runtime -- --test-threads=1` passed with 112
+  tests.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`
+  passed with 2 tests. `cargo check -p php_runtime -p phpc`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Current WordPress frontier: `ArraySlot` can now hold its private cell behind
+  a shared handle for future reference work, while normal slot cloning remains
+  clone-by-value and public writes detach before mutation.
+- Remaining semantic gaps: this is not PHP-visible array-offset aliasing;
+  direct `$alias =& $array[$key]`, missing-offset reference materialization,
+  array/object offset aliases, exact by-reference `foreach`, lingering
+  references, copy-on-write, mutation ordering, and native lowering remain
+  missing.
+- Next concrete task: route one bounded direct array-offset reference-source
+  slice onto real slot reference cells, likely existing-key
+  `$alias =& $array[$key]`, while keeping missing/nested/object offsets and COW
+  explicit boundaries.
+
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:

@@ -1630,13 +1630,13 @@ impl ArrayEntry {
 
 #[derive(Debug, PartialEq)]
 pub struct ArraySlot {
-    cell: ArraySlotCell,
+    cell: Rc<ArraySlotCell>,
 }
 
 impl Clone for ArraySlot {
     fn clone(&self) -> Self {
         Self {
-            cell: self.cell.clone_by_value(),
+            cell: Rc::new(self.cell.clone_by_value()),
         }
     }
 }
@@ -1644,7 +1644,7 @@ impl Clone for ArraySlot {
 impl ArraySlot {
     pub fn new(value: Value) -> Self {
         Self {
-            cell: ArraySlotCell::new(value),
+            cell: Rc::new(ArraySlotCell::new(value)),
         }
     }
 
@@ -1652,12 +1652,16 @@ impl ArraySlot {
         self.cell.id()
     }
 
+    pub fn shares_cell_with(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.cell, &other.cell)
+    }
+
     pub fn value(&self) -> &Value {
         self.cell.value()
     }
 
     pub fn value_mut(&mut self) -> &mut Value {
-        self.cell.value_mut()
+        self.cell_mut_for_by_value_write().value_mut()
     }
 
     pub fn value_cloned(&self) -> Value {
@@ -1665,11 +1669,30 @@ impl ArraySlot {
     }
 
     pub fn set_value(&mut self, value: Value) {
-        self.cell.set_value(value);
+        self.cell_mut_for_by_value_write().set_value(value);
     }
 
     pub fn into_value(self) -> Value {
-        self.cell.into_value()
+        match Rc::try_unwrap(self.cell) {
+            Ok(cell) => cell.into_value(),
+            Err(cell) => cell.value_cloned(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn share_cell_from(source: &Self) -> Self {
+        Self {
+            cell: Rc::clone(&source.cell),
+        }
+    }
+
+    fn cell_mut_for_by_value_write(&mut self) -> &mut ArraySlotCell {
+        if Rc::strong_count(&self.cell) > 1 {
+            self.cell = Rc::new(self.cell.clone_by_value());
+        }
+
+        Rc::get_mut(&mut self.cell)
+            .expect("array slot by-value writes must detach shared cells before mutation")
     }
 }
 
@@ -4328,7 +4351,7 @@ mod tests {
             "slot cloning must allocate a distinct cell id until PHP reference cells exist"
         );
         assert!(
-            !ptr::addr_eq(&slot.cell, &cloned.cell),
+            !slot.shares_cell_with(&cloned),
             "slot cloning must allocate an independent cell until PHP reference cells exist"
         );
 
@@ -4347,6 +4370,36 @@ mod tests {
         assert_eq!(left, right);
         assert!(left.cell_id().as_i64() > 0);
         assert!(right.cell_id().as_i64() > 0);
+    }
+
+    #[test]
+    fn array_slot_shared_cell_primitive_detaches_for_public_writes() {
+        let original = ArraySlot::new(Value::String("original".to_string()));
+        let mut shared = ArraySlot::share_cell_from(&original);
+
+        assert!(original.shares_cell_with(&shared));
+        assert_eq!(original.cell_id(), shared.cell_id());
+
+        shared.set_value(Value::String("changed".to_string()));
+
+        assert!(!original.shares_cell_with(&shared));
+        assert_ne!(original.cell_id(), shared.cell_id());
+        assert_eq!(original.value(), &Value::String("original".to_string()));
+        assert_eq!(shared.value(), &Value::String("changed".to_string()));
+
+        let mut shared_for_mut = ArraySlot::share_cell_from(&original);
+        *shared_for_mut.value_mut() = Value::Int(9);
+
+        assert!(!original.shares_cell_with(&shared_for_mut));
+        assert_eq!(original.value(), &Value::String("original".to_string()));
+        assert_eq!(shared_for_mut.value(), &Value::Int(9));
+
+        let shared_for_into = ArraySlot::share_cell_from(&original);
+        assert_eq!(
+            shared_for_into.into_value(),
+            Value::String("original".to_string())
+        );
+        assert_eq!(original.value(), &Value::String("original".to_string()));
     }
 
     #[test]

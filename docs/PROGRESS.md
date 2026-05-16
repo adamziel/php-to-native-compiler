@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 1062, an internal shared-cell primitive behind
+  `ArraySlot` without changing current public by-value writes. `ArraySlot`
+  now stores its private `ArraySlotCell` behind a shared handle, normal
+  `ArraySlot::clone()` still allocates a fresh cell with a cloned value, and
+  public `value_mut()`/`set_value()` detach from any shared cell before
+  mutation. Added a focused runtime test proving an internally shared slot
+  starts with the same cell identity but public writes detach and leave the
+  original slot unchanged. This is storage groundwork only: it does not
+  implement PHP-visible shared reference cells, direct array-offset
+  references, missing-offset reference materialization, copy-on-write, exact
+  by-reference `foreach`, object-property offsets, or native lowering.
+  Verification so far:
+  `cargo test -p php_runtime array_slot -- --test-threads=1`,
+  `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_array_offset_source -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1061, stable internal identity for array slot cells without
   changing value equality or clone-by-value behavior. Each `ArraySlotCell` now
   receives an `ArraySlotCellId`, `ArraySlot::cell_id()` exposes that identity,
