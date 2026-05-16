@@ -8773,18 +8773,28 @@ handled.
   client-library build-flag inspection, real thread-safety configuration, host
   client-library state, socket state, host database state, warning/error
   fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+- [x] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
   records bounded `mysqli_thread_safe()` metadata through a WordPress-shaped
   connection diagnostics method without claiming host client-library
   build-flag inspection, real thread-safety configuration, host
   client-library state, sockets, host database state, warning/error fidelity,
   or native lowering.
+  Milestone 942 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  deterministic `mysqli_thread_safe()` truthy metadata through a
+  WordPress-shaped diagnostics method. It is not host client-library
+  build-flag inspection, real thread-safety configuration, host
+  client-library state, sockets, host database state, warning/error fidelity,
+  or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi statement or connection
+  metadata boundary after thread-safety metadata, such as statement lifecycle
+  APIs (`mysqli_stmt_init`, `mysqli_prepare`) or a sharper unsupported
+  diagnostic, before claiming broader mysqli extension fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5399446 tests: add wordpress wpdb error list smoke`, covering
-  Milestone 940 before the current Milestone 941 candidate.
+  `db05ed4 runtime: add mysqli thread safe placeholder`, covering
+  Milestone 941 before the current Milestone 942 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

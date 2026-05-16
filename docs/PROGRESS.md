@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 942, a synthetic WordPress-shaped `wpdb` connection
+  diagnostics smoke that records bounded `mysqli_thread_safe()` metadata
+  through a `wpdb`-style method, verifies deterministic thread-safety truth,
+  stores it on object state, and verifies that the diagnostics path ran. This
+  is a harness smoke only; it does not add host client-library build-flag
+  inspection, real thread-safety configuration, host client-library state,
+  socket state, host database state, PHP warning/error fidelity, or native
+  database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone942`.
+
 - Added Milestone 941, bounded `mysqli_thread_safe()` support for
   deterministic placeholder MySQLi client-library thread-safety metadata. The
   runtime accepts the no-argument call, returns deterministic `true`, rejects

@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone942/wpdb_thread_safe_diagnostics.php
+thread-safe
+recorded
+checked

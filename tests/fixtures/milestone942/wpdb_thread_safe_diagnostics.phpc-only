@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_thread_safe()`
+client-library thread-safety metadata through a WordPress-shaped `wpdb`
+connection diagnostics method. System PHP reports host client-library build
+metadata; phpc returns deterministic true without inspecting client build
+flags, real thread-safety configuration, host client-library state, sockets,
+or database state.
