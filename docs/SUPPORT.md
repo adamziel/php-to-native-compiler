@@ -1255,9 +1255,9 @@
   parsing, escaping/quoting fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
   INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
-  database execution, warning/error fidelity, PDO, prepared-statement mutation
-  state, or native lowering. Prepared statement execution over the same state
-  island supports the exact
+  database execution, warning/error fidelity, PDO, broad prepared-statement
+  mutation state, or native lowering. Prepared statement execution over the
+  same state island supports the exact
   `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
   option-name parameters on the same placeholder handle through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -1270,9 +1270,13 @@
   `UPDATE wp_options SET option_value = ? WHERE option_name = ?` prepared
   statement updates an existing recorded option value for string parameters on
   the same handle, updates statement and connection affected-row metadata, and
-  treats missing option names as successful zero-row updates. Prepared mutation
-  SQL without a prior state island remains unsupported. This does not add broad
-  prepared SQL execution, prepared INSERT/DELETE/REPLACE state, non-string
+  treats missing option names as successful zero-row updates. The exact
+  `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
+  existing recorded option for a string option-name parameter on the same
+  handle, updates statement and connection affected-row metadata, and treats
+  missing option names as successful zero-row deletes. Prepared mutation SQL
+  without a prior state island remains unsupported. This does not add broad
+  prepared SQL execution, prepared INSERT/REPLACE state, non-string
   parameter coercion, result binding fidelity beyond exact metadata, host
   database execution, PDO, or native lowering. For the
   exact synthetic empty result query

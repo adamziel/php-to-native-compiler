@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1031, bounded prepared-statement `wp_options` delete state
+  over the current per-placeholder-connection MySQLi state island.
+  `mysqli_prepare($handle, "DELETE FROM wp_options WHERE option_name = ?")`,
+  direct-variable `mysqli_stmt_bind_param(..., "s", $name)`, and
+  `mysqli_stmt_execute()` now remove an existing recorded option value for a
+  string option-name parameter on the same placeholder handle, set
+  `mysqli_stmt_affected_rows($stmt)` and `mysqli_affected_rows($handle)` to
+  `1`, leave missing option names as a successful zero-row delete, and expose
+  the removed option as an empty exact option-value readback result. Prepared
+  mutation SQL without a prior supported state island still reports the
+  existing unsupported statement-mutation diagnostic. This is not broad
+  prepared SQL execution, prepared INSERT/REPLACE, non-string parameter
+  coercion, schema/index behavior, transactions, host database execution,
+  warning/error fidelity, PDO, or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_deletes_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1031`.
+
 - Added Milestone 1030, bounded prepared-statement `wp_options` update state
   over the current per-placeholder-connection MySQLi state island.
   `mysqli_prepare($handle, "UPDATE wp_options SET option_value = ? WHERE

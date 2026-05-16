@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1031/mysqli_wp_options_prepared_delete_state.php
+exit: 0
+stdout:
+deleted|1|1|0|missing-deleted|0
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `c04c6024 runtime: add wp options prepared update state`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1031, bounded exact prepared `wp_options` MySQLi
+  delete state over the current per-placeholder-handle state island.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1031/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_deletes_current_wordpress_option_state -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1031`,
+  `cargo run -p phpc -- test tests/fixtures/milestone873`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone874` passed.
+- Current WordPress frontier: exact prepared option deletes can remove
+  existing recorded option values for string option-name parameters on the same
+  placeholder handle and report statement/connection affected rows.
+- Remaining semantic gaps: broad prepared SQL execution, prepared
+  INSERT/REPLACE state, non-string parameter coercion, broad SQL parsing,
+  schema/index behavior, transactions, host database execution,
+  warning/error fidelity, PDO, references/copy-on-write, and native lowering
+  remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ef8971c9 runtime: add wp options prepared row readback state`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1030, bounded exact prepared `wp_options` MySQLi

@@ -1174,8 +1174,10 @@ historical blockers and remaining full-support gaps include:
   to exact option-name/option-value row reads for the same string option-name
   parameter shape. Milestone 1030 extends the state island to exact prepared
   option updates for string value/name parameters and affected-row metadata.
+  Milestone 1031 extends the state island to exact prepared option deletes for
+  string option-name parameters and affected-row metadata.
   This is still not broad SQL parsing, ordering/collation fidelity,
-  INSERT-on-duplicate behavior, prepared INSERT/DELETE/REPLACE, transactions,
+  INSERT-on-duplicate behavior, prepared INSERT/REPLACE, transactions,
   host database execution, PDO, or native database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,

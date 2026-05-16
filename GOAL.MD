@@ -1283,8 +1283,10 @@ The repository already has a working Rust workspace with:
   reads now expose recorded row data for the same string option-name parameter
   shape. Exact prepared option updates now mutate existing recorded option
   values for string value/name parameters and expose affected-row metadata,
+  and exact prepared option deletes now remove existing recorded option values
+  for string option-name parameters and expose affected-row metadata,
   without claiming broad SQL parsing, ordering/collation fidelity,
-  INSERT-on-duplicate behavior, prepared INSERT/DELETE/REPLACE, transactions,
+  INSERT-on-duplicate behavior, prepared INSERT/REPLACE, transactions,
   host database execution, PDO, or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
@@ -1678,12 +1680,12 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1030 is the active checkpoint candidate: exact prepared
-  `wp_options` MySQLi update state now updates existing recorded option values
-  for string value/name parameters on the same placeholder handle and records
+- Milestone 1031 is the active checkpoint candidate: exact prepared
+  `wp_options` MySQLi delete state now removes existing recorded option values
+  for string option-name parameters on the same placeholder handle and records
   statement/connection affected rows, while broad SQL parsing,
   escaping/quoting fidelity, schema/index behavior, ordering/collation
-  fidelity, INSERT-on-duplicate behavior, prepared INSERT/DELETE/REPLACE,
+  fidelity, INSERT-on-duplicate behavior, prepared INSERT/REPLACE,
   transactions, host database execution, warning/error fidelity, PDO, and
   native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics

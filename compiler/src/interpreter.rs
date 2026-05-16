@@ -5352,6 +5352,38 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_delete_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let [Value::String(option_name)] = bound_parameters.as_slice() else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                "prepared wp_options delete requires a string option name parameter in the current subset",
+                            ),
+                        ));
+                    };
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = if options.remove(option_name).is_some() {
+                        1
+                    } else {
+                        0
+                    };
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -16119,6 +16151,12 @@ fn is_wordpress_option_prepared_update_query(query: &str) -> bool {
     let query = query.trim();
     query == "UPDATE wp_options SET option_value = ? WHERE option_name = ?"
         || query == "UPDATE `wp_options` SET `option_value` = ? WHERE `option_name` = ?"
+}
+
+fn is_wordpress_option_prepared_delete_query(query: &str) -> bool {
+    let query = query.trim();
+    query == "DELETE FROM wp_options WHERE option_name = ?"
+        || query == "DELETE FROM `wp_options` WHERE `option_name` = ?"
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {

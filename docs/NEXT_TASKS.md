@@ -9905,8 +9905,19 @@ handled.
   prepared SQL execution, prepared INSERT/DELETE/REPLACE state, non-string
   parameter coercion, transactions, host database execution, PDO, or native
   lowering.
+- [x] Runtime/database lane: add bounded prepared `wp_options` MySQLi delete
+  state over the current per-handle state island.
+  Milestone 1031 covers exact
+  `DELETE FROM wp_options WHERE option_name = ?` execution through
+  `mysqli_stmt_execute()` for string option-name parameters on the same
+  placeholder handle after exact supported insert state exists. Existing
+  recorded option names are removed, set
+  `mysqli_stmt_affected_rows($stmt)` and `mysqli_affected_rows($handle)` to
+  `1`, and missing names are successful zero-row deletes. This is not broad
+  prepared SQL execution, prepared INSERT/REPLACE state, non-string parameter
+  coercion, transactions, host database execution, PDO, or native lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as prepared-statement insert/delete
+  audited PHP/WordPress surface, such as prepared-statement insert/replace
   state, transaction state, broader escaping fidelity, host-backed query
   execution, PDO, or the next `wpdb` state consumer, and add the next bounded
   behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
@@ -9915,8 +9926,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ef8971c9 runtime: add wp options prepared row readback state`, covering
-  Milestone 1029 before the current Milestone 1030 candidate.
+  `c04c6024 runtime: add wp options prepared update state`, covering
+  Milestone 1030 before the current Milestone 1031 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
