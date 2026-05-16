@@ -8897,16 +8897,27 @@ handled.
   cursor/fetch state, bound result variables, result-row materialization,
   statement row-count metadata, host database state, warning/error fidelity,
   or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   output-binding boundary after result/cursor visibility, such as
   `mysqli_stmt_bind_result()` callable metadata and explicit unsupported
   diagnostics, before claiming broader prepared statement fidelity.
+  Milestone 953 exposes `mysqli_stmt_bind_result()` through callable metadata
+  and turns reached result-output binding calls into stable unsupported
+  diagnostics. This is not statement object allocation, by-reference result
+  binding, result buffer mutation, fetch integration, host database execution,
+  warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement
+  result-binding smoke that reaches the explicit
+  `mysqli_stmt_bind_result()` boundary through a WordPress-shaped method
+  without claiming statement objects, by-reference result binding, result
+  buffer mutation, fetch integration, host database state, warning/error
+  fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8067b32 runtime: add mysqli stmt result cursor boundaries`, covering
-  Milestone 951 before the current Milestone 952 candidate.
+  `8d6abee tests: add wordpress wpdb stmt result cursor smokes`, covering
+  Milestone 952 before the current Milestone 953 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -6380,6 +6380,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_stmt_init"
             | "mysqli_prepare"
             | "mysqli_stmt_bind_param"
+            | "mysqli_stmt_bind_result"
             | "mysqli_stmt_execute"
             | "mysqli_stmt_get_result"
             | "mysqli_stmt_close"

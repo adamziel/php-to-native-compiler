@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone953/mysqli_stmt_bind_result_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone953/mysqli_stmt_bind_result_boundary.php:4:1: unsupported call mysqli_stmt_bind_result(): mysqli statement objects, by-reference result binding, result buffer mutation, and fetch integration are not implemented in the current subset
+--- stderr end ---

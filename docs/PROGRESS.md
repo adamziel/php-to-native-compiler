@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 953, explicit MySQLi statement result-binding boundary for
+  `mysqli_stmt_bind_result()`. The runtime exposes the name through
+  function/callability metadata, validates the at-least-two-argument arity,
+  and reports a stable unsupported diagnostic when result output binding is
+  reached. Native metadata lookup knows the name while direct native lowering
+  remains rejected. This is not statement object allocation, by-reference
+  result binding, result buffer mutation, fetch integration, host database
+  execution, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_result -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone953`.
+
 - Added Milestone 952, synthetic WordPress-shaped `wpdb` prepared-statement
   result/cursor smokes that reach the explicit
   `mysqli_stmt_store_result()`, `mysqli_stmt_num_rows()`, and

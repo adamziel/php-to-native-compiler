@@ -4528,6 +4528,26 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_bind_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_stmt_bind_result()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_bind_result()",
+                "mysqli statement objects, by-reference result binding, result buffer mutation, and fetch integration are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_stmt_execute(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -9845,6 +9865,7 @@ impl Interpreter {
             "mysqli_stmt_init" => self.call_mysqli_stmt_init(&args, span),
             "mysqli_prepare" => self.call_mysqli_prepare(&args, span),
             "mysqli_stmt_bind_param" => self.call_mysqli_stmt_bind_param(&args, span),
+            "mysqli_stmt_bind_result" => self.call_mysqli_stmt_bind_result(&args, span),
             "mysqli_stmt_execute" => self.call_mysqli_stmt_execute(&args, span),
             "mysqli_stmt_get_result" => self.call_mysqli_stmt_get_result(&args, span),
             "mysqli_stmt_close" => self.call_mysqli_stmt_close(&args, span),
@@ -12827,6 +12848,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_init"
             | "mysqli_prepare"
             | "mysqli_stmt_bind_param"
+            | "mysqli_stmt_bind_result"
             | "mysqli_stmt_execute"
             | "mysqli_stmt_get_result"
             | "mysqli_stmt_close"

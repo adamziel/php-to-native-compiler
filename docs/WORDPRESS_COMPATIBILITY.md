@@ -1606,7 +1606,11 @@ historical blockers and remaining full-support gaps include:
   claiming statement objects, buffered result storage, cursor/fetch state,
   bound result variables, result-row materialization, statement row-count
   metadata, host database state, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 953 adds an explicit `mysqli_stmt_bind_result()`
+  result-output binding boundary with callable metadata and stable unsupported
+  diagnostics, without statement object allocation, by-reference result
+  binding, result buffer mutation, fetch integration, host database execution,
+  warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

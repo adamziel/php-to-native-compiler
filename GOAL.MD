@@ -330,6 +330,11 @@ fidelity, or native lowering, now wired through synthetic WordPress-shaped
 result storage, cursor/fetch state, bound result variables, result-row
 materialization, statement row-count metadata, host database state,
 warning/error fidelity, or native lowering,
+plus an explicit `mysqli_stmt_bind_result()` result-output binding boundary
+that exposes callable metadata and stable unsupported diagnostics without
+statement object allocation, by-reference result binding, result buffer
+mutation, fetch integration, host database execution, warning/error fidelity,
+or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -11,7 +11,8 @@ Status: boundary only.
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
 `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
-`mysqli_prepare`, `mysqli_stmt_bind_param`, `mysqli_stmt_execute`,
+`mysqli_prepare`, `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
+`mysqli_stmt_execute`,
 `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
 `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
 `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -170,12 +171,14 @@ report stable unsupported diagnostics because statement objects, prepared SQL
 parsing, parameter/result binding, statement execution, and result metadata are
 not implemented.
 
-`mysqli_stmt_bind_param($statement, $types, &...$vars)` and
+`mysqli_stmt_bind_param($statement, $types, &...$vars)`,
+`mysqli_stmt_bind_result($statement, &...$vars)`, and
 `mysqli_stmt_execute($statement, $params = null)` are also visible through
 callable metadata but are explicit runtime boundaries. Reached calls report
 stable unsupported diagnostics because statement objects, by-reference
-parameter binding, type strings, array-parameter execution, result state, and
-host database execution are not implemented.
+parameter/result binding, type strings, result buffer mutation,
+array-parameter execution, result state, fetch integration, and host database
+execution are not implemented.
 
 `mysqli_stmt_get_result($statement)` and `mysqli_stmt_close($statement)` are
 visible through callable metadata but are explicit runtime boundaries. Reached
