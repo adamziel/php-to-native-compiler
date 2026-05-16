@@ -1,0 +1,1 @@
+phpc intentionally rejects grouped use declarations before grouped class/function/const import parsing and namespace-aware import metadata exist.

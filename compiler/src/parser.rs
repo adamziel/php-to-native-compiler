@@ -889,8 +889,7 @@ impl Parser {
             return Err(self.error_at(span, unsupported_use_message()));
         }
 
-        let (name, import_span) =
-            self.parse_qualified_name_with_span(false, "expected import name")?;
+        let (name, import_span) = self.parse_use_import_name()?;
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
             return Err(self.error_at(self.peek().span, unsupported_use_message()));
         }
@@ -924,6 +923,25 @@ impl Parser {
             .consume_keyword(TokenKind::Eval, "expected 'eval'")?
             .span;
         Err(self.error_at(span, unsupported_eval_message()))
+    }
+
+    fn parse_use_import_name(&mut self) -> CompileResult<(String, Span)> {
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(self.peek().span, unsupported_grouped_use_message()));
+        }
+
+        let (first, span) = self.consume_identifier_with_span("expected import name")?;
+        let mut name = first;
+
+        while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            name.push('\\');
+            if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+                return Err(self.error_at(self.peek().span, unsupported_grouped_use_message()));
+            }
+            name.push_str(&self.consume_identifier("expected import name")?);
+        }
+
+        Ok((name, span))
     }
 
     fn parse_throw(&mut self) -> CompileResult<Stmt> {
@@ -5920,6 +5938,10 @@ fn unsupported_nested_namespace_message() -> &'static str {
 
 fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: only simple class imports are implemented"
+}
+
+fn unsupported_grouped_use_message() -> &'static str {
+    "unsupported grouped use declaration: grouped class, function, and const imports are not implemented"
 }
 
 fn unsupported_nested_const_declaration_message() -> &'static str {

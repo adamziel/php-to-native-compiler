@@ -4,6 +4,92 @@
 
 Implemented:
 
+- Added Milestone 1135, a tests/docs queue refresh after the 1131-1134
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1131-1135
+  complete and opens Milestones 1136-1140, `docs/LANE_WORKERS.md` points the
+  next parser/runtime/IR/compiler-output/tests-docs lanes at that queue, and
+  support/architecture/operations docs now describe grouped `use` parse
+  boundaries, method visibility reduction runtime boundaries, native
+  error-control rejection, and compatibility-target manifest summaries. This
+  does not change runtime behavior, native lowering, fixture execution, or
+  PHP/WordPress compatibility claims beyond the implemented 1131-1134 slices.
+  Full gate pending at the 1131-1135 checkpoint.
+
+- Added Milestone 1134, a deterministic compiler-output compatibility-target
+  summary in the version 2 JSON fixture-manifest contract. `phpc test
+  --list-fixtures-json [fixture-dir]` now reports a sorted
+  `compatibility_targets` array for `compat/<target>` directories under the
+  fixture root, including targets with no executable `.php` fixtures yet. This
+  makes the current PHP and WordPress compatibility fixture coverage visible as
+  data without parsing, executing, comparing fixtures, changing normal
+  `phpc test` or `--compare-php` behavior, or widening PHP/WordPress support
+  claims. Unsupported/remaining gaps: the JSON still does not encode fixture
+  execution results, system PHP comparison outcomes, PHP-version-specific
+  diagnostics, non-fixture compatibility metadata such as source pins or
+  inventory expected files, or unrecognized sidecars. Verification so far:
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, direct
+  `cargo run -q -p phpc -- test --list-fixtures-json tests/fixtures`, direct
+  `cargo run -q -p phpc -- test --list-fixtures tests/fixtures`, `cargo test
+  -p phpc --test php_comparison -- --test-threads=1`, `cargo fmt --check`,
+  and scoped `git diff --check` passed in the compiler-output lane. Full gate
+  deferred until integration.
+
+- Added Milestone 1133, a dedicated native error-control rejection for
+  documented `@expr` interpreter behavior. `phpc compile --emit-ir` and
+  `--emit-asm` now reject error-control expressions with a diagnostic naming
+  native diagnostic severity, warning/notice/deprecation suppression,
+  `error_reporting()` mask interaction, recoverable expression values, and
+  exact native diagnostics instead of falling through to the broader
+  unary/cast boundary. This does not implement native error-control lowering,
+  warning/notice/deprecation suppression, recoverable diagnostic severity,
+  `error_reporting()` mask interactions, recoverable expression values, or
+  exact PHP diagnostics. Verification so far: `cargo test -p phpc --test
+  native_error_control_boundary -- --test-threads=1`, `cargo test -p phpc
+  --test native_unary_boundary -- --test-threads=1`, direct `cargo run -q -p
+  phpc -- compile
+  tests/fixtures/milestone1133/native_error_control_boundary.phpc-source
+  --emit-ir`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1133/native_error_control_boundary.phpc-source
+  --emit-asm`, `cargo fmt --check`, and scoped `git diff --check` passed in
+  the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1132, bounded runtime enforcement for inherited method
+  visibility compatibility. Child classes may keep or widen inherited
+  non-private method visibility, while reductions such as public-to-protected
+  now report the stable runtime boundary `unsupported class inheritance for
+  Child: method Child::label() cannot reduce visibility of inherited public
+  method Base::label()` during class registration. Private parent methods
+  remain separately redeclarable in this slice, and nested class registration
+  timing is preserved. This does not implement method signature compatibility,
+  static/non-static method compatibility, trait/interface enforcement, exact
+  PHP `Error` objects/diagnostics/exit parity, declaration-order/autoload
+  fidelity, or native object/class lowering. Verification so far:
+  `cargo test -p phpc --test object_model inherited_method_visibility_compatibility_is_enforced -- --test-threads=1`,
+  `cargo test -p phpc --test object_model private_parent_methods_do_not_block_child_visibility -- --test-threads=1`,
+  `cargo test -p phpc --test object_model nested_method_visibility_boundary_preserves_registration_timing -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1132`, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1132`
+  passed in the runtime lane. Full gate deferred until integration.
+
+- Added Milestone 1131, a parser/syntax-boundary diagnostic for unsupported
+  grouped `use` declarations. Forms such as `use App\{Controller, Service};`
+  and `use {App\Controller};` now fail with the stable parse diagnostic
+  `unsupported grouped use declaration: grouped class, function, and const
+  imports are not implemented` instead of falling through to the broad
+  `expected import name` parser error. This does not implement grouped class
+  imports, grouped function imports, grouped const imports, import metadata
+  expansion, namespace-aware native lowering, or exact PHP diagnostics.
+  Verification so far: focused syntax-boundary and namespace-resolution tests,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`, `cargo
+  run -q -p phpc -- test tests/fixtures/unsupported_dynamic_features`, `cargo
+  run -q -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features`, direct `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/unsupported_dynamic_features/unsupported_grouped_use_declaration.php
+  --emit-ir`, `cargo fmt --check`, and scoped `git diff --check` passed in
+  the parser lane. Full gate deferred until integration.
+
 - Added Milestone 1130, a tests/docs reconciliation after the 1126-1129
   implementation batch. `GOAL.MD` now keeps the full PHP and WordPress
   compatibility gaps as first-class roadmap tracks, `docs/NEXT_TASKS.md`

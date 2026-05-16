@@ -1,0 +1,3 @@
+<?php
+$value = 6;
+echo @($value + 1);

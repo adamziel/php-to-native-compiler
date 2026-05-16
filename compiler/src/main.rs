@@ -8,8 +8,8 @@ use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
-    fixture_manifest, run_fixture_dir_with_options, FixtureManifestEntry,
-    FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
+    fixture_manifest, run_fixture_dir_with_options, FixtureManifestCompatibilityTarget,
+    FixtureManifestEntry, FixtureManifestOrphanSidecar, FixtureManifestSummary, FixtureRunOptions,
 };
 
 fn main() -> ExitCode {
@@ -165,6 +165,9 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         for orphan in &manifest.orphan_sidecars {
             println!("{}", render_fixture_manifest_orphan_sidecar(orphan));
         }
+        for target in &manifest.compatibility_targets {
+            println!("{}", render_fixture_manifest_compatibility_target(target));
+        }
         return Ok(0);
     }
     if list_fixtures_json {
@@ -243,10 +246,28 @@ fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar)
     )
 }
 
+fn render_fixture_manifest_compatibility_target(
+    target: &FixtureManifestCompatibilityTarget,
+) -> String {
+    format!(
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={}",
+        target.target,
+        target.path,
+        target.summary.total,
+        target.summary.php_comparison_eligible,
+        target.summary.phpc_only,
+        target.summary.stdout_expectations,
+        target.summary.stderr_expectations,
+        target.summary.exit_expectations,
+        target.summary.phpc_only_markers,
+        target.summary.orphan_sidecars
+    )
+}
+
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 1,\n");
+    output.push_str("  \"contract_version\": 2,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -311,6 +332,57 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         ));
         output.push_str("    }");
         if index + 1 < manifest.entries.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ],\n");
+    output.push_str("  \"compatibility_targets\": [\n");
+    for (index, target) in manifest.compatibility_targets.iter().enumerate() {
+        output.push_str("    {\n");
+        output.push_str(&format!(
+            "      \"target\": {},\n",
+            json_string_literal(&target.target)
+        ));
+        output.push_str(&format!(
+            "      \"path\": {},\n",
+            json_string_literal(&target.path)
+        ));
+        output.push_str("      \"summary\": {\n");
+        output.push_str(&format!("        \"total\": {},\n", target.summary.total));
+        output.push_str(&format!(
+            "        \"php_comparison_eligible\": {},\n",
+            target.summary.php_comparison_eligible
+        ));
+        output.push_str(&format!(
+            "        \"phpc_only\": {},\n",
+            target.summary.phpc_only
+        ));
+        output.push_str("        \"expectations\": {\n");
+        output.push_str(&format!(
+            "          \"stdout\": {},\n",
+            target.summary.stdout_expectations
+        ));
+        output.push_str(&format!(
+            "          \"stderr\": {},\n",
+            target.summary.stderr_expectations
+        ));
+        output.push_str(&format!(
+            "          \"exit\": {},\n",
+            target.summary.exit_expectations
+        ));
+        output.push_str(&format!(
+            "          \"phpc_only\": {}\n",
+            target.summary.phpc_only_markers
+        ));
+        output.push_str("        },\n");
+        output.push_str(&format!(
+            "        \"orphan_sidecars\": {}\n",
+            target.summary.orphan_sidecars
+        ));
+        output.push_str("      }\n");
+        output.push_str("    }");
+        if index + 1 < manifest.compatibility_targets.len() {
             output.push(',');
         }
         output.push('\n');

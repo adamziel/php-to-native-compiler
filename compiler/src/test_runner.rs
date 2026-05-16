@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -22,6 +23,7 @@ pub struct FixtureManifest {
     pub entries: Vec<FixtureManifestEntry>,
     pub summary: FixtureManifestSummary,
     pub orphan_sidecars: Vec<FixtureManifestOrphanSidecar>,
+    pub compatibility_targets: Vec<FixtureManifestCompatibilityTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -52,6 +54,13 @@ pub struct FixtureManifestOrphanSidecar {
     pub expected_fixture: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestCompatibilityTarget {
+    pub target: String,
+    pub path: String,
+    pub summary: FixtureManifestSummary,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FixtureRunOptions {
     pub compare_php: bool,
@@ -74,11 +83,13 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
         .collect::<Vec<_>>();
     let orphan_sidecars = collect_orphan_sidecars(root)?;
     let summary = FixtureManifestSummary::from_entries(&entries, &orphan_sidecars);
+    let compatibility_targets = collect_compatibility_targets(root, &entries, &orphan_sidecars)?;
 
     Ok(FixtureManifest {
         entries,
         summary,
         orphan_sidecars,
+        compatibility_targets,
     })
 }
 
@@ -410,6 +421,87 @@ fn collect_orphan_sidecars(root: &Path) -> CompileResult<Vec<FixtureManifestOrph
     });
 
     Ok(orphans)
+}
+
+fn collect_compatibility_targets(
+    root: &Path,
+    entries: &[FixtureManifestEntry],
+    orphan_sidecars: &[FixtureManifestOrphanSidecar],
+) -> CompileResult<Vec<FixtureManifestCompatibilityTarget>> {
+    let mut targets = BTreeSet::new();
+    let compat_dir = root.join("compat");
+    if compat_dir.is_dir() {
+        let entries = fs::read_dir(&compat_dir).map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!(
+                    "failed to read compatibility fixture directory {}: {error}",
+                    compat_dir.display()
+                ),
+            )
+        })?;
+
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                Diagnostic::new(
+                    Phase::Test,
+                    0,
+                    0,
+                    format!("failed to read compatibility fixture entry: {error}"),
+                )
+            })?;
+            if entry.path().is_dir() {
+                targets.insert(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    for entry in entries {
+        if let Some(target) = compatibility_target_from_manifest_path(&entry.path) {
+            targets.insert(target.to_string());
+        }
+    }
+    for orphan in orphan_sidecars {
+        if let Some(target) = compatibility_target_from_manifest_path(&orphan.path) {
+            targets.insert(target.to_string());
+        }
+    }
+
+    Ok(targets
+        .into_iter()
+        .map(|target| {
+            let prefix = format!("compat/{target}/");
+            let target_entries = entries
+                .iter()
+                .filter(|entry| entry.path.starts_with(&prefix))
+                .cloned()
+                .collect::<Vec<_>>();
+            let target_orphans = orphan_sidecars
+                .iter()
+                .filter(|orphan| orphan.path.starts_with(&prefix))
+                .cloned()
+                .collect::<Vec<_>>();
+            let summary = FixtureManifestSummary::from_entries(&target_entries, &target_orphans);
+
+            FixtureManifestCompatibilityTarget {
+                path: format!("compat/{target}"),
+                target,
+                summary,
+            }
+        })
+        .collect())
+}
+
+fn compatibility_target_from_manifest_path(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("compat/")?;
+    let (target, _) = rest.split_once('/')?;
+    if target.is_empty() {
+        None
+    } else {
+        Some(target)
+    }
 }
 
 fn collect_sidecar_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {

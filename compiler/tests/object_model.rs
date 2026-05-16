@@ -5901,6 +5901,154 @@ echo $leaf->compute();
 }
 
 #[test]
+fn inherited_method_visibility_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function label() {
+        return "child";
+    }
+}
+
+$child = new Child();
+echo $child->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child");
+    assert_eq!(execution.exit_code, 0);
+
+    let public_error = runtime_error(
+        r#"<?php
+class Base {
+    public function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    protected function label() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(public_error.line, 9);
+    assert_eq!(public_error.column, 15);
+    assert_eq!(
+        public_error.message,
+        "unsupported class inheritance for Child: method Child::label() cannot reduce visibility of inherited public method Base::label()"
+    );
+
+    let protected_error = runtime_error(
+        r#"<?php
+class Base {
+    protected function compute() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    private function compute() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(protected_error.line, 9);
+    assert_eq!(protected_error.column, 13);
+    assert_eq!(
+        protected_error.message,
+        "unsupported class inheritance for Child: method Child::compute() cannot reduce visibility of inherited protected method Base::compute()"
+    );
+}
+
+#[test]
+fn private_parent_methods_do_not_block_child_visibility() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private function label() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function label() {
+        return "child";
+    }
+}
+
+$child = new Child();
+echo $child->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn nested_method_visibility_boundary_preserves_registration_timing() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function label() {
+        return "base";
+    }
+}
+
+if (false) {
+    class Child extends Base {
+        protected function label() {
+            return "child";
+        }
+    }
+}
+
+echo class_exists("Child") ? "registered" : "not-registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "not-registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+class Base {
+    public function label() {
+        return "base";
+    }
+}
+
+if (true) {
+    class Child extends Base {
+        protected function label() {
+            return "child";
+        }
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 19);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: method Child::label() cannot reduce visibility of inherited public method Base::label()"
+    );
+}
+
+#[test]
 fn nested_abstract_method_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php

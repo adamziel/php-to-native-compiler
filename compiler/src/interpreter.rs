@@ -18978,6 +18978,13 @@ fn register_class_members(
                 let visibility = runtime_visibility(method.visibility);
                 validate_final_method_override(classes, id, &class.name, method, final_methods)
                     .map_err(|error| runtime_error(method.span, error))?;
+                validate_inherited_method_visibility_compatibility(
+                    classes,
+                    id,
+                    &class.name,
+                    method,
+                )
+                .map_err(|error| runtime_error(method.span, error))?;
                 let metadata_method = if method.is_static {
                     PhpMethodMetadata::static_method(&method.function.name, visibility)
                 } else {
@@ -19162,6 +19169,53 @@ fn validate_final_method_override(
     Ok(())
 }
 
+fn validate_inherited_method_visibility_compatibility(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    class_name: &str,
+    method: &ClassMethodDecl,
+) -> RuntimeResult<()> {
+    let visibility = runtime_visibility(method.visibility);
+    let method_lookup_name = method.function.name.to_ascii_lowercase();
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        if let Some(parent_method) = parent.method(&method_lookup_name) {
+            if parent_method.visibility() == Visibility::Private {
+                current = parent.parent_id();
+                continue;
+            }
+
+            if visibility_is_more_restrictive(visibility, parent_method.visibility()) {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "method {}::{}() cannot reduce visibility of inherited {} method {}::{}()",
+                        class_name,
+                        method.function.name,
+                        visibility_name(parent_method.visibility()),
+                        parent.name(),
+                        parent_method.name()
+                    ),
+                ));
+            }
+
+            return Ok(());
+        }
+
+        current = parent.parent_id();
+    }
+
+    Ok(())
+}
+
 fn validate_inherited_property_compatibility(
     classes: &PhpClassTable,
     class_id: ClassId,
@@ -19208,7 +19262,7 @@ fn validate_inherited_property_compatibility(
                 ));
             }
 
-            if property_visibility_is_more_restrictive(visibility, parent_property.visibility()) {
+            if visibility_is_more_restrictive(visibility, parent_property.visibility()) {
                 return Err(RuntimeError::unsupported_class_inheritance(
                     class_name,
                     format!(
@@ -19231,7 +19285,7 @@ fn validate_inherited_property_compatibility(
     Ok(())
 }
 
-fn property_visibility_is_more_restrictive(child: Visibility, parent: Visibility) -> bool {
+fn visibility_is_more_restrictive(child: Visibility, parent: Visibility) -> bool {
     visibility_rank(child) > visibility_rank(parent)
 }
 

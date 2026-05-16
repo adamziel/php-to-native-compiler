@@ -1283,10 +1283,11 @@ differences.
 
 Objects and class-like types:
 Constructor and inheritance compatibility, abstract method implementation
-checks, method/property visibility compatibility, interfaces, interface
-inheritance, traits and conflict resolution, enums, typed/readonly properties,
-reflection, magic methods, dynamic members, `__clone`, destructors, late static
-binding, and exact fatal/error behavior.
+checks, method signature compatibility, remaining property visibility
+compatibility, interfaces, interface inheritance, traits and conflict
+resolution, enums, typed/readonly properties, reflection, magic methods,
+dynamic members, `__clone`, destructors, late static binding, and exact
+fatal/error behavior.
 
 Error and exception model:
 Warnings, notices, deprecations, recoverable errors, real `@` suppression,

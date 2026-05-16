@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T01:15:00Z
+
+- Checkpoint before this task:
+  `00582a71 runtime: enforce abstract method boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1131-1135, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed so far: parser/runtime/codegen/CLI test-runner code, focused
+  tests and fixtures for grouped `use` parse boundaries, inherited method
+  visibility compatibility enforcement, native error-control rejection,
+  compatibility-target manifest summaries, plus `README.md`, `GOAL.MD`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`,
+  `docs/COMPATIBILITY.md`, and this memory file.
+- Tests run so far: each lane reported focused checks passing in its own
+  worktree and target directory; integration focused checks and the serialized
+  checkpoint gate are pending in the main workspace.
+- Remaining semantic gaps: full references/copy-on-write, real readonly and
+  typed property semantics, method signature and static/non-static
+  compatibility, trait composition, interface enforcement, exception
+  unwinding and PHP error objects, native object/function/static-local/
+  multifile execution, native boxed runtime integration,
+  standard-library/extensions, database/PDO/MySQLi realism,
+  filesystem/streams, request/SAPI/server state,
+  Composer/autoload/multifile behavior, WordPress entry flows, and
+  compatibility verification gates remain implementation work.
+- Next concrete task: run integrated focused checks, run the serialized full
+  checkpoint gate, commit, push, then start Milestones 1136-1139 from separate
+  worktrees.
+
 ## Loop Event 2026-05-17T00:10:00Z
 
 - Checkpoint before this task:

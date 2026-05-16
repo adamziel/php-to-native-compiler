@@ -64,6 +64,8 @@ const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset ope
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
+const LLVM_ERROR_CONTROL_REJECTION: &str = "LLVM error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current transparent error-control wrapper behavior";
+const ASSEMBLY_ERROR_CONTROL_REJECTION: &str = "assembly error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current transparent error-control wrapper behavior";
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
@@ -746,7 +748,9 @@ impl LlvmGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
-            Expr::ErrorControl { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
+            Expr::ErrorControl { span, .. } => {
+                Err(self.unsupported(*span, LLVM_ERROR_CONTROL_REJECTION))
+            }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
@@ -3585,7 +3589,7 @@ impl CGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))

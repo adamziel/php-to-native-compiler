@@ -126,7 +126,7 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 1,\n",
+            "  \"contract_version\": 2,\n",
             "  \"fixture_count\": 3,\n",
             "  \"summary\": {\n",
             "    \"total\": 3,\n",
@@ -157,11 +157,119 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
             "      \"php_comparison\": \"eligible\"\n",
             "    }\n",
             "  ],\n",
+            "  \"compatibility_targets\": [\n",
+            "  ],\n",
             "  \"orphan_sidecars\": [\n",
             "    {\n",
             "      \"path\": \"orphan.stdout\",\n",
             "      \"kind\": \"stdout\",\n",
             "      \"expected_fixture\": \"orphan.php\"\n",
+            "    }\n",
+            "  ]\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
+    let temp = TempFixtureDir::new("phpc-fixture-manifest-compat-targets");
+    let fixture_dir = temp.path().join("fixtures");
+    let php_dir = fixture_dir.join("compat").join("php");
+    let wordpress_dir = fixture_dir.join("compat").join("wordpress");
+    fs::create_dir_all(&php_dir).unwrap();
+    fs::create_dir_all(&wordpress_dir).unwrap();
+
+    fs::write(php_dir.join("cross_feature.php"), "<?php echo 'ok';\n").unwrap();
+    fs::write(php_dir.join("cross_feature.stdout"), "ok\n").unwrap();
+    fs::write(php_dir.join("skipped.php"), "<?php echo 'skip';\n").unwrap();
+    fs::write(php_dir.join("skipped.phpc-only"), "").unwrap();
+    fs::write(php_dir.join("stale.stderr"), "stale\n").unwrap();
+    fs::write(wordpress_dir.join("source-pin.md"), "operator supplied\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--list-fixtures-json"])
+        .arg(&fixture_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  \"contract_version\": 2,\n",
+            "  \"fixture_count\": 2,\n",
+            "  \"summary\": {\n",
+            "    \"total\": 2,\n",
+            "    \"php_comparison_eligible\": 1,\n",
+            "    \"phpc_only\": 1,\n",
+            "    \"expectations\": {\n",
+            "      \"stdout\": 1,\n",
+            "      \"stderr\": 0,\n",
+            "      \"exit\": 0,\n",
+            "      \"phpc_only\": 1\n",
+            "    },\n",
+            "    \"orphan_sidecars\": 1\n",
+            "  },\n",
+            "  \"fixtures\": [\n",
+            "    {\n",
+            "      \"path\": \"compat/php/cross_feature.php\",\n",
+            "      \"expectations\": [\"stdout\"],\n",
+            "      \"php_comparison\": \"eligible\"\n",
+            "    },\n",
+            "    {\n",
+            "      \"path\": \"compat/php/skipped.php\",\n",
+            "      \"expectations\": [],\n",
+            "      \"php_comparison\": \"phpc-only\"\n",
+            "    }\n",
+            "  ],\n",
+            "  \"compatibility_targets\": [\n",
+            "    {\n",
+            "      \"target\": \"php\",\n",
+            "      \"path\": \"compat/php\",\n",
+            "      \"summary\": {\n",
+            "        \"total\": 2,\n",
+            "        \"php_comparison_eligible\": 1,\n",
+            "        \"phpc_only\": 1,\n",
+            "        \"expectations\": {\n",
+            "          \"stdout\": 1,\n",
+            "          \"stderr\": 0,\n",
+            "          \"exit\": 0,\n",
+            "          \"phpc_only\": 1\n",
+            "        },\n",
+            "        \"orphan_sidecars\": 1\n",
+            "      }\n",
+            "    },\n",
+            "    {\n",
+            "      \"target\": \"wordpress\",\n",
+            "      \"path\": \"compat/wordpress\",\n",
+            "      \"summary\": {\n",
+            "        \"total\": 0,\n",
+            "        \"php_comparison_eligible\": 0,\n",
+            "        \"phpc_only\": 0,\n",
+            "        \"expectations\": {\n",
+            "          \"stdout\": 0,\n",
+            "          \"stderr\": 0,\n",
+            "          \"exit\": 0,\n",
+            "          \"phpc_only\": 0\n",
+            "        },\n",
+            "        \"orphan_sidecars\": 0\n",
+            "      }\n",
+            "    }\n",
+            "  ],\n",
+            "  \"orphan_sidecars\": [\n",
+            "    {\n",
+            "      \"path\": \"compat/php/stale.stderr\",\n",
+            "      \"kind\": \"stderr\",\n",
+            "      \"expected_fixture\": \"compat/php/stale.php\"\n",
             "    }\n",
             "  ]\n",
             "}\n",

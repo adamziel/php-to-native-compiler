@@ -589,6 +589,43 @@ fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_grouped_use_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nuse App\\{Controller, Service};\n",
+            2,
+            9,
+            "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
+        ),
+        (
+            "<?php\nuse {App\\Controller};\n",
+            2,
+            5,
+            "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_grouped_use_declarations_at_parse_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nuse App\\{Controller, Service};\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported grouped use declaration: grouped class, function, and const imports are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_readonly_class_declarations_have_stable_parse_errors() {
     let cases = [
         (

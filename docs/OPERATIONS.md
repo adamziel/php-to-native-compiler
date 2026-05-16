@@ -30,7 +30,10 @@ For fixture audits that should not execute code, use
 manifest of fixtures, recognized expectation files, aggregate sidecar counts,
 recognized orphan sidecars, and PHP-comparison eligibility.
 Use `cargo run -p phpc -- test --list-fixtures-json [fixture-dir]` when
-automation needs the same audit-only manifest as deterministic JSON.
+automation needs the same audit-only manifest as deterministic JSON. The JSON
+manifest also reports per-target counts for `compat/<target>` directories so
+PHP and WordPress compatibility fixture coverage can be audited without
+executing code.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

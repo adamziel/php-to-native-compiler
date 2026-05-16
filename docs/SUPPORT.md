@@ -419,6 +419,10 @@
 - PHP error-control syntax `@expr` as a transparent runtime wrapper. The
   operand evaluates normally and existing runtime diagnostics are still
   reported; warning/notice/deprecation suppression is not implemented.
+  Native lowering rejects `@expr` through a dedicated codegen diagnostic until
+  generated code has diagnostic severity, warning/notice/deprecation
+  suppression, `error_reporting()` mask interaction, recoverable expression
+  values, and exact native diagnostics.
 - `if` / `elseif` / `else`, including alternate
   `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
@@ -565,6 +569,10 @@
   stable runtime boundary before registering the child class. A concrete class
   that declares or inherits abstract methods without a concrete implementation
   reports a stable runtime boundary before registering the class.
+  Child methods that redeclare inherited non-private methods may keep or widen
+  visibility, while reductions such as public-to-protected and
+  protected-to-private report a stable runtime boundary before registering the
+  child class.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -577,7 +585,8 @@
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
-  boundary. Method visibility compatibility enforcement, method signature
+  boundary. Method visibility reduction reports a stable runtime boundary.
+  Method signature compatibility enforcement, static/non-static method
   compatibility enforcement, and readonly class semantics are not implemented.
   Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
@@ -4771,9 +4780,9 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  method visibility compatibility enforcement, method signature compatibility
-  enforcement, readonly class semantics, readonly properties, typed property
-  storage and enforcement,
+  method signature compatibility enforcement, static/non-static method
+  compatibility enforcement, readonly class semantics, readonly properties,
+  typed property storage and enforcement,
   asymmetric property set visibility such as `private(set)` and
   `protected(set)`,
   promoted constructor properties,
@@ -4936,11 +4945,13 @@
   not have a matching `.php` fixture. It does not parse, execute, or compare
   fixtures.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 1, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 2, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
-  PHP-comparison eligibility, and recognized orphan sidecars. It does not
-  parse, execute, compare fixtures, report fixture execution results, or report
-  unrecognized sidecars.
+  PHP-comparison eligibility, recognized orphan sidecars, and per-target
+  compatibility counts for `compat/<target>` directories under the fixture
+  root, including targets with no executable `.php` fixtures yet. It does not
+  parse, execute, compare fixtures, report fixture execution results, inspect
+  non-fixture compatibility metadata, or report unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -5733,8 +5744,9 @@
   remain unsupported
 - namespace-aware behavior beyond the current class-name and same-namespace
   function declaration/call slice, including namespace-scoped constants,
-  qualified or fully-qualified function calls, grouped/function/constant
-  imports, string-name import expansion, `__NAMESPACE__`, autoload-aware
+  qualified or fully-qualified function calls, grouped imports with a dedicated
+  parse diagnostic, function/constant imports, string-name import expansion,
+  `__NAMESPACE__`, autoload-aware
   lookup, and native lowering
 - closure invocation, explicit and implicit capture binding/execution, and
   callable integration

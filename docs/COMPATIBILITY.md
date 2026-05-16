@@ -75,8 +75,9 @@ tools/run-tests.sh
 
 - Add a PHP branch/version manifest that records which local or CI PHP binaries
   are available for comparison.
-- Add a small `tests/fixtures/compat/php` smoke group that intentionally spans
-  multiple language areas and records unsupported skips by name.
+- Keep `phpc test --list-fixtures-json` compatibility-target counts in step
+  with `tests/fixtures/compat/<target>` so PHP and WordPress coverage gaps are
+  visible as fixture data, including targets with no executable fixtures yet.
 - Use the WordPress front-controller inventory result to choose the next real
   compiler/runtime blocker without vendoring WordPress core.
 - Define the first native runtime ABI slice before claiming native executable

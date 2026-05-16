@@ -217,6 +217,14 @@ use function App\Demo\make_service;
             1,
             "unsupported use declaration: only simple class imports are implemented",
         ),
+        (
+            r#"<?php
+use App\Demo\{Service, Repository};
+"#,
+            2,
+            14,
+            "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
+        ),
     ];
 
     for (source, line, column, message) in cases {

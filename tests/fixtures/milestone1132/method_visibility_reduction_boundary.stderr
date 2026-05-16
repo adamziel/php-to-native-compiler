@@ -1,0 +1,2 @@
+runtime error at 9:15: unsupported class inheritance for Child: method Child::label() cannot reduce visibility of inherited public method Base::label()
+
