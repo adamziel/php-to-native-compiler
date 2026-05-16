@@ -1650,7 +1650,14 @@ historical blockers and remaining full-support gaps include:
   long-parameter streaming, packet buffering, statement parameter state,
   statement state reset, buffered result cleanup, parameter/result lifecycle
   state, multi-result state, pending result queues, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 961 adds
+  explicit `mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/
+  `mysqli_stmt_insert_id()` statement diagnostics/insert metadata boundaries
+  with callable metadata and stable unsupported diagnostics, without statement
+  object allocation, statement SQLSTATE tracking, statement warning tracking,
+  statement diagnostic state, statement execution state, statement insert-id
+  metadata, host database execution, warning/error fidelity, or native
+  database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

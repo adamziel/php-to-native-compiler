@@ -4766,6 +4766,39 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stmt_sqlstate(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_sqlstate", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_sqlstate()",
+                "mysqli statement objects, statement SQLSTATE tracking, and statement diagnostic state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_warning_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_warning_count", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_warning_count()",
+                "mysqli statement objects, statement warning tracking, and statement diagnostic state are not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn call_mysqli_stmt_insert_id(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stmt_insert_id", args, 1, span)?;
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_insert_id()",
+                "mysqli statement objects, statement execution state, and statement insert-id metadata are not implemented in the current subset",
+            ),
+        ))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9995,6 +10028,9 @@ impl Interpreter {
             "mysqli_stmt_reset" => self.call_mysqli_stmt_reset(&args, span),
             "mysqli_stmt_more_results" => self.call_mysqli_stmt_more_results(&args, span),
             "mysqli_stmt_next_result" => self.call_mysqli_stmt_next_result(&args, span),
+            "mysqli_stmt_sqlstate" => self.call_mysqli_stmt_sqlstate(&args, span),
+            "mysqli_stmt_warning_count" => self.call_mysqli_stmt_warning_count(&args, span),
+            "mysqli_stmt_insert_id" => self.call_mysqli_stmt_insert_id(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12988,6 +13024,9 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_reset"
             | "mysqli_stmt_more_results"
             | "mysqli_stmt_next_result"
+            | "mysqli_stmt_sqlstate"
+            | "mysqli_stmt_warning_count"
+            | "mysqli_stmt_insert_id"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

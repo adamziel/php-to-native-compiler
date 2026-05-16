@@ -371,6 +371,13 @@ claiming statement objects, long-parameter streaming, packet buffering,
 statement parameter state, statement state reset, buffered result cleanup,
 parameter/result lifecycle state, multi-result state, pending result queues,
 host database state, warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/
+`mysqli_stmt_insert_id()` statement diagnostics/insert metadata boundaries
+that expose callable metadata and stable unsupported diagnostics without
+statement object allocation, statement SQLSTATE tracking, statement warning
+tracking, statement diagnostic state, statement execution state, statement
+insert-id metadata, host database execution, warning/error fidelity, or native
+lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

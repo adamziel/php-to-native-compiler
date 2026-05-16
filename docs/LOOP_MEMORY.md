@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `0ec70d9a tests: add wordpress wpdb stmt streaming reset smokes`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 961, explicit MySQLi statement
+  diagnostics/insert metadata boundaries for `mysqli_stmt_sqlstate()`,
+  `mysqli_stmt_warning_count()`, and `mysqli_stmt_insert_id()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone961/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_diagnostics_and_insert_metadata -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone961`.
+  All passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi statement SQLSTATE,
+  warning-count, and insert-id metadata APIs now produce stable diagnostics
+  instead of generic unknown-call behavior.
+- Remaining semantic gaps: statement object allocation, statement SQLSTATE
+  tracking, statement warning tracking, statement diagnostic state, statement
+  execution state, statement insert-id metadata, host database state,
+  warnings/errors, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+  diagnostics/insert metadata smokes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `eaf99484 runtime: add mysqli stmt streaming reset boundaries`, pushed to
   `origin/master`.
 - Task attempted: Milestone 960, synthetic WordPress-shaped `wpdb`
@@ -49,9 +80,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   reset, buffered result cleanup, parameter/result lifecycle state,
   multi-result state, pending result queues, host database state,
   warnings/errors, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next prepared-statement
-  diagnostics/insert metadata boundary such as `mysqli_stmt_sqlstate()`,
+- Checkpoint result: committed and pushed
+  `0ec70d9a tests: add wordpress wpdb stmt streaming reset smokes`.
+- Next concrete task: inspect the next prepared-statement diagnostics/insert
+  metadata boundary such as `mysqli_stmt_sqlstate()`,
   `mysqli_stmt_warning_count()`, or `mysqli_stmt_insert_id()`.
 
 ## Loop Event 2026-05-16T00:00:00Z

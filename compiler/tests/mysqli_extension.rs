@@ -1030,6 +1030,83 @@ mysqli_stmt_next_result($stmt);
 }
 
 #[test]
+fn mysqli_statement_diagnostics_and_insert_metadata_are_visible_but_explicit_boundaries() {
+    let execution = run_source(
+        r#"<?php
+$sqlstate = "mysqli_stmt_sqlstate";
+$warning_count = "mysqli_stmt_warning_count";
+$insert_id = "mysqli_stmt_insert_id";
+echo function_exists($sqlstate) ? "yes" : "no";
+echo "|";
+echo is_callable($sqlstate) ? "sqlstate-callable" : "sqlstate-missing";
+echo "|";
+echo function_exists($warning_count) ? "warning-count-exists" : "warning-count-missing";
+echo "|";
+echo is_callable($warning_count) ? "warning-count-callable" : "warning-count-missing";
+echo "|";
+echo function_exists($insert_id) ? "insert-id-exists" : "insert-id-missing";
+echo "|";
+echo is_callable($insert_id) ? "insert-id-callable" : "insert-id-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|sqlstate-callable|warning-count-exists|warning-count-callable|insert-id-exists|insert-id-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let sqlstate_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_sqlstate($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(sqlstate_error.phase, Phase::Runtime);
+    assert_eq!(sqlstate_error.line, 3);
+    assert_eq!(sqlstate_error.column, 1);
+    assert_eq!(
+        sqlstate_error.message,
+        "unsupported call mysqli_stmt_sqlstate(): mysqli statement objects, statement SQLSTATE tracking, and statement diagnostic state are not implemented in the current subset"
+    );
+
+    let warning_count_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_warning_count($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(warning_count_error.phase, Phase::Runtime);
+    assert_eq!(warning_count_error.line, 3);
+    assert_eq!(warning_count_error.column, 1);
+    assert_eq!(
+        warning_count_error.message,
+        "unsupported call mysqli_stmt_warning_count(): mysqli statement objects, statement warning tracking, and statement diagnostic state are not implemented in the current subset"
+    );
+
+    let insert_id_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_stmt_insert_id($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(insert_id_error.phase, Phase::Runtime);
+    assert_eq!(insert_id_error.line, 3);
+    assert_eq!(insert_id_error.column, 1);
+    assert_eq!(
+        insert_id_error.message,
+        "unsupported call mysqli_stmt_insert_id(): mysqli statement objects, statement execution state, and statement insert-id metadata are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -3312,6 +3389,12 @@ echo function_exists("mysqli_stmt_more_results") ? "1" : "0";
 echo is_callable("mysqli_stmt_more_results") ? "1" : "0";
 echo function_exists("mysqli_stmt_next_result") ? "1" : "0";
 echo is_callable("mysqli_stmt_next_result") ? "1" : "0";
+echo function_exists("mysqli_stmt_sqlstate") ? "1" : "0";
+echo is_callable("mysqli_stmt_sqlstate") ? "1" : "0";
+echo function_exists("mysqli_stmt_warning_count") ? "1" : "0";
+echo is_callable("mysqli_stmt_warning_count") ? "1" : "0";
+echo function_exists("mysqli_stmt_insert_id") ? "1" : "0";
+echo is_callable("mysqli_stmt_insert_id") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -3410,7 +3493,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 188, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 194, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3946,6 +4029,42 @@ mysqli_stmt_more_results(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_next_result(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_sqlstate(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_warning_count(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_insert_id(mysqli_init());
 "#,
     )
     .unwrap_err();

@@ -21,6 +21,8 @@ Status: boundary only.
 `mysqli_stmt_attr_get`, `mysqli_stmt_attr_set`,
 `mysqli_stmt_send_long_data`, `mysqli_stmt_reset`,
 `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
+`mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
+`mysqli_stmt_insert_id`,
 `mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
@@ -229,6 +231,14 @@ diagnostics because statement objects, long-parameter streaming, packet
 buffering, statement parameter state, statement state reset, buffered result
 cleanup, parameter/result lifecycle state, multi-result state, and pending
 statement result queues are not implemented.
+
+`mysqli_stmt_sqlstate($statement)`,
+`mysqli_stmt_warning_count($statement)`, and
+`mysqli_stmt_insert_id($statement)` are visible through callable metadata but
+are explicit runtime boundaries. Reached calls report stable unsupported
+diagnostics because statement objects, statement SQLSTATE tracking, statement
+warning tracking, statement diagnostic state, statement execution state, and
+statement insert-id metadata are not implemented.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

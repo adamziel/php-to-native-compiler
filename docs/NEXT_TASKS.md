@@ -9001,17 +9001,33 @@ handled.
   state, statement state reset, buffered result cleanup, parameter/result
   lifecycle state, multi-result state, pending result queues, host database
   state, warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
   diagnostics/insert metadata boundary, such as `mysqli_stmt_sqlstate()`,
   `mysqli_stmt_warning_count()`, or `mysqli_stmt_insert_id()` callable
   metadata and explicit unsupported diagnostics, before claiming broader
   prepared statement fidelity.
+  Milestone 961 exposes `mysqli_stmt_sqlstate()`,
+  `mysqli_stmt_warning_count()`, and `mysqli_stmt_insert_id()` through
+  callable metadata and turns reached statement diagnostics/insert metadata
+  calls into stable unsupported diagnostics. This is not statement object
+  allocation, statement SQLSTATE tracking, statement warning tracking,
+  statement diagnostic state, statement execution state, statement insert-id
+  metadata, host database execution, warning/error fidelity, or native
+  lowering.
+- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+  diagnostics/insert metadata smokes that reach the explicit
+  `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, or
+  `mysqli_stmt_insert_id()` boundary through WordPress-shaped methods without
+  claiming statement objects, statement SQLSTATE tracking, statement warning
+  tracking, statement diagnostic state, statement execution state, statement
+  insert-id metadata, host database state, warning/error fidelity, or native
+  lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `eaf99484 runtime: add mysqli stmt streaming reset boundaries`, covering
-  Milestone 959 before the current Milestone 960 candidate.
+  `0ec70d9a tests: add wordpress wpdb stmt streaming reset smokes`, covering
+  Milestone 960 before the current Milestone 961 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

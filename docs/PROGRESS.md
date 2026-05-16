@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 961, explicit MySQLi statement diagnostics/insert metadata
+  boundaries for `mysqli_stmt_sqlstate()`,
+  `mysqli_stmt_warning_count()`, and `mysqli_stmt_insert_id()`. The runtime
+  exposes the names through function/callability metadata, validates the
+  one-argument arity, and reports stable unsupported diagnostics when
+  statement SQLSTATE, warning-count, or insert-id metadata is reached. Native
+  metadata lookup knows the names while direct native lowering remains
+  rejected. This is not statement object allocation, statement SQLSTATE
+  tracking, statement warning tracking, statement diagnostic state, statement
+  execution state, statement insert-id metadata, host database execution, PHP
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_diagnostics_and_insert_metadata -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone961`.
+
 - Added Milestone 960, synthetic WordPress-shaped `wpdb`
   prepared-statement parameter streaming/reset/multi-result smokes that reach
   the explicit `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
