@@ -10308,8 +10308,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4851b8ed runtime: add array slot shared cell primitive`, covering
-  Milestone 1062.
+  `f987615d runtime: add direct array offset reference aliases`, covering
+  Milestone 1063.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

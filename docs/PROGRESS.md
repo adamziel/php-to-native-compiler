@@ -21,7 +21,10 @@ Implemented:
   `cargo test -p phpc --test runtime_error_cli cli_runtime_error_snapshots_match_committed_outputs -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone748 --compare-php`,
   `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
-  `cargo check -p phpc`, and `git diff --check`.
+  `cargo check -p phpc`, and `git diff --check`. The serialized checkpoint
+  gate passed with 1269 fixture tests, 715 system PHP comparisons, and 554
+  skipped comparisons, then committed
+  `f987615d runtime: add direct array offset reference aliases`.
 
 - Added Milestone 1062, an internal shared-cell primitive behind
   `ArraySlot` without changing current public by-value writes. `ArraySlot`
