@@ -34,12 +34,13 @@ observe the same value in the current top-level/root-symbol-table slice. This
 is still a materialized-symbol-table model, not PHP's full reference-backed
 alias, recursive `$GLOBALS` array, copy-on-write, dynamic global-name, or
 included-file scope model.
-`$_COOKIE`, `$_GET`, `$_POST`, and `$_REQUEST` are seeded as empty ordered
-arrays in the same root symbol table and route direct function-scope reads and
-writes through that root storage. This is deterministic request-state
+`$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded as empty
+ordered arrays in the same root symbol table and route direct function-scope
+reads and writes through that root storage. This is deterministic request-state
 scaffolding only: it does not parse browser cookie headers, query strings, or
 request bodies, populate values from the host SAPI, automatically merge
-`$_REQUEST`, emit cookies, or model `variables_order`.
+`$_REQUEST`, import file-upload metadata, emit cookies, or model
+`variables_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -153,11 +154,15 @@ and stores the executable method bodies under the consuming class id, so
 ordinary instance method dispatch works through `phpc run`. A narrow trait
 method alias adaptation such as `use TraitName { method as alias; }` clones
 the composed public instance method under the alias name while leaving the
-original method available. Trait properties/constants, static/abstract/final
-or non-public trait methods, conflict resolution, visibility changes,
-`insteadof`, qualified or multi-trait alias edge cases beyond the current
-slice, `__TRAIT__` context, references/copy-on-write, nested or conditional
-trait declarations, and native trait lowering remain explicit boundaries.
+original method available. The same alias path accepts an explicit `public`
+marker with a same-use qualified trait target, such as
+`use TraitA, TraitB { TraitA::method as public alias; }`, while still treating
+the alias as an ordinary public method. Trait properties/constants,
+static/abstract/final or non-public trait methods, conflict resolution,
+protected/private visibility changes, visibility-only adaptations, `insteadof`,
+qualified or multi-trait alias edge cases beyond the current slice,
+`__TRAIT__` context, references/copy-on-write, nested or conditional trait
+declarations, and native trait lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -445,9 +450,13 @@ provided direct-variable by-reference arguments bind the callee parameter name
 to the caller's variable cell for the duration of current user-function,
 instance-method, and constructor calls. Writes through the parameter are
 visible before the call returns, and `unset($param)` detaches only the callee's
-local name from the shared cell. This deliberately does not model full PHP
-reference containers, by-reference array/object offsets, broader reference
-returns, exact by-reference `foreach`, or copy-on-write.
+local name from the shared cell. `call_user_func_array()` reuses that same
+direct cell binding for the narrow string user-callback shape where the
+argument array is an unkeyed literal containing `&$directVariable` elements
+for reached by-reference parameters. This deliberately does not model full PHP
+reference containers, stored reference arrays, keyed reference argument arrays,
+by-reference array/object offsets, array callable reference parameters,
+broader reference returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1337,6 +1346,15 @@ string callbacks resolving to current user functions or documented callable
 builtins. It reuses the value-based call path and does not implement array
 callables, closure invocation, `__invoke`, `call_user_func_array`, references,
 variadic unpacking, or native lowering.
+`call_user_func_array()` is a separate interpreter-only callable dispatcher for
+string callbacks, current public array-callable shapes, and integer-keyed
+positional argument arrays. String user-function callbacks can bind reached
+by-reference parameters only from unkeyed literal argument-array elements such
+as `array(&$value)`, using the same direct caller cell as ordinary
+by-reference user-function calls. Stored reference arrays, keyed reference
+argument arrays, array-callable reference parameters, closure invocation,
+`__invoke`, named arguments, exact warning behavior, and native lowering remain
+unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1362,11 +1380,11 @@ returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
 runtime state.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
-current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`, and
-`$_REQUEST` reject through a request-state codegen boundary until generated
-code has request storage, SAPI population, `variables_order` policy,
-references/copy-on-write, and exact diagnostics. This avoids folding
-unassigned request bags as ordinary missing native variables.
+current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
+`$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary
+until generated code has request storage, SAPI population, `variables_order`
+policy, upload metadata, references/copy-on-write, and exact diagnostics. This
+avoids folding unassigned request bags as ordinary missing native variables.
 `abs()` is an interpreter-only bounded numeric builtin for current integer and
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime

@@ -49,6 +49,27 @@ echo $call("strlen", array("four"));
 }
 
 #[test]
+fn call_user_func_array_binds_literal_reference_arguments_for_user_callbacks() {
+    let execution = run_source(
+        r#"<?php
+function update_option_like(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$option = "autoload";
+$callback = "update_option_like";
+echo call_user_func_array($callback, array(&$option, "cache")), "\n";
+echo $option;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "autoload:cache\nautoload:cache");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php

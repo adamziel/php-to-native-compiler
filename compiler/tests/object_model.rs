@@ -2565,6 +2565,55 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_alias_adaptation_accepts_explicit_public_aliases() {
+    let source = r#"<?php
+interface Registrable {
+    public function register_hooks();
+}
+
+trait HasHooks {
+    public function hooks($suffix = "default") {
+        return "hooks:" . $suffix . ":" . get_class($this);
+    }
+}
+
+trait HasLabel {
+    public function label() {
+        return "label:" . get_class($this);
+    }
+}
+
+class Plugin implements Registrable {
+    use HasHooks, HasLabel {
+        HasHooks::hooks as public register_hooks;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->hooks("direct"), "\n";
+echo $plugin->register_hooks("alias"), "\n";
+echo $plugin->label(), "\n";
+echo method_exists($plugin, "register_hooks") ? "alias-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "hooks:direct:Plugin\nhooks:alias:Plugin\nlabel:Plugin\nalias-method\nArray\n(\n    [0] => hooks\n    [1] => register_hooks\n    [2] => label\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("hooks").is_some());
+    assert!(class.method("register_hooks").is_some());
+    assert!(class.method("label").is_some());
+}
+
+#[test]
 fn class_trait_use_alias_requires_existing_trait_method() {
     let error = runtime_error(
         r#"<?php
@@ -7205,6 +7254,18 @@ class Box {
             4,
             23,
             "unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    use Labels {
+        Labels::label as public;
+    }
+}
+"#,
+            4,
+            32,
+            "unsupported trait use adaptation: trait visibility-only adaptations are not implemented",
         ),
         (
             r#"<?php

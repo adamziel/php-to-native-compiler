@@ -3,7 +3,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -196,6 +196,31 @@ echo $_REQUEST["name"];
 }
 
 #[test]
+fn files_superglobal_is_materialized_as_empty_auto_global_array() {
+    let execution = run_source(
+        r#"<?php
+echo is_array($_FILES) ? "files-array" : "files-missing";
+echo "|";
+echo isset($_FILES["async-upload"]) ? "upload" : "files-empty";
+
+function seed_upload_file() {
+    $_FILES["async-upload"] = ["name" => "plugin.zip", "error" => 0];
+}
+
+seed_upload_file();
+echo "|";
+echo $_FILES["async-upload"]["name"];
+echo ":";
+echo $_FILES["async-upload"]["error"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "files-array|files-empty|plugin.zip:0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() {
     let direct = emit_ir_source("<?php\necho $_GET;\n").unwrap_err();
     assert_eq!(direct.phase, Phase::Codegen);
@@ -208,6 +233,12 @@ fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() 
     assert_eq!(isset_offset.line, 2);
     assert_eq!(isset_offset.column, 12);
     assert_eq!(isset_offset.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
+
+    let files_direct = emit_ir_source("<?php\necho $_FILES;\n").unwrap_err();
+    assert_eq!(files_direct.phase, Phase::Codegen);
+    assert_eq!(files_direct.line, 2);
+    assert_eq!(files_direct.column, 6);
+    assert_eq!(files_direct.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
 }
 
 #[test]

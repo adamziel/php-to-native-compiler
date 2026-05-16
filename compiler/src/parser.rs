@@ -571,7 +571,14 @@ impl Parser {
                 return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
             }
             self.consume_trait_adaptation_as()?;
-            if self.check_trait_visibility_adaptation() {
+            if self.match_trait_public_visibility_adaptation() {
+                if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_trait_visibility_only_adaptation_message(),
+                    ));
+                }
+            } else if self.check_trait_visibility_adaptation() {
                 return Err(self.error_at(
                     self.peek().span,
                     unsupported_trait_visibility_adaptation_message(),
@@ -6442,6 +6449,10 @@ fn unsupported_trait_visibility_adaptation_message() -> &'static str {
     "unsupported trait use adaptation: trait visibility changes are not implemented"
 }
 
+fn unsupported_trait_visibility_only_adaptation_message() -> &'static str {
+    "unsupported trait use adaptation: trait visibility-only adaptations are not implemented"
+}
+
 impl Parser {
     fn check_trait_method_declaration(&self) -> bool {
         for token in self.tokens[self.current..]
@@ -6469,6 +6480,11 @@ impl Parser {
                     || name.eq_ignore_ascii_case("protected")
                     || name.eq_ignore_ascii_case("private")
         )
+    }
+
+    fn match_trait_public_visibility_adaptation(&mut self) -> bool {
+        self.match_token(|kind| matches!(kind, TokenKind::Public))
+            || self.match_identifier("public")
     }
 
     fn check_asymmetric_property_visibility_modifier(&self) -> bool {

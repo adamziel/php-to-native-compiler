@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:44:13Z
+
+- Checkpoint before this task:
+  `5a283f16 runtime: add WordPress request and trait slices`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1236-1240, four WordPress-focused implementation
+  lanes plus queue refresh.
+- Files changed: parser/runtime support for explicit-public qualified trait
+  aliases and a pinned visibility-only adaptation diagnostic, runtime
+  `call_user_func_array()` reference binding for literal direct-variable
+  reference arguments into string user callbacks with reached by-reference
+  parameters, deterministic empty `$_FILES` root superglobal request state with
+  explicit native request-superglobal rejection, synthetic WordPress
+  `update_option()` option-cache bootstrap evidence, focused tests and
+  fixtures, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed for trait/object-model,
+  callback reference arguments, request superglobals/native rejection,
+  WordPress inventory, milestone fixtures/PHP comparisons, and formatting/diff
+  hygiene. `tools/checkpoint.sh "runtime: add WordPress callback and upload
+  slices"` passed with `1372` fixture tests, `784` system PHP comparisons, and
+  `588` skipped `phpc-only` fixtures before the scoped checkpoint commit
+  `5ac2d209 runtime: add WordPress callback and upload slices`.
+- Remaining semantic gaps: protected/private trait visibility changes,
+  visibility-only adaptations, `insteadof`, trait conflict resolution, trait
+  properties/constants, static/abstract/final or non-public trait methods,
+  full reference/COW containers, stored reference arrays, keyed/non-literal
+  callback reference arrays, array-callable and closure by-reference callback
+  dispatch, recursive `$GLOBALS`, included-file scope fidelity, real request
+  imports, query/body parsing, multipart upload metadata and temp files,
+  upload helpers, include-path/open_basedir/stat-cache/stream fidelity,
+  persistent object cache, real database connections, broad SQL/`wpdb`,
+  plugins/themes, real WordPress request state, and native
+  object/request/filesystem/database lowering remain implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, then start Milestones
+  1241-1244 in separate worktrees focused on the same largest WordPress
+  blockers.
+
 ## Loop Event 2026-05-16T23:30:06Z
 
 - Checkpoint before this task:

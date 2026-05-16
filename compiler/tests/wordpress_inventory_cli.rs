@@ -378,6 +378,89 @@ fn wordpress_inventory_wpdb_option_cache_bootstrap_smoke_matches_fixture() {
 }
 
 #[test]
+fn wordpress_inventory_wpdb_update_option_cache_bootstrap_smoke_matches_fixture() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let wp_root = std::env::temp_dir().join(format!(
+        "phpc-wordpress-wpdb-update-option-cache-{}-{unique}",
+        std::process::id()
+    ));
+    let wp_includes = wp_root.join("wp-includes");
+
+    fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
+    fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\n",
+    )
+    .expect("write front controller");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write wp-config.php");
+    fs::write(
+        wp_root.join("wp-settings.php"),
+        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\nrequire ABSPATH . WPINC . '/class-wpdb.php';\nrequire ABSPATH . WPINC . '/cache.php';\n$wpdb = new wpdb($table_prefix);\nwp_cache_init();\nrequire ABSPATH . WPINC . '/option.php';\necho get_option('blogdescription');\necho '|';\nif (update_option('blogdescription', 'fresh-db')) {\n    echo 'updated';\n} else {\n    echo 'failed';\n}\necho '|';\necho get_option('blogdescription');\n",
+    )
+    .expect("write wp-settings.php");
+    fs::write(wp_includes.join("load.php"), "<?php\n").expect("write load.php");
+    fs::write(
+        wp_includes.join("class-wpdb.php"),
+        "<?php\nclass wpdb {\n    public $dbh;\n    public $options;\n\n    public function __construct($prefix) {\n        $this->options = $prefix . 'options';\n        $this->dbh = mysqli_init();\n        mysqli_real_connect($this->dbh, 'localhost', 'user', 'pass', null, 3306, null, 0);\n        mysqli_query($this->dbh, \"INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogdescription', 'cache-db', 'no')\");\n    }\n\n    public function get_row($query) {\n        $result = mysqli_query($this->dbh, $query);\n        return mysqli_fetch_assoc($result);\n    }\n}\n",
+    )
+    .expect("write class-wpdb.php");
+    fs::write(
+        wp_includes.join("cache.php"),
+        "<?php\nfunction wp_cache_init() {\n    $GLOBALS['wp_object_cache'] = array();\n}\n\nfunction wp_cache_get($key, $group = '', $force = false, &$found = null) {\n    global $wp_object_cache;\n    if (isset($wp_object_cache[$group][$key])) {\n        $found = true;\n        return $wp_object_cache[$group][$key];\n    }\n    $found = false;\n    return false;\n}\n\nfunction wp_cache_add($key, $value, $group = '') {\n    global $wp_object_cache;\n    $wp_object_cache[$group][$key] = $value;\n    return true;\n}\n\nfunction wp_cache_set($key, $value, $group = '') {\n    global $wp_object_cache;\n    $wp_object_cache[$group][$key] = $value;\n    return true;\n}\n",
+    )
+    .expect("write cache.php");
+    fs::write(
+        wp_includes.join("option.php"),
+        "<?php\nfunction get_option($option, $default = false) {\n    global $wpdb;\n    $found = null;\n    $value = wp_cache_get($option, 'options', false, $found);\n    if ($found) {\n        return $value;\n    }\n    $query = 'SELECT option_value FROM ' . $wpdb->options . \" WHERE option_name = '\" . $option . \"' LIMIT 1\";\n    $row = $wpdb->get_row($query);\n    if ($row) {\n        wp_cache_add($option, $row['option_value'], 'options');\n        return $row['option_value'];\n    }\n    return $default;\n}\n\nfunction update_option($option, $value) {\n    global $wpdb;\n    $query = 'UPDATE ' . $wpdb->options . \" SET option_value = '\" . $value . \"' WHERE option_name = '\" . $option . \"'\";\n    $result = mysqli_query($wpdb->dbh, $query);\n    if ($result) {\n        wp_cache_set($option, $value, 'options');\n        return true;\n    }\n    return false;\n}\n",
+    )
+    .expect("write option.php");
+    fs::write(
+        wp_includes.join("version.php"),
+        "<?php\n$wp_version = '6.9.4';\n",
+    )
+    .expect("write version.php");
+
+    let output = Command::new("sh")
+        .arg(repo_root.join("tools/wordpress-inventory.sh"))
+        .arg("--normalize")
+        .arg(&wp_root)
+        .env("PHPC_BIN", env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(repo_root)
+        .output()
+        .expect("run wordpress inventory");
+
+    let _ = fs::remove_dir_all(&wp_root);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let expected = include_str!(
+        "../../tests/fixtures/compat/wordpress/wpdb_update_option_cache_bootstrap.expected"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
 fn wordpress_inventory_reports_probe_timeouts() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

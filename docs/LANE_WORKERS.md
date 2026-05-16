@@ -194,31 +194,31 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1235 closes the 1231-1234 WordPress-focused
-  implementation-batch queue refresh. Milestone 1240 is the next tests/docs
+- Tests/docs lane: Milestone 1240 closes the 1236-1239 WordPress-focused
+  implementation-batch queue refresh. Milestone 1245 is the next tests/docs
   slot after the next WordPress-focused implementation batch.
-- Parser/runtime lane: Milestone 1236 targets the next trait/interface
-  WordPress blocker beyond simple public trait method aliases.
-- Runtime lane: Milestone 1237 targets the next concrete reference/COW blocker
+- Parser/runtime lane: Milestone 1241 targets the next trait/interface
+  WordPress blocker beyond explicit-public qualified aliases.
+- Runtime lane: Milestone 1242 targets the next concrete reference/COW blocker
   reached by WordPress-style globals, callbacks, object-property arrays,
   include scope, request bags, or mutable `wpdb`/option/cache state.
-- Runtime or IR/lowering lane: Milestone 1238 targets request-state,
-  include-path, stream/filesystem, output-buffering, header/cookie, SAPI, or
-  precise native-boundary behavior that affects real WordPress
+- Runtime or IR/lowering lane: Milestone 1243 targets request-state,
+  include-path, stream/filesystem, output-buffering, header/cookie, upload, or
+  SAPI behavior that affects real WordPress
   bootstrap/request progress.
-- Compatibility/runtime lane: Milestone 1239 targets executable WordPress
-  evidence: a later bootstrap/request probe or a small `mysqli`/`wpdb`/option
-  behavior needed by such a probe. Avoid manifest-only polish unless it
-  directly proves the WordPress blocker.
+- Compatibility/runtime lane: Milestone 1244 targets executable WordPress
+  evidence: a later bootstrap/request probe or a small
+  `mysqli`/`wpdb`/object-cache/option behavior needed by such a probe. Avoid
+  manifest-only polish unless it directly proves the WordPress blocker.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
-592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, and 1231 closed recent parser slots, Milestones 565, 568,
+592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, and 1236 closed recent parser slots, Milestones 565, 568,
 572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, 615, 1204, 1209, 1214, and 1219 closed recent
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
-593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, and 1233 closed recent runtime slots, and Milestones 569,
+593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, 1233, 1237, and 1238 closed recent runtime slots, and Milestones 569,
 573, 588, 591, 596, 601, 606, 611, 616, 1203, 1208, 1213, and 1218 closed recent IR/lowering slots.
-Milestones 1224, 1229, and 1234 closed recent WordPress compatibility evidence work. Milestones
-604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, and 1235 closed recent tests/docs
+Milestones 1224, 1229, 1234, and 1239 closed recent WordPress compatibility evidence work. Milestones
+604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, 1235, and 1240 closed recent tests/docs
 queue refreshes.
 Milestones 1156 through 1159 closed the latest parser/runtime/IR/compiler-output
 implementation batch, and Milestone 1160 refreshed the next-lane queue.

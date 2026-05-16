@@ -221,7 +221,10 @@ enum ArrayFilterMode {
 }
 
 fn is_auto_global_name(name: &str) -> bool {
-    matches!(name, "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST")
+    matches!(
+        name,
+        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
+    )
 }
 
 fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
@@ -2115,6 +2118,10 @@ impl Interpreter {
         );
         self.global_symbols.borrow_mut().insert(
             "_REQUEST".to_string(),
+            value_cell(Value::Array(PhpArray::new())),
+        );
+        self.global_symbols.borrow_mut().insert(
+            "_FILES".to_string(),
             value_cell(Value::Array(PhpArray::new())),
         );
     }
@@ -12544,33 +12551,6 @@ impl Interpreter {
         }
 
         let callback = self.evaluate(&args[0], caller_scope)?;
-        let argument_array = self.evaluate(&args[1], caller_scope)?;
-        let Value::Array(argument_array) = &argument_array else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    format!(
-                        "argument array must be array in the current subset, got {}",
-                        argument_array.type_name()
-                    ),
-                ),
-            ));
-        };
-
-        let mut positional_args = Vec::with_capacity(argument_array.len());
-        for entry in argument_array.entries() {
-            if matches!(entry.key, ArrayKey::String(_)) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        "string-keyed named arguments are not implemented in the current subset",
-                    ),
-                ));
-            }
-            positional_args.push(entry.value_cloned());
-        }
 
         match &callback {
             Value::String(callback_name) => {
@@ -12582,6 +12562,11 @@ impl Interpreter {
                 })?;
                 if let Callable::Builtin(key) = &callable {
                     if let Some(function) = mysqli_stmt_execute_function_label(key) {
+                        let positional_args = self.evaluate_call_user_func_array_arguments(
+                            &args[1],
+                            span,
+                            caller_scope,
+                        )?;
                         return self.call_mysqli_stmt_execute_with_refresh(
                             function,
                             &positional_args,
@@ -12590,9 +12575,23 @@ impl Interpreter {
                         );
                     }
                 }
+                if let Callable::User(function) = &callable {
+                    if function.params.iter().any(|param| param.by_reference) {
+                        return self.call_user_func_array_user_function(
+                            function.clone(),
+                            &args[1],
+                            span,
+                            caller_scope,
+                        );
+                    }
+                }
+                let positional_args =
+                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
                 self.call_callable_with_values(callable, positional_args, span)
             }
             Value::Array(callback) => {
+                let positional_args =
+                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
                 self.call_array_callable_with_values(callback, positional_args, span)
             }
             Value::Closure(_) => Err(runtime_error(
@@ -12613,6 +12612,199 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn evaluate_call_user_func_array_arguments(
+        &mut self,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let argument_array = self.evaluate(argument_expr, caller_scope)?;
+        let Value::Array(argument_array) = &argument_array else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        argument_array.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        Self::call_user_func_array_positional_values(argument_array, span)
+    }
+
+    fn call_user_func_array_positional_values(
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let mut positional_args = Vec::with_capacity(argument_array.len());
+        for entry in argument_array.entries() {
+            if matches!(entry.key, ArrayKey::String(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "string-keyed named arguments are not implemented in the current subset",
+                    ),
+                ));
+            }
+            positional_args.push(entry.value_cloned());
+        }
+
+        Ok(positional_args)
+    }
+
+    fn call_user_func_array_user_function(
+        &mut self,
+        function: Rc<FunctionDecl>,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let function = function.as_ref();
+        let Expr::Array { items, .. } = argument_expr else {
+            let positional_args =
+                self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
+            ensure_user_function_arity(function, positional_args.len(), span)?;
+            ensure_supported_function_metadata(function, span)?;
+            if function
+                .params
+                .iter()
+                .enumerate()
+                .any(|(index, param)| param.by_reference && index < positional_args.len())
+            {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference parameter invocation requires an array literal with by-reference direct variable elements in the current subset",
+                    ),
+                ));
+            }
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_user_function_with_checked_values(
+                function,
+                positional_args,
+                None,
+                None,
+                None,
+                Vec::new(),
+                Some(caller_scope),
+            );
+        };
+
+        ensure_user_function_arity(function, items.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
+        if !function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && index < items.len())
+        {
+            let positional_args =
+                self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_user_function_with_checked_values(
+                function,
+                positional_args,
+                None,
+                None,
+                None,
+                Vec::new(),
+                Some(caller_scope),
+            );
+        }
+        if function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && param.is_variadic && index < items.len())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "variadic reference parameter invocation is not implemented",
+                ),
+            ));
+        }
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(items.len());
+        let mut reference_bindings = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            if item.key.is_some() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference parameter invocation is only implemented for unkeyed literal argument arrays in the current subset",
+                    ),
+                ));
+            }
+
+            let Some(param) = function.params.get(index) else {
+                values.push(self.evaluate(&item.value, caller_scope)?);
+                continue;
+            };
+
+            if param.by_reference {
+                if !item.by_reference {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
+                        ),
+                    ));
+                }
+                let Expr::Variable(caller_name, _) = &item.value else {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference parameter invocation is only implemented for direct variable array elements in the current subset",
+                        ),
+                    ));
+                };
+                if caller_scope.is_array_offset_alias_name(caller_name) {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference array elements routed through array-offset alias metadata are not implemented",
+                        ),
+                    ));
+                }
+                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                    runtime_error(
+                        item.value.span(),
+                        RuntimeError::undefined_variable(caller_name),
+                    )
+                })?;
+                values.push(caller_cell.borrow().clone());
+                reference_bindings.push(ReferenceBinding {
+                    param_name: param.name.clone(),
+                    caller_cell,
+                });
+            } else {
+                values.push(self.evaluate(&item.value, caller_scope)?);
+            }
+        }
+
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+        )
     }
 
     fn call_spl_autoload_register(

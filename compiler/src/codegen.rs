@@ -120,8 +120,8 @@ const LLVM_BITWISE_REJECTION: &str = "LLVM bitwise lowering rejects unsupported 
 const ASSEMBLY_BITWISE_REJECTION: &str = "assembly bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior";
 const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
-const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
-const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -158,7 +158,10 @@ fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
 }
 
 fn is_request_superglobal_name(name: &str) -> bool {
-    matches!(name, "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST")
+    matches!(
+        name,
+        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
+    )
 }
 
 fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {

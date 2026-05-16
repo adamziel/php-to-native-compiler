@@ -153,6 +153,20 @@ connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
 plugin/theme loading, request/SAPI fidelity, references/copy-on-write, or
 native support.
 
+After Milestone 1239, the synthetic harness also includes an
+`update_option()`-shaped option-cache bootstrap smoke. The generated bootstrap
+shim and `wp-blog-header.php` front-controller path seed a non-autoloaded
+`blogdescription` row, read the original value through the bounded
+cache-backed `get_option()` path, update the row through the exact supported
+`UPDATE wp_options SET option_value = ... WHERE option_name = ...` query,
+refresh the bounded in-memory cache with `wp_cache_set()`, and prove the next
+`get_option()` lookup returns the updated value by emitting
+`cache-db|updated|fresh-db` (`stdout_bytes: 25` in normalized output). This is
+executable evidence for a later bounded option-cache/update point only; it
+does not claim persistent object-cache behavior, real database connectivity,
+arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -168,6 +182,14 @@ parse query strings or request bodies, merge GET/POST/COOKIE into `$_REQUEST`,
 handle uploads, import host environment state, implement `variables_order`, or
 claim request fidelity.
 
+After Milestone 1238, `phpc run` seeds `$_FILES` as a deterministic empty
+auto-global array routed through the root symbol table. This supports
+WordPress-shaped upload guards that check or seed the upload bag in function
+scope. It does not parse multipart requests, create temporary uploaded files,
+populate upload error metadata, implement `is_uploaded_file()` or
+`move_uploaded_file()`, import host SAPI request state, implement
+`variables_order`, or claim upload/request fidelity.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
@@ -181,8 +203,11 @@ after exercising an autoload-filtered `wp_options` row query through a
 minimal `wpdb::get_results()` wrapper. The Milestone 1234 option-cache smoke
 records a later cache-miss/cache-hit `get_option()` byte count separately after
 exercising the exact single-option `wp_options` row query through a minimal
-`wpdb::get_row()` wrapper and bounded in-memory cache functions. Known
-historical blockers and remaining full-support gaps include:
+`wpdb::get_row()` wrapper and bounded in-memory cache functions. The Milestone
+1239 update-option smoke records a later option-cache update byte count
+separately after exercising the exact direct `wp_options` UPDATE shape through
+a minimal wrapper and refreshing the bounded in-memory cache. Known historical
+blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice. The
@@ -2185,7 +2210,7 @@ and native lowering explicit gaps.
   members/composition, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;
 - filesystem, streams, HTTP, database, JSON, XML, mbstring/intl, password/hash,
-  date/time, sessions/cookies, and request superglobals;
+  date/time, sessions/cookies, uploads, and broader request superglobals;
 - dynamic hooks, filters, callbacks, autoloading, plugin/theme discovery, and
   host state.
 

@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1236/trait_public_alias_adaptation.php
+hooks:direct:Plugin|hooks:alias:Plugin|label:Plugin|alias-method|trait

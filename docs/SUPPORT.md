@@ -67,8 +67,12 @@
   arguments in the current user-function, instance-method, and constructor
   dispatch paths: the callee local parameter shares the caller's variable cell
   during execution, so writes through the parameter are visible to other reads
-  of the caller variable before the call returns. `unset($param)` detaches only
-  the callee's local parameter name; later local writes do not mutate the
+  of the caller variable before the call returns. The same direct-variable cell
+  binding is supported for string user-function callbacks invoked through
+  `call_user_func_array($callback, array(&$value, ...))` when the argument array
+  is an unkeyed literal and each reached by-reference callback parameter
+  receives a by-reference direct variable element. `unset($param)` detaches
+  only the callee's local parameter name; later local writes do not mutate the
   caller variable. This is still a bounded direct-variable alias path, not full
   PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
@@ -577,6 +581,15 @@
   automatic `$_REQUEST` merging from GET/POST/COOKIE data, host environment
   imports, `$GLOBALS` aliasing, references, copy-on-write, exact warning
   behavior, and native lowering remain unsupported.
+- `$_FILES` is seeded as a bounded root superglobal for `phpc run` with an
+  empty ordered array. Direct function-scope reads and writes of `$_FILES`
+  route through the root symbol table without a `global $_FILES` declaration,
+  matching the current deterministic CLI upload-bag scaffold. Multipart/form
+  upload parsing, temporary uploaded files, upload error metadata population,
+  request method/content-type handling, `is_uploaded_file()`/
+  `move_uploaded_file()`, `variables_order`, host SAPI imports, `$GLOBALS`
+  aliasing, references, copy-on-write, exact warning behavior, and native
+  lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -1205,9 +1218,17 @@
   to current user functions or documented callable builtins, public
   `[object, method]` instance callbacks, public `[class, method]` static
   callbacks, and integer-keyed ordered arrays expanded as positional argument
-  lists. String-keyed named arguments, closure and `__invoke` callbacks,
-  non-public methods, by-reference argument propagation, other callable array
-  shapes, exact PHP warning behavior, and native lowering remain unsupported.
+  lists. For string user-function callbacks, a literal argument array may pass
+  direct variables to reached by-reference parameters with unkeyed elements
+  such as `array(&$value)`, and writes through the callback parameter update
+  that caller variable. Stored argument arrays containing reference elements,
+  keyed literal argument arrays for reached by-reference parameters,
+  non-literal argument arrays for reached by-reference parameters, reference
+  elements that are not direct variables, variables already routed through
+  array-offset alias metadata, array-callable by-reference parameters,
+  string-keyed named arguments, closure and `__invoke` callbacks, non-public
+  methods, other callable array shapes, exact PHP warning behavior, and native
+  lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -4469,8 +4490,9 @@
   builtin section above; direct native `call_user_func(...)` calls still reject
   under the function-call boundary, while native function-table introspection
   recognizes the name.
-  `call_user_func_array` accepts the same current string/array callable and
-  integer-keyed positional argument-array subset as the builtin section above;
+  `call_user_func_array` accepts the same current string/array callable,
+  integer-keyed positional argument-array, and unkeyed literal direct-variable
+  by-reference user-callback argument subset as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
@@ -4582,10 +4604,11 @@
   including traits with supported public instance methods. Simple class-body
   `use TraitName;`, repeated simple trait-use declarations, and
   `use TraitA, TraitB;` compose already-declared public instance trait methods
-  onto the consuming class metadata. A single simple method alias adaptation
-  shape such as `use TraitName { method as alias; }` is also supported for
-  public instance trait methods; the original method remains available, and
-  the alias is registered as an ordinary public instance method that can
+  onto the consuming class metadata. Simple method alias adaptation shapes such
+  as `use TraitName { method as alias; }` and
+  `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
+  for public instance trait methods; the original method remains available,
+  and the alias is registered as an ordinary public instance method that can
   satisfy the current interface method-presence checks. Built-in/internal
   trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
@@ -5110,8 +5133,9 @@
   inheritance, built-in/internal interface catalogs,
   trait properties/constants, static/abstract/final and non-public trait
   methods, conflicting trait composition, trait conflict resolution,
-  trait aliases beyond the current simple method alias slice, visibility
-  changes, `insteadof`, `__TRAIT__`,
+  trait aliases beyond the current simple public and qualified public-alias
+  slices, visibility changes other than explicit `public` on an alias,
+  visibility-only adaptations, `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -6436,7 +6460,14 @@
   `$_REQUEST` merging from GET/POST/COOKIE data, host environment imports,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
-- other superglobals such as `$_FILES`, `$_ENV`, `$_SESSION`, and `$GLOBALS`
+- `$_FILES` behavior beyond the current deterministic empty array seed and
+  direct root-symbol routing: multipart/form upload parsing, temporary upload
+  file state, upload error metadata population, `is_uploaded_file()`/
+  `move_uploaded_file()`, request method/content-type handling,
+  `variables_order`, host SAPI imports, `$GLOBALS` aliasing,
+  references/copy-on-write, mutation-ordering fidelity, exact warning
+  behavior, and native lowering
+- other superglobals such as `$_ENV`, `$_SESSION`, and `$GLOBALS`
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,
