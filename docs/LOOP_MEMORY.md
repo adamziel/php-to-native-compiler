@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `d486eb7c docs: record nested reference source gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `5cb8be59 runtime: add append reference sources`.
 - Task attempted: Milestone 1087, bounded append array-offset reference
   sources for direct arrays and direct public object-property arrays. `$alias
   =& $array[];`, `$alias =& $array[$outer][];`,
@@ -57,15 +59,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
   `cargo test -p phpc --test object_model -- --test-threads=1`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed. The
+  serialized checkpoint gate passed with 1292 fixture tests, 737 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `5cb8be59 runtime: add append reference sources`.
 - Remaining semantic gaps: `$GLOBALS` append reference sources,
   dynamic/magic/non-public property reference sources, non-direct object
   expressions, non-variable reference targets, ArrayAccess reference sources,
   full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, and native lowering remain missing.
-- Next concrete task: checkpoint with
-  `tools/checkpoint.sh "runtime: add append reference sources"` if the
-  working tree still matches the focused checks.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-17T01:25:00Z
 

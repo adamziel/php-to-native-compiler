@@ -34,7 +34,10 @@ Implemented:
   `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
   `cargo test -p phpc --test object_model -- --test-threads=1`,
   `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`. The
+  serialized checkpoint gate passed with 1292 fixture tests, 737 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `5cb8be59 runtime: add append reference sources`.
 
 - Added Milestone 1086, a bounded nested array-offset reference-source slice
   for direct arrays and direct public object-property arrays. Statement-form
