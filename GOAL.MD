@@ -429,6 +429,11 @@ and expired-password option constants without claiming real option storage,
 timeout/network behavior, local-infile behavior, init command execution, path
 validation, result type conversion changes, connection state mutation,
 warning/error fidelity, or native lowering,
+plus deterministic `MYSQLI_CLIENT_*` client-flag constants and bounded
+`mysqli_real_connect()` flag-combination acceptance for reached SSL/options
+setup paths without claiming real client capability negotiation, TLS
+negotiation, certificate verification, host connection state, warning/error
+fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

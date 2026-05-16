@@ -838,9 +838,18 @@
   unsupported runtime diagnostic. `mysqli_real_connect($handle, ...)` accepts
   the current WordPress startup shape for a placeholder `mysqli` object,
   string/null hostname, username, password, and database arguments, int/null
-  port, string/null socket, and int flags. It performs no host I/O, writes
-  `connect_errno = 0` and `connect_error = null`, and returns `true` as a
-  deterministic compatibility boundary. `mysqli_report($mode)` accepts the
+  port, string/null socket, and `0` or a combination of the exposed
+  `MYSQLI_CLIENT_*` flags. The current client-flag catalog is
+  `MYSQLI_CLIENT_SSL`, `MYSQLI_CLIENT_COMPRESS`,
+  `MYSQLI_CLIENT_INTERACTIVE`, `MYSQLI_CLIENT_IGNORE_SPACE`,
+  `MYSQLI_CLIENT_NO_SCHEMA`, `MYSQLI_CLIENT_FOUND_ROWS`,
+  `MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT`,
+  `MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT`, and
+  `MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS`, using PHP-matching integer
+  values. It performs no host I/O, client capability negotiation, TLS
+  negotiation, or certificate verification, writes `connect_errno = 0` and
+  `connect_error = null`, and returns `true` as a deterministic compatibility
+  boundary. `mysqli_report($mode)` accepts the
   current WordPress startup modes `MYSQLI_REPORT_OFF` and
   `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`, stores the current mode, and
   returns `true`. `mysqli_init()` returns a current placeholder `mysqli` object

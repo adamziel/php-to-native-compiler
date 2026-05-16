@@ -1698,6 +1698,11 @@ historical blockers and remaining full-support gaps include:
   expired-password option constants without claiming real option storage,
   timeout/network behavior, local-infile behavior, init command execution,
   path validation, result type conversion changes, connection state mutation,
+  warning/error fidelity, or native database lowering. Milestone 974 adds
+  deterministic `MYSQLI_CLIENT_*` client-flag constants and bounded
+  `mysqli_real_connect()` flag-combination acceptance for reached SSL/options
+  setup paths without claiming real client capability negotiation, TLS
+  negotiation, certificate verification, host connection state,
   warning/error fidelity, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

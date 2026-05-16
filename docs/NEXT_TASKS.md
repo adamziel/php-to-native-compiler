@@ -9153,18 +9153,29 @@ handled.
   timeout/network behavior, local-infile behavior, init command execution,
   path validation, result type conversion changes, connection state mutation,
   warning/error fidelity, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as broader escaping charset fidelity,
   `mysqli_real_connect()` SSL/option interaction, local-infile option effects,
   or result metadata fields, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
+  Milestone 974 exposes deterministic `MYSQLI_CLIENT_*` client-flag constants
+  and bounds `mysqli_real_connect()` flags to combinations of those constants,
+  including reached SSL/options setup paths. This is not real client capability
+  negotiation, TLS negotiation, SSL certificate verification, option storage,
+  host connection state, warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as broader escaping charset fidelity,
+  local-infile option effects, result metadata fields, or prepared-statement
+  execution boundaries, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8811bdde runtime: add mysqli ssl setup placeholder`, covering
-  Milestone 972 before the current Milestone 973 candidate.
+  `1076922e runtime: broaden mysqli option placeholders`, covering
+  Milestone 973 before the current Milestone 974 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

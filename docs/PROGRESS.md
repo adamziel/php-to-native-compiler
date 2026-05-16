@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 974, deterministic MySQLi client-flag constants and a
+  bounded `mysqli_real_connect()` client-flags boundary. The runtime now
+  exposes `MYSQLI_CLIENT_SSL`, `MYSQLI_CLIENT_COMPRESS`,
+  `MYSQLI_CLIENT_INTERACTIVE`, `MYSQLI_CLIENT_IGNORE_SPACE`,
+  `MYSQLI_CLIENT_NO_SCHEMA`, `MYSQLI_CLIENT_FOUND_ROWS`,
+  `MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT`,
+  `MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT`, and
+  `MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS` with PHP-matching integer
+  values, and `mysqli_real_connect()` accepts combinations of those flags,
+  including the current placeholder `mysqli_ssl_set()` and SSL verify option
+  setup path. Native constant metadata knows the names while direct native
+  MySQLi lowering remains rejected. This is not real client capability
+  negotiation, TLS negotiation, SSL certificate verification, option storage,
+  host connection state, warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_real_connect -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone974`.
+
 - Added Milestone 973, a broader deterministic MySQLi option catalog for
   `mysqli_options()` and `mysqli_set_opt()`. The runtime now exposes and
   validates placeholder values for `MYSQLI_OPT_CONNECT_TIMEOUT`,

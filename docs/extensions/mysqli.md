@@ -62,6 +62,18 @@ shape for that placeholder object, writes `connect_errno = 0` and
 `connect_error = null`, and returns `true`. It is deterministic fake success
 for bootstrap exploration only. It does not open sockets, authenticate,
 select a database, negotiate charset, or produce real mysqli connection state.
+The optional client-flags argument may be `0` or a combination of the currently
+exposed `MYSQLI_CLIENT_*` constants:
+`MYSQLI_CLIENT_SSL`, `MYSQLI_CLIENT_COMPRESS`,
+`MYSQLI_CLIENT_INTERACTIVE`, `MYSQLI_CLIENT_IGNORE_SPACE`,
+`MYSQLI_CLIENT_NO_SCHEMA`, `MYSQLI_CLIENT_FOUND_ROWS`,
+`MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT`,
+`MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT`, and
+`MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS`. The constants use PHP-matching
+integer values and let reached SSL/options setup code pass through the
+deterministic connection boundary, but they do not negotiate client
+capabilities, configure TLS, verify certificates, mutate connection state, or
+affect query/result behavior.
 
 `mysqli_get_server_info($handle)` accepts the placeholder object and returns
 `8.0.0-phpc-placeholder`, a deterministic fake server string used by

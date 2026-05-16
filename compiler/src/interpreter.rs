@@ -4129,7 +4129,7 @@ impl Interpreter {
         }
 
         if let Some(flags) = args.get(7) {
-            if !matches!(flags, Value::Int(_)) {
+            let Value::Int(flags) = flags else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -4137,6 +4137,18 @@ impl Interpreter {
                         format!(
                             "flags argument must be int in the current subset, got {}",
                             flags.type_name()
+                        ),
+                    ),
+                ));
+            };
+            let unsupported = flags & !PHP_MYSQLI_CLIENT_ALL_SUPPORTED;
+            if unsupported != 0 || *flags < 0 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_connect()",
+                        format!(
+                            "only MYSQLI_CLIENT_* flag combinations are supported in the current subset, unsupported bits {unsupported}"
                         ),
                     ),
                 ));
@@ -13587,6 +13599,24 @@ const PHP_MYSQLI_ASSOC: i64 = 1;
 const PHP_MYSQLI_NUM: i64 = 2;
 const PHP_MYSQLI_BOTH: i64 = 3;
 const PHP_MYSQLI_ASYNC: i64 = 8;
+const PHP_MYSQLI_CLIENT_SSL: i64 = 2048;
+const PHP_MYSQLI_CLIENT_COMPRESS: i64 = 32;
+const PHP_MYSQLI_CLIENT_INTERACTIVE: i64 = 1024;
+const PHP_MYSQLI_CLIENT_IGNORE_SPACE: i64 = 256;
+const PHP_MYSQLI_CLIENT_NO_SCHEMA: i64 = 16;
+const PHP_MYSQLI_CLIENT_FOUND_ROWS: i64 = 2;
+const PHP_MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT: i64 = 1_073_741_824;
+const PHP_MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT: i64 = 64;
+const PHP_MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS: i64 = 4_194_304;
+const PHP_MYSQLI_CLIENT_ALL_SUPPORTED: i64 = PHP_MYSQLI_CLIENT_SSL
+    | PHP_MYSQLI_CLIENT_COMPRESS
+    | PHP_MYSQLI_CLIENT_INTERACTIVE
+    | PHP_MYSQLI_CLIENT_IGNORE_SPACE
+    | PHP_MYSQLI_CLIENT_NO_SCHEMA
+    | PHP_MYSQLI_CLIENT_FOUND_ROWS
+    | PHP_MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT
+    | PHP_MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT
+    | PHP_MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS;
 const PHP_MYSQLI_OPT_CONNECT_TIMEOUT: i64 = 0;
 const PHP_MYSQLI_OPT_LOCAL_INFILE: i64 = 8;
 const PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR: i64 = 43;
@@ -13653,6 +13683,21 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
         "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
         "MYSQLI_ASYNC" => Some(Value::Int(PHP_MYSQLI_ASYNC)),
+        "MYSQLI_CLIENT_SSL" => Some(Value::Int(PHP_MYSQLI_CLIENT_SSL)),
+        "MYSQLI_CLIENT_COMPRESS" => Some(Value::Int(PHP_MYSQLI_CLIENT_COMPRESS)),
+        "MYSQLI_CLIENT_INTERACTIVE" => Some(Value::Int(PHP_MYSQLI_CLIENT_INTERACTIVE)),
+        "MYSQLI_CLIENT_IGNORE_SPACE" => Some(Value::Int(PHP_MYSQLI_CLIENT_IGNORE_SPACE)),
+        "MYSQLI_CLIENT_NO_SCHEMA" => Some(Value::Int(PHP_MYSQLI_CLIENT_NO_SCHEMA)),
+        "MYSQLI_CLIENT_FOUND_ROWS" => Some(Value::Int(PHP_MYSQLI_CLIENT_FOUND_ROWS)),
+        "MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT" => {
+            Some(Value::Int(PHP_MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT))
+        }
+        "MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT" => {
+            Some(Value::Int(PHP_MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT))
+        }
+        "MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS" => {
+            Some(Value::Int(PHP_MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS))
+        }
         "MYSQLI_OPT_CONNECT_TIMEOUT" => Some(Value::Int(PHP_MYSQLI_OPT_CONNECT_TIMEOUT)),
         "MYSQLI_OPT_LOCAL_INFILE" => Some(Value::Int(PHP_MYSQLI_OPT_LOCAL_INFILE)),
         "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR" => Some(Value::Int(PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR)),

@@ -126,12 +126,21 @@ echo $handle->connect_errno;
 echo "|";
 echo $handle->connect_error === null ? "null" : "set";
 echo "|";
+mysqli_ssl_set($handle, null, null, null, null, null);
+mysqli_options($handle, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, true);
+echo mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, MYSQLI_CLIENT_SSL | MYSQLI_CLIENT_FOUND_ROWS | MYSQLI_CLIENT_IGNORE_SPACE) ? "ssl-flags" : "failed";
+echo "|";
+echo MYSQLI_CLIENT_SSL, ":", MYSQLI_CLIENT_COMPRESS, ":", MYSQLI_CLIENT_INTERACTIVE, ":", MYSQLI_CLIENT_IGNORE_SPACE, ":", MYSQLI_CLIENT_NO_SCHEMA, ":", MYSQLI_CLIENT_FOUND_ROWS, ":", MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT, ":", MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT, ":", MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS;
+echo "|";
 echo $call($handle, null, null, null, null, null, null, 0) ? "dynamic" : "failed";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|connected|0|null|dynamic");
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|connected|0|null|ssl-flags|2048:32:1024:256:16:2:1073741824:64:4194304|dynamic"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -1909,6 +1918,22 @@ mysqli_real_connect($handle, "localhost", "user", "pass", null, "3306", null, 0)
     assert_eq!(
         error.message,
         "unsupported call mysqli_real_connect(): port argument must be int or null in the current subset, got string"
+    );
+
+    let error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 4096);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_real_connect(): only MYSQLI_CLIENT_* flag combinations are supported in the current subset, unsupported bits 4096"
     );
 }
 
@@ -4142,6 +4167,15 @@ echo defined("MYSQLI_ASSOC") ? "1" : "0";
 echo defined("MYSQLI_NUM") ? "1" : "0";
 echo defined("MYSQLI_BOTH") ? "1" : "0";
 echo defined("MYSQLI_ASYNC") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_SSL") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_COMPRESS") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_INTERACTIVE") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_IGNORE_SPACE") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_NO_SCHEMA") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_FOUND_ROWS") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT") ? "1" : "0";
+echo defined("MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS") ? "1" : "0";
 echo defined("MYSQLI_OPT_CONNECT_TIMEOUT") ? "1" : "0";
 echo defined("MYSQLI_OPT_LOCAL_INFILE") ? "1" : "0";
 echo defined("MYSQLI_OPT_LOAD_DATA_LOCAL_DIR") ? "1" : "0";
@@ -4166,7 +4200,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 235, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 244, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
