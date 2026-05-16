@@ -19041,8 +19041,14 @@ fn register_class_members(
 
     validate_abstract_method_implementation(classes, abstract_methods, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
-    validate_interface_method_implementation(classes, interface_lookup, id, class)
-        .map_err(|error| runtime_error(class.span, error))?;
+    validate_interface_method_implementation(
+        classes,
+        interface_lookup,
+        method_signatures,
+        id,
+        class,
+    )
+    .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
 }
@@ -19050,6 +19056,7 @@ fn register_class_members(
 fn validate_interface_method_implementation(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class_id: ClassId,
     class: &ClassDecl,
 ) -> RuntimeResult<()> {
@@ -19072,7 +19079,7 @@ fn validate_interface_method_implementation(
             )) {
                 continue;
             }
-            let Some((declaring_class_name, class_method)) =
+            let Some((declaring_class_id, declaring_class_name, class_method)) =
                 find_public_method(classes, class_id, &lookup_name)
             else {
                 missing.push(format!("{}::{}()", interface.name, method.function.name));
@@ -19091,6 +19098,27 @@ fn validate_interface_method_implementation(
                         method_static_name(class_method.is_static()),
                         declaring_class_name,
                         class_method.name()
+                    ),
+                ));
+            }
+
+            let interface_required = required_param_count(&method.function);
+            let class_required = public_method_required_param_count(
+                method_signatures,
+                class,
+                class_id,
+                declaring_class_id,
+                &lookup_name,
+            );
+            if class_required > interface_required {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    &class.name,
+                    format!(
+                        "method {}::{}() cannot require more parameters than interface method {}::{}()",
+                        declaring_class_name,
+                        class_method.name(),
+                        interface.name,
+                        method.function.name
                     ),
                 ));
             }
@@ -19116,6 +19144,35 @@ fn validate_interface_method_implementation(
     ))
 }
 
+fn public_method_required_param_count(
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class: &ClassDecl,
+    class_id: ClassId,
+    declaring_class_id: ClassId,
+    method_lookup_name: &str,
+) -> usize {
+    if declaring_class_id == class_id {
+        return class
+            .members
+            .iter()
+            .find_map(|member| {
+                let ClassMember::Method(method) = member else {
+                    return None;
+                };
+                method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(method_lookup_name)
+                    .then(|| required_param_count(&method.function))
+            })
+            .unwrap_or(0);
+    }
+
+    method_signatures
+        .get(&(declaring_class_id, method_lookup_name.to_string()))
+        .map_or(0, |signature| signature.required_params)
+}
+
 fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Vec<String> {
     let mut names = Vec::new();
     let mut current = Some(class_id);
@@ -19134,7 +19191,7 @@ fn find_public_method<'a>(
     classes: &'a PhpClassTable,
     class_id: ClassId,
     method_lookup_name: &str,
-) -> Option<(&'a str, &'a PhpMethodMetadata)> {
+) -> Option<(ClassId, &'a str, &'a PhpMethodMetadata)> {
     let mut current = Some(class_id);
     while let Some(current_id) = current {
         let current_class = classes
@@ -19142,7 +19199,7 @@ fn find_public_method<'a>(
             .expect("class id should resolve to class metadata");
         if let Some(method) = current_class.method(method_lookup_name) {
             if method.visibility() == Visibility::Public {
-                return Some((current_class.name(), method));
+                return Some((current_id, current_class.name(), method));
             }
         }
         current = current_class.parent_id();

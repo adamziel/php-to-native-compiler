@@ -4,6 +4,118 @@
 
 Implemented:
 
+- Added Milestone 1160, a tests/docs queue refresh after the 1156-1159
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1156-1160
+  complete and opens Milestones 1161-1165, public docs describe the
+  leading-backslash fully-qualified function-call parse boundary,
+  declared-interface required-parameter enforcement, dedicated native
+  static-member rejection, and JSON fixture-manifest byte counts. This does
+  not change runtime behavior, native lowering, fixture execution, or
+  PHP/WordPress compatibility claims beyond the implemented 1156-1159 slices.
+  Full gate passed at checkpoint: `1334` fixture tests, `758` system PHP
+  comparisons, and `576` skipped `phpc-only` fixtures.
+
+- Added Milestone 1159, a deterministic compiler-output/audit JSON fixture
+  manifest refinement. `phpc test --list-fixtures-json [fixture-dir]` now emits
+  `contract_version: 4` with source and recognized sidecar byte counts on
+  fixture entries, aggregate summaries, compatibility-target summaries, and
+  orphan sidecars. This does not change fixture execution, system PHP
+  comparison behavior, text fixture manifests, supported PHP syntax/runtime
+  behavior, native lowering, or PHP/WordPress compatibility claims.
+  Unsupported/unchanged audit gaps: the manifest does not hash fixture
+  payloads, parse or execute fixtures, compare system PHP, validate non-empty
+  `.phpc-only` reasons, inspect unrecognized sidecars, or prove
+  branch-specific compatibility. Verification so far: `cargo test -p phpc
+  --test fixture_manifest -- --test-threads=1`, direct `cargo run -q -p phpc
+  -- test --list-fixtures-json <temp-fixture-dir>` showing
+  `contract_version: 4`, fixture `file_bytes`, summary `file_bytes`, and
+  orphan sidecar `bytes`, `cargo fmt --check`, and `git diff --check` passed
+  in the compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1158, a dedicated native static-member rejection for
+  documented interpreter behavior. `phpc compile --emit-ir` and `--emit-asm`
+  now reject `::class` constants, class constants, static property
+  reads/writes, and dynamic static-property receivers with a diagnostic naming
+  missing native class constant tables, static property storage, class context
+  and late-static-binding resolution, visibility checks, autoload/class
+  lookup, references/copy-on-write, and exact native static-member errors
+  instead of using the broader object/class boundary. This does not implement
+  native class constant tables, static property storage, `self::`/`parent::`
+  or late-static-binding context resolution, visibility checks,
+  autoload/class lookup, references, copy-on-write, or exact native
+  static-member errors. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary emit_ir_rejects_static_members_with_specific_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  emit_asm_rejects_static_members_before_backend_execution --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  native_static_member_emit_ir_cli_snapshot_matches_committed_output --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  native_static_member_emit_asm_cli_snapshot_matches_committed_output --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1158/native_static_member_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1158/native_static_member_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo test -p phpc --test
+  native_object_class_boundary -- --test-threads=1`, `cargo fmt --check`,
+  and `git diff --check` passed in the IR lane. Full gate deferred until
+  integration.
+
+- Added Milestone 1157, a bounded runtime interface method
+  required-parameter compatibility check. Concrete classes that implement
+  declared user interfaces, including concrete children inheriting
+  `implements` metadata, now reject public methods that require more
+  parameters than the corresponding interface method with a stable
+  class-registration boundary. Compatible implementations that keep the same
+  required count or add optional parameters continue to execute, and
+  abstract classes may still defer interface obligations. This does not
+  implement full PHP signature variance, parameter type compatibility, return
+  type compatibility, interface inheritance, built-in/internal interface
+  method enforcement, trait composition, exact PHP `Error` objects,
+  declaration-order/autoload fidelity beyond the current registration model,
+  or native object/interface lowering. Verification so far: `cargo test -p
+  phpc --test object_model
+  interface_required_method_parameter_compatibility_is_enforced_for_concrete_classes
+  -- --test-threads=1`, `cargo test -p phpc --test object_model --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1157`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1157`, and direct `cargo run -q -p
+  phpc -- run
+  tests/fixtures/milestone1157/interface_method_parameter_compatibility_boundary.php`
+  returning exit `1`, plus `cargo fmt --check` and `git diff --check` passed
+  in the runtime lane. Full gate deferred until integration.
+
+- Added Milestone 1156, a parser diagnostic refinement for
+  leading-backslash fully-qualified function calls. Calls such as `\strlen()`
+  and `\App\make()` now fail with a dedicated parse diagnostic naming missing
+  exact function-table lookup, namespace fallback bypass, builtin/user
+  dispatch, and native lowering instead of the broader namespace-qualified
+  function-name message. Existing relative namespace-qualified calls such as
+  `App\make()` and `namespace\make()` keep their prior boundary. This does not
+  implement fully-qualified function calls, exact function-table lookup,
+  namespace fallback bypass, leading-separator builtin/user dispatch, exact
+  PHP diagnostics, or native lowering. Verification so far: `cargo test -p
+  phpc --test syntax_boundaries
+  unsupported_fully_qualified_function_calls_have_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_fully_qualified_function_calls_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test dynamic_features
+  fully_qualified_function_calls_are_rejected_with_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test dynamic_features
+  namespace_qualified_function_names_are_rejected_with_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_dynamic_features_cli -- --test-threads=1`, `cargo run -q -p
+  phpc -- test tests/fixtures/unsupported_dynamic_features`, `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_fully_qualified_function_call.php`
+  returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_dynamic_features/unsupported_fully_qualified_function_call.php
+  --emit-ir` returning exit `1`, and direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_dynamic_features/unsupported_fully_qualified_function_call.php
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and
+  `git diff --check` passed in the parser lane. Full gate deferred until
+  integration.
+
 - Added Milestone 1155, a tests/docs queue refresh after the 1151-1154
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1151-1155
   complete and opens Milestones 1156-1160, public docs describe the

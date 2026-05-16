@@ -37,15 +37,25 @@ pub struct FixtureManifestSummary {
     pub exit_expectations: usize,
     pub phpc_only_markers: usize,
     pub orphan_sidecars: usize,
+    pub source_bytes: u64,
+    pub stdout_bytes: u64,
+    pub stderr_bytes: u64,
+    pub exit_bytes: u64,
+    pub phpc_only_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixtureManifestEntry {
     pub path: String,
+    pub source_bytes: u64,
     pub has_stdout: bool,
     pub has_stderr: bool,
     pub has_exit: bool,
     pub phpc_only: bool,
+    pub stdout_bytes: Option<u64>,
+    pub stderr_bytes: Option<u64>,
+    pub exit_bytes: Option<u64>,
+    pub phpc_only_bytes: Option<u64>,
     pub phpc_only_reason: Option<String>,
 }
 
@@ -54,6 +64,7 @@ pub struct FixtureManifestOrphanSidecar {
     pub path: String,
     pub kind: String,
     pub expected_fixture: String,
+    pub bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,12 +111,21 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
     let mut entries = Vec::new();
     for path in files {
         let phpc_only_reason = read_phpc_only_reason(&path)?;
+        let stdout_bytes = optional_file_size(&path.with_extension("stdout"))?;
+        let stderr_bytes = optional_file_size(&path.with_extension("stderr"))?;
+        let exit_bytes = optional_file_size(&path.with_extension("exit"))?;
+        let phpc_only_bytes = optional_file_size(&path.with_extension("phpc-only"))?;
         entries.push(FixtureManifestEntry {
             path: fixture_manifest_path(root, &path),
-            has_stdout: path.with_extension("stdout").exists(),
-            has_stderr: path.with_extension("stderr").exists(),
-            has_exit: path.with_extension("exit").exists(),
+            source_bytes: file_size(&path)?,
+            has_stdout: stdout_bytes.is_some(),
+            has_stderr: stderr_bytes.is_some(),
+            has_exit: exit_bytes.is_some(),
             phpc_only: phpc_only_reason.is_some(),
+            stdout_bytes,
+            stderr_bytes,
+            exit_bytes,
+            phpc_only_bytes,
             phpc_only_reason,
         });
     }
@@ -148,6 +168,11 @@ impl FixtureManifestSummary {
             if entry.has_exit {
                 summary.exit_expectations += 1;
             }
+            summary.source_bytes += entry.source_bytes;
+            summary.stdout_bytes += entry.stdout_bytes.unwrap_or(0);
+            summary.stderr_bytes += entry.stderr_bytes.unwrap_or(0);
+            summary.exit_bytes += entry.exit_bytes.unwrap_or(0);
+            summary.phpc_only_bytes += entry.phpc_only_bytes.unwrap_or(0);
         }
 
         summary
@@ -539,22 +564,23 @@ fn collect_orphan_sidecars(root: &Path) -> CompileResult<Vec<FixtureManifestOrph
     let mut sidecars = Vec::new();
     collect_sidecar_files(root, &mut sidecars)?;
 
-    let mut orphans = sidecars
-        .into_iter()
-        .filter_map(|path| {
-            let kind = recognized_sidecar_kind(&path)?;
-            let expected_fixture = path.with_extension("php");
-            if expected_fixture.exists() {
-                return None;
-            }
+    let mut orphans = Vec::new();
+    for path in sidecars {
+        let Some(kind) = recognized_sidecar_kind(&path) else {
+            continue;
+        };
+        let expected_fixture = path.with_extension("php");
+        if expected_fixture.exists() {
+            continue;
+        }
 
-            Some(FixtureManifestOrphanSidecar {
-                path: fixture_manifest_path(root, &path),
-                kind: kind.to_string(),
-                expected_fixture: fixture_manifest_path(root, &expected_fixture),
-            })
-        })
-        .collect::<Vec<_>>();
+        orphans.push(FixtureManifestOrphanSidecar {
+            path: fixture_manifest_path(root, &path),
+            kind: kind.to_string(),
+            expected_fixture: fixture_manifest_path(root, &expected_fixture),
+            bytes: file_size(&path)?,
+        });
+    }
     orphans.sort_by(|left, right| {
         left.path
             .cmp(&right.path)
@@ -695,6 +721,32 @@ fn read_optional(path: PathBuf) -> Result<String, String> {
             path.display()
         )),
     }
+}
+
+fn optional_file_size(path: &Path) -> CompileResult<Option<u64>> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata.len())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!("failed to stat fixture sidecar {}: {error}", path.display()),
+        )),
+    }
+}
+
+fn file_size(path: &Path) -> CompileResult<u64> {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!("failed to stat fixture file {}: {error}", path.display()),
+            )
+        })
 }
 
 fn read_phpc_only_reason(path: &Path) -> CompileResult<Option<String>> {

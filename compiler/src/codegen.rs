@@ -40,6 +40,8 @@ const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation low
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
@@ -126,6 +128,17 @@ fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
         target,
         AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
+    )
+}
+
+fn is_static_member_assign_target(target: &AssignTarget) -> bool {
+    matches!(
+        target,
+        AssignTarget::StaticProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
     )
 }
 
@@ -640,7 +653,7 @@ impl LlvmGenerator {
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
@@ -755,8 +768,16 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_CAST_REJECTION)),
-            Expr::Assign { target, span, .. }
-            | Expr::CompoundAssign { target, span, .. }
+            Expr::Assign { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                if is_static_member_assign_target(target) {
+                    return Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
                 if is_object_property_array_access_target(target) {
@@ -1141,7 +1162,7 @@ impl LlvmGenerator {
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::LateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
         }
     }
@@ -3470,7 +3491,7 @@ impl CGenerator {
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
@@ -3587,8 +3608,16 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION)),
-            Expr::Assign { target, span, .. }
-            | Expr::CompoundAssign { target, span, .. }
+            Expr::Assign { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if is_static_member_assign_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Expr::CompoundAssign { target, span, .. }
             | Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
                 if is_object_property_array_access_target(target) {
@@ -3973,7 +4002,7 @@ impl CGenerator {
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::LateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
         }
     }

@@ -194,20 +194,20 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1150 closes the 1146-1149 implementation-batch
-  queue refresh. Milestone 1155 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1160 closes the 1156-1159 implementation-batch
+  queue refresh. Milestone 1165 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 1151 is the next parser slot, selecting a small
+- Parser lane: Milestone 1161 is the next parser slot, selecting a small
   syntax or parse-diagnostic boundary from the refreshed PHP/WordPress gap map
   without widening runtime or native support claims.
-- Runtime lane: Milestone 1152 is the next runtime slot, selecting a bounded
+- Runtime lane: Milestone 1162 is the next runtime slot, selecting a bounded
   value-model, object-semantics, request-state, filesystem, database, or
   WordPress-probe blocker with focused tests, CLI coverage, and named
   unsupported edges.
-- IR/lowering lane: Milestone 1153 is the next native slot, selecting a narrow
+- IR/lowering lane: Milestone 1163 is the next native slot, selecting a narrow
   native IR/lowering refinement or precise rejection boundary from already
   documented interpreter behavior.
-- Compiler-output lane: Milestone 1154 is the next compiler-output slot,
+- Compiler-output lane: Milestone 1164 is the next compiler-output slot,
   choosing a deterministic CLI, fixture-runner, compatibility-manifest, or
   backend artifact contract that improves auditability without broadening PHP
   support claims.
@@ -219,6 +219,8 @@ compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
 593, 598, 603, 608, 613, and 618 closed recent runtime slots, and Milestones 569,
 573, 588, 591, 596, 601, 606, 611, and 616 closed recent IR/lowering slots.
 Milestones 604, 609, 614, and 619 closed recent tests/docs queue refreshes.
+Milestones 1156 through 1159 closed the latest parser/runtime/IR/compiler-output
+implementation batch, and Milestone 1160 refreshed the next-lane queue.
 Milestone 1094 closed the runtime clone/reference-slot mirroring slice,
 Milestone 1095 closed the promoted constructor property parameter parse
 boundary, Milestone 1096 closed the native reference-assignment rejection

@@ -4109,6 +4109,12 @@ impl Parser {
                     let resolved = self.resolve_class_like_name(&qualified);
                     return self.reject_unsupported_static_member_access(Some(&resolved));
                 }
+                if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Err(self.error_at(
+                        token.span,
+                        unsupported_fully_qualified_function_call_message(),
+                    ));
+                }
                 Err(self.error_at(
                     token.span,
                     unsupported_namespace_qualified_function_name_message(),
@@ -6014,6 +6020,10 @@ fn unsupported_namespace_const_declaration_message() -> &'static str {
 
 fn unsupported_namespace_qualified_function_name_message() -> &'static str {
     "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
+}
+
+fn unsupported_fully_qualified_function_call_message() -> &'static str {
+    "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
 }
 
 fn unsupported_array_spread_message() -> &'static str {

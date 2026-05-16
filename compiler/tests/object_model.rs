@@ -2,6 +2,8 @@ use php_compiler::error::{Diagnostic, Phase};
 use php_compiler::{class_metadata_source, run_source};
 use php_runtime::Visibility;
 
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Parse);
@@ -2053,6 +2055,87 @@ class Child extends Base {}
     assert_eq!(
         inherited_static_method_error.message,
         "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log() as non static method; found static Base::log()"
+    );
+}
+
+#[test]
+fn interface_required_method_parameter_compatibility_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public function log($message, $context = "default") {
+        return "log:" . $message . ":" . $context;
+    }
+}
+
+$service = new Service();
+echo $service->log("ok"), "\n";
+echo $service->log("ok", "custom");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "log:ok:default\nlog:ok:custom");
+    assert_eq!(execution.exit_code, 0);
+
+    let extra_required_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public function log($message, $context) {}
+}
+"#,
+    );
+    assert_eq!(extra_required_error.line, 6);
+    assert_eq!(extra_required_error.column, 1);
+    assert_eq!(
+        extra_required_error.message,
+        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+    );
+
+    let optional_interface_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message = "default");
+}
+
+class Service implements Logger {
+    public function log($message) {}
+}
+"#,
+    );
+    assert_eq!(optional_interface_error.line, 6);
+    assert_eq!(optional_interface_error.column, 1);
+    assert_eq!(
+        optional_interface_error.message,
+        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+    );
+
+    let inherited_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+abstract class Base implements Logger {
+    public function log($message, $context) {}
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(inherited_error.line, 10);
+    assert_eq!(inherited_error.column, 1);
+    assert_eq!(
+        inherited_error.message,
+        "unsupported class inheritance for Child: method Base::log() cannot require more parameters than interface method Logger::log()"
     );
 }
 
@@ -4229,19 +4312,11 @@ fn emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exist
 fn emit_ir_rejects_object_static_properties_until_native_object_lowering_exists() {
     let read_error = php_compiler::emit_ir_source("<?php\n$box::$value;\n").unwrap_err();
     assert_eq!(read_error.phase, Phase::Codegen);
-    assert!(
-        read_error.message.contains("object/class lowering rejects"),
-        "{}",
-        read_error.message
-    );
+    assert_eq!(read_error.message, LLVM_STATIC_MEMBER_REJECTION);
 
     let write_error = php_compiler::emit_ir_source("<?php\n$box::$value = 1;\n").unwrap_err();
     assert_eq!(write_error.phase, Phase::Codegen);
-    assert!(
-        write_error.message.contains("mutation lowering rejects"),
-        "{}",
-        write_error.message
-    );
+    assert_eq!(write_error.message, LLVM_STATIC_MEMBER_REJECTION);
 }
 
 #[test]
@@ -4376,11 +4451,7 @@ fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
-        assert!(
-            error.message.contains("object/class lowering rejects"),
-            "{}",
-            error.message
-        );
+        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
     }
 }
 
@@ -4508,11 +4579,7 @@ fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
-        assert!(
-            error.message.contains("object/class lowering rejects"),
-            "{}",
-            error.message
-        );
+        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
     }
 }
 
@@ -5032,11 +5099,7 @@ fn emit_ir_rejects_static_properties_until_native_object_lowering_exists() {
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
-        assert!(
-            error.message.contains("object/class lowering rejects"),
-            "{}",
-            error.message
-        );
+        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
     }
 }
 

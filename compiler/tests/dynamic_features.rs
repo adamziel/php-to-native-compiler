@@ -682,13 +682,6 @@ App\make();
         ),
         (
             r#"<?php
-$result = \App\make();
-"#,
-            2,
-            11,
-        ),
-        (
-            r#"<?php
 $result = namespace\make();
 "#,
             2,
@@ -703,6 +696,36 @@ $result = namespace\make();
         assert_eq!(
             error.message,
             "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
+        );
+    }
+}
+
+#[test]
+fn fully_qualified_function_calls_are_rejected_with_stable_parse_errors() {
+    let function_cases = [
+        (
+            r#"<?php
+$result = \strlen("abc");
+"#,
+            2,
+            11,
+        ),
+        (
+            r#"<?php
+$result = \App\make();
+"#,
+            2,
+            11,
+        ),
+    ];
+
+    for (source, line, column) in function_cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
         );
     }
 }

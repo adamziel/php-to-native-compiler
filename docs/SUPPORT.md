@@ -597,9 +597,10 @@
   compatibility violations report stable runtime boundaries. Concrete classes
   that implement declared user interfaces, including through inherited
   `implements` metadata, must expose public methods with the required
-  interface method names at class registration time. Full PHP method
+  interface method names and must not require more parameters than those
+  interface methods at class registration time. Full PHP method
   signature variance, parameter type compatibility, return type compatibility,
-  interface parameter/return compatibility, interface inheritance,
+  interface parameter type/return compatibility, interface inheritance,
   built-in/internal interface method enforcement, named arguments,
   trait composition, exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -1933,11 +1934,13 @@
 - explicit parse diagnostics for unsupported namespace forms and imports:
   bracketed/global/multiple namespaces, namespace-scoped constants, grouped
   imports, multiple simple class imports in one `use` declaration, function
-  imports, constant imports, qualified function calls, and
-  namespace-qualified function calls such as `App\make()`. Multiple class
-  imports, function imports, and const imports have dedicated diagnostics
-  naming missing import metadata, namespace-aware lookup, alias handling,
-  fallback lookup where applicable, and native lowering.
+  imports, constant imports, qualified function calls,
+  namespace-qualified function calls such as `App\make()`, and
+  leading-backslash fully-qualified function calls such as `\strlen()`.
+  Multiple class imports, function imports, const imports, and
+  fully-qualified function calls have dedicated diagnostics naming the
+  relevant missing import/function-table metadata, namespace-aware lookup or
+  fallback behavior, alias handling where applicable, and native lowering.
 - explicit parse diagnostics for unsupported magic class names in `new`
   expressions such as `new self()`, `new parent()`, and `new static()`
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
@@ -2281,12 +2284,14 @@
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes. For interfaces declared in the current
   parsed program, concrete classes must expose public methods with the required
-  interface method names and current supported non-static method shape;
+  interface method names, current supported non-static method shape, and no
+  more required parameters than the interface method;
   abstract classes may defer that requirement until a concrete child is
   registered, and inherited public methods count. Public static methods do not
   satisfy non-static interface method requirements. This is a bounded
-  public-method compatibility check only, not parameter/return type
-  compatibility or exact PHP error-object behavior. Unresolved interface names
+  public-method compatibility check only, not parameter type compatibility,
+  return type compatibility, full signature variance, or exact PHP
+  error-object behavior. Unresolved interface names
   and built-in/internal interface names remain relationship metadata only. The
   bounded core interface catalog currently includes `Traversable`,
   `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
@@ -2905,6 +2910,13 @@
   resolution, `$this` and late-static-binding context, argument/arity
   diagnostics, visibility enforcement, reference/copy-on-write parameter and
   return behavior, and exact native method-call errors.
+  Static class members have a dedicated native codegen boundary:
+  `phpc compile --emit-ir` and `--emit-asm` reject `::class` constants, class
+  constants, static property reads/writes, and dynamic static-property
+  receivers before lowering class/member operands. Native support still needs
+  class constant tables, static property storage, class context and
+  late-static-binding resolution, visibility checks, autoload/class lookup,
+  references/copy-on-write, and exact native static-member errors.
   Native object-property reads/writes have a dedicated codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject instance property access
   and dynamic property names before lowering receivers or property-name
@@ -3403,7 +3415,7 @@
   lowering with a specific codegen diagnostic until generated code has native
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
-  Native class declarations, inheritance metadata, instance method calls, and
+  Native class declarations, inheritance metadata, and
   object metadata builtins
   beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
@@ -5009,15 +5021,16 @@
   omit the field. It also reports recognized orphan sidecars that do not have
   a matching `.php` fixture. It does not parse, execute, or compare fixtures.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 3, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 4, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
-  PHP-comparison eligibility, sibling `.phpc-only` marker text as
-  `phpc_only_reason`, recognized orphan sidecars, and per-target compatibility
-  counts for `compat/<target>` directories under the fixture root, including
-  targets with no executable `.php` fixtures yet. It does not parse, execute,
-  compare fixtures, report fixture execution results, validate that
-  `.phpc-only` reason text is non-empty, inspect non-fixture compatibility
-  metadata, or report unrecognized sidecars.
+  source/recognized sidecar byte counts, PHP-comparison eligibility, sibling
+  `.phpc-only` marker text as `phpc_only_reason`, recognized orphan sidecars
+  with byte counts, and per-target compatibility counts for `compat/<target>`
+  directories under the fixture root, including targets with no executable
+  `.php` fixtures yet. It does not parse, execute, compare fixtures, hash
+  payloads, report fixture execution results, validate that `.phpc-only`
+  reason text is non-empty, inspect non-fixture compatibility metadata, or
+  report unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -5044,8 +5057,9 @@
 - namespace forms outside the current one-unbracketed-namespace/simple-class-use
   plus same-namespace function slice: bracketed/global/multiple namespaces,
   namespace-scoped constants, grouped imports, function imports, constant
-  imports, namespace-qualified function calls, `__NAMESPACE__`, string-name
-  import expansion, autoload-aware lookup, and namespace-aware native lowering
+  imports, namespace-qualified function calls, leading-backslash
+  fully-qualified function calls, `__NAMESPACE__`, string-name import
+  expansion, autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names; `$object->$method()` currently fails with a stable
   parse diagnostic. Dynamic property-name support is limited to existing
   public slots, `stdClass` public dynamic slots, and the bounded WordPress
@@ -5811,9 +5825,10 @@
   remain unsupported
 - namespace-aware behavior beyond the current class-name and same-namespace
   function declaration/call slice, including namespace-scoped constants,
-  qualified or fully-qualified function calls, grouped imports with a dedicated
-  parse diagnostic, function/constant imports, string-name import expansion,
-  `__NAMESPACE__`, autoload-aware
+  qualified function calls, fully-qualified function calls with a dedicated
+  parse diagnostic for leading-backslash call syntax, grouped imports with a
+  dedicated parse diagnostic, function/constant imports, string-name import
+  expansion, `__NAMESPACE__`, autoload-aware
   lookup, and native lowering
 - closure invocation, explicit and implicit capture binding/execution, and
   callable integration

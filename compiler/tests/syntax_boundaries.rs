@@ -640,6 +640,35 @@ fn emit_ir_rejects_grouped_use_declarations_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_fully_qualified_function_calls_have_stable_parse_errors() {
+    let cases = [
+        ("<?php\n$result = \\strlen('abc');\n", 2, 11),
+        ("<?php\n$result = \\App\\make();\n", 2, 11),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_fully_qualified_function_calls_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$result = \\strlen('abc');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
+    );
+}
+
+#[test]
 fn unsupported_readonly_class_declarations_have_stable_parse_errors() {
     let cases = [
         (

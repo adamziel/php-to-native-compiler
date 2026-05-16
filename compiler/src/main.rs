@@ -363,7 +363,7 @@ fn render_fixture_manifest_compatibility_target(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 3,\n");
+    output.push_str("  \"contract_version\": 4,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -397,9 +397,31 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     ));
     output.push_str("    },\n");
     output.push_str(&format!(
-        "    \"orphan_sidecars\": {}\n",
+        "    \"orphan_sidecars\": {},\n",
         manifest.summary.orphan_sidecars
     ));
+    output.push_str("    \"file_bytes\": {\n");
+    output.push_str(&format!(
+        "      \"source\": {},\n",
+        manifest.summary.source_bytes
+    ));
+    output.push_str(&format!(
+        "      \"stdout\": {},\n",
+        manifest.summary.stdout_bytes
+    ));
+    output.push_str(&format!(
+        "      \"stderr\": {},\n",
+        manifest.summary.stderr_bytes
+    ));
+    output.push_str(&format!(
+        "      \"exit\": {},\n",
+        manifest.summary.exit_bytes
+    ));
+    output.push_str(&format!(
+        "      \"phpc_only\": {}\n",
+        manifest.summary.phpc_only_bytes
+    ));
+    output.push_str("    }\n");
     output.push_str("  },\n");
     output.push_str("  \"fixtures\": [\n");
     for (index, entry) in manifest.entries.iter().enumerate() {
@@ -417,6 +439,25 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             output.push_str(&json_string_literal(expectation));
         }
         output.push_str("],\n");
+        output.push_str("      \"file_bytes\": {\n");
+        output.push_str(&format!("        \"source\": {},\n", entry.source_bytes));
+        output.push_str(&format!(
+            "        \"stdout\": {},\n",
+            json_optional_u64(entry.stdout_bytes)
+        ));
+        output.push_str(&format!(
+            "        \"stderr\": {},\n",
+            json_optional_u64(entry.stderr_bytes)
+        ));
+        output.push_str(&format!(
+            "        \"exit\": {},\n",
+            json_optional_u64(entry.exit_bytes)
+        ));
+        output.push_str(&format!(
+            "        \"phpc_only\": {}\n",
+            json_optional_u64(entry.phpc_only_bytes)
+        ));
+        output.push_str("      },\n");
         let comparison = if entry.phpc_only {
             "phpc-only"
         } else {
@@ -479,9 +520,31 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         ));
         output.push_str("        },\n");
         output.push_str(&format!(
-            "        \"orphan_sidecars\": {}\n",
+            "        \"orphan_sidecars\": {},\n",
             target.summary.orphan_sidecars
         ));
+        output.push_str("        \"file_bytes\": {\n");
+        output.push_str(&format!(
+            "          \"source\": {},\n",
+            target.summary.source_bytes
+        ));
+        output.push_str(&format!(
+            "          \"stdout\": {},\n",
+            target.summary.stdout_bytes
+        ));
+        output.push_str(&format!(
+            "          \"stderr\": {},\n",
+            target.summary.stderr_bytes
+        ));
+        output.push_str(&format!(
+            "          \"exit\": {},\n",
+            target.summary.exit_bytes
+        ));
+        output.push_str(&format!(
+            "          \"phpc_only\": {}\n",
+            target.summary.phpc_only_bytes
+        ));
+        output.push_str("        }\n");
         output.push_str("      }\n");
         output.push_str("    }");
         if index + 1 < manifest.compatibility_targets.len() {
@@ -502,9 +565,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             json_string_literal(&orphan.kind)
         ));
         output.push_str(&format!(
-            "      \"expected_fixture\": {}\n",
+            "      \"expected_fixture\": {},\n",
             json_string_literal(&orphan.expected_fixture)
         ));
+        output.push_str(&format!("      \"bytes\": {}\n", orphan.bytes));
         output.push_str("    }");
         if index + 1 < manifest.orphan_sidecars.len() {
             output.push(',');
@@ -601,6 +665,12 @@ fn fixture_manifest_entry_expectations(entry: &FixtureManifestEntry) -> Vec<&'st
 fn json_optional_string_literal(value: Option<&str>) -> String {
     value
         .map(json_string_literal)
+        .unwrap_or_else(|| "null".to_string())
+}
+
+fn json_optional_u64(value: Option<u64>) -> String {
+    value
+        .map(|value| value.to_string())
         .unwrap_or_else(|| "null".to_string())
 }
 

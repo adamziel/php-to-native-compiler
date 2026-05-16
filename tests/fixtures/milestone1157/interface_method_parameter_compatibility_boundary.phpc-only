@@ -1,0 +1,1 @@
+phpc reports a stable runtime boundary for declared interface method parameter compatibility; exact PHP Error objects, diagnostics, and exit status are not implemented.

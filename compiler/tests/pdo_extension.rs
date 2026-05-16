@@ -4,6 +4,7 @@ use php_compiler::run_source;
 
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 
 #[test]
 fn pdo_metadata_is_visible_but_connections_are_explicit_boundaries() {
@@ -124,5 +125,5 @@ echo PDO::ATTR_ERRMODE;
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 9);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
 }

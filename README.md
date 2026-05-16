@@ -153,7 +153,8 @@ incorrect native code.
   `interface_exists()` and `get_declared_interfaces()`, and require concrete
   classes that implement declared interfaces, including through inherited
   `implements` metadata, to expose public methods with the required names at
-  class registration time; class `implements` clauses record comma-separated
+  class registration time and to avoid requiring more parameters than those
+  interface methods; class `implements` clauses record comma-separated
   interface names as relationship metadata for `is_a`, `is_subclass_of`, and
   `instanceof`, including unresolved built-in/internal interface names without
   seeding `interface_exists()` or enforcing built-in/internal methods
@@ -219,6 +220,7 @@ The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell
 slice, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
+including leading-backslash fully-qualified function calls such as `\strlen()`,
 include/require breadth beyond the current narrow local string-path statement
 and expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
@@ -245,12 +247,13 @@ bare namespace constant fallback reads, class-constant lookup through
 string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
-full method signature compatibility beyond inherited required-parameter count
-increases, visibility enforcement beyond the current public and
-same-declaring-class private-property, protected-property, protected-method,
-constructor, method inheritance visibility/staticness/signature-count, and
-class-constant slice, typed property compatibility and DNF-shaped typed
-property declarations plus property defaults beyond the current untyped
+full method signature compatibility beyond inherited and interface
+required-parameter count increases, visibility enforcement beyond the current
+public and same-declaring-class private-property, protected-property,
+protected-method, constructor, method inheritance
+visibility/staticness/signature-count, and class-constant slice, typed
+property compatibility and DNF-shaped typed property declarations plus
+property defaults beyond the current untyped
 constant-expression instance property slice, readonly property metadata and
 write-once enforcement, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
@@ -302,9 +305,9 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, array destructuring, objects, ArrayAccess
-object-offset dispatch, clone expressions, `exit()`/`die()` termination, user functions,
-closure values,
+Native lowering rejects arrays, array destructuring, objects, static class
+members, ArrayAccess object-offset dispatch, clone expressions,
+`exit()`/`die()` termination, user functions, closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, dynamic calls, `assert()`,
 runtime constant tables, PHP-wide coercions,
@@ -338,8 +341,9 @@ its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
 also include their marker text as `phpc-only-reason=<reason>`.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 3. The JSON records
-sibling `.phpc-only` marker text as `phpc_only_reason` so comparison opt-outs
+manifest as deterministic JSON with `contract_version` 4. The JSON records
+sibling `.phpc-only` marker text as `phpc_only_reason` and source/recognized
+sidecar byte counts so comparison opt-outs and committed expectation payloads
 are visible without executing fixtures. When the fixture root contains
 `compat/<target>` directories, the JSON also includes per-target compatibility
 counts, including targets with no executable `.php` fixtures yet.

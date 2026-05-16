@@ -11285,7 +11285,7 @@ handled.
 
 ## Milestone 1156: Next Parser Boundary
 
-- [ ] Parser lane: choose the next small unsupported syntax or
+- [x] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
   misleading diagnostic. Add stable focused coverage, CLI fixture evidence
@@ -11293,7 +11293,7 @@ handled.
 
 ## Milestone 1157: Next Runtime Value/Object Slice
 
-- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
+- [x] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
   filesystem, database, or WordPress-probe blocker already reached by fixtures
   or external probes. Prove it with focused tests, CLI coverage, system PHP
@@ -11301,20 +11301,59 @@ handled.
 
 ## Milestone 1158: Next Native Boundary
 
+- [x] IR/lowering lane: split documented static class members into a
+  dedicated native rejection for `::class`, class constants, static property
+  reads/writes, and dynamic static-property receivers in `phpc compile
+  --emit-ir` and `--emit-asm`, keeping class declarations, object metadata,
+  method calls, properties, and object instantiation on their existing
+  boundaries.
+
+## Milestone 1159: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: bump the JSON fixture manifest to
+  `contract_version` 4 with deterministic source and recognized sidecar byte
+  counts for fixture entries, summaries, compatibility targets, and orphan
+  sidecars, while leaving fixture execution, comparison behavior, text
+  manifests, and PHP support claims unchanged.
+
+## Milestone 1160: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1156-1159 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1161: Next Parser Boundary
+
+- [ ] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed full-compatibility gap map.
+  Prefer a PHP/WordPress surface that still falls through to a broad or
+  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
+  where applicable, and keep runtime/native support claims unchanged.
+
+## Milestone 1162: Next Runtime Value/Object Slice
+
+- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
+  map, preferably a remaining reference/COW, object-semantics, request-state,
+  filesystem, database, or WordPress-probe blocker already reached by fixtures
+  or external probes. Prove it with focused tests, CLI coverage, system PHP
+  comparison where applicable, and named unsupported edges.
+
+## Milestone 1163: Next Native Boundary
+
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1159: Next Compiler-Output Contract
+## Milestone 1164: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1160: Next Tests/Docs Queue Refresh
+## Milestone 1165: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1156-1159 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1161-1164 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

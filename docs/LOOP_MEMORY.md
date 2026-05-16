@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:20:00Z
+
+- Checkpoint before this task:
+  `f4d03e33 runtime: enforce interface staticness boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1156-1160, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: parser/runtime/codegen/CLI test-runner code, focused tests
+  and fixtures for leading-backslash fully-qualified function-call parse
+  boundaries, declared-interface required-parameter compatibility enforcement,
+  dedicated native static-member rejection, JSON fixture manifest byte counts,
+  plus `README.md`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OPERATIONS.md`, `docs/COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: enforce interface parameter boundary"`
+  passed with `1334` fixture tests, `758` system PHP comparisons, and `576`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: fully-qualified function-call execution and exact
+  namespace fallback behavior, full PHP method signature variance and type
+  compatibility, interface inheritance/constants, built-in/internal interface
+  method enforcement, traits, exact PHP diagnostics/error objects, native
+  class constant tables/static property storage, late-static-binding native
+  context, branch-specific PHP comparison matrices, real reference/COW
+  containers, real database and filesystem services, and full WordPress
+  request/plugin/theme flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1161-1164 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T19:35:23Z
 
 - Checkpoint before this task:

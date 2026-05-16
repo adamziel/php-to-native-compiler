@@ -8,6 +8,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
@@ -47,6 +48,26 @@ echo "done";
 }
 
 #[test]
+fn phpc_run_still_handles_current_static_member_subset() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    const NAME = "Box";
+    public static $count;
+}
+Box::$count = 2;
+echo Box::class, "\n";
+echo Box::NAME, "\n";
+echo Box::$count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Box\nBox\n2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_class_declarations_with_specific_boundary() {
     let error =
         emit_ir_source("<?php\nclass Box { public $name; }\necho \"after\";\n").unwrap_err();
@@ -76,6 +97,22 @@ fn emit_ir_rejects_inherited_class_declarations_with_specific_boundary() {
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_static_members_with_specific_boundary() {
+    for source in [
+        "<?php\necho Box::class;\n",
+        "<?php\necho Box::NAME;\n",
+        "<?php\necho Box::$name;\n",
+        "<?php\nBox::$name = \"Ada\";\n",
+        "<?php\n$receiver::$name = \"Ada\";\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+    }
 }
 
 #[test]
@@ -261,6 +298,68 @@ fn emit_asm_rejects_constructor_argument_instantiation_before_backend_execution(
 }
 
 #[test]
+fn native_static_member_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1158/native_static_member_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1158/native_static_member_boundary_emit_ir.cli"),
+    )
+    .expect("native static-member IR CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_static_member_emit_asm_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1158/native_static_member_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1158/native_static_member_boundary_emit_asm.cli"),
+    )
+    .expect("native static-member assembly CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn native_object_instantiation_emit_ir_cli_snapshot_matches_committed_output() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -320,6 +419,22 @@ fn native_object_instantiation_emit_asm_cli_snapshot_matches_committed_output() 
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn emit_asm_rejects_static_members_before_backend_execution() {
+    for source in [
+        "<?php\necho Box::class;\n",
+        "<?php\necho Box::NAME;\n",
+        "<?php\necho Box::$name;\n",
+        "<?php\nBox::$name = \"Ada\";\n",
+        "<?php\n$receiver::$name = \"Ada\";\n",
+    ] {
+        let error = emit_asm_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+    }
 }
 
 #[test]

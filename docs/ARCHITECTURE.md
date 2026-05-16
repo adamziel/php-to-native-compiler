@@ -484,6 +484,14 @@ receiver resolution, `$this` and late-static-binding context, argument/arity
 diagnostics, visibility checks, references/copy-on-write, and exact native
 method-call errors stay visible instead of collapsing into the broader
 object/class diagnostic.
+Static class members have a dedicated native rejection boundary for `::class`
+constants, class constants, static property reads/writes, and dynamic
+static-property receivers. Both LLVM IR emission and the C assembly fallback
+path reject those AST nodes before lowering class/member operands, so missing
+native class constant tables, static property storage, class context,
+late-static-binding resolution, visibility checks, autoload/class lookup,
+references/copy-on-write, and exact native static-member errors stay visible
+instead of collapsing into the broader object/class diagnostic.
 
 Current assembly emission order:
 
@@ -1458,8 +1466,9 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   declaration/call slice. Namespace-scoped function declarations register under
   their resolved names; unqualified direct calls inside a namespace first look
   for a same-namespace function and then fall back to global builtins/user
-  functions. Function imports, qualified function calls, namespace-scoped
-  constants, and dynamic string-name namespace expansion remain boundaries.
+  functions. Function imports, qualified function calls, leading-backslash
+  fully-qualified function calls, namespace-scoped constants, and dynamic
+  string-name namespace expansion remain boundaries.
 - global constants use a narrow interpreter constant table: exact uppercase
   `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_KEY`, and
   `ARRAY_FILTER_USE_BOTH` are available as bare built-in constants, while
@@ -1543,12 +1552,13 @@ autoload callbacks.
 
 Unsupported namespace/import behavior remains: bracketed namespace blocks,
 global namespace blocks, multiple namespaces in one file, namespace-scoped
-functions/constants, namespace-qualified function calls, grouped imports,
-function imports, constant imports, string-name import expansion, trait `use`
-execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
-partial-output behavior, and namespace-aware native lowering. The native path
-rejects namespace declarations/imports before scalar folding or backend
-execution until native symbol tables and namespace context exist.
+functions/constants, namespace-qualified function calls, leading-backslash
+fully-qualified function calls, grouped imports, function imports, constant
+imports, string-name import expansion, trait `use` execution, `__NAMESPACE__`,
+autoload interaction, exact PHP diagnostics, partial-output behavior, and
+namespace-aware native lowering. The native path rejects namespace
+declarations/imports before scalar folding or backend execution until native
+symbol tables and namespace context exist.
 
 ## Object/Class Boundary
 

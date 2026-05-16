@@ -1,0 +1,2 @@
+runtime error at 6:1: unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()
+
