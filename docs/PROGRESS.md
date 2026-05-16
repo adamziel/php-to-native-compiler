@@ -18,6 +18,9 @@ Implemented:
   unsupported. Verification so far:
   `cargo test -p phpc --test functions_and_scopes reference_parameter -- --test-threads=1`
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1045`.
+  The serialized checkpoint gate passed with 1259 fixture tests, 705 system PHP
+  comparisons, and 554 skipped comparisons, then committed
+  `2be6fe92 runtime: bind reference parameters to caller cells`.
 
 - Added Milestone 1044, target-pointer-width-aware native runtime helper
   signature rendering for the scalar echo ABI probe. The compiler-side probe

@@ -10082,9 +10082,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `df45ac16 native: render helper signatures by pointer width`, covering
-  Milestone 1044. A Milestone 1045 by-reference parameter alias-cell slice is
-  implemented in the working tree and awaiting checkpoint.
+  `2be6fe92 runtime: bind reference parameters to caller cells`, covering
+  Milestone 1045.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

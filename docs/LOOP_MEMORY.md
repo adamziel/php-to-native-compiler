@@ -33,17 +33,21 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1045, direct-variable by-reference parameter alias
   cells for current user function and instance method calls.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/functions_and_scopes.rs`,
   `tests/fixtures/milestone1045/*`, `docs/PROGRESS.md`,
   `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
   `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test functions_and_scopes reference_parameter -- --test-threads=1`
   passed.
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1045`
   passed with 1 fixture and 1 system PHP comparison. `cargo fmt --check`
-  first reported formatting drift, then `cargo fmt` was run.
+  first reported formatting drift, then `cargo fmt` was run. `cargo fmt --check`
+  and `git diff --check` passed after formatting. The serialized checkpoint
+  gate passed with 1259 fixture tests, 705 system PHP comparisons, and 554
+  skipped comparisons, then committed
+  `2be6fe92 runtime: bind reference parameters to caller cells`.
 - Current WordPress frontier: reference/output-parameter calls now share a
   caller variable cell during execution instead of copying final values back
   only after return.
@@ -51,9 +55,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   offset references, reference returns, by-reference `foreach`, full PHP
   reference containers, copy-on-write, broader callback reference behavior, and
   native lowering remain missing.
-- Next concrete task: rerun formatting/focused checks after docs edits, run
-  `git diff --check`, then checkpoint Milestone 1045 through
-  `tools/checkpoint.sh` if the serialized gate passes.
+- Next concrete task: push the checkpoint, then continue with the next
+  reference/COW lane candidate such as array-offset reference cells,
+  by-reference returns, by-reference `foreach`, or array copy-on-write.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
