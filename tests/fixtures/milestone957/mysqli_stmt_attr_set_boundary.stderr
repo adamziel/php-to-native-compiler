@@ -1,2 +1,2 @@
-runtime error at 3:1: unsupported call mysqli_stmt_attr_set(): mysqli statement objects, statement attributes, option mutation, and option registry state are not implemented in the current subset
+runtime error at 3:1: unsupported call mysqli_stmt_attr_set(): first argument must be mysqli_stmt object in the current subset, got mysqli object
 

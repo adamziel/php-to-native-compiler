@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_stmt_attr_get()` and `mysqli_stmt_attr_set()` state for active
+`mysqli_stmt` objects. System PHP requires a real initialized MySQLi
+connection and mysqlnd statement state; phpc only stores supported
+attribute values on the placeholder statement and does not implement real
+cursor behavior, prefetch behavior, max-length metadata recalculation, host
+database state, PHP warning/error fidelity, or native database lowering.

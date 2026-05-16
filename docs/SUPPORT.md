@@ -3347,11 +3347,14 @@
   `mysqli_stmt_fetch(...)` is an explicit statement cursor boundary without
   by-reference result binding, output buffer mutation, cursor advancement over
   bound buffers, or host database rows,
-  `mysqli_stmt_data_seek(...)`/`mysqli_stmt_attr_get(...)`/
-  `mysqli_stmt_attr_set(...)` are explicit statement positioning/attribute
-  boundaries without statement objects, buffered result cursor state, offset
-  seeking, statement attribute catalogs, option registry state, or option
-  mutation,
+  `mysqli_stmt_data_seek(...)` is an explicit statement positioning boundary
+  without buffered result cursor state or offset seeking,
+  `mysqli_stmt_attr_get(...)`/`mysqli_stmt_attr_set(...)` expose only
+  deterministic placeholder statement-attribute state for active statements
+  and the supported `MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH`,
+  `MYSQLI_STMT_ATTR_CURSOR_TYPE`, and `MYSQLI_STMT_ATTR_PREFETCH_ROWS`
+  attributes without real mysqlnd cursor behavior, prefetch behavior,
+  max-length metadata recalculation, host database state, or native lowering,
   `mysqli_stmt_more_results(...)`/`mysqli_stmt_next_result(...)` return only
   deterministic `false` for active placeholder statements without
   multi-statement execution, pending statement result queues, cursor

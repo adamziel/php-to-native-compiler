@@ -1751,7 +1751,13 @@ historical blockers and remaining full-support gaps include:
   active placeholder statements, including a WordPress-shaped `wpdb` smoke,
   without claiming multi-statement execution, pending statement result queues,
   cursor advancement, host database state, PHP warning/error fidelity, or
-  native database lowering. Milestone 965 adds explicit
+  native database lowering. Milestone 983 adds deterministic
+  `mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()` placeholder state for
+  active statements, including PHP-matching statement attribute and
+  cursor-type constants plus a WordPress-shaped `wpdb` smoke, without claiming
+  real mysqlnd cursor behavior, prefetch behavior, max-length metadata
+  recalculation, host database state, PHP warning/error fidelity, or native
+  database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

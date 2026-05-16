@@ -29,6 +29,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `3b7ce624 runtime: add mysqli stmt clean multi result state`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 983, deterministic
+  `mysqli_stmt_attr_get()` and `mysqli_stmt_attr_set()` placeholder state for
+  active statements, including statement attribute/cursor-type constants and
+  direct MySQLi plus WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone983/*`, affected legacy statement attribute
+  fixture snapshots in `tests/fixtures/milestone957` and
+  `tests/fixtures/milestone958`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_positioning_is_boundary_and_attributes_are_placeholder_state -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone983`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone957`;
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone958`.
+  All passed; the new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder prepared statements now preserve
+  bounded attribute state through a WordPress-shaped `wpdb` method.
+- Remaining semantic gaps: real mysqlnd cursor behavior, prefetch behavior,
+  max-length metadata recalculation, bound prepared parameters,
+  by-reference result binding/fetching, host database state, PHP warning/error
+  fidelity, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect
+  active-statement binding/fetch boundaries or move to the next real database
+  integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d7a51b17 runtime: add mysqli stmt buffered row counts`, pushed to
   `origin/master`.
 - Task attempted: Milestone 982, deterministic clean statement multi-result

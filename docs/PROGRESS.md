@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 983, deterministic `mysqli_stmt_attr_get()` and
+  `mysqli_stmt_attr_set()` placeholder state for active `mysqli_stmt` objects.
+  The runtime now exposes PHP-matching statement attribute and cursor-type
+  constants, returns deterministic default values for
+  `MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH`,
+  `MYSQLI_STMT_ATTR_CURSOR_TYPE`, and `MYSQLI_STMT_ATTR_PREFETCH_ROWS`, stores
+  int/bool placeholder values set on active statements, and keeps
+  non-statement handles as stable validation errors. The new fixtures include
+  direct MySQLi and WordPress-shaped `wpdb` smokes; the affected legacy
+  `milestone957` and `milestone958` boundary fixtures now record the narrower
+  handle-validation diagnostic. This is not real mysqlnd cursor behavior,
+  prefetch behavior, max-length metadata recalculation, host database state,
+  PHP warning/error fidelity, or native database lowering. Verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_positioning_is_boundary_and_attributes_are_placeholder_state -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone983`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone957`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone958`.
+
 - Added Milestone 982, deterministic clean multi-result state for active
   placeholder `mysqli_stmt` objects. `mysqli_stmt_more_results()` and
   `mysqli_stmt_next_result()` now validate placeholder statement handles and

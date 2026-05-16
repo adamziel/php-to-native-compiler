@@ -139,6 +139,7 @@ struct MysqliStatementState {
     param_count: usize,
     executed_result: Option<MysqliPendingResultState>,
     buffered_result: Option<MysqliPendingResultState>,
+    attributes: HashMap<i64, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4059,6 +4060,7 @@ impl Interpreter {
                 query,
                 executed_result: None,
                 buffered_result: None,
+                attributes: HashMap::new(),
             },
         );
         Ok(Value::Object(PhpObject::from_class_with_id(
@@ -4918,24 +4920,24 @@ impl Interpreter {
 
     fn call_mysqli_stmt_attr_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_attr_get", args, 2, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_attr_get()",
-                "mysqli statement objects, statement attributes, and option registry state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_attr_get()", &args[0], span)?;
+        let attribute = expect_mysqli_stmt_attribute("mysqli_stmt_attr_get()", &args[1], span)?;
+        let state = self.mysqli_statement_state("mysqli_stmt_attr_get()", stmt_id, span)?;
+        Ok(state
+            .attributes
+            .get(&attribute)
+            .cloned()
+            .unwrap_or_else(|| Value::Int(mysqli_stmt_attribute_default(attribute))))
     }
 
-    fn call_mysqli_stmt_attr_set(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_stmt_attr_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_attr_set", args, 3, span)?;
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "mysqli_stmt_attr_set()",
-                "mysqli statement objects, statement attributes, option mutation, and option registry state are not implemented in the current subset",
-            ),
-        ))
+        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_attr_set()", &args[0], span)?;
+        let attribute = expect_mysqli_stmt_attribute("mysqli_stmt_attr_set()", &args[1], span)?;
+        let value = expect_mysqli_stmt_attribute_value("mysqli_stmt_attr_set()", &args[2], span)?;
+        let state = self.mysqli_statement_state_mut("mysqli_stmt_attr_set()", stmt_id, span)?;
+        state.attributes.insert(attribute, Value::Int(value));
+        Ok(Value::Bool(true))
     }
 
     fn call_mysqli_stmt_send_long_data(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4957,6 +4959,7 @@ impl Interpreter {
         state.param_count = 0;
         state.executed_result = None;
         state.buffered_result = None;
+        state.attributes.clear();
         Ok(Value::Bool(true))
     }
 
@@ -13732,6 +13735,13 @@ const PHP_MYSQLI_OPT_NET_READ_BUFFER_SIZE: i64 = 203;
 const PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE: i64 = 201;
 const PHP_MYSQLI_OPT_SSL_VERIFY_SERVER_CERT: i64 = 21;
 const PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS: i64 = 37;
+const PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH: i64 = 0;
+const PHP_MYSQLI_STMT_ATTR_CURSOR_TYPE: i64 = 1;
+const PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS: i64 = 2;
+const PHP_MYSQLI_CURSOR_TYPE_NO_CURSOR: i64 = 0;
+const PHP_MYSQLI_CURSOR_TYPE_READ_ONLY: i64 = 1;
+const PHP_MYSQLI_CURSOR_TYPE_FOR_UPDATE: i64 = 2;
+const PHP_MYSQLI_CURSOR_TYPE_SCROLLABLE: i64 = 4;
 const PHP_MYSQLI_REFRESH_GRANT: i64 = 1;
 const PHP_MYSQLI_REFRESH_LOG: i64 = 2;
 const PHP_MYSQLI_REFRESH_TABLES: i64 = 4;
@@ -13817,6 +13827,15 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS" => {
             Some(Value::Int(PHP_MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS))
         }
+        "MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH" => {
+            Some(Value::Int(PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH))
+        }
+        "MYSQLI_STMT_ATTR_CURSOR_TYPE" => Some(Value::Int(PHP_MYSQLI_STMT_ATTR_CURSOR_TYPE)),
+        "MYSQLI_STMT_ATTR_PREFETCH_ROWS" => Some(Value::Int(PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS)),
+        "MYSQLI_CURSOR_TYPE_NO_CURSOR" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_NO_CURSOR)),
+        "MYSQLI_CURSOR_TYPE_READ_ONLY" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_READ_ONLY)),
+        "MYSQLI_CURSOR_TYPE_FOR_UPDATE" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_FOR_UPDATE)),
+        "MYSQLI_CURSOR_TYPE_SCROLLABLE" => Some(Value::Int(PHP_MYSQLI_CURSOR_TYPE_SCROLLABLE)),
         "MYSQLI_REFRESH_GRANT" => Some(Value::Int(PHP_MYSQLI_REFRESH_GRANT)),
         "MYSQLI_REFRESH_LOG" => Some(Value::Int(PHP_MYSQLI_REFRESH_LOG)),
         "MYSQLI_REFRESH_TABLES" => Some(Value::Int(PHP_MYSQLI_REFRESH_TABLES)),
@@ -14149,6 +14168,69 @@ fn expect_mysqli_stmt_handle(function: &str, value: &Value, span: Span) -> Compi
     }
 
     Ok(handle.id())
+}
+
+fn expect_mysqli_stmt_attribute(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
+    let Value::Int(attribute) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "attribute argument must be int in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+
+    if matches!(
+        *attribute,
+        PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH
+            | PHP_MYSQLI_STMT_ATTR_CURSOR_TYPE
+            | PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS
+    ) {
+        Ok(*attribute)
+    } else {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "only MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH, MYSQLI_STMT_ATTR_CURSOR_TYPE, and MYSQLI_STMT_ATTR_PREFETCH_ROWS are implemented in the current subset, got {attribute}"
+                ),
+            ),
+        ))
+    }
+}
+
+fn expect_mysqli_stmt_attribute_value(
+    function: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Int(value) => Ok(*value),
+        Value::Bool(value) => Ok(if *value { 1 } else { 0 }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "value argument must be int or bool in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn mysqli_stmt_attribute_default(attribute: i64) -> i64 {
+    match attribute {
+        PHP_MYSQLI_STMT_ATTR_CURSOR_TYPE => PHP_MYSQLI_CURSOR_TYPE_NO_CURSOR,
+        PHP_MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH | PHP_MYSQLI_STMT_ATTR_PREFETCH_ROWS => 0,
+        _ => 0,
+    }
 }
 
 fn string_builtin_argument(

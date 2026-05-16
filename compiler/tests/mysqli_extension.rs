@@ -1066,7 +1066,7 @@ mysqli_stmt_field_count($stmt);
 }
 
 #[test]
-fn mysqli_statement_positioning_and_attributes_are_visible_but_explicit_boundary() {
+fn mysqli_statement_positioning_is_boundary_and_attributes_are_placeholder_state() {
     let execution = run_source(
         r#"<?php
 $data_seek = "mysqli_stmt_data_seek";
@@ -1083,13 +1083,46 @@ echo "|";
 echo function_exists($attr_set) ? "attr-set-exists" : "attr-set-missing";
 echo "|";
 echo is_callable($attr_set) ? "attr-set-callable" : "attr-set-missing";
+echo "|";
+echo MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH;
+echo ":";
+echo MYSQLI_STMT_ATTR_CURSOR_TYPE;
+echo ":";
+echo MYSQLI_STMT_ATTR_PREFETCH_ROWS;
+echo ":";
+echo MYSQLI_CURSOR_TYPE_NO_CURSOR;
+echo ":";
+echo MYSQLI_CURSOR_TYPE_READ_ONLY;
+echo ":";
+echo MYSQLI_CURSOR_TYPE_FOR_UPDATE;
+echo ":";
+echo MYSQLI_CURSOR_TYPE_SCROLLABLE;
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH);
+echo ":";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE);
+echo ":";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_PREFETCH_ROWS);
+echo "|";
+echo mysqli_stmt_attr_set($stmt, MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH, true) ? "set-update" : "failed";
+echo ":";
+echo mysqli_stmt_attr_set($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE, MYSQLI_CURSOR_TYPE_READ_ONLY) ? "set-cursor" : "failed";
+echo ":";
+echo mysqli_stmt_attr_set($stmt, MYSQLI_STMT_ATTR_PREFETCH_ROWS, 8) ? "set-prefetch" : "failed";
+echo "|";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH);
+echo ":";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE);
+echo ":";
+echo mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_PREFETCH_ROWS);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|data-seek-callable|attr-get-exists|attr-get-callable|attr-set-exists|attr-set-callable"
+        "yes|data-seek-callable|attr-get-exists|attr-get-callable|attr-set-exists|attr-set-callable|0:1:2:0:1:2:4|0:0:0|set-update:set-cursor:set-prefetch|1:1:8"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -1111,8 +1144,34 @@ mysqli_stmt_data_seek($stmt, 0);
 
     let attr_get_error = run_source(
         r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo mysqli_stmt_attr_get($stmt, 1);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(attr_get_error.stdout, "0");
+
+    let attr_get_handle_error = run_source(
+        r#"<?php
 $stmt = mysqli_init();
-mysqli_stmt_attr_get($stmt, 1);
+mysqli_stmt_attr_get($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(attr_get_handle_error.phase, Phase::Runtime);
+    assert_eq!(attr_get_handle_error.line, 3);
+    assert_eq!(attr_get_handle_error.column, 1);
+    assert_eq!(
+        attr_get_handle_error.message,
+        "unsupported call mysqli_stmt_attr_get(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let attr_get_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_attr_get($stmt, 999);
 "#,
     )
     .unwrap_err();
@@ -1122,13 +1181,13 @@ mysqli_stmt_attr_get($stmt, 1);
     assert_eq!(attr_get_error.column, 1);
     assert_eq!(
         attr_get_error.message,
-        "unsupported call mysqli_stmt_attr_get(): mysqli statement objects, statement attributes, and option registry state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_attr_get(): only MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH, MYSQLI_STMT_ATTR_CURSOR_TYPE, and MYSQLI_STMT_ATTR_PREFETCH_ROWS are implemented in the current subset, got 999"
     );
 
     let attr_set_error = run_source(
         r#"<?php
 $stmt = mysqli_init();
-mysqli_stmt_attr_set($stmt, 1, 1);
+mysqli_stmt_attr_set($stmt, MYSQLI_STMT_ATTR_CURSOR_TYPE, 1);
 "#,
     )
     .unwrap_err();
@@ -1138,7 +1197,23 @@ mysqli_stmt_attr_set($stmt, 1, 1);
     assert_eq!(attr_set_error.column, 1);
     assert_eq!(
         attr_set_error.message,
-        "unsupported call mysqli_stmt_attr_set(): mysqli statement objects, statement attributes, option mutation, and option registry state are not implemented in the current subset"
+        "unsupported call mysqli_stmt_attr_set(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let attr_set_value_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_stmt_attr_set($stmt, MYSQLI_STMT_ATTR_PREFETCH_ROWS, "8");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(attr_set_value_error.phase, Phase::Runtime);
+    assert_eq!(attr_set_value_error.line, 3);
+    assert_eq!(attr_set_value_error.column, 1);
+    assert_eq!(
+        attr_set_value_error.message,
+        "unsupported call mysqli_stmt_attr_set(): value argument must be int or bool in the current subset, got string"
     );
 }
 
@@ -4358,6 +4433,13 @@ echo defined("MYSQLI_OPT_NET_READ_BUFFER_SIZE") ? "1" : "0";
 echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
 echo defined("MYSQLI_OPT_SSL_VERIFY_SERVER_CERT") ? "1" : "0";
 echo defined("MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS") ? "1" : "0";
+echo defined("MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH") ? "1" : "0";
+echo defined("MYSQLI_STMT_ATTR_CURSOR_TYPE") ? "1" : "0";
+echo defined("MYSQLI_STMT_ATTR_PREFETCH_ROWS") ? "1" : "0";
+echo defined("MYSQLI_CURSOR_TYPE_NO_CURSOR") ? "1" : "0";
+echo defined("MYSQLI_CURSOR_TYPE_READ_ONLY") ? "1" : "0";
+echo defined("MYSQLI_CURSOR_TYPE_FOR_UPDATE") ? "1" : "0";
+echo defined("MYSQLI_CURSOR_TYPE_SCROLLABLE") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_GRANT") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_LOG") ? "1" : "0";
 echo defined("MYSQLI_REFRESH_TABLES") ? "1" : "0";
@@ -4372,7 +4454,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 244, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 251, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

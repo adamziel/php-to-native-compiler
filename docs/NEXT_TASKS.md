@@ -9269,6 +9269,19 @@ handled.
   `wpdb` smoke. This is not multi-statement execution, pending statement
   result queues, cursor advancement, host database state, PHP warning/error
   fidelity, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as
+  active-statement attribute state, active-statement binding boundaries,
+  statement fetch boundaries, broader escaping charset fidelity, local-infile
+  option effects, or connection multi-result pending queues, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
+  Milestone 983 adds deterministic `mysqli_stmt_attr_get()` and
+  `mysqli_stmt_attr_set()` placeholder state for active statements, including
+  PHP-matching statement attribute and cursor-type constants plus a
+  WordPress-shaped `wpdb` smoke. This is not real mysqlnd cursor behavior,
+  prefetch behavior, max-length metadata recalculation, host database state,
+  PHP warning/error fidelity, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as
   active-statement binding boundaries, statement fetch boundaries, broader
@@ -9280,8 +9293,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d7a51b17 runtime: add mysqli stmt buffered row counts`, covering
-  Milestone 981 before the current Milestone 982 candidate.
+  `3b7ce624 runtime: add mysqli stmt clean multi result state`, covering
+  Milestone 982 before the current Milestone 983 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

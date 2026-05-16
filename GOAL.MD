@@ -483,6 +483,12 @@ plus deterministic clean `mysqli_stmt_more_results()` and
 direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
 multi-statement execution, pending statement result queues, cursor advancement,
 host database state, PHP warning/error fidelity, or native lowering,
+plus deterministic `mysqli_stmt_attr_get()` and `mysqli_stmt_attr_set()`
+placeholder state for active statements, including PHP-matching statement
+attribute and cursor-type constants and a WordPress-shaped `wpdb` smoke,
+without claiming real mysqlnd cursor behavior, prefetch behavior, max-length
+metadata recalculation, host database state, PHP warning/error fidelity, or
+native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

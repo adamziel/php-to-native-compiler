@@ -1,0 +1,6 @@
+This fixture records deterministic placeholder statement attribute state
+through a WordPress-shaped `wpdb` object. It covers only supported
+`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()` placeholder values and does
+not implement real mysqlnd cursor behavior, prefetch behavior, max-length
+metadata recalculation, host database state, PHP warning/error fidelity, or
+native database lowering.

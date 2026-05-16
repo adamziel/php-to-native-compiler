@@ -268,13 +268,23 @@ or `0` before buffering and after `mysqli_stmt_free_result($statement)`.
 by-reference result binding, output buffer mutation, cursor advancement over
 bound buffers, and host database rows are not implemented.
 
-`mysqli_stmt_data_seek($statement, $offset)`,
-`mysqli_stmt_attr_get($statement, $attribute)`, and
-`mysqli_stmt_attr_set($statement, $attribute, $value)` are visible through
-callable metadata but are explicit runtime boundaries. Reached calls report
-stable unsupported diagnostics because statement objects, buffered result
-cursors, offset seeking, statement attributes, option registry state, and
-option mutation are not implemented.
+`mysqli_stmt_data_seek($statement, $offset)` remains an explicit runtime
+boundary because buffered statement result cursors and offset seeking are not
+implemented.
+
+`mysqli_stmt_attr_get($statement, $attribute)` and
+`mysqli_stmt_attr_set($statement, $attribute, $value)` expose deterministic
+placeholder state for active `mysqli_stmt` objects. The supported attributes
+are `MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH`,
+`MYSQLI_STMT_ATTR_CURSOR_TYPE`, and `MYSQLI_STMT_ATTR_PREFETCH_ROWS`; the
+cursor-type constants `MYSQLI_CURSOR_TYPE_NO_CURSOR`,
+`MYSQLI_CURSOR_TYPE_READ_ONLY`, `MYSQLI_CURSOR_TYPE_FOR_UPDATE`, and
+`MYSQLI_CURSOR_TYPE_SCROLLABLE` are exposed with PHP-matching integer values.
+Unset attributes return deterministic placeholder defaults. Attribute values
+may be int or bool and are stored on the placeholder statement. This is not
+real mysqlnd cursor behavior, prefetch behavior, max-length metadata
+recalculation, host database state, PHP warning/error fidelity, or native
+lowering.
 
 `mysqli_stmt_send_long_data($statement, $param_num, $data)`,
 `mysqli_stmt_reset($statement)`, `mysqli_stmt_more_results($statement)`, and
