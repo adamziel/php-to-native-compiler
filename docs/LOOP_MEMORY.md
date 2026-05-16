@@ -34,16 +34,20 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Task attempted: Milestone 1051, bounded direct-variable reference-return
   assignment cells for `parent::` static method calls in active child
   class/method context.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1051/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
   `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt` was run after `cargo fmt --check` reported wrapping drift.
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   passed with 10 tests.
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1051`
-  passed with 1 fixture and 1 system PHP comparison.
+  passed with 1 fixture and 1 system PHP comparison. `cargo fmt --check` and
+  `git diff --check` passed after formatting. The serialized checkpoint gate
+  passed with 1265 fixture tests, 711 system PHP comparisons, and 554 skipped
+  comparisons, then committed
+  `df3b07aa runtime: add parent static reference return cells`.
 - Current WordPress frontier: `parent::` static method reference-return
   sources now have one executable alias-cell path in active child class/method
   context when the visible inherited static method returns a direct variable.
@@ -53,10 +57,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   non-direct return expressions, nested-control-flow returns, array/object
   offset references, by-reference `foreach`, full PHP reference containers,
   copy-on-write, and native lowering remain missing.
-- Next concrete task: run `cargo fmt --check`, `git diff --check`, and the
-  serialized checkpoint gate, then checkpoint with
-  `tools/checkpoint.sh "runtime: add parent static reference return cells"` if
-  the full gate passes.
+- Next concrete task: push the checkpoint, then continue with the next
+  reference/COW lane candidate. The read-only lane scouts found that
+  `static::` late-static reference-return assignment is the next small
+  follow-up, while array-offset references and exact by-reference `foreach`
+  need deeper array slot/reference-container work.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
