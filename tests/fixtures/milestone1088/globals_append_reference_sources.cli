@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1088/globals_append_reference_sources.php
+global-alias
+global-slot
+nested-alias
+nested-slot
+nested-slot

@@ -109,10 +109,10 @@
   explicit parent key paths: missing roots or parent containers materialize as
   arrays, the runtime append cursor chooses the selected slot, and that slot
   is bound to the direct alias variable as `null` until either side writes.
-  Non-array roots, `$GLOBALS` append reference sources, object-property
-  offsets outside the documented public-property source subset, `ArrayAccess`
-  offsets, exact by-reference `foreach`, full PHP reference containers,
-  copy-on-write, and native lowering remain unsupported. Direct
+  Non-array roots, object-property offsets outside the documented
+  public-property source subset, `ArrayAccess` offsets, exact by-reference
+  `foreach`, full PHP reference containers, copy-on-write, and native lowering
+  remain unsupported. Direct
   object-property array-offset
   reference sources such as `$alias =& $object->items[$key];` execute when the
   target is a direct variable, the source object is a direct variable, the
@@ -127,11 +127,16 @@
   `$alias =& $object->items[$outer][];` execute for direct object variables
   and named declared public properties, materializing `null` properties and
   missing parent containers as arrays before binding the selected appended
-  slot. Dynamic/magic/non-public property sources, non-direct object
-  expressions, non-variable reference targets, ArrayAccess offset reference
-  sources, full PHP reference containers, copy-on-write containers, exact alias
-  destruction ordering, and native lowering remain unsupported for this source
-  form. When a direct static array
+  slot. String-keyed `$GLOBALS` append reference sources such as
+  `$alias =& $GLOBALS["bag"][];` and
+  `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
+  selected slot under the real global symbol table, including from function
+  scope. `$GLOBALS[]` append sources, non-string root keys, recursive
+  `$GLOBALS` materialization, dynamic/magic/non-public property sources,
+  non-direct object expressions, non-variable reference targets, ArrayAccess
+  offset reference sources, full PHP reference containers, copy-on-write
+  containers, exact alias destruction ordering, and native lowering remain
+  unsupported for these source forms. When a direct static array
   variable with a covered direct array-offset reference alias is copied into
   another direct static variable, the copied slot remains tied to the same
   bounded alias group: writes through the source alias, the original array

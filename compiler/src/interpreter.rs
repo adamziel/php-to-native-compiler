@@ -552,13 +552,7 @@ impl SymbolTable {
         span: Span,
     ) -> CompileResult<()> {
         if array_name == "GLOBALS" {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "$GLOBALS",
-                    "append reference sources through $GLOBALS are not implemented",
-                ),
-            ));
+            return self.bind_static_to_appended_global_array_offset(target, keys, span);
         }
 
         let mut array = match self.read_storage_named(array_name) {
@@ -583,6 +577,44 @@ impl SymbolTable {
                 root: ArrayOffsetAliasRoot::StaticArray {
                     name: array_name.to_string(),
                 },
+                keys: alias_keys,
+            },
+        );
+        Ok(())
+    }
+
+    fn bind_static_to_appended_global_array_offset(
+        &mut self,
+        target: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
+        let root = ArrayOffsetAliasRoot::GlobalArray { name: global_name };
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        self.bind_static_to_array_offset_alias(
+            target,
+            ArrayOffsetAlias {
+                root,
                 keys: alias_keys,
             },
         );

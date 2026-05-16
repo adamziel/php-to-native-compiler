@@ -93,7 +93,8 @@ metadata for direct arrays and declared public object-property arrays copied
 into direct variables, and bounded direct object-property array-offset
 reference sources such as `$alias =& $object->items[$key]`, plus bounded
 nested direct-array and object-property array-offset reference sources, plus
-bounded append direct-array and object-property array-offset reference sources.
+bounded append direct-array, object-property, and string-keyed `$GLOBALS`
+array-offset reference sources.
 The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global

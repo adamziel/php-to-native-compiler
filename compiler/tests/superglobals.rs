@@ -218,6 +218,46 @@ echo $value;
 }
 
 #[test]
+fn globals_append_reference_sources_bind_alias_to_root_array_slot() {
+    let execution = run_source(
+        r#"<?php
+$GLOBALS["bag"] = [];
+$alias =& $GLOBALS["bag"][];
+$alias = "from-alias";
+echo $bag[0], "|";
+$GLOBALS["bag"][0] = "from-slot";
+echo $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_nested_append_reference_sources_bind_function_local_alias() {
+    let execution = run_source(
+        r#"<?php
+function bind_nested() {
+    $alias =& $GLOBALS["bag"]["outer"][];
+    $alias = "from-alias";
+    echo $GLOBALS["bag"]["outer"][0], "|";
+    $GLOBALS["bag"]["outer"][0] = "from-slot";
+    echo $alias;
+}
+
+bind_nested();
+echo "|", $bag["outer"][0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-alias|from-slot|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
     let error = runtime_error("<?php\necho $_GET;\n");
 

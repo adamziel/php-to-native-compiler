@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 1088, a bounded `$GLOBALS` append array-offset
+  reference-source slice. Statement-form `$alias =& $GLOBALS["bag"][];` and
+  `$alias =& $GLOBALS["bag"]["outer"][];` now parse and execute when the
+  target is a direct variable and the `$GLOBALS` root key is a string. Missing
+  root globals or parent containers are materialized as arrays, the selected
+  appended slot starts as `null`, and writes through either the local alias,
+  direct global variable path, or supported `$GLOBALS` path observe the same
+  value. This does not implement `$GLOBALS[]` append sources, non-string root
+  keys, recursive `$GLOBALS` materialization, dynamic global names,
+  non-variable reference targets, ArrayAccess reference sources, full PHP
+  reference containers, copy-on-write containers, exact alias destruction
+  ordering, or native lowering. Verification so far: `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals globals_append_reference_sources --
+  --test-threads=1`, `cargo test -p phpc --test superglobals
+  globals_nested_append_reference_sources -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1088 --compare-php`,
+  `cargo test -p phpc --test superglobals -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+
 - Added Milestone 1087, a bounded append array-offset reference-source slice
   for direct arrays and direct public object-property arrays. Statement-form
   `$alias =& $array[];`, `$alias =& $array[$outer][];`,

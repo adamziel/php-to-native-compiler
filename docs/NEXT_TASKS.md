@@ -10522,6 +10522,33 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
+## Milestone 1088: `$GLOBALS` Append Reference Sources
+
+- [x] Runtime/value-model lane: add bounded string-keyed `$GLOBALS` append
+  array-offset reference sources. `$alias =& $GLOBALS["bag"][];` and
+  `$alias =& $GLOBALS["bag"]["outer"][];` parse and execute when the alias
+  target is a direct variable and the root global key is a string. Missing
+  root globals and parent containers materialize as arrays, the selected
+  appended slot starts as `null`, and writes through the alias, direct global
+  variable path, or supported `$GLOBALS` path observe the same value. This is
+  not `$GLOBALS[]` append-source support, non-string root key support,
+  recursive `$GLOBALS` materialization, dynamic global names, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
+- [ ] Runtime/value-model lane: choose the next reference/COW gap from
+  remaining copied reference slots, remaining by-reference `foreach` fidelity,
+  array/object copy-on-write split behavior, dynamic/magic/non-public property
+  reference targets, remaining `$GLOBALS` reference semantics, by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity, or native
+  lowering boundaries, and add the next bounded behavior or explicit
+  diagnostic with PHP comparison coverage where applicable.
+- [ ] WordPress entry-flow lane: choose the next real entry blocker from a
+  stricter XML-RPC request-body trace, REST/front controller request state,
+  cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
+  probe documented as an external measurement unless a normalized fixture is
+  added.
+
 ## Milestone 1087: Append Reference Sources
 
 - [x] Runtime/value-model lane: add bounded append array-offset reference
@@ -10538,18 +10565,6 @@ handled.
   sources, non-direct object expressions, non-variable reference targets,
   ArrayAccess reference sources, full PHP reference containers, copy-on-write
   containers, exact alias destruction ordering, or native lowering.
-- [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  remaining copied reference slots, remaining by-reference `foreach` fidelity,
-  array/object copy-on-write split behavior, dynamic/magic/non-public property
-  reference targets, remaining `$GLOBALS` reference source/target semantics,
-  by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
-  native lowering boundaries, and add the next bounded behavior or explicit
-  diagnostic with PHP comparison coverage where applicable.
-- [ ] WordPress entry-flow lane: choose the next real entry blocker from a
-  stricter XML-RPC request-body trace, REST/front controller request state,
-  cron/request/SAPI fidelity, or a stricter admin/AJAX trace, and keep the
-  probe documented as an external measurement unless a normalized fixture is
-  added.
 
 ## Milestone 1086: Nested Reference Sources
 

@@ -298,7 +298,11 @@ same bounded root route for named declared public properties:
 `$alias =& $object->items[$key];`,
 `$alias =& $object->items[$outer][$inner];`,
 `$alias =& $object->items[];`, and
-`$alias =& $object->items[$outer][];`. `$GLOBALS` append reference sources,
+`$alias =& $object->items[$outer][];`. String-keyed `$GLOBALS` append
+reference sources such as `$alias =& $GLOBALS["bag"][];` and
+`$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
+selected slot under the real global symbol table. `$GLOBALS[]` append
+sources, non-string root keys, recursive `$GLOBALS` materialization,
 dynamic/magic/non-public property sources, non-direct object expressions,
 non-variable reference targets, `ArrayAccess` sources, full reference
 containers, copy-on-write, exact alias destruction ordering, and native

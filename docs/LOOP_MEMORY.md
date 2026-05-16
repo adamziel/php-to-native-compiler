@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T15:49:49Z
+
+- Checkpoint before this task:
+  `a0be96cc docs: record append reference source gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1088, bounded string-keyed `$GLOBALS` append
+  array-offset reference sources. `$alias =& $GLOBALS["bag"][];` and
+  `$alias =& $GLOBALS["bag"]["outer"][];` now bind a direct alias variable to
+  the selected appended slot under the real global symbol table, including
+  from function scope.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/superglobals.rs`,
+  `tests/fixtures/milestone1088/globals_append_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals globals_append_reference_sources
+  -- --test-threads=1`,
+  `cargo test -p phpc --test superglobals
+  globals_nested_append_reference_sources -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1088 --compare-php`,
+  `cargo test -p phpc --test superglobals -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_array_append_source -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+- Remaining semantic gaps: `$GLOBALS[]` append sources, non-string root keys,
+  recursive `$GLOBALS` materialization, dynamic global names, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, and
+  native lowering remain missing.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "runtime: add globals append reference sources"` if
+  the working tree still matches the focused checks.
+
 ## Loop Event 2026-05-16T15:42:57Z
 
 - Checkpoint before this task:
