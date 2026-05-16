@@ -43,7 +43,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test mysqli_extension mysqli_query_records_escaped_wordpress_option_literals -- --test-threads=1`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1038`,
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1037`
-  passed.
+  passed. The full checkpoint gate passed with 1253 fixture tests, 701 system
+  PHP comparisons, and 552 skipped comparisons, then committed
+  `ef2e8dc5 runtime: add wp options escaped literal state`.
 - Current WordPress frontier: exact direct option insert, upsert, update,
   delete, option-value select, and option-name-list row-read string-literal
   parsers can decode bounded MySQL-style backslash escapes and doubled single
@@ -51,8 +53,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, host database execution, PDO,
   references/copy-on-write, and native lowering remain missing.
-- Next concrete task: run formatting, diff checks, focused verification, then
-  the serialized checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint and continue with the next bounded
+  WordPress compatibility lane.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
