@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1030, bounded prepared-statement `wp_options` update state
+  over the current per-placeholder-connection MySQLi state island.
+  `mysqli_prepare($handle, "UPDATE wp_options SET option_value = ? WHERE
+  option_name = ?")`, direct-variable `mysqli_stmt_bind_param(..., "ss",
+  $value, $name)`, and `mysqli_stmt_execute()` now update an existing recorded
+  option value for string parameters on the same placeholder handle, set
+  `mysqli_stmt_affected_rows($stmt)` and `mysqli_affected_rows($handle)` to
+  `1`, leave missing option names as a successful zero-row update, and expose
+  the updated value through the existing exact option-value readback path.
+  Prepared mutation SQL without a prior supported state island still reports
+  the existing unsupported statement-mutation diagnostic. This is not broad
+  prepared SQL execution, prepared INSERT/DELETE/REPLACE, non-string parameter
+  coercion, schema/index behavior, transactions, host database execution,
+  warning/error fidelity, PDO, or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_updates_current_wordpress_option_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1030`.
+
 - Added Milestone 1029, bounded prepared-statement `wp_options` row readback
   from the current per-placeholder-connection MySQLi state island.
   `mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options

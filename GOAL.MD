@@ -1281,10 +1281,11 @@ The repository already has a working Rust workspace with:
   per-handle state through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()`
   and `mysqli_execute_query()`, and exact prepared option-name/option-value row
   reads now expose recorded row data for the same string option-name parameter
-  shape, without claiming broad SQL parsing, ordering/collation fidelity,
-  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
-  database execution, PDO, prepared-statement mutation state, or native
-  lowering.
+  shape. Exact prepared option updates now mutate existing recorded option
+  values for string value/name parameters and expose affected-row metadata,
+  without claiming broad SQL parsing, ordering/collation fidelity,
+  INSERT-on-duplicate behavior, prepared INSERT/DELETE/REPLACE, transactions,
+  host database execution, PDO, or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
   direct nested array-offset and object-property array-offset `empty(...)`
@@ -1677,14 +1678,14 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1029 is the active checkpoint candidate: exact prepared
-  `wp_options` MySQLi row readback now exposes recorded option-name and
-  option-value rows for string option-name parameters on the same placeholder
-  handle, while broad SQL parsing, escaping/quoting fidelity, schema/index
-  behavior, ordering/collation fidelity, INSERT-on-duplicate behavior, DELETE
-  breadth, REPLACE, transactions, host database execution, warning/error
-  fidelity, PDO, prepared-statement mutation state, and native lowering remain
-  open.
+- Milestone 1030 is the active checkpoint candidate: exact prepared
+  `wp_options` MySQLi update state now updates existing recorded option values
+  for string value/name parameters on the same placeholder handle and records
+  statement/connection affected rows, while broad SQL parsing,
+  escaping/quoting fidelity, schema/index behavior, ordering/collation
+  fidelity, INSERT-on-duplicate behavior, prepared INSERT/DELETE/REPLACE,
+  transactions, host database execution, warning/error fidelity, PDO, and
+  native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

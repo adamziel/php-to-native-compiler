@@ -323,8 +323,13 @@ empty placeholder result. The exact
 `SELECT option_name, option_value FROM wp_options WHERE option_name = ?` query
 also returns a recorded option-name/option-value row for string option-name
 parameters on the same handle through the same prepared result paths; missing
-names return an empty zero-field placeholder result. This does not add broad
-prepared SQL execution, prepared mutation state, non-string option-name
+names return an empty zero-field placeholder result. The exact
+`UPDATE wp_options SET option_value = ? WHERE option_name = ?` prepared
+statement updates an existing recorded option value for string parameters on
+the same handle, updates statement and connection affected-row metadata, and
+treats missing option names as successful zero-row updates. Prepared mutation
+SQL without a prior state island remains unsupported. This does not add broad
+prepared SQL execution, prepared INSERT/DELETE/REPLACE state, non-string
 parameter coercion, result binding fidelity beyond exact metadata, host
 database execution, PDO, or native lowering.
 

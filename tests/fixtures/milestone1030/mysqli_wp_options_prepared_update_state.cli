@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1030/mysqli_wp_options_prepared_update_state.php
+exit: 0
+stdout:
+updated|1|1|https://updated.test|missing-updated|0
+--- stdout end ---
+stderr:
+--- stderr end ---

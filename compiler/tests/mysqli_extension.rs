@@ -1048,6 +1048,58 @@ echo $direct_row["option_name"], "=", $direct_row["option_value"];
 }
 
 #[test]
+fn mysqli_statement_updates_current_wordpress_option_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "UPDATE wp_options SET option_value = ? WHERE option_name = ?");
+$value = "https://updated.test";
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "ss", $value, $name);
+echo mysqli_stmt_execute($stmt) ? "updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+$name = "home";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "missing-updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "updated|1|1|https://updated.test|missing-updated|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let no_state = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "UPDATE wp_options SET option_value = ? WHERE option_name = ?");
+mysqli_stmt_execute($stmt, array("1", "blog_public"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(no_state.phase, Phase::Runtime);
+    assert_eq!(no_state.line, 3);
+    assert_eq!(no_state.column, 1);
+    assert_eq!(
+        no_state.message,
+        "unsupported call mysqli_stmt_execute(): statement mutation execution and host database state are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_bind_result_has_direct_variable_placeholder_state() {
     let execution = run_source(
         r#"<?php

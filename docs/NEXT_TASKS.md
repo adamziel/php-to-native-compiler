@@ -9893,18 +9893,30 @@ handled.
   prepared mutation state, non-string option-name parameter coercion, result
   binding fidelity beyond exact metadata, host database execution, PDO, or
   native lowering.
+- [x] Runtime/database lane: add bounded prepared `wp_options` MySQLi update
+  state over the current per-handle state island.
+  Milestone 1030 covers exact
+  `UPDATE wp_options SET option_value = ? WHERE option_name = ?` execution
+  through `mysqli_stmt_execute()` for string value/name parameters on the same
+  placeholder handle after exact supported insert state exists. Existing
+  recorded option names update their value, set
+  `mysqli_stmt_affected_rows($stmt)` and `mysqli_affected_rows($handle)` to
+  `1`, and missing names are successful zero-row updates. This is not broad
+  prepared SQL execution, prepared INSERT/DELETE/REPLACE state, non-string
+  parameter coercion, transactions, host database execution, PDO, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as prepared-statement mutation state,
-  transaction state, broader escaping fidelity, host-backed query execution,
-  PDO, or the next `wpdb` state consumer, and add the next bounded behavior or
-  explicit runtime boundary with tests, CLI fixtures, docs, and native
-  rejection coverage where lowering remains unsupported.
+  audited PHP/WordPress surface, such as prepared-statement insert/delete
+  state, transaction state, broader escaping fidelity, host-backed query
+  execution, PDO, or the next `wpdb` state consumer, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8d395e40 runtime: add wp options prepared readback state`, covering
-  Milestone 1028 before the current Milestone 1029 candidate.
+  `ef8971c9 runtime: add wp options prepared row readback state`, covering
+  Milestone 1029 before the current Milestone 1030 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

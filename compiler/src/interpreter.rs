@@ -159,6 +159,7 @@ struct MysqliStatementState {
     bound_parameter_variables: Vec<String>,
     bound_parameter_values: Vec<Value>,
     executed_result: Option<MysqliPendingResultState>,
+    affected_rows: i64,
     buffered_result: Option<MysqliPendingResultState>,
     buffered_result_cursor: usize,
     bound_result_variables: Vec<String>,
@@ -4431,6 +4432,7 @@ impl Interpreter {
                 bound_parameter_variables: Vec::new(),
                 bound_parameter_values: Vec::new(),
                 executed_result: None,
+                affected_rows: 0,
                 buffered_result: None,
                 buffered_result_cursor: 0,
                 bound_result_variables: Vec::new(),
@@ -5128,6 +5130,7 @@ impl Interpreter {
         state.bound_parameter_variables.clear();
         state.bound_parameter_values.clear();
         state.executed_result = None;
+        state.affected_rows = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
@@ -5308,10 +5311,46 @@ impl Interpreter {
         let Some(query) = query else {
             let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
             state.executed_result = None;
+            state.affected_rows = 0;
             state.buffered_result = None;
             state.buffered_result_cursor = 0;
             return Ok(Value::Bool(false));
         };
+
+        if is_wordpress_option_prepared_update_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let [Value::String(option_value), Value::String(option_name)] =
+                        bound_parameters.as_slice()
+                    else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                function,
+                                "prepared wp_options update requires string option value and option name parameters in the current subset",
+                            ),
+                        ));
+                    };
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = if let Some(option) = options.get_mut(option_name) {
+                        option.value = option_value.clone();
+                        1
+                    } else {
+                        0
+                    };
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
 
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
@@ -5332,6 +5371,7 @@ impl Interpreter {
         )?;
         let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
         state.executed_result = result;
+        state.affected_rows = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
@@ -5431,8 +5471,8 @@ impl Interpreter {
     fn call_mysqli_stmt_affected_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_affected_rows", args, 1, span)?;
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_affected_rows()", &args[0], span)?;
-        self.mysqli_statement_state("mysqli_stmt_affected_rows()", stmt_id, span)?;
-        Ok(Value::Int(0))
+        let state = self.mysqli_statement_state("mysqli_stmt_affected_rows()", stmt_id, span)?;
+        Ok(Value::Int(state.affected_rows))
     }
 
     fn call_mysqli_stmt_store_result(
@@ -5639,6 +5679,7 @@ impl Interpreter {
         state.bound_parameter_variables.clear();
         state.bound_parameter_values.clear();
         state.executed_result = None;
+        state.affected_rows = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
@@ -9882,6 +9923,7 @@ impl Interpreter {
         state.bound_parameter_variables = variable_names;
         state.bound_parameter_values = variable_values;
         state.executed_result = None;
+        state.affected_rows = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
@@ -16071,6 +16113,12 @@ fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> 
         return None;
     }
     Some((names[0].clone(), values[0].clone()))
+}
+
+fn is_wordpress_option_prepared_update_query(query: &str) -> bool {
+    let query = query.trim();
+    query == "UPDATE wp_options SET option_value = ? WHERE option_name = ?"
+        || query == "UPDATE `wp_options` SET `option_value` = ? WHERE `option_name` = ?"
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {

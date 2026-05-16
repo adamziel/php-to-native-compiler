@@ -1,0 +1,22 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "UPDATE wp_options SET option_value = ? WHERE option_name = ?");
+$value = "https://updated.test";
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "ss", $value, $name);
+echo mysqli_stmt_execute($stmt) ? "updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+$name = "home";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "missing-updated" : "failed";
+echo "|";
+echo mysqli_stmt_affected_rows($stmt);
