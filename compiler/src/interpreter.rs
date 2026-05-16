@@ -152,6 +152,7 @@ enum MysqliMultiResultSlot {
 
 #[derive(Debug, Clone, Default)]
 struct MysqliStatementState {
+    connection_handle_id: Option<i64>,
     query: Option<String>,
     param_count: usize,
     bound_parameter_types: Option<String>,
@@ -4403,6 +4404,7 @@ impl Interpreter {
     fn create_mysqli_stmt_placeholder(
         &mut self,
         span: Span,
+        connection_handle_id: Option<i64>,
         query: Option<String>,
     ) -> CompileResult<Value> {
         let class_id = self.classes.lookup_class_id("mysqli_stmt").ok_or_else(|| {
@@ -4419,6 +4421,7 @@ impl Interpreter {
         self.mysqli_statements.insert(
             object_id,
             MysqliStatementState {
+                connection_handle_id,
                 param_count: query
                     .as_deref()
                     .map(mysqli_placeholder_param_count)
@@ -5103,15 +5106,15 @@ impl Interpreter {
 
     fn call_mysqli_stmt_init(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_init", args, 1, span)?;
-        expect_mysqli_handle("mysqli_stmt_init()", &args[0], span)?;
-        self.create_mysqli_stmt_placeholder(span, None)
+        let handle_id = expect_mysqli_handle_id("mysqli_stmt_init()", &args[0], span)?;
+        self.create_mysqli_stmt_placeholder(span, Some(handle_id), None)
     }
 
     fn call_mysqli_prepare(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_prepare", args, 2, span)?;
-        expect_mysqli_handle("mysqli_prepare()", &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_prepare()", &args[0], span)?;
         let query = string_builtin_argument("mysqli_prepare()", "query", &args[1], span)?;
-        self.create_mysqli_stmt_placeholder(span, Some(query))
+        self.create_mysqli_stmt_placeholder(span, Some(handle_id), Some(query))
     }
 
     fn call_mysqli_stmt_prepare(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5272,7 +5275,7 @@ impl Interpreter {
         stmt_id: i64,
         span: Span,
     ) -> CompileResult<Value> {
-        let (query, bound_parameters) = {
+        let (connection_handle_id, query, bound_parameters) = {
             let state = self.mysqli_statement_state(function, stmt_id, span)?;
             if state.param_count != 0 && state.bound_parameter_values.len() != state.param_count {
                 return Err(runtime_error(
@@ -5295,7 +5298,11 @@ impl Interpreter {
                     }
                 }
             }
-            (state.query.clone(), bound_parameters)
+            (
+                state.connection_handle_id,
+                state.query.clone(),
+                bound_parameters,
+            )
         };
 
         let Some(query) = query else {
@@ -5316,8 +5323,9 @@ impl Interpreter {
             ));
         }
 
-        let result = mysqli_statement_result_for_query_with_params(
+        let result = self.mysqli_statement_result_for_query_with_params(
             function,
+            connection_handle_id,
             &query,
             &bound_parameters,
             span,
@@ -5327,6 +5335,40 @@ impl Interpreter {
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
+    }
+
+    fn mysqli_statement_result_for_query_with_params(
+        &self,
+        function: &str,
+        connection_handle_id: Option<i64>,
+        query: &str,
+        params: &[Value],
+        span: Span,
+    ) -> CompileResult<Option<MysqliPendingResultState>> {
+        if query == "SELECT option_value FROM wp_options WHERE option_name = ?" {
+            if let Some(option_value) = match (connection_handle_id, params) {
+                (Some(handle_id), [Value::String(option_name)]) => self
+                    .mysqli_wp_options
+                    .get(&handle_id)
+                    .and_then(|options| options.get(option_name))
+                    .map(|option| option.value.clone()),
+                _ => None,
+            } {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_value".to_string()],
+                    rows: vec![vec![(
+                        "option_value".to_string(),
+                        Value::String(option_value),
+                    )]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        mysqli_statement_result_for_query_with_params(function, query, params, span)
     }
 
     fn call_mysqli_stmt_get_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5629,7 +5671,7 @@ impl Interpreter {
             ));
         }
 
-        expect_mysqli_handle("mysqli_execute_query()", &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id("mysqli_execute_query()", &args[0], span)?;
         let query = string_builtin_argument("mysqli_execute_query()", "query", &args[1], span)?;
         let params = match args.get(2) {
             None | Some(Value::Null) => Vec::new(),
@@ -5664,8 +5706,9 @@ impl Interpreter {
             ));
         }
 
-        if let Some(result) = mysqli_statement_result_for_query_with_params(
+        if let Some(result) = self.mysqli_statement_result_for_query_with_params(
             "mysqli_execute_query()",
+            Some(handle_id),
             &query,
             &params,
             span,

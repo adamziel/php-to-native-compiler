@@ -314,6 +314,15 @@ autoload mutation beyond exact inserts, INSERT-on-duplicate behavior, DELETE
 breadth, REPLACE support, transactions, host database execution, PDO,
 prepared-statement mutation state, warning/error fidelity, or native lowering.
 
+Prepared statement execution over the same state island supports the exact
+`SELECT option_value FROM wp_options WHERE option_name = ?` query for string
+option-name parameters on the same placeholder handle through
+`mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array($name))`; missing names return an
+empty placeholder result. This does not add broad prepared SQL execution,
+prepared mutation state, non-string option-name parameter coercion, host
+database execution, PDO, or native lowering.
+
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or
 `b` type markers; direct and callback-dispatched `mysqli_stmt_execute()`

@@ -1276,10 +1276,13 @@ The repository already has a working Rust workspace with:
   existing recorded option names, and exact option `DELETE` plus later empty
   readback for removed option names, and exact option-name/option-value row
   reads for all options, autoloaded options, and explicit option-name lists,
-  through the existing result/fetch path without claiming broad SQL parsing,
+  through the existing result/fetch path. Exact prepared statement
+  option-value reads for string option-name parameters now use the same
+  per-handle state through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()`
+  and `mysqli_execute_query()` without claiming broad SQL parsing,
   ordering/collation fidelity, INSERT-on-duplicate behavior, DELETE breadth,
-  REPLACE, transactions, host database execution, PDO,
-  prepared-statement mutation state, or native lowering.
+  REPLACE, transactions, host database execution, PDO, prepared-statement
+  mutation state, or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
   direct nested array-offset and object-property array-offset `empty(...)`
@@ -1672,14 +1675,13 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1027 is the active checkpoint candidate: exact direct
-  `wp_options` MySQLi row readback now exposes recorded option-name and
-  option-value rows for all-options, autoload-options, and explicit
-  option-name list reads, while broad SQL parsing, escaping/quoting fidelity,
-  schema/index behavior, ordering/collation fidelity,
-  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
-  database execution, warning/error fidelity, PDO, prepared-statement mutation
-  state, and native lowering remain open.
+- Milestone 1028 is the active checkpoint candidate: exact prepared
+  `wp_options` MySQLi value readback now exposes recorded option values for
+  string option-name parameters on the same placeholder handle, while broad
+  SQL parsing, escaping/quoting fidelity, schema/index behavior,
+  ordering/collation fidelity, INSERT-on-duplicate behavior, DELETE breadth,
+  REPLACE, transactions, host database execution, warning/error fidelity, PDO,
+  prepared-statement mutation state, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

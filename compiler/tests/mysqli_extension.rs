@@ -46,10 +46,14 @@ $row = mysqli_fetch_assoc($result);
 echo "|";
 echo $row["ID"], ":", $row["post_title"];
 echo "|";
-$empty = $call($handle, "SELECT option_value FROM wp_options WHERE option_name = ?", array("siteurl"));
-echo mysqli_num_rows($empty);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$option = $call($handle, "SELECT option_value FROM wp_options WHERE option_name = ?", array("siteurl"));
+echo mysqli_num_rows($option);
 echo ":";
-echo mysqli_num_fields($empty);
+echo mysqli_num_fields($option);
+echo ":";
+$option_row = mysqli_fetch_assoc($option);
+echo $option_row["option_value"];
 echo "|";
 echo mysqli_execute_query($handle, "SET SESSION sql_mode=''") ? "no-result" : "failed";
 "#,
@@ -58,7 +62,7 @@ echo mysqli_execute_query($handle, "SET SESSION sql_mode=''") ? "no-result" : "f
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|1:Hello world placeholder|0:0|no-result"
+        "yes|callable|1:Hello world placeholder|1:1:https://example.test|no-result"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -967,6 +971,40 @@ mysqli_execute($stmt, array("id" => 1));
         alias_params_array_error.message,
         "unsupported call mysqli_execute(): params array must be a list in the current subset"
     );
+}
+
+#[test]
+fn mysqli_statement_reads_current_wordpress_option_value_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name = ?");
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "s", $name);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+$result = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($result);
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["option_value"];
+$name = "home";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "missing-executed" : "failed";
+$missing = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "executed|1|https://example.test|missing-executed|0"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

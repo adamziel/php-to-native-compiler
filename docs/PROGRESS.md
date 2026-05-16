@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1028, bounded prepared-statement `wp_options` value
+  readback from the current per-placeholder-connection MySQLi state island.
+  `mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE
+  option_name = ?")`, direct-variable `mysqli_stmt_bind_param(..., "s",
+  $name)`, `mysqli_stmt_execute()`, and `mysqli_stmt_get_result()` can now
+  expose a recorded option value for string option-name parameters on the same
+  placeholder handle; missing names return an empty placeholder result.
+  `mysqli_execute_query($handle, same-query, array($name))` uses the same
+  bounded readback path. This is not broad prepared SQL execution, prepared
+  mutation state, non-string option-name parameter coercion, result binding
+  fidelity beyond the existing placeholder result path, broad SQL parsing,
+  escaped quote handling, schema/index behavior, transactions, host database
+  execution, warning/error fidelity, PDO, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_reads_current_wordpress_option_value_from_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1028`.
+
 - Added Milestone 1027, bounded `wp_options` row readback for the current
   per-placeholder-connection MySQLi state island. After exact supported option
   inserts, direct `mysqli_query()` row reads for

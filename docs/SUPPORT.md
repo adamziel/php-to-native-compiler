@@ -1256,7 +1256,15 @@
   ordering/collation fidelity, autoload mutation beyond exact inserts,
   INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
   database execution, warning/error fidelity, PDO, prepared-statement mutation
-  state, or native lowering. For the
+  state, or native lowering. Prepared statement execution over the same state
+  island supports the exact
+  `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
+  option-name parameters on the same placeholder handle through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array($name))`; missing names return
+  an empty placeholder result. This does not add broad prepared SQL execution,
+  prepared mutation state, non-string option-name parameter coercion, host
+  database execution, PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
