@@ -185,11 +185,13 @@ call sources have a narrow reference-return execution path when the function
 declares `&`, returns a direct variable, and is used as a statement-form
 reference-assignment source; the target name is bound to the returned variable
 cell. Direct object method-call sources have the same narrow path for visible
-non-static methods on object receivers. Array-offset sources, direct
-array-offset targets for array values, object-property array targets,
-magic/static/parent/self method reference sources, source/target rebinding beyond
-direct names, full PHP reference containers, by-reference `foreach`,
-mutation-ordering guarantees, and copy-on-write remain future runtime work.
+non-static methods on object receivers. Direct named static method-call sources
+have the same narrow path for visible static methods on direct class-name
+receivers. Array-offset sources, direct array-offset targets for array values,
+object-property array targets, self/parent/late-static/dynamic/magic method
+reference sources, source/target rebinding beyond direct names, full PHP
+reference containers, by-reference `foreach`, mutation-ordering guarantees,
+and copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

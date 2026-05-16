@@ -10110,12 +10110,26 @@ handled.
   non-direct return expressions, nested-control-flow returns, array/object
   offset aliases, by-reference `foreach`, full PHP reference containers,
   copy-on-write, or native lowering.
+
+## Milestone 1049: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: extend the bounded direct-variable
+  reference-return assignment path to direct named static method calls. In the
+  current subset, `$alias =& Box::identity($value);` can bind the alias name to
+  the direct variable cell returned by a visible static
+  `public static function &identity(&$value) { return $value; }`, and
+  `unset($alias)` detaches only the alias name. This is not normal
+  reference-return invocation, `self::`, `parent::`, `static::`, dynamic
+  static receiver, or magic `__callStatic` reference-return method sources,
+  non-direct return expressions, nested-control-flow returns, array/object
+  offset aliases, by-reference `foreach`, full PHP reference containers,
+  copy-on-write, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
-  magic/static/parent/self reference-return method sources, by-reference
-  `foreach`, object-property references, source/target rebinding, or array
-  copy-on-write, and add the next bounded behavior or explicit runtime
-  boundary with PHP comparison fixtures.
+  self/parent/late-static/dynamic/magic reference-return method sources,
+  by-reference `foreach`, object-property references, source/target rebinding,
+  or array copy-on-write, and add the next bounded behavior or explicit
+  runtime boundary with PHP comparison fixtures.
 
 ## Latest Completed Checkpoint
 

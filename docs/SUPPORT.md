@@ -33,13 +33,16 @@
   `$alias =& identity($value);` with
   `function &identity(&$value) { return $value; }`, and from direct object
   method calls whose visible non-static method returns a direct variable by
-  reference, for example `$alias =& $object->identity($value);`. In those
-  shapes, the assigned alias binds to the returned variable cell and
+  reference, for example `$alias =& $object->identity($value);`, and from
+  direct named static method calls whose visible static method returns a direct
+  variable by reference, for example `$alias =& Box::identity($value);`. In
+  those shapes, the assigned alias binds to the returned variable cell and
   `unset($alias)` detaches only the alias name. Normal invocation such as
-  `identity($value)` or `$object->identity($value)`, magic/static/parent/self
-  reference-return method sources, non-direct return expressions,
-  nested-control-flow returns, full PHP reference containers, copy-on-write,
-  and native lowering remain unsupported.
+  `identity($value)`, `$object->identity($value)`, or `Box::identity($value)`,
+  `self::`, `parent::`, `static::`, dynamic static receiver, and magic
+  `__callStatic` reference-return method sources, non-direct return
+  expressions, nested-control-flow returns, full PHP reference containers,
+  copy-on-write, and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -65,14 +68,15 @@
   while another alias still points at it. Direct variable sources holding
   current object values may also be assigned into direct array offsets under
   the existing object-handle value model. Direct free-function and direct
-  object method-call sources are executable only for the bounded
-  direct-variable reference-return shapes documented above. Array-offset
-  sources, direct array-offset targets for array values, object-property array
-  targets, by-reference `foreach`, broader reference returns,
-  reference-parameter forms beyond direct variable arguments, source/target
-  rebinding beyond direct names, PHP reference-container edge cases,
-  copy-on-write, and native lowering remain unsupported and report stable
-  reference-assignment runtime diagnostics when reached.
+  object method-call sources, and direct named static method-call sources are
+  executable only for the bounded direct-variable reference-return shapes
+  documented above. Array-offset sources, direct array-offset targets for array
+  values, object-property array targets, by-reference `foreach`, broader
+  reference returns, reference-parameter forms beyond direct variable
+  arguments, source/target rebinding beyond direct names, PHP
+  reference-container edge cases, copy-on-write, and native lowering remain
+  unsupported and report stable reference-assignment runtime diagnostics when
+  reached.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

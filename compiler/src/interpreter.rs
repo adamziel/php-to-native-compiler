@@ -2760,11 +2760,19 @@ impl Interpreter {
                 args,
                 span: call_span,
             } => self.call_reference_return_instance_method(target, method, args, *call_span, scope),
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                span: call_span,
+            } => {
+                self.call_reference_return_named_static_method(class_name, method, args, *call_span, scope)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call and object method-call reference-return sources are implemented in the current subset",
+                    "only direct function-call, object method-call, and named static method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -11127,6 +11135,88 @@ impl Interpreter {
             Some(object),
             Some(class_id),
             Some(called_class_id),
+            reference_bindings,
+        )
+    }
+
+    fn call_reference_return_named_static_method(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        let receiver_class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            visibility,
+            is_static,
+        )) = self.resolve_instance_method(class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+            ));
+        };
+
+        self.ensure_instance_method_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "non-static method dispatch through named static receivers is not implemented",
+                ),
+            ));
+        }
+
+        let function = self.method_function(
+            declaring_class_id,
+            &declaring_class_name,
+            &resolved_method_name,
+            span,
+        )?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+
+        self.call_reference_return_function_with_checked_values(
+            function,
+            values,
+            None,
+            Some(declaring_class_id),
+            Some(class_id),
             reference_bindings,
         )
     }
