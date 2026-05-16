@@ -1767,6 +1767,10 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
+- Milestone 1071 is committed: direct public object-property array-offset
+  reference targets such as `$object->items[$key] =& $value;` now work for a
+  direct object variable, declared public property, explicit offset, and
+  unaliased direct variable source, with PHP comparison coverage.
 - Milestone 1040 is the active checkpoint candidate: bounded `Countable` object
   protocol support now lets `is_countable($object)` recognize object values
   whose class metadata records `implements Countable`, and lets

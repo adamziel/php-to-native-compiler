@@ -89,11 +89,10 @@
   method-call sources are executable only for the bounded direct-variable
   reference-return shapes documented above. Magic `__callStatic`
   reference-return method sources report the explicit runtime boundary
-  documented above. Object-property array targets, exact by-reference
-  `foreach`, broader reference returns,
+  documented above. Exact by-reference `foreach`, broader reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
-  rebinding beyond direct names and the documented direct array-offset slices,
-  PHP reference-container edge cases, copy-on-write, and native lowering remain
+  rebinding beyond direct names and the documented array-offset slices, PHP
+  reference-container edge cases, copy-on-write, and native lowering remain
   unsupported. Direct array-offset reference sources such as
   `$alias =& $array[$key];` execute when the source is a direct array variable
   and the target is a direct variable. The evaluated key is normalized with the
@@ -119,10 +118,23 @@
   and `unset($value)` detaches only the source name. Existing direct alias
   groups, source names already routed through array-offset aliases, `$GLOBALS`,
   PHP's deprecated false-root conversion, other non-array roots,
-  object-property/`ArrayAccess` targets, non-direct sources, full PHP reference
+  object-property append/deeper targets, `ArrayAccess` targets, non-direct
+  sources, full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, and native lowering remain unsupported. Direct
+  public object-property
+  array-offset reference targets such as `$object->items[$key] =& $value;`
+  execute when the target object is a direct object variable, the property is a
+  declared public property reachable through the current public property access
+  path, the target uses an explicit offset, and the source is a direct
+  unaliased variable name. A `null` public property materializes as an array,
+  writes through the source variable and direct object-property array offset
+  observe the same selected value, and `unset($value)` detaches only the source
+  name. Existing direct alias groups, source names already routed through
+  array-offset aliases, `$GLOBALS`, object-property append targets, untested
+  deeper object-property reference paths, dynamic/magic/non-public properties,
+  `ArrayAccess` reference targets, non-direct sources, full PHP reference
   containers, copy-on-write, exact alias rebinding/mutation ordering, and
-  native lowering remain
-  unsupported.
+  native lowering remain unsupported.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

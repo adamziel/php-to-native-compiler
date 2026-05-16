@@ -10399,18 +10399,35 @@ handled.
   array-offset aliases, `$GLOBALS`, object-property/`ArrayAccess` targets,
   non-direct sources, full PHP reference containers, copy-on-write, exact alias
   rebinding/mutation ordering, or native lowering.
+
+## Milestone 1071: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add a bounded direct public object-property
+  array-offset reference-target slice for unaliased direct variable sources. In
+  the current subset, `$object->items[$key] =& $value;` works when the target
+  object is a direct object variable, the property is declared public and
+  reached through the existing public property access path, the target uses an
+  explicit offset, and the source is a direct unaliased variable name. A `null`
+  public property materializes as an array, writes through the source variable
+  and direct object-property array offset observe the same selected value, and
+  `unset($value)` detaches only the source name. This is not existing alias
+  groups, source names already routed through array-offset aliases, `$GLOBALS`,
+  object-property append targets, untested deeper object-property reference
+  paths, dynamic/magic/non-public properties, `ArrayAccess` reference targets,
+  non-direct sources, full PHP reference containers, copy-on-write, exact alias
+  rebinding/mutation ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
-  object-property/`ArrayAccess` reference targets, nested/object offset
-  aliases, remaining by-reference `foreach` fidelity, array/object
-  copy-on-write split behavior, or native lowering boundaries, and add the next
-  bounded behavior or explicit diagnostic with PHP comparison coverage where
-  applicable.
+  object-property append/deeper reference targets, `ArrayAccess` reference
+  targets, nested/object offset aliases, remaining by-reference `foreach`
+  fidelity, array/object copy-on-write split behavior, or native lowering
+  boundaries, and add the next bounded behavior or explicit diagnostic with PHP
+  comparison coverage where applicable.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a6f81e86 runtime: add nested append reference targets`, covering Milestone
-  1070.
+  `403cdac4 runtime: add object property reference targets`, covering
+  Milestone 1071.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

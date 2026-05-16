@@ -26,6 +26,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T16:25:00Z
+
+- Checkpoint before this task:
+  `d4762e7a docs: record nested append reference target gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1071, bounded direct public object-property
+  array-offset reference targets for unaliased direct variable sources.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone753/reference_assignment_object_property_array_target_reached.*`,
+  `tests/fixtures/milestone1071/reference_assignment_object_property_array_target_direct_variable.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run:
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`
+  passed after the stale object-property target boundary fixture was converted
+  into a successful PHP comparison fixture.
+  `cargo run -p phpc -- test tests/fixtures/milestone753 --compare-php` passed
+  with 2 fixtures, 2 PHP comparisons, and 0 skipped.
+  `cargo run -p phpc -- test tests/fixtures/milestone1071 --compare-php` passed
+  with 1 fixture, 1 PHP comparison, and 0 skipped.
+  The serialized checkpoint gate passed with 1275 fixture tests, 722 system PHP
+  comparisons, and 553 skipped comparisons, then committed
+  `403cdac4 runtime: add object property reference targets`.
+- Current WordPress frontier: statement-form
+  `$object->items[$key] =& $value;` now aliases an unaliased direct source
+  variable through an explicit offset under a declared public property on a
+  direct object variable. A `null` property materializes as an array, writes
+  through either route observe the same selected value, and `unset($value)`
+  detaches only the source name.
+- Remaining semantic gaps: existing direct alias groups, source names already
+  routed through array-offset aliases, `$GLOBALS`, object-property append
+  targets, untested deeper object-property reference paths, dynamic/magic/
+  non-public properties, `ArrayAccess` reference targets, non-direct sources,
+  nested/object/`ArrayAccess` offset aliases, mutation-during-iteration
+  fidelity, non-direct iterables, object/`Traversable` iteration, foreach
+  destructuring, array/object/`ArrayAccess` offset loop variables, full PHP
+  reference containers, copy-on-write, native lowering, exact mutation
+  ordering, and alias rebinding remain missing.
+- Next concrete task: choose the next reference/COW gap, likely
+  object-property append/deeper reference targets, `ArrayAccess` reference
+  targets, nested/object offset aliases, remaining by-reference `foreach`
+  mutation fidelity, COW split behavior, or native lowering boundaries, and add
+  a bounded behavior or explicit diagnostic with PHP comparison coverage where
+  applicable.
+
 ## Loop Event 2026-05-16T15:50:00Z
 
 - Checkpoint before this task:

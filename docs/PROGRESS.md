@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 1071, a bounded direct public object-property array-offset
+  reference-target slice for direct variable sources. Statement-form
+  `$object->items[$key] =& $value;` now works when the object expression is a
+  direct object variable, the property is a declared public property reachable
+  through the existing public property access path, the target uses an explicit
+  offset, and the source is an unaliased direct variable name. The interpreter
+  materializes a `null` public property as an array, copies the current source
+  value into the selected property array slot, then routes the source name to
+  that slot. Writes through the source variable and through the direct
+  object-property array offset observe the same selected value, and
+  `unset($value)` detaches the source name while leaving the property slot
+  value alive. The old object-property array target runtime-boundary fixture
+  now runs and compares against system PHP. Existing direct alias groups,
+  source names already routed through array-offset aliases, `$GLOBALS`,
+  object-property append targets, untested deeper object-property reference
+  paths, dynamic/magic/non-public property targets, `ArrayAccess` reference
+  targets, non-direct sources, full PHP reference containers, copy-on-write,
+  exact mutation ordering/alias rebinding, and native lowering remain
+  unsupported. Verification so far:
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone753 --compare-php`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1071 --compare-php`,
+  and the serialized checkpoint gate, which passed with 1275 fixture tests,
+  722 system PHP comparisons, and 553 skipped comparisons, then committed
+  `403cdac4 runtime: add object property reference targets`.
+
 - Added Milestone 1070, a bounded nested direct array-append reference-target
   slice for direct variable sources. Statement-form
   `$array[$outer][] =& $value;` now works when the root is a direct array
