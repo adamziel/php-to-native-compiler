@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_links_stats()` host-link metadata. System PHP reports host process
+mysqli link state; phpc returns zeroed `total`, `active_plinks`, and
+`cached_plinks` metadata without inspecting real persistent links, sockets,
+host client-library state, or database connections.

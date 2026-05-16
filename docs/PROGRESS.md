@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 931, bounded `mysqli_get_links_stats()` support for
+  deterministic placeholder MySQLi host-link metadata. The runtime accepts the
+  no-argument call, returns a zeroed `total`, `active_plinks`, and
+  `cached_plinks` array, rejects argument-bearing calls with a stable arity
+  diagnostic, and exposes the name through runtime and native metadata lookup.
+  This is not real persistent-link tracking, host client-library state,
+  sockets, connection reuse state, PHP warning/error fidelity, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_links_stats -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone931`.
+
 - Added Milestone 930, a synthetic WordPress-shaped `wpdb` async-readiness
   smoke that records bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata and then
   reaches the stable `mysqli_poll()` runtime boundary through a connection

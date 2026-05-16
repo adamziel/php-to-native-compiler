@@ -4449,6 +4449,15 @@ impl Interpreter {
         Ok(Value::Array(stats))
     }
 
+    fn call_mysqli_get_links_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_links_stats", args, 0, span)?;
+        let mut stats = PhpArray::new();
+        stats.insert("total", Value::Int(0));
+        stats.insert("active_plinks", Value::Int(0));
+        stats.insert("cached_plinks", Value::Int(0));
+        Ok(Value::Array(stats))
+    }
+
     fn call_mysqli_stat(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stat", args, 1, span)?;
         expect_mysqli_handle("mysqli_stat()", &args[0], span)?;
@@ -9639,6 +9648,7 @@ impl Interpreter {
             "mysqli_connect_errno" => self.call_mysqli_connect_errno(&args, span),
             "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
+            "mysqli_get_links_stats" => self.call_mysqli_get_links_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
             "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
@@ -12603,6 +12613,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect_errno"
             | "mysqli_connect_error"
             | "mysqli_get_connection_stats"
+            | "mysqli_get_links_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"
             | "mysqli_begin_transaction"

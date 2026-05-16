@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone931/mysqli_links_stats_placeholder.php
+yes
+callable
+0
+0
+0
+0
+0
+0

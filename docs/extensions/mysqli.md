@@ -9,7 +9,7 @@ Status: boundary only.
 `mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
-`mysqli_get_connection_stats`, `mysqli_autocommit`,
+`mysqli_get_connection_stats`, `mysqli_get_links_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
@@ -135,6 +135,10 @@ returns an eight-key deterministic statistics array:
 counters are deterministic placeholders. This does not model real mysqlnd
 statistics, client/server traffic, memory accounting, connection reuse, or host
 database state.
+
+`mysqli_get_links_stats()` returns a deterministic zeroed array with `total`,
+`active_plinks`, and `cached_plinks`. It does not inspect real persistent
+links, sockets, host client-library state, or connection reuse state.
 
 `mysqli_stat($handle)` accepts the placeholder object and returns deterministic
 zeroed server-status metadata. It does not query real counters, thread/table

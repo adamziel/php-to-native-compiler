@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `f93976d tests: add wordpress wpdb poll boundary smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 931, bounded deterministic
+  `mysqli_get_links_stats()` placeholder host-link metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone931/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_links_stats -- --test-threads=1`
+  passed with 2 tests, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone931`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi host-state metadata now
+  includes zeroed `mysqli_get_links_stats()` persistent-link counters.
+- Remaining semantic gaps: real persistent-link tracking, host client-library
+  state, sockets, connection reuse state, warnings/errors, host database state,
+  and native database lowering remain missing.
+- Next concrete task: run the full MySQLi extension test, then the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, add a synthetic
+  WordPress-shaped `wpdb` host-link stats smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `361a047 runtime: add mysqli poll boundary`, pushed to `origin/master`.
 - Task attempted: Milestone 930, a synthetic WordPress-shaped `wpdb`
   async-readiness smoke over bounded `mysqli_poll()`/`MYSQLI_ASYNC` metadata

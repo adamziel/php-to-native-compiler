@@ -8656,16 +8656,27 @@ handled.
   connection method. It is not real async polling, by-reference
   read/error/reject array mutation, socket readiness, pending async result
   queues, warnings/errors, host database state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi connection option or async
+- [x] Runtime/mysqli lane: inspect the next MySQLi connection option or async
   execution boundary after `mysqli_poll()`, such as `mysqli_get_links_stats()`,
   `mysqli_dump_debug_info()`, or a sharper unsupported diagnostic, before
   claiming broader mysqli host-state fidelity.
+  Milestone 931 implements bounded deterministic
+  `mysqli_get_links_stats()` support for the no-argument call. It returns
+  zeroed `total`, `active_plinks`, and `cached_plinks` metadata, rejects
+  argument-bearing calls with a stable arity diagnostic, and is visible through
+  runtime and native metadata lookup. This is not real persistent-link
+  tracking, host client-library state, sockets, connection reuse state,
+  warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_links_stats()` host-link metadata through a
+  WordPress-shaped connection method without claiming real persistent-link,
+  socket, host client-library, or connection reuse fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `361a047 runtime: add mysqli poll boundary`, covering Milestone 929 before
-  the current Milestone 930 candidate.
+  `f93976d tests: add wordpress wpdb poll boundary smoke`, covering
+  Milestone 930 before the current Milestone 931 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

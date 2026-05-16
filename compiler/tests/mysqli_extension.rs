@@ -336,6 +336,29 @@ echo $dynamic["result_set_queries"];
 }
 
 #[test]
+fn mysqli_links_stats_return_current_placeholder_metadata() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_get_links_stats";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$stats = mysqli_get_links_stats();
+echo "|", $stats["total"];
+echo "|", $stats["active_plinks"];
+echo "|", $stats["cached_plinks"];
+echo "|";
+$dynamic = $call();
+echo $dynamic["total"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|0|0|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_field_count_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -985,6 +1008,24 @@ mysqli_get_connection_stats("not-a-handle");
     assert_eq!(
         bad_handle.message,
         "unsupported call mysqli_get_connection_stats(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_links_stats_reject_forms_outside_current_boundary() {
+    let error = run_source(
+        r#"<?php
+mysqli_get_links_stats(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "arity mismatch for mysqli_get_links_stats(): expected 0 argument(s), got 1"
     );
 }
 
@@ -2410,6 +2451,8 @@ echo function_exists("mysqli_connect_error") ? "1" : "0";
 echo is_callable("mysqli_connect_error") ? "1" : "0";
 echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
+echo function_exists("mysqli_get_links_stats") ? "1" : "0";
+echo is_callable("mysqli_get_links_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
 echo is_callable("mysqli_stat") ? "1" : "0";
 echo function_exists("mysqli_autocommit") ? "1" : "0";
@@ -2504,7 +2547,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 130, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 132, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2716,6 +2759,18 @@ mysqli_change_user(mysqli_init(), "user", "pass", "wordpress");
     let error = emit_ir_source(
         r#"<?php
 mysqli_refresh(mysqli_init(), MYSQLI_REFRESH_LOG);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_links_stats();
 "#,
     )
     .unwrap_err();
