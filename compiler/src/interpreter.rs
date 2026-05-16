@@ -1306,7 +1306,7 @@ impl Interpreter {
                     if let Some(key) = key {
                         scope.write_static(key, value_from_array_key(&entry.key));
                     }
-                    scope.write_static(value, entry.value.clone());
+                    scope.write_static(value, entry.value_cloned());
                     match self.execute_statements(body, scope)? {
                         Flow::Normal => {}
                         Flow::Continue { depth, .. } if depth <= 1 => {}
@@ -10109,7 +10109,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            positional_args.push(entry.value.clone());
+            positional_args.push(entry.value_cloned());
         }
 
         match &callback {
@@ -14612,7 +14612,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            positional_args.push(entry.value.clone());
+            positional_args.push(entry.value_cloned());
         }
 
         match &args[0] {
@@ -14942,7 +14942,7 @@ impl Interpreter {
         for entry in array.entries() {
             accumulator = self.call_callable_with_values(
                 callable.clone(),
-                vec![accumulator, entry.value.clone()],
+                vec![accumulator, entry.value_cloned()],
                 span,
             )?;
         }
@@ -15130,15 +15130,15 @@ impl Interpreter {
         let mut filtered = PhpArray::new();
         for entry in array.entries() {
             let arguments = match mode {
-                ArrayFilterMode::Value => vec![entry.value.clone()],
+                ArrayFilterMode::Value => vec![entry.value_cloned()],
                 ArrayFilterMode::Both => {
-                    vec![entry.value.clone(), value_from_array_key(&entry.key)]
+                    vec![entry.value_cloned(), value_from_array_key(&entry.key)]
                 }
                 ArrayFilterMode::Key => vec![value_from_array_key(&entry.key)],
             };
             let result = self.call_callable_with_values(callable.clone(), arguments, span)?;
             if result.is_truthy() {
-                filtered.insert(entry.key.clone(), entry.value.clone());
+                filtered.insert(entry.key.clone(), entry.value_cloned());
             }
         }
 
@@ -15207,7 +15207,7 @@ impl Interpreter {
         let mut mapped = PhpArray::new();
         for entry in array.entries() {
             let value =
-                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
+                self.call_callable_with_values(callable.clone(), vec![entry.value_cloned()], span)?;
             mapped.insert(entry.key.clone(), value);
         }
 
@@ -15235,7 +15235,7 @@ impl Interpreter {
                     array
                         .entries()
                         .get(index)
-                        .map(|entry| entry.value.clone())
+                        .map(|entry| entry.value_cloned())
                         .unwrap_or(Value::Null)
                 })
                 .collect();
@@ -15266,7 +15266,7 @@ impl Interpreter {
                 let value = array
                     .entries()
                     .get(index)
-                    .map(|entry| entry.value.clone())
+                    .map(|entry| entry.value_cloned())
                     .unwrap_or(Value::Null);
                 tuple
                     .append(value)
@@ -16724,12 +16724,12 @@ fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
         return None;
     }
 
-    let Value::String(method_name) = &entries[1].value else {
+    let Value::String(method_name) = entries[1].value() else {
         return None;
     };
 
-    match &entries[0].value {
-        Value::String(_) | Value::Object(_) => Some((&entries[0].value, method_name)),
+    match entries[0].value() {
+        Value::String(_) | Value::Object(_) => Some((entries[0].value(), method_name)),
         _ => None,
     }
 }
@@ -17230,7 +17230,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
         Value::Array(array) => array
             .entries()
             .iter()
-            .find_map(|entry| unsupported_runtime_constant_value_type(&entry.value)),
+            .find_map(|entry| unsupported_runtime_constant_value_type(entry.value())),
         Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
     }
@@ -17793,8 +17793,8 @@ fn mysqli_execute_params_from_value(
 
     let mut params = Vec::with_capacity(array.len());
     for entry in array.entries() {
-        validate_mysqli_stmt_parameter_value(function, &entry.value, span)?;
-        params.push(entry.value.clone());
+        validate_mysqli_stmt_parameter_value(function, entry.value(), span)?;
+        params.push(entry.value_cloned());
     }
     Ok(params)
 }
@@ -19561,7 +19561,7 @@ fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec
         Value::Array(array) => {
             let mut values = Vec::with_capacity(array.len());
             for entry in array.entries() {
-                match &entry.value {
+                match entry.value() {
                     Value::Array(_) => {
                         return Err(runtime_error(
                             span,
@@ -19675,7 +19675,7 @@ fn call_vsprintf(args: &[Value], span: Span) -> CompileResult<Value> {
     let values = array
         .entries()
         .iter()
-        .map(|entry| entry.value.clone())
+        .map(|entry| entry.value_cloned())
         .collect::<Vec<_>>();
     bounded_sprintf("vsprintf()", format, &values, span).map(Value::String)
 }
@@ -20076,9 +20076,9 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
 
     let mut parts = Vec::with_capacity(array.len());
     for entry in array.entries() {
-        match &entry.value {
+        match entry.value() {
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                parts.push(entry.value.echo_string());
+                parts.push(entry.value().echo_string());
             }
             other => {
                 return Err(runtime_error(
@@ -20861,7 +20861,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
                     "{padding}  [{}]=>\n",
                     format_var_dump_key(&entry.key)
                 ));
-                output.push_str(&format_var_dump_with_indent(&entry.value, indent + 1));
+                output.push_str(&format_var_dump_with_indent(entry.value(), indent + 1));
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -20919,7 +20919,7 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
     output.push_str(&format!("{padding}(\n"));
     for entry in array.entries() {
         output.push_str(&format!("{child_padding}[{}] => ", entry.key.display_key()));
-        match &entry.value {
+        match entry.value() {
             Value::Array(value) => {
                 output.push_str(&format_print_r_array(value, indent + 1));
             }

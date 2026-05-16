@@ -10210,6 +10210,17 @@ handled.
   lingering post-loop references, mutation-during-iteration fidelity,
   non-direct by-reference iterables, object/Traversable iteration,
   copy-on-write, or native lowering.
+
+## Milestone 1056: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add array-entry accessor groundwork for future
+  slot/reference cells without changing observable array behavior.
+  `ArrayEntry.value` is private, runtime/compiler callers go through
+  `value()`, `value_cloned()`, `value_mut()`, `set_value()`, or `into_value()`,
+  and a focused runtime test pins that cloned arrays still have independent
+  entry values when overwritten. This is not direct array-offset references,
+  real slot cells, copy-on-write, exact by-reference `foreach`, object-property
+  offsets, or native lowering.
 - [ ] Runtime/value-model lane: inspect the next reference/COW gap from the
   audited PHP/WordPress surface, such as array-offset reference cells,
   object-property references, source/target rebinding, exact by-reference

@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1056, runtime array-entry accessor groundwork for the future
+  array slot/reference-cell migration. `ArrayEntry.value` is now private and
+  all runtime/compiler users go through `ArrayEntry::value()`,
+  `value_cloned()`, `value_mut()`, `set_value()`, or `into_value()`. This
+  preserves the current eager by-value PHP array behavior while creating one
+  internal field boundary that can later be replaced by a real referenceable
+  slot. Added a focused runtime test proving cloned arrays still get
+  independent entry values when an entry is overwritten, so ordinary
+  `$copy = $array; $copy[0] = ...` behavior is not accidentally turned into
+  aliasing. This is groundwork only: direct array-offset reference assignment,
+  true array slot/reference cells, copy-on-write, exact by-reference
+  `foreach`, object-property offsets, and native lowering remain unsupported.
+  Verification so far: `cargo test -p php_runtime -- --test-threads=1`,
+  `cargo test -p phpc --test foreach -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`.
+
 - Added Milestone 1055, a bounded direct-array-variable by-reference
   `foreach` copy-back execution slice. In the current subset,
   `foreach ($items as $key => &$item) { ... }` executes when `$items` is a

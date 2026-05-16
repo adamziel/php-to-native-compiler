@@ -596,7 +596,7 @@ impl PhpArray {
         self.entries
             .iter()
             .find(|entry| entry.key == key)
-            .map(|entry| &entry.value)
+            .map(ArrayEntry::value)
     }
 
     pub fn contains_key(&self, key: impl Into<ArrayKey>) -> bool {
@@ -619,14 +619,11 @@ impl PhpArray {
         self.bump_next_auto_index(&key);
 
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key) {
-            entry.value = value;
+            entry.set_value(value);
             return key;
         }
 
-        self.entries.push(ArrayEntry {
-            key: key.clone(),
-            value,
-        });
+        self.entries.push(ArrayEntry::new(key.clone(), value));
         key
     }
 
@@ -662,7 +659,7 @@ impl PhpArray {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
             let key = i64::try_from(index).expect("array length fits in i64");
-            array.insert(key, entry.value.clone());
+            array.insert(key, entry.value_cloned());
         }
         array
     }
@@ -675,10 +672,10 @@ impl PhpArray {
         for entry in &self.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    array.append(entry.value.clone())?;
+                    array.append(entry.value_cloned())?;
                 }
                 ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value.clone());
+                    array.insert(key.clone(), entry.value_cloned());
                 }
             }
         }
@@ -705,7 +702,7 @@ impl PhpArray {
             self.cursor = self.entries.len() - 1;
         }
 
-        entry.value
+        entry.into_value()
     }
 
     pub fn keys_reindexed(&self) -> Self {
@@ -734,7 +731,7 @@ impl PhpArray {
     pub fn current_value(&self) -> Value {
         self.entries
             .get(self.cursor)
-            .map(|entry| entry.value.clone())
+            .map(|entry| entry.value_cloned())
             .unwrap_or(Value::Bool(false))
     }
 
@@ -774,8 +771,8 @@ impl PhpArray {
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            ensure_array_keys_filter_values_supported(search_value, &entry.value)?;
-            if search_value.php_cmp_checked(&entry.value, Comparison::Eq)? {
+            ensure_array_keys_filter_values_supported(search_value, entry.value())?;
+            if search_value.php_cmp_checked(entry.value(), Comparison::Eq)? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
             }
@@ -787,8 +784,8 @@ impl PhpArray {
     pub fn keys_matching_strict_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            ensure_array_keys_filter_values_supported(search_value, &entry.value)?;
-            if search_value.php_identical_checked(&entry.value)? {
+            ensure_array_keys_filter_values_supported(search_value, entry.value())?;
+            if search_value.php_identical_checked(entry.value())? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
             }
@@ -805,13 +802,13 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in &self.entries {
             let value = match &column_key {
-                None => Some(entry.value.clone()),
-                Some(column_key) => array_column_row_value(&entry.value, column_key),
+                None => Some(entry.value_cloned()),
+                Some(column_key) => array_column_row_value(entry.value(), column_key),
             };
 
             if let Some(value) = value {
                 match &index_key {
-                    Some(index_key) => match array_column_row_value(&entry.value, index_key) {
+                    Some(index_key) => match array_column_row_value(entry.value(), index_key) {
                         Some(index_value) => {
                             let key = array_column_index_key_from_value(&index_value)?;
                             array.insert(key, value.clone());
@@ -836,11 +833,11 @@ impl PhpArray {
             match &entry.key {
                 ArrayKey::Int(_) => {
                     array
-                        .append(entry.value.clone())
+                        .append(entry.value_cloned())
                         .expect("array length fits in i64");
                 }
                 ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value.clone());
+                    array.insert(key.clone(), entry.value_cloned());
                 }
             }
         }
@@ -850,7 +847,7 @@ impl PhpArray {
     pub fn reversed_preserving_keys(&self) -> Self {
         let mut array = Self::new();
         for entry in self.entries.iter().rev() {
-            array.insert(entry.key.clone(), entry.value.clone());
+            array.insert(entry.key.clone(), entry.value_cloned());
         }
         array
     }
@@ -916,10 +913,10 @@ impl PhpArray {
             let mut chunk = Self::new();
             for entry in entries {
                 if preserve_keys {
-                    chunk.insert(entry.key.clone(), entry.value.clone());
+                    chunk.insert(entry.key.clone(), entry.value_cloned());
                 } else {
                     chunk
-                        .append(entry.value.clone())
+                        .append(entry.value_cloned())
                         .expect("array length fits in i64");
                 }
             }
@@ -950,16 +947,16 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in self.entries[start..end].iter() {
             if preserve_keys {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             } else {
                 match &entry.key {
                     ArrayKey::Int(_) => {
                         array
-                            .append(entry.value.clone())
+                            .append(entry.value_cloned())
                             .expect("array length fits in i64");
                     }
                     ArrayKey::String(key) => {
-                        array.insert(key.clone(), entry.value.clone());
+                        array.insert(key.clone(), entry.value_cloned());
                     }
                 }
             }
@@ -987,7 +984,7 @@ impl PhpArray {
         let mut array = self.clone();
         for replacement in replacements {
             for entry in &replacement.entries {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array
@@ -996,7 +993,7 @@ impl PhpArray {
     pub fn flipped(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            let key = array_flip_key_from_value(&entry.value)?;
+            let key = array_flip_key_from_value(entry.value())?;
             array.insert(key, array_key_to_value(&entry.key));
         }
         Ok(array)
@@ -1012,7 +1009,7 @@ impl PhpArray {
                     ArrayKeyCase::Upper => ArrayKey::String(value.to_ascii_uppercase()),
                 },
             };
-            array.insert(key, entry.value.clone());
+            array.insert(key, entry.value_cloned());
         }
         array
     }
@@ -1020,7 +1017,7 @@ impl PhpArray {
     pub fn filled_keys(&self, value: Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            let key = array_fill_key_from_value(&entry.value)?;
+            let key = array_fill_key_from_value(entry.value())?;
             array.insert(key, value.clone());
         }
         Ok(array)
@@ -1040,8 +1037,8 @@ impl PhpArray {
 
         let mut array = Self::new();
         for (key_entry, value_entry) in self.entries.iter().zip(values.entries.iter()) {
-            let key = array_combine_key_from_value(&key_entry.value)?;
-            array.insert(key, value_entry.value.clone());
+            let key = array_combine_key_from_value(key_entry.value())?;
+            array.insert(key, value_entry.value_cloned());
         }
         Ok(array)
     }
@@ -1058,7 +1055,7 @@ impl PhpArray {
                 .iter()
                 .all(|other| other.contains_key(entry.key.clone()))
             {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array
@@ -1076,7 +1073,7 @@ impl PhpArray {
                 .iter()
                 .all(|other| !other.contains_key(entry.key.clone()))
             {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array
@@ -1093,7 +1090,7 @@ impl PhpArray {
         let left_values = self
             .entries
             .iter()
-            .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
+            .map(|entry| array_scalar_string_comparison_value("array_diff()", entry.value()))
             .collect::<RuntimeResult<Vec<_>>>()?;
         let other_values = others
             .into_iter()
@@ -1101,7 +1098,9 @@ impl PhpArray {
                 other
                     .entries
                     .iter()
-                    .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
+                    .map(|entry| {
+                        array_scalar_string_comparison_value("array_diff()", entry.value())
+                    })
                     .collect::<RuntimeResult<Vec<_>>>()
             })
             .collect::<RuntimeResult<Vec<_>>>()?;
@@ -1112,7 +1111,7 @@ impl PhpArray {
                 .iter()
                 .all(|values| !values.iter().any(|right_value| right_value == left_value))
             {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array.inherit_append_cursor_from(self);
@@ -1131,7 +1130,7 @@ impl PhpArray {
         let left_values = self
             .entries
             .iter()
-            .map(|entry| array_scalar_string_comparison_value("array_intersect()", &entry.value))
+            .map(|entry| array_scalar_string_comparison_value("array_intersect()", entry.value()))
             .collect::<RuntimeResult<Vec<_>>>()?;
         let other_values = others
             .into_iter()
@@ -1140,7 +1139,7 @@ impl PhpArray {
                     .entries
                     .iter()
                     .map(|entry| {
-                        array_scalar_string_comparison_value("array_intersect()", &entry.value)
+                        array_scalar_string_comparison_value("array_intersect()", entry.value())
                     })
                     .collect::<RuntimeResult<Vec<_>>>()
             })
@@ -1152,7 +1151,7 @@ impl PhpArray {
                 .iter()
                 .all(|values| values.iter().any(|right_value| right_value == left_value))
             {
-                array.insert(entry.key.clone(), entry.value.clone());
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array.inherit_append_cursor_from(self);
@@ -1165,7 +1164,7 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in &self.entries {
             let comparison_value =
-                array_scalar_string_comparison_value("array_unique()", &entry.value)?;
+                array_scalar_string_comparison_value("array_unique()", entry.value())?;
             if seen
                 .iter()
                 .any(|seen_value| seen_value == &comparison_value)
@@ -1174,7 +1173,7 @@ impl PhpArray {
             }
 
             seen.push(comparison_value);
-            array.insert(entry.key.clone(), entry.value.clone());
+            array.insert(entry.key.clone(), entry.value_cloned());
         }
 
         Ok(array)
@@ -1184,11 +1183,11 @@ impl PhpArray {
         let mut seen = Vec::new();
         let mut array = Self::new();
         for entry in &self.entries {
-            array_scalar_value_supported("array_unique()", &entry.value)?;
+            array_scalar_value_supported("array_unique()", entry.value())?;
 
             let mut duplicate = false;
             for seen_value in &seen {
-                if entry.value.php_cmp_checked(seen_value, Comparison::Eq)? {
+                if entry.value().php_cmp_checked(seen_value, Comparison::Eq)? {
                     duplicate = true;
                     break;
                 }
@@ -1197,8 +1196,8 @@ impl PhpArray {
                 continue;
             }
 
-            seen.push(entry.value.clone());
-            array.insert(entry.key.clone(), entry.value.clone());
+            seen.push(entry.value_cloned());
+            array.insert(entry.key.clone(), entry.value_cloned());
         }
 
         Ok(array)
@@ -1208,7 +1207,8 @@ impl PhpArray {
         let mut seen = Vec::new();
         let mut array = Self::new();
         for entry in &self.entries {
-            let comparison_value = array_numeric_number_from_value("array_unique()", &entry.value)?;
+            let comparison_value =
+                array_numeric_number_from_value("array_unique()", entry.value())?;
             if seen.iter().any(|seen_value| {
                 compare_numbers(*seen_value, comparison_value) == Some(Ordering::Equal)
             }) {
@@ -1216,7 +1216,7 @@ impl PhpArray {
             }
 
             seen.push(comparison_value);
-            array.insert(entry.key.clone(), entry.value.clone());
+            array.insert(entry.key.clone(), entry.value_cloned());
         }
 
         Ok(array)
@@ -1225,9 +1225,9 @@ impl PhpArray {
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
-            let key = array_count_values_key_from_value(&entry.value)?;
+            let key = array_count_values_key_from_value(entry.value())?;
             if let Some(count_entry) = array.entries.iter_mut().find(|entry| entry.key == key) {
-                let Value::Int(count) = &mut count_entry.value else {
+                let Value::Int(count) = count_entry.value_mut() else {
                     unreachable!("array_count_values stores integer counts")
                 };
                 *count = count.checked_add(1).expect("array value count fits in i64");
@@ -1241,7 +1241,7 @@ impl PhpArray {
     pub fn sum_values(&self) -> RuntimeResult<Value> {
         let mut sum = Number::Int(0);
         for entry in &self.entries {
-            let value = array_sum_number_from_value(&entry.value)?;
+            let value = array_sum_number_from_value(entry.value())?;
             sum = add_array_sum_numbers(sum, value);
         }
 
@@ -1251,7 +1251,7 @@ impl PhpArray {
     pub fn product_values(&self) -> RuntimeResult<Value> {
         let mut product = Number::Int(1);
         for entry in &self.entries {
-            let value = array_product_number_from_value(&entry.value)?;
+            let value = array_product_number_from_value(entry.value())?;
             product = multiply_array_product_numbers(product, value);
         }
 
@@ -1261,8 +1261,8 @@ impl PhpArray {
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
-            if entry.value.is_truthy() {
-                array.insert(entry.key.clone(), entry.value.clone());
+            if entry.value().is_truthy() {
+                array.insert(entry.key.clone(), entry.value_cloned());
             }
         }
         array
@@ -1272,11 +1272,11 @@ impl PhpArray {
         for entry in &source.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    self.append(entry.value.clone())
+                    self.append(entry.value_cloned())
                         .expect("array length fits in i64");
                 }
                 ArrayKey::String(key) => {
-                    self.insert(key.clone(), entry.value.clone());
+                    self.insert(key.clone(), entry.value_cloned());
                 }
             }
         }
@@ -1284,8 +1284,8 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
-            if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
+            ensure_array_search_values_supported("in_array()", needle, entry.value())?;
+            if needle.php_cmp_checked(entry.value(), Comparison::Eq)? {
                 return Ok(true);
             }
         }
@@ -1295,8 +1295,8 @@ impl PhpArray {
 
     pub fn contains_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
-            if needle.php_identical_checked(&entry.value)? {
+            ensure_array_search_values_supported("in_array()", needle, entry.value())?;
+            if needle.php_identical_checked(entry.value())? {
                 return Ok(true);
             }
         }
@@ -1306,8 +1306,8 @@ impl PhpArray {
 
     pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("array_search()", needle, &entry.value)?;
-            if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
+            ensure_array_search_values_supported("array_search()", needle, entry.value())?;
+            if needle.php_cmp_checked(entry.value(), Comparison::Eq)? {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -1317,8 +1317,8 @@ impl PhpArray {
 
     pub fn search_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            ensure_array_search_values_supported("array_search()", needle, &entry.value)?;
-            if needle.php_identical_checked(&entry.value)? {
+            ensure_array_search_values_supported("array_search()", needle, entry.value())?;
+            if needle.php_identical_checked(entry.value())? {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -1576,7 +1576,33 @@ fn value_from_number(number: Number) -> Value {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayEntry {
     pub key: ArrayKey,
-    pub value: Value,
+    value: Value,
+}
+
+impl ArrayEntry {
+    pub fn new(key: ArrayKey, value: Value) -> Self {
+        Self { key, value }
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut Value {
+        &mut self.value
+    }
+
+    pub fn value_cloned(&self) -> Value {
+        self.value.clone()
+    }
+
+    pub fn set_value(&mut self, value: Value) {
+        self.value = value;
+    }
+
+    pub fn into_value(self) -> Value {
+        self.value
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4062,7 +4088,7 @@ mod tests {
         array
             .entries()
             .iter()
-            .map(|entry| entry.value.clone())
+            .map(|entry| entry.value_cloned())
             .collect()
     }
 
@@ -4090,6 +4116,25 @@ mod tests {
     }
 
     #[test]
+    fn array_entry_accessors_preserve_clone_by_value_boundary_for_future_slots() {
+        let mut array = PhpArray::new();
+        array.insert(0, Value::String("original".to_string()));
+
+        let mut clone = array.clone();
+        clone.insert(0, Value::String("clone".to_string()));
+
+        assert_eq!(array.get(0), Some(&Value::String("original".to_string())));
+        assert_eq!(clone.get(0), Some(&Value::String("clone".to_string())));
+
+        let mut entry = ArrayEntry::new(ArrayKey::Int(0), Value::Int(1));
+        assert_eq!(entry.value(), &Value::Int(1));
+        *entry.value_mut() = Value::Int(2);
+        assert_eq!(entry.value_cloned(), Value::Int(2));
+        entry.set_value(Value::String("slot".to_string()));
+        assert_eq!(entry.into_value(), Value::String("slot".to_string()));
+    }
+
+    #[test]
     fn array_preserves_insertion_order_and_updates_normalized_keys() {
         let mut array = PhpArray::new();
 
@@ -4113,7 +4158,10 @@ mod tests {
         let entries = array.entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::Int(2));
-        assert_eq!(entries[0].value, Value::String("two updated".to_string()));
+        assert_eq!(
+            entries[0].value(),
+            &Value::String("two updated".to_string())
+        );
         assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(1));
         assert_eq!(
@@ -4207,13 +4255,16 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("two updated".to_string()));
+        assert_eq!(
+            entries[2].value(),
+            &Value::String("two updated".to_string())
+        );
         assert_eq!(entries[3].key, ArrayKey::Int(3));
-        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("zero two".to_string()));
         assert!(values.contains_key(0));
         assert!(values.contains_key(3));
         assert!(!values.contains_key("name"));
@@ -4242,15 +4293,15 @@ mod tests {
         assert_eq!(len, 5);
         let entries = array.entries();
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("new".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("new".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("first".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("first".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[3].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(3));
-        assert_eq!(entries[4].value, Value::String("five".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("five".to_string()));
 
         array.append(Value::String("tail".to_string())).unwrap();
         assert_eq!(array.entries()[5].key, ArrayKey::Int(4));
@@ -4267,11 +4318,11 @@ mod tests {
 
         let entries = array.entries();
         assert_eq!(entries[0].key, ArrayKey::Int(2));
-        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(5));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(10));
-        assert_eq!(entries[2].value, Value::String("ten".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("ten".to_string()));
     }
 
     #[test]
@@ -4290,15 +4341,15 @@ mod tests {
 
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("name".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("name".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::Int(5));
+        assert_eq!(entries[1].value(), &Value::Int(5));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::Int(2));
+        assert_eq!(entries[2].value(), &Value::Int(2));
         assert_eq!(entries[3].key, ArrayKey::Int(3));
-        assert_eq!(entries[3].value, Value::String("02".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("02".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(4));
-        assert_eq!(entries[4].value, Value::Int(-1));
+        assert_eq!(entries[4].value(), &Value::Int(-1));
         assert_eq!(
             array.get("name"),
             Some(&Value::String("Ada".to_string())),
@@ -4600,17 +4651,20 @@ mod tests {
 
         assert_eq!(entries.len(), 6);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("next".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("next".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("two updated".to_string()));
+        assert_eq!(
+            entries[3].value(),
+            &Value::String("two updated".to_string())
+        );
         assert_eq!(entries[4].key, ArrayKey::Int(3));
-        assert_eq!(entries[4].value, Value::String("five".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("five".to_string()));
         assert_eq!(entries[5].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[5].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("Ada".to_string()));
         assert_eq!(
             reversed.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(4)
@@ -4639,17 +4693,20 @@ mod tests {
 
         assert_eq!(entries.len(), 6);
         assert_eq!(entries[0].key, ArrayKey::Int(6));
-        assert_eq!(entries[0].value, Value::String("next".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("next".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(-1));
-        assert_eq!(entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("two updated".to_string()));
+        assert_eq!(
+            entries[3].value(),
+            &Value::String("two updated".to_string())
+        );
         assert_eq!(entries[4].key, ArrayKey::Int(5));
-        assert_eq!(entries[4].value, Value::String("five".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("five".to_string()));
         assert_eq!(entries[5].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[5].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("Ada".to_string()));
         assert_eq!(
             reversed.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(7)
@@ -4677,13 +4734,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[1].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(1));
-        assert_eq!(entries[2].value, Value::String("negative".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("next".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("next".to_string()));
         assert_eq!(
             sliced.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -4709,11 +4766,17 @@ mod tests {
         let tail_entries = tail.entries();
         assert_eq!(tail_entries.len(), 3);
         assert_eq!(tail_entries[0].key, ArrayKey::String("02".to_string()));
-        assert_eq!(tail_entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(
+            tail_entries[0].value(),
+            &Value::String("zero two".to_string())
+        );
         assert_eq!(tail_entries[1].key, ArrayKey::Int(0));
-        assert_eq!(tail_entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(
+            tail_entries[1].value(),
+            &Value::String("negative".to_string())
+        );
         assert_eq!(tail_entries[2].key, ArrayKey::Int(1));
-        assert_eq!(tail_entries[2].value, Value::String("next".to_string()));
+        assert_eq!(tail_entries[2].value(), &Value::String("next".to_string()));
 
         assert!(array.sliced_from_offset(99).entries().is_empty());
 
@@ -4737,13 +4800,16 @@ mod tests {
         let middle_entries = middle.entries();
         assert_eq!(middle_entries.len(), 3);
         assert_eq!(middle_entries[0].key, ArrayKey::Int(0));
-        assert_eq!(middle_entries[0].value, Value::String("five".to_string()));
+        assert_eq!(
+            middle_entries[0].value(),
+            &Value::String("five".to_string())
+        );
         assert_eq!(middle_entries[1].key, ArrayKey::Int(1));
-        assert_eq!(middle_entries[1].value, Value::String("two".to_string()));
+        assert_eq!(middle_entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(middle_entries[2].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            middle_entries[2].value,
-            Value::String("zero two".to_string())
+            middle_entries[2].value(),
+            &Value::String("zero two".to_string())
         );
 
         assert!(array.sliced(1, Some(0)).entries().is_empty());
@@ -4758,23 +4824,23 @@ mod tests {
         let entries = negative_offset_with_length.entries();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[1].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("zero two".to_string()));
 
         let null_length = array.sliced(1, None);
         let entries = null_length.entries();
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("five".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("negative".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(3));
-        assert_eq!(entries[4].value, Value::String("next".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("next".to_string()));
     }
 
     #[test]
@@ -4792,11 +4858,11 @@ mod tests {
         let entries = middle.entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::Int(5));
-        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("five".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("zero two".to_string()));
         assert_eq!(
             middle.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(6)
@@ -4806,11 +4872,11 @@ mod tests {
         let entries = tail.entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(-1));
-        assert_eq!(entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(6));
-        assert_eq!(entries[2].value, Value::String("next".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("next".to_string()));
         assert_eq!(
             tail.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(7)
@@ -4837,35 +4903,47 @@ mod tests {
 
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        let Value::Array(first) = &entries[0].value else {
+        let Value::Array(first) = entries[0].value() else {
             panic!("first chunk is an array");
         };
         assert_eq!(first.entries().len(), 2);
         assert_eq!(first.entries()[0].key, ArrayKey::Int(0));
-        assert_eq!(first.entries()[0].value, Value::String("Ada".to_string()));
+        assert_eq!(
+            first.entries()[0].value(),
+            &Value::String("Ada".to_string())
+        );
         assert_eq!(first.entries()[1].key, ArrayKey::Int(1));
-        assert_eq!(first.entries()[1].value, Value::String("five".to_string()));
+        assert_eq!(
+            first.entries()[1].value(),
+            &Value::String("five".to_string())
+        );
 
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        let Value::Array(second) = &entries[1].value else {
+        let Value::Array(second) = entries[1].value() else {
             panic!("second chunk is an array");
         };
         assert_eq!(second.entries().len(), 2);
         assert_eq!(second.entries()[0].key, ArrayKey::Int(0));
-        assert_eq!(second.entries()[0].value, Value::String("two".to_string()));
+        assert_eq!(
+            second.entries()[0].value(),
+            &Value::String("two".to_string())
+        );
         assert_eq!(second.entries()[1].key, ArrayKey::Int(1));
         assert_eq!(
-            second.entries()[1].value,
-            Value::String("zero two".to_string())
+            second.entries()[1].value(),
+            &Value::String("zero two".to_string())
         );
 
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        let Value::Array(third) = &entries[2].value else {
+        let Value::Array(third) = entries[2].value() else {
             panic!("third chunk is an array");
         };
         assert_eq!(third.entries().len(), 1);
         assert_eq!(third.entries()[0].key, ArrayKey::Int(0));
-        assert_eq!(third.entries()[0].value, Value::String("next".to_string()));
+        assert_eq!(
+            third.entries()[0].value(),
+            &Value::String("next".to_string())
+        );
 
         assert_eq!(
             chunks.append(Value::String("after".to_string())).unwrap(),
@@ -4895,38 +4973,50 @@ mod tests {
 
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        let Value::Array(first) = &entries[0].value else {
+        let Value::Array(first) = entries[0].value() else {
             panic!("first chunk is an array");
         };
         assert_eq!(first.entries().len(), 2);
         assert_eq!(first.entries()[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(first.entries()[0].value, Value::String("Ada".to_string()));
+        assert_eq!(
+            first.entries()[0].value(),
+            &Value::String("Ada".to_string())
+        );
         assert_eq!(first.entries()[1].key, ArrayKey::Int(5));
-        assert_eq!(first.entries()[1].value, Value::String("five".to_string()));
+        assert_eq!(
+            first.entries()[1].value(),
+            &Value::String("five".to_string())
+        );
 
-        let Value::Array(second) = &entries[1].value else {
+        let Value::Array(second) = entries[1].value() else {
             panic!("second chunk is an array");
         };
         assert_eq!(second.entries().len(), 2);
         assert_eq!(second.entries()[0].key, ArrayKey::Int(2));
-        assert_eq!(second.entries()[0].value, Value::String("two".to_string()));
+        assert_eq!(
+            second.entries()[0].value(),
+            &Value::String("two".to_string())
+        );
         assert_eq!(second.entries()[1].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            second.entries()[1].value,
-            Value::String("zero two".to_string())
+            second.entries()[1].value(),
+            &Value::String("zero two".to_string())
         );
 
-        let Value::Array(third) = &entries[2].value else {
+        let Value::Array(third) = entries[2].value() else {
             panic!("third chunk is an array");
         };
         assert_eq!(third.entries().len(), 2);
         assert_eq!(third.entries()[0].key, ArrayKey::Int(-1));
         assert_eq!(
-            third.entries()[0].value,
-            Value::String("negative".to_string())
+            third.entries()[0].value(),
+            &Value::String("negative".to_string())
         );
         assert_eq!(third.entries()[1].key, ArrayKey::Int(6));
-        assert_eq!(third.entries()[1].value, Value::String("next".to_string()));
+        assert_eq!(
+            third.entries()[1].value(),
+            &Value::String("next".to_string())
+        );
 
         assert_eq!(
             array.get("name"),
@@ -4956,21 +5046,21 @@ mod tests {
         let entries = right.entries();
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(0));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(1));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(2));
-        assert_eq!(entries[4].value, Value::String("negative".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(3));
-        assert_eq!(entries[5].value, Value::String("next".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("next".to_string()));
         assert_eq!(entries[6].key, ArrayKey::Int(4));
-        assert_eq!(entries[6].value, Value::String("pad".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("pad".to_string()));
         assert_eq!(entries[7].key, ArrayKey::Int(5));
-        assert_eq!(entries[7].value, Value::String("pad".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("pad".to_string()));
         assert_eq!(
             right.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(6)
@@ -4982,21 +5072,21 @@ mod tests {
         let entries = left.entries();
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].key, ArrayKey::Int(0));
-        assert_eq!(entries[0].value, Value::String("pad".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("pad".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("pad".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("pad".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[2].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("five".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("five".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(3));
-        assert_eq!(entries[4].value, Value::String("two".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("two".to_string()));
         assert_eq!(entries[5].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[5].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[6].key, ArrayKey::Int(4));
-        assert_eq!(entries[6].value, Value::String("negative".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("negative".to_string()));
         assert_eq!(entries[7].key, ArrayKey::Int(5));
-        assert_eq!(entries[7].value, Value::String("next".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("next".to_string()));
         assert_eq!(
             left.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(6)
@@ -5070,24 +5160,24 @@ mod tests {
 
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Bea".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Bea".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(0));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(1));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            entries[3].value,
-            Value::String("zero two right".to_string())
+            entries[3].value(),
+            &Value::String("zero two right".to_string())
         );
         assert_eq!(entries[4].key, ArrayKey::Int(2));
-        assert_eq!(entries[4].value, Value::String("left next".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("left next".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(3));
-        assert_eq!(entries[5].value, Value::String("seven".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[6].key, ArrayKey::Int(4));
-        assert_eq!(entries[6].value, Value::String("right next".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("right next".to_string()));
         assert_eq!(entries[7].key, ArrayKey::String("extra".to_string()));
-        assert_eq!(entries[7].value, Value::String("extra".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("extra".to_string()));
         assert_eq!(
             merged.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(5)
@@ -5119,15 +5209,18 @@ mod tests {
         let single_entries = single.entries();
         assert_eq!(single_entries.len(), 4);
         assert_eq!(single_entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(single_entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(single_entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(single_entries[1].key, ArrayKey::Int(0));
-        assert_eq!(single_entries[1].value, Value::String("five".to_string()));
+        assert_eq!(
+            single_entries[1].value(),
+            &Value::String("five".to_string())
+        );
         assert_eq!(single_entries[2].key, ArrayKey::Int(1));
-        assert_eq!(single_entries[2].value, Value::String("two".to_string()));
+        assert_eq!(single_entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(single_entries[3].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            single_entries[3].value,
-            Value::String("zero two".to_string())
+            single_entries[3].value(),
+            &Value::String("zero two".to_string())
         );
 
         let mut two = PhpArray::new();
@@ -5145,19 +5238,22 @@ mod tests {
 
         assert_eq!(entries.len(), 7);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Cy".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Cy".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(0));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(1));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(2));
-        assert_eq!(entries[4].value, Value::String("seven".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[5].key, ArrayKey::String("extra".to_string()));
-        assert_eq!(entries[5].value, Value::String("three extra".to_string()));
+        assert_eq!(
+            entries[5].value(),
+            &Value::String("three extra".to_string())
+        );
         assert_eq!(entries[6].key, ArrayKey::Int(3));
-        assert_eq!(entries[6].value, Value::String("eleven".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("eleven".to_string()));
     }
 
     #[test]
@@ -5184,24 +5280,24 @@ mod tests {
 
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Bea".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Bea".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(5));
-        assert_eq!(entries[1].value, Value::String("five right".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five right".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            entries[3].value,
-            Value::String("zero two right".to_string())
+            entries[3].value(),
+            &Value::String("zero two right".to_string())
         );
         assert_eq!(entries[4].key, ArrayKey::Int(6));
-        assert_eq!(entries[4].value, Value::String("left next".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("left next".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(7));
-        assert_eq!(entries[5].value, Value::String("seven".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[6].key, ArrayKey::Int(8));
-        assert_eq!(entries[6].value, Value::String("right next".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("right next".to_string()));
         assert_eq!(entries[7].key, ArrayKey::String("extra".to_string()));
-        assert_eq!(entries[7].value, Value::String("extra".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("extra".to_string()));
         assert_eq!(
             replaced.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(9)
@@ -5258,27 +5354,36 @@ mod tests {
 
         assert_eq!(entries.len(), 11);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Di".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Di".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(5));
-        assert_eq!(entries[1].value, Value::String("five second".to_string()));
+        assert_eq!(
+            entries[1].value(),
+            &Value::String("five second".to_string())
+        );
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(6));
-        assert_eq!(entries[3].value, Value::String("left next".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("left next".to_string()));
         assert_eq!(entries[4].key, ArrayKey::String("keep".to_string()));
-        assert_eq!(entries[4].value, Value::String("first keep".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("first keep".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(7));
-        assert_eq!(entries[5].value, Value::String("seven second".to_string()));
+        assert_eq!(
+            entries[5].value(),
+            &Value::String("seven second".to_string())
+        );
         assert_eq!(entries[6].key, ArrayKey::Int(8));
-        assert_eq!(entries[6].value, Value::String("first next".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("first next".to_string()));
         assert_eq!(entries[7].key, ArrayKey::Int(9));
-        assert_eq!(entries[7].value, Value::String("nine".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("nine".to_string()));
         assert_eq!(entries[8].key, ArrayKey::String("extra".to_string()));
-        assert_eq!(entries[8].value, Value::String("extra third".to_string()));
+        assert_eq!(
+            entries[8].value(),
+            &Value::String("extra third".to_string())
+        );
         assert_eq!(entries[9].key, ArrayKey::Int(0));
-        assert_eq!(entries[9].value, Value::String("third zero".to_string()));
+        assert_eq!(entries[9].value(), &Value::String("third zero".to_string()));
         assert_eq!(entries[10].key, ArrayKey::Int(10));
-        assert_eq!(entries[10].value, Value::String("ten".to_string()));
+        assert_eq!(entries[10].value(), &Value::String("ten".to_string()));
         assert_eq!(
             replaced.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(11)
@@ -5311,13 +5416,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("dup-string".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("dup-string".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("02".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("02".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(-1));
-        assert_eq!(entries[3].value, Value::Int(6));
+        assert_eq!(entries[3].value(), &Value::Int(6));
         assert_eq!(
             flipped.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -5362,15 +5467,15 @@ mod tests {
         let entries = lower.entries();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("lower".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("lower".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(7));
-        assert_eq!(entries[1].value, Value::String("seven".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("mixed".to_string()));
-        assert_eq!(entries[2].value, Value::String("mixed".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("mixed".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
         assert_eq!(
-            entries[3].value,
-            Value::String("numeric string".to_string())
+            entries[3].value(),
+            &Value::String("numeric string".to_string())
         );
         assert_eq!(
             lower.append(Value::String("after".to_string())).unwrap(),
@@ -5381,11 +5486,11 @@ mod tests {
         let entries = upper.entries();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("NAME".to_string()));
-        assert_eq!(entries[0].value, Value::String("lower".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("lower".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(7));
-        assert_eq!(entries[1].value, Value::String("seven".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("MIXED".to_string()));
-        assert_eq!(entries[2].value, Value::String("mixed".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("mixed".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
         assert_eq!(
             array.get("Name"),
@@ -5427,11 +5532,11 @@ mod tests {
         let entries = result.entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::Int(10));
-        assert_eq!(entries[0].value, Value::String("Grace".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Grace".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(11));
-        assert_eq!(entries[1].value, Value::String("NoId".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("NoId".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("code".to_string()));
-        assert_eq!(entries[2].value, Value::Null);
+        assert_eq!(entries[2].value(), &Value::Null);
     }
 
     #[test]
@@ -5472,13 +5577,13 @@ mod tests {
         let entries = result.entries();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::Int(1));
-        assert_eq!(entries[0].value, Value::String("float".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("float".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(0));
-        assert_eq!(entries[1].value, Value::String("false".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("false".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String(String::new()));
-        assert_eq!(entries[2].value, Value::String("null".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("null".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("missing".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("missing".to_string()));
     }
 
     #[test]
@@ -5521,13 +5626,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("filled".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("filled".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("filled".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(-1));
-        assert_eq!(entries[3].value, Value::String("filled".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("filled".to_string()));
         assert_eq!(
             filled.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -5558,15 +5663,15 @@ mod tests {
 
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].key, ArrayKey::String(String::new()));
-        assert_eq!(entries[0].value, Value::String("filled".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("filled".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("filled".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[3].value, Value::String("filled".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("filled".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(-3));
-        assert_eq!(entries[4].value, Value::String("filled".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("filled".to_string()));
     }
 
     #[test]
@@ -5634,17 +5739,17 @@ mod tests {
 
         assert_eq!(entries.len(), 6);
         assert_eq!(entries[0].key, ArrayKey::String(String::new()));
-        assert_eq!(entries[0].value, Value::String("false key".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("false key".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(1));
-        assert_eq!(entries[1].value, Value::String("true key".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("true key".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[2].value, Value::String("duplicate".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("duplicate".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(2));
-        assert_eq!(entries[3].value, Value::String("two int".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("two int".to_string()));
         assert_eq!(entries[4].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[4].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(-1));
-        assert_eq!(entries[5].value, Value::String("negative".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("negative".to_string()));
         assert_eq!(
             combined.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -5686,13 +5791,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::Int(1));
-        assert_eq!(entries[0].value, Value::String("one".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("one".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(-3));
-        assert_eq!(entries[2].value, Value::String("minus".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("minus".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("04".to_string()));
-        assert_eq!(entries[3].value, Value::String("leading".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("leading".to_string()));
     }
 
     #[test]
@@ -5768,15 +5873,15 @@ mod tests {
         let entries = intersected.entries();
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(5));
-        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("five".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(2));
-        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("two".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(-1));
-        assert_eq!(entries[4].value, Value::String("negative".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("negative".to_string()));
         assert!(!intersected.contains_key("drop"));
         assert!(!intersected.contains_key(6));
 
@@ -5831,11 +5936,11 @@ mod tests {
 
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("zero two".to_string()));
         assert_eq!(
             intersected
                 .append(Value::String("after".to_string()))
@@ -5879,11 +5984,11 @@ mod tests {
         let entries = diffed.entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("zero two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("drop".to_string()));
-        assert_eq!(entries[1].value, Value::String("drop".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("drop".to_string()));
         assert_eq!(entries[2].key, ArrayKey::Int(6));
-        assert_eq!(entries[2].value, Value::String("next".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("next".to_string()));
         assert!(!diffed.contains_key("name"));
         assert!(!diffed.contains_key(5));
         assert!(!diffed.contains_key(2));
@@ -5935,9 +6040,9 @@ mod tests {
         let entries = diffed.entries();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].key, ArrayKey::Int(8));
-        assert_eq!(entries[0].value, Value::String("eight".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("eight".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("keep".to_string()));
-        assert_eq!(entries[1].value, Value::String("keep".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("keep".to_string()));
         assert_eq!(
             diffed.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(9)
@@ -5991,13 +6096,13 @@ mod tests {
             entries[0].key,
             ArrayKey::String("string-ten-float".to_string())
         );
-        assert_eq!(entries[0].value, Value::String("10.0".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("10.0".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(8));
-        assert_eq!(entries[1].value, Value::String("eight".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("eight".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("keep".to_string()));
-        assert_eq!(entries[2].value, Value::String("keep".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("keep".to_string()));
         assert_eq!(entries[3].key, ArrayKey::Int(9));
-        assert_eq!(entries[3].value, Value::String("next".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("next".to_string()));
         assert_eq!(
             diffed.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(10)
@@ -6047,9 +6152,9 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].key, ArrayKey::String("keep".to_string()));
-        assert_eq!(entries[0].value, Value::String("keep".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("keep".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(9));
-        assert_eq!(entries[1].value, Value::String("next".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("next".to_string()));
         assert_eq!(
             diffed.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(10)
@@ -6149,27 +6254,27 @@ mod tests {
 
         assert_eq!(entries.len(), 11);
         assert_eq!(entries[0].key, ArrayKey::String("null".to_string()));
-        assert_eq!(entries[0].value, Value::Null);
+        assert_eq!(entries[0].value(), &Value::Null);
         assert_eq!(entries[1].key, ArrayKey::String("false".to_string()));
-        assert_eq!(entries[1].value, Value::Bool(false));
+        assert_eq!(entries[1].value(), &Value::Bool(false));
         assert_eq!(entries[2].key, ArrayKey::String("empty".to_string()));
-        assert_eq!(entries[2].value, Value::String(String::new()));
+        assert_eq!(entries[2].value(), &Value::String(String::new()));
         assert_eq!(entries[3].key, ArrayKey::String("true".to_string()));
-        assert_eq!(entries[3].value, Value::Bool(true));
+        assert_eq!(entries[3].value(), &Value::Bool(true));
         assert_eq!(entries[4].key, ArrayKey::String("one".to_string()));
-        assert_eq!(entries[4].value, Value::Int(1));
+        assert_eq!(entries[4].value(), &Value::Int(1));
         assert_eq!(entries[5].key, ArrayKey::String("zero".to_string()));
-        assert_eq!(entries[5].value, Value::Int(0));
+        assert_eq!(entries[5].value(), &Value::Int(0));
         assert_eq!(entries[6].key, ArrayKey::String("string-zero".to_string()));
-        assert_eq!(entries[6].value, Value::String("0".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("0".to_string()));
         assert_eq!(entries[7].key, ArrayKey::String("int-ten".to_string()));
-        assert_eq!(entries[7].value, Value::Int(10));
+        assert_eq!(entries[7].value(), &Value::Int(10));
         assert_eq!(entries[8].key, ArrayKey::String("float-ten".to_string()));
-        assert_eq!(entries[8].value, Value::Float(10.0));
+        assert_eq!(entries[8].value(), &Value::Float(10.0));
         assert_eq!(entries[9].key, ArrayKey::String("text".to_string()));
-        assert_eq!(entries[9].value, Value::String("abc".to_string()));
+        assert_eq!(entries[9].value(), &Value::String("abc".to_string()));
         assert_eq!(entries[10].key, ArrayKey::Int(8));
-        assert_eq!(entries[10].value, Value::String("eight".to_string()));
+        assert_eq!(entries[10].value(), &Value::String("eight".to_string()));
         assert_eq!(
             intersected
                 .append(Value::String("after".to_string()))
@@ -6229,15 +6334,15 @@ mod tests {
 
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("ten".to_string()));
-        assert_eq!(entries[1].value, Value::Int(10));
+        assert_eq!(entries[1].value(), &Value::Int(10));
         assert_eq!(entries[2].key, ArrayKey::String("float-ten".to_string()));
-        assert_eq!(entries[2].value, Value::Float(10.0));
+        assert_eq!(entries[2].value(), &Value::Float(10.0));
         assert_eq!(entries[3].key, ArrayKey::Int(8));
-        assert_eq!(entries[3].value, Value::String("eight".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("eight".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(9));
-        assert_eq!(entries[4].value, Value::String("next".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("next".to_string()));
         assert_eq!(
             intersected
                 .append(Value::String("after".to_string()))
@@ -6327,24 +6432,24 @@ mod tests {
 
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].key, ArrayKey::Int(5));
-        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("five".to_string()));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("null".to_string()));
-        assert_eq!(entries[2].value, Value::Null);
+        assert_eq!(entries[2].value(), &Value::Null);
         assert_eq!(entries[3].key, ArrayKey::String("true".to_string()));
-        assert_eq!(entries[3].value, Value::Bool(true));
+        assert_eq!(entries[3].value(), &Value::Bool(true));
         assert_eq!(entries[4].key, ArrayKey::String("int-ten".to_string()));
-        assert_eq!(entries[4].value, Value::Int(10));
+        assert_eq!(entries[4].value(), &Value::Int(10));
         assert_eq!(
             entries[5].key,
             ArrayKey::String("string-ten-float".to_string())
         );
-        assert_eq!(entries[5].value, Value::String("10.0".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("10.0".to_string()));
         assert_eq!(entries[6].key, ArrayKey::String("text".to_string()));
-        assert_eq!(entries[6].value, Value::String("abc".to_string()));
+        assert_eq!(entries[6].value(), &Value::String("abc".to_string()));
         assert_eq!(entries[7].key, ArrayKey::Int(10));
-        assert_eq!(entries[7].value, Value::String("next".to_string()));
+        assert_eq!(entries[7].value(), &Value::String("next".to_string()));
         assert_eq!(
             unique.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(11)
@@ -6379,13 +6484,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("s10".to_string()));
-        assert_eq!(entries[0].value, Value::String("10".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("10".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("one".to_string()));
-        assert_eq!(entries[1].value, Value::Int(1));
+        assert_eq!(entries[1].value(), &Value::Int(1));
         assert_eq!(entries[2].key, ArrayKey::String("false".to_string()));
-        assert_eq!(entries[2].value, Value::Bool(false));
+        assert_eq!(entries[2].value(), &Value::Bool(false));
         assert_eq!(entries[3].key, ArrayKey::String("text".to_string()));
-        assert_eq!(entries[3].value, Value::String("abc".to_string()));
+        assert_eq!(entries[3].value(), &Value::String("abc".to_string()));
         assert_eq!(
             array.get("i10"),
             Some(&Value::Int(10)),
@@ -6413,13 +6518,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("first".to_string()));
-        assert_eq!(entries[0].value, Value::String("10".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("10".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("fourth".to_string()));
-        assert_eq!(entries[1].value, Value::Float(10.5));
+        assert_eq!(entries[1].value(), &Value::Float(10.5));
         assert_eq!(entries[2].key, ArrayKey::String("sixth".to_string()));
-        assert_eq!(entries[2].value, Value::Int(11));
+        assert_eq!(entries[2].value(), &Value::Int(11));
         assert_eq!(entries[3].key, ArrayKey::String("eighth".to_string()));
-        assert_eq!(entries[3].value, Value::Int(0));
+        assert_eq!(entries[3].value(), &Value::Int(0));
         assert_eq!(
             array.get("second"),
             Some(&Value::Int(10)),
@@ -6509,13 +6614,13 @@ mod tests {
 
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::Int(2));
+        assert_eq!(entries[0].value(), &Value::Int(2));
         assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::Int(3));
+        assert_eq!(entries[1].value(), &Value::Int(3));
         assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::Int(1));
+        assert_eq!(entries[2].value(), &Value::Int(1));
         assert_eq!(entries[3].key, ArrayKey::Int(-1));
-        assert_eq!(entries[3].value, Value::Int(1));
+        assert_eq!(entries[3].value(), &Value::Int(1));
         assert_eq!(
             counted.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -6711,16 +6816,16 @@ mod tests {
 
         assert_eq!(entries.len(), 6);
         assert_eq!(entries[0].key, ArrayKey::String("true".to_string()));
-        assert_eq!(entries[0].value, Value::Bool(true));
+        assert_eq!(entries[0].value(), &Value::Bool(true));
         assert_eq!(entries[1].key, ArrayKey::String("one".to_string()));
-        assert_eq!(entries[1].value, Value::Int(1));
+        assert_eq!(entries[1].value(), &Value::Int(1));
         assert_eq!(entries[2].key, ArrayKey::String("space".to_string()));
-        assert_eq!(entries[2].value, Value::String(" ".to_string()));
+        assert_eq!(entries[2].value(), &Value::String(" ".to_string()));
         assert_eq!(entries[3].key, ArrayKey::String("nested-array".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(7));
-        assert_eq!(entries[4].value, Value::String("seven".to_string()));
+        assert_eq!(entries[4].value(), &Value::String("seven".to_string()));
         assert_eq!(entries[5].key, ArrayKey::Int(8));
-        assert_eq!(entries[5].value, Value::String("next".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("next".to_string()));
         assert_eq!(
             filtered.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(9)
