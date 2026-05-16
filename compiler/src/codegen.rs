@@ -18,6 +18,8 @@ const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous cl
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
+const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
+const ASSEMBLY_REQUIRE_EXPRESSION_REJECTION: &str = "assembly include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
 const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
@@ -654,7 +656,7 @@ impl LlvmGenerator {
             }
             Expr::ErrorControl { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
-                Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
+                Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Assign { target, span, .. }
@@ -3483,7 +3485,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
+                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION)),
             Expr::Assign { target, span, .. }

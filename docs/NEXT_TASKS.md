@@ -10845,38 +10845,94 @@ handled.
 
 ## Milestone 1106: Next Parser Boundary
 
-- [ ] Parser lane: choose one small unsupported syntax or parse-diagnostic
-  boundary from the refreshed gap map, add stable focused coverage, CLI
-  fixture evidence where applicable, and keep runtime/native support claims
-  unchanged.
+- [x] Parser lane: add a stable parse diagnostic for unsupported readonly
+  property declarations, including untyped, typed, static, and reordered
+  modifier forms such as `public readonly string $id` and
+  `readonly public string $id`. This keeps readonly property metadata,
+  initialization rules, write-once enforcement, reflection behavior, and
+  native lowering unsupported while replacing the previous broad class-member
+  modifier diagnostic with a property-specific boundary.
 
-## Milestone 1107: Next Runtime Value/Object Slice
+## Milestone 1107: Non-Public Property Append Reference Sources
+
+- [x] Runtime/value-model lane: extend the bounded object-property append
+  reference-source path to named non-public properties in active method
+  visibility contexts. `$alias =& $this->privateItems[];`,
+  `$alias =& $this->protectedItems[];`, and protected peer-object append
+  sources such as `$alias =& $other->items[];` parse and execute when the
+  alias target is a direct variable, the source object is a direct variable,
+  the property name is explicit, every parent offset for append-at-depth is
+  explicit, and the selected property is visible under the current
+  public/private/protected method context. `null` property roots and missing
+  parent containers materialize as arrays before binding the appended `null`
+  slot. This is not dynamic non-public append-source support,
+  dynamic/magic-property append-source support, non-public property
+  array-offset clone alias mirroring, non-direct object expressions,
+  inaccessible private/protected property magic fallback from outside
+  context, ArrayAccess reference sources, full PHP reference containers,
+  copy-on-write containers, exact alias destruction ordering, or native
+  lowering.
+
+## Milestone 1108: Native Include/Require Expression Boundary
+
+- [x] IR/lowering lane: add a dedicated native rejection for expression-form
+  `include`, `include_once`, `require`, and `require_once`, naming include
+  return values, `_once` de-duplication results, caller-scope side effects,
+  and multi-file execution instead of falling through to the statement-form
+  multi-file diagnostic.
+
+## Milestone 1109: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: strengthen the deterministic
+  `phpc test --compare-php` summary contract by splitting skipped comparison
+  fixtures into missing-system-`php` and sibling `.phpc-only` reasons. This
+  changes only CLI reporting and test-runner accounting; it does not change
+  fixture execution semantics, comparison normalization, PHP-version-specific
+  diagnostics, runtime behavior, native lowering, or PHP support claims.
+
+## Milestone 1110: Lane Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1106-1109 landed, refresh
+  `GOAL.MD`, `docs/LANE_WORKERS.md`, `docs/NEXT_TASKS.md`,
+  `docs/PROGRESS.md`, and affected support docs so the next batch has one
+  active milestone per lane and a clear full-gate checkpoint point. This is a
+  planning/documentation milestone only; it does not change runtime behavior,
+  native lowering, fixtures, or PHP/WordPress support claims.
+
+## Milestone 1111: Next Parser Boundary
+
+- [ ] Parser lane: choose one small unsupported syntax or parse-diagnostic
+  boundary from the refreshed gap map, with preference for a PHP/WordPress
+  surface that currently falls through to a broad or misleading diagnostic.
+  Add stable focused coverage, CLI fixture evidence where applicable, and
+  keep runtime/native support claims unchanged.
+
+## Milestone 1112: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
-  map, preferably a reference/COW, object-semantics, or request-state blocker
-  already reached by fixtures or WordPress probes. Prove it with focused
-  tests, CLI coverage, system PHP comparison where applicable, and named
-  unsupported edges.
+  map, preferably a reference/COW, object-semantics, request-state, filesystem,
+  database, or WordPress-probe blocker already reached by fixtures or external
+  probes. Prove it with focused tests, CLI coverage, system PHP comparison
+  where applicable, and named unsupported edges.
 
-## Milestone 1108: Next Native Boundary
+## Milestone 1113: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1109: Next Compiler-Output Contract
+## Milestone 1114: Next Compiler-Output Contract
 
-- [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner, or
-  backend artifact contract that makes verification or native rejection easier
-  to audit without broadening PHP support claims.
+- [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
+  compatibility-manifest, or backend artifact contract that improves
+  auditability without broadening PHP support claims.
 
-## Milestone 1110: Next Tests/Docs Queue Refresh
+## Milestone 1115: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1106-1109 land, refresh
-  `GOAL.MD`, `docs/LANE_WORKERS.md`, `docs/NEXT_TASKS.md`,
-  `docs/PROGRESS.md`, and affected support docs so the next batch has one
-  active milestone per lane and a clear full-gate checkpoint point.
+- [ ] Tests/docs lane: after Milestones 1111-1114 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

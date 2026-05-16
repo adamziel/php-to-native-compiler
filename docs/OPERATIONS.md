@@ -22,6 +22,9 @@ The PHP comparison command still passes when system `php` is absent; comparison
 counts are reported as skipped while committed fixture expectations still run.
 Fixtures with sibling `.phpc-only` marker files are also skipped by system PHP
 comparison while remaining covered by committed `phpc` expectations.
+The comparison summary breaks skipped fixtures down by reason so CI logs show
+how many skips came from a missing `php` binary and how many came from
+`.phpc-only` markers.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

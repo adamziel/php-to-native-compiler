@@ -148,8 +148,11 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
     );
     if compare_php {
         println!(
-            "system php comparison: {} compared, {} skipped",
-            summary.php_compared, summary.php_skipped
+            "system php comparison: {} compared, {} skipped ({} missing php, {} phpc-only)",
+            summary.php_compared,
+            summary.php_skipped,
+            summary.php_skipped_missing,
+            summary.php_skipped_by_fixture
         );
     }
     Ok(if summary.failed == 0 { 0 } else { 1 })

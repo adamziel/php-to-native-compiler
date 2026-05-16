@@ -1,0 +1,3 @@
+<?php
+$result = include 'bootstrap.php';
+echo $result;

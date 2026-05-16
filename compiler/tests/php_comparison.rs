@@ -96,6 +96,48 @@ fn cli_compare_php_summary_counts_phpc_only_skips_with_fake_php() {
         stdout.contains("system php comparison: 1 compared, 1 skipped"),
         "{stdout}"
     );
+    assert!(
+        stdout
+            .contains("system php comparison: 1 compared, 1 skipped (0 missing php, 1 phpc-only)"),
+        "{stdout}"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cli_compare_php_summary_counts_missing_php_skips_with_empty_path() {
+    let temp = TempFixtureDir::new("phpc-compare-missing-php-summary");
+    let bin_dir = temp.path().join("bin");
+    let fixture_dir = temp.path().join("fixtures");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::create_dir_all(&fixture_dir).unwrap();
+
+    fs::write(fixture_dir.join("runs.php"), "<?php echo 'same';\n").unwrap();
+    fs::write(fixture_dir.join("runs.stdout"), "same\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args(["test", "--compare-php"])
+        .arg(&fixture_dir)
+        .env("PATH", &bin_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.is_empty(), "{stderr}");
+    assert!(
+        stdout.contains("fixture tests: 1 passed, 0 failed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("system php comparison: 0 compared, 1 skipped (1 missing php, 0 phpc-only)"),
+        "{stdout}"
+    );
 }
 
 struct TempFixtureDir {

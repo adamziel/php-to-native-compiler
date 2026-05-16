@@ -127,17 +127,20 @@
   with the same visible-property root materialization. Append source paths such
   as `$alias =& $object->items[];` and
   `$alias =& $object->items[$outer][];` execute for direct object variables
-  and named declared public properties, materializing `null` properties and
-  missing parent containers as arrays before binding the selected appended
-  slot. String-keyed `$GLOBALS` append reference sources such as
+  and named visible properties, materializing `null` properties and missing
+  parent containers as arrays before binding the selected appended slot.
+  Covered non-public append forms are limited to valid method visibility
+  contexts such as `$this->privateItems[]`, `$this->protectedItems[]`, and
+  protected peer-object roots. String-keyed `$GLOBALS` append reference
+  sources such as
   `$alias =& $GLOBALS["bag"][];` and
   `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
   selected slot under the real global symbol table, including from function
   scope. `$GLOBALS[]` append sources, non-string root keys, recursive
-  `$GLOBALS` materialization, dynamic/magic property sources, non-public
-  append-source paths, non-direct object expressions, non-variable reference
-  targets, ArrayAccess offset reference sources, full PHP reference containers,
-  copy-on-write
+  `$GLOBALS` materialization, dynamic/magic property append sources, dynamic
+  non-public append-source paths, non-direct object expressions, non-variable
+  reference targets, ArrayAccess offset reference sources, full PHP reference
+  containers, copy-on-write
   containers, exact alias destruction ordering, and native lowering remain
   unsupported for these source forms. When a direct static array
   variable with a covered direct array-offset reference alias is copied into
@@ -1959,6 +1962,9 @@
   bare cases,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
+  readonly property declarations before readonly metadata, initialization
+  rules, write-once enforcement, reflection behavior, and native lowering
+  exist,
   typed instance property declarations, typed static property declarations
   before typed metadata/uninitialized state/write enforcement exist, instance
   property default values, multiple property declarations, unsupported class
@@ -2045,6 +2051,10 @@
   `phar://`, opcache behavior, autoload interaction, declaration-order edge
   cases, source mapping for functions/classes after include, PHP's exact
   warning-vs-fatal recovery behavior, and native lowering are not implemented.
+  Native lowering rejects expression forms such as
+  `$result = include 'file.php';` through a dedicated codegen diagnostic that
+  names include return values, `_once` de-duplication results, caller-scope
+  side effects, and multi-file execution.
 - Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
   with a stable parse diagnostic. The planned first executable slice treats
   `eval` as a language construct with one string-valued argument, parses that
@@ -2812,6 +2822,12 @@
   remains syntax-ambiguous with ordinary array offsets at this layer, so the
   native array boundary still covers it unless a future analysis can prove the
   root is an `ArrayAccess` object.
+  Expression-form `include`, `include_once`, `require`, and `require_once`
+  also have a dedicated native codegen boundary instead of falling through to
+  the statement-form multi-file diagnostic. Native support still needs source
+  loading, path resolution, declaration registration, caller-scope side
+  effects, include return values, `_once` de-duplication results, source
+  mapping, and exact native diagnostics.
   Native binary arithmetic currently lowers `+`, `-`, and `*` when both
   operands are already same-type lowerable floats, or when both operands are
   lowerable integers and the integer result is statically proven not to
@@ -4929,7 +4945,8 @@
   implementation,
   autoload-triggered parent class resolution,
   promoted constructor properties,
-  typed property storage/enforcement, DNF-shaped typed property declarations,
+  readonly property metadata/enforcement, typed property storage/enforcement,
+  DNF-shaped typed property declarations,
   non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,

@@ -589,6 +589,51 @@ fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_readonly_property_declarations_have_stable_parse_errors() {
+    let cases = [
+        ("<?php\nclass Value {\n    public readonly $id;\n}\n", 3, 12),
+        (
+            "<?php\nclass Value {\n    public readonly string $id;\n}\n",
+            3,
+            12,
+        ),
+        (
+            "<?php\nclass Value {\n    private static readonly int $id;\n}\n",
+            3,
+            20,
+        ),
+        (
+            "<?php\nclass Value {\n    readonly public string $id;\n}\n",
+            3,
+            5,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_readonly_property_declarations_at_parse_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nclass Value {\n    public readonly string $id;\n}\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
+    );
+}
+
+#[test]
 fn malformed_clone_expression_has_stable_parse_errors() {
     let cases = [
         (

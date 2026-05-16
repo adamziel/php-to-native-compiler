@@ -12,6 +12,8 @@ pub struct TestSummary {
     pub failed: usize,
     pub php_compared: usize,
     pub php_skipped: usize,
+    pub php_skipped_missing: usize,
+    pub php_skipped_by_fixture: usize,
     pub failures: Vec<String>,
 }
 
@@ -43,6 +45,8 @@ pub fn run_fixture_dir_with_options(
         failed: 0,
         php_compared: 0,
         php_skipped: 0,
+        php_skipped_missing: 0,
+        php_skipped_by_fixture: 0,
         failures: Vec::new(),
     };
 
@@ -57,7 +61,14 @@ pub fn run_fixture_dir_with_options(
 
         match fixture_php_comparison {
             PhpComparison::Enabled => summary.php_compared += 1,
-            PhpComparison::Missing | PhpComparison::SkippedByFixture => summary.php_skipped += 1,
+            PhpComparison::Missing => {
+                summary.php_skipped += 1;
+                summary.php_skipped_missing += 1;
+            }
+            PhpComparison::SkippedByFixture => {
+                summary.php_skipped += 1;
+                summary.php_skipped_by_fixture += 1;
+            }
             PhpComparison::Disabled => {}
         }
 

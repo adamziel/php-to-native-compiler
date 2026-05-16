@@ -194,21 +194,23 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1105 closes the roadmap gap-map refresh after the
-  1102-1105 batch. Milestone 1110 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1110 closes the 1106-1109 implementation-batch
+  queue refresh. Milestone 1115 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 1106 is the next parser slot, selecting a small
+- Parser lane: Milestone 1111 is the next parser slot, selecting a small
   syntax or parse-diagnostic boundary from the refreshed PHP/WordPress gap map
   without widening runtime or native support claims.
-- Runtime lane: Milestone 1107 is the next runtime slot, selecting a bounded
-  value-model, object-semantics, request-state, or WordPress-probe blocker
-  with focused tests, CLI coverage, and named unsupported edges.
-- IR/lowering lane: Milestone 1108 is the next native slot, selecting a narrow
+- Runtime lane: Milestone 1112 is the next runtime slot, selecting a bounded
+  value-model, object-semantics, request-state, filesystem, database, or
+  WordPress-probe blocker with focused tests, CLI coverage, and named
+  unsupported edges.
+- IR/lowering lane: Milestone 1113 is the next native slot, selecting a narrow
   native IR/lowering refinement or precise rejection boundary from already
   documented interpreter behavior.
-- Compiler-output lane: Milestone 1109 is the next compiler-output slot,
-  choosing a deterministic CLI, fixture-runner, or backend artifact contract
-  that improves auditability without broadening PHP support claims.
+- Compiler-output lane: Milestone 1114 is the next compiler-output slot,
+  choosing a deterministic CLI, fixture-runner, compatibility-manifest, or
+  backend artifact contract that improves auditability without broadening PHP
+  support claims.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
 592, 597, 602, 607, 612, and 617 closed recent parser slots, Milestones 565, 568,
@@ -226,7 +228,10 @@ Milestone 1099 closed the nullsafe object operator parse boundary, Milestone
 1100 closed the native clone rejection boundary, and Milestone 1101 closed
 compile emit-mode validation precedence. Milestone 1105 refreshed the
 compatibility gap map and next-lane queue without changing implementation or
-fixture behavior.
+fixture behavior. Milestone 1109 closed the compiler-output comparison-summary
+skip-reason contract for `phpc test --compare-php`. Milestones 1106 through
+1109 closed the latest parser/runtime/IR/compiler-output implementation batch,
+and Milestone 1110 refreshed the next-lane queue.
 The next batch should again keep one active milestone per lane and should use
 separate worktrees and separate `CARGO_TARGET_DIR` values when workers run in
 parallel.

@@ -244,9 +244,12 @@ inside valid method visibility contexts. The route materializes a `null`
 property as an array and missing selected slots as `null`. Writes through the
 alias and through the direct array or supported object-property offset observe
 the same value, and `unset($alias)` removes only the alias binding.
-Append-at-depth reference sources and dynamic public object-property reference
-sources have similarly bounded routes for direct object variables. Named
-visible object-property sources can bind through the current
+Append-at-depth reference sources have similarly bounded routes for direct
+arrays and named visible object-property roots, including private `$this`,
+protected `$this`, and protected peer-object roots when the source appears
+inside a valid method visibility context. Dynamic public object-property
+reference sources have similarly bounded routes for direct object variables.
+Named visible object-property sources can bind through the current
 public/private/protected method context. Missing direct object
 properties can also dispatch to a visible non-static magic `__get()`
 reference source when the method is declared by reference and returns a direct
@@ -256,7 +259,7 @@ missing public-property names use the same magic route after the property
 expression resolves to a string or integer. Non-array roots, non-direct object
 expressions, inaccessible private/protected magic fallback fidelity, `__get()`
 returns of properties/offsets/expressions, dynamic non-public magic-property
-behavior, non-public append-source paths, `ArrayAccess` offsets, exact
+behavior, dynamic non-public append-source paths, `ArrayAccess` offsets, exact
 by-reference `foreach`, full reference containers, copy-on-write, and native
 lowering remain future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
@@ -441,6 +444,13 @@ on PHP semantics first.
 Tradeoff: Milestone 1 native lowering is smaller than interpreter support. The
 backend must return a codegen error for unsupported constructs rather than
 pretend to compile them.
+Expression-form `include`, `include_once`, `require`, and `require_once` have
+a dedicated native rejection boundary, separate from the statement-form
+multi-file boundary. This keeps the extra expression semantics visible:
+included-file return values, `_once` de-duplication result values,
+caller-scope side effects, source loading, path resolution, declaration
+registration, source mapping, and exact diagnostics all remain future native
+work.
 Statement-form reference assignment has a dedicated native rejection boundary,
 separate from general mutation lowering. `Stmt::ReferenceAssign` is rejected
 before lowering its source or target operands in both LLVM IR emission and the
@@ -1569,11 +1579,11 @@ parent-to-child slot order.
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
 and private names as `\0ClassName\0name` using the declaring class name.
-Dynamic properties, non-constant or typed property defaults, promoted
-constructor properties, trait/interface properties, and
-non-public property visibility-context behavior beyond same-declaring-class
-private access and class/ancestor protected access remain outside the current
-object model.
+Dynamic properties, readonly property metadata/enforcement, non-constant or
+typed property defaults, promoted constructor properties, trait/interface
+properties, and non-public property visibility-context behavior beyond
+same-declaring-class private access and class/ancestor protected access remain
+outside the current object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
 single-parent ancestor, and recorded `implements` metadata relationships
 against the current metadata table.

@@ -654,48 +654,6 @@ impl SymbolTable {
         Ok(())
     }
 
-    fn bind_static_to_appended_object_property_array_offset(
-        &mut self,
-        target: &str,
-        object_name: &str,
-        property: &str,
-        keys: Vec<ArrayKey>,
-        span: Span,
-    ) -> CompileResult<()> {
-        let root = ArrayOffsetAliasRoot::PublicObjectProperty {
-            object: object_name.to_string(),
-            property: property.to_string(),
-        };
-        let root_alias = ArrayOffsetAlias {
-            root: root.clone(),
-            keys: Vec::new(),
-        };
-        let mut array = match self.read_alias_root_value(&root_alias, span)? {
-            Some(Value::Array(array)) => array,
-            Some(Value::Null) | None => PhpArray::new(),
-            Some(other) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot write offset on {}",
-                        other.type_name()
-                    )),
-                ));
-            }
-        };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
-        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
-        self.bind_static_to_array_offset_alias(
-            target,
-            ArrayOffsetAlias {
-                root,
-                keys: alias_keys,
-            },
-        );
-        Ok(())
-    }
-
     fn bind_static_to_existing_context_object_property(
         &mut self,
         target: &str,
@@ -4342,8 +4300,8 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
-                    scope.bind_static_to_appended_object_property_array_offset(
-                        name, object, property, keys, span,
+                    self.bind_static_to_appended_context_object_property_array_offset(
+                        name, object, property, keys, span, scope,
                     )?;
                 } else if let ReferenceSource::Property {
                     expr:
@@ -4701,6 +4659,76 @@ impl Interpreter {
         let alias = ArrayOffsetAlias { root, keys };
         scope.materialize_array_offset_alias(&alias, span)?;
         scope.bind_static_to_array_offset_alias(target_name, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_appended_context_object_property_array_offset(
+        &self,
+        target_name: &str,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let visibility = object
+            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        let root = if visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+                current_class_id,
+                protected_class_ids,
+            }
+        };
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match scope.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            SymbolTable::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        scope.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        scope.bind_static_to_array_offset_alias(
+            target_name,
+            ArrayOffsetAlias {
+                root,
+                keys: alias_keys,
+            },
+        );
         Ok(())
     }
 

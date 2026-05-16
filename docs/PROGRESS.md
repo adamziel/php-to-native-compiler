@@ -4,6 +4,133 @@
 
 Implemented:
 
+- Added Milestone 1110, a tests/docs lane queue refresh after the 1106-1109
+  implementation batch. `GOAL.MD` now names the latest bounded non-public
+  object-property array-offset and append reference-source work in the
+  compatibility narrative, `docs/NEXT_TASKS.md` marks Milestones 1106-1110
+  complete and opens Milestones 1111-1115, and `docs/LANE_WORKERS.md` points
+  the next parser/runtime/IR/compiler-output/tests-docs lanes at that queue.
+  This does not change runtime behavior, native lowering, fixture behavior, or
+  PHP/WordPress compatibility claims. Verification so far: queue inspection,
+  progress-log inspection, and scoped `git diff --check` passed in the main
+  integration tree. Full gate pending at the 1106-1110 checkpoint.
+
+- Added Milestone 1109, a deterministic compiler-output contract for
+  `phpc test --compare-php` skip reporting. The fixture runner now tracks
+  skipped system-PHP comparisons by reason and the CLI summary prints both the
+  total skip count and its missing-`php` versus `.phpc-only` breakdown. This
+  improves auditability of comparison logs without changing fixture execution,
+  comparison normalization, PHP-version-specific diagnostics, runtime
+  behavior, native lowering, or PHP support claims. Verification so far:
+  `cargo test -p phpc --test php_comparison
+  cli_compare_php_summary_counts_phpc_only_skips_with_fake_php --
+  --test-threads=1`, `cargo test -p phpc --test php_comparison
+  cli_compare_php_summary_counts_missing_php_skips_with_empty_path --
+  --test-threads=1`, `cargo test -p phpc --test php_comparison --
+  --test-threads=1`, `cargo fmt --check`, direct
+  `PATH=/tmp/phpc-compare-summary-manual/bin /home/claude/.cargo/bin/cargo
+  run -q -p phpc -- test --compare-php
+  /tmp/phpc-compare-summary-manual/fixtures` with a fake `php` binary reported
+  `system php comparison: 1 compared, 1 skipped (0 missing php, 1
+  phpc-only)`, and scoped `git diff --check` passed in the compiler-output
+  lane. Full gate deferred until integration.
+
+- Added Milestone 1108, a dedicated native include/require expression-form
+  rejection boundary. `phpc compile --emit-ir` and `--emit-asm` now reject
+  expression forms such as `$result = include 'file.php';`, `require`,
+  `include_once`, and `require_once` with a diagnostic that names multi-file
+  execution plus include return values, `_once` de-duplication results, and
+  caller-scope side effects instead of using only the statement-form
+  include/require boundary. Statement-form include/require remains on the
+  existing multi-file source-loading diagnostic. This does not implement native
+  source loading, path resolution, declaration registration, caller-scope
+  symbol-table effects, include return values, `_once` de-duplication,
+  source mapping, exact native diagnostics, or native multi-file execution.
+  Verification so far:
+  `cargo test -p phpc --test native_include_require_boundary emit_ir_rejects_expression_include_require_with_return_value_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_include_require_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features emit_ir_rejects_require_until_native_multifile_lowering_exists -- --test-threads=1`,
+  direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1108/native_include_expression_boundary.phpc-source
+  --emit-ir` returned exit `1` with the pinned expression-form diagnostic, and
+  `cargo fmt --check` passed in the IR lane using
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-1108`; scoped
+  `git diff --check -- README.md compiler/src/codegen.rs
+  compiler/tests/native_include_require_boundary.rs docs/ARCHITECTURE.md
+  docs/NEXT_TASKS.md docs/PROGRESS.md docs/SUPPORT.md
+  tests/fixtures/milestone1108/native_include_expression_boundary.phpc-source
+  tests/fixtures/milestone1108/native_include_expression_boundary_emit_ir.cli`
+  also passed. Full gate deferred until integration.
+
+- Added Milestone 1107, a bounded non-public object-property append
+  reference-source slice for active method visibility contexts.
+  Direct-variable aliases can now bind to appended slots under visible named
+  non-public properties, covering `$alias =& $this->privateItems[];`,
+  `$alias =& $this->protectedItems[];`, nested append-at-depth parent paths,
+  and protected peer-object forms such as `$alias =& $other->items[];`. The
+  implementation reuses the context-aware object-property alias root, so
+  `null` property roots and missing parent containers materialize consistently
+  with the existing visible public-property append route while preserving the
+  existing public append-source and clone/reference mirroring behavior. This
+  does not implement dynamic non-public append-source support,
+  dynamic/magic-property append-source support, non-public property
+  array-offset clone alias mirroring, non-direct object expressions,
+  inaccessible private/protected magic fallback from outside context,
+  ArrayAccess reference sources, full PHP reference containers,
+  copy-on-write, exact alias destruction ordering, or native lowering.
+  Verification so far: `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public_object_property_array_append_source_aliases_inside_method_context
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public_object_property_array_append_source --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_protected_peer_object_property_array_append_source_aliases_inside_child_context
+  -- --test-threads=1`, direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1107/non_public_object_property_array_append_reference_sources.php`
+  printed the expected alias output, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1107`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1107`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment -- --test-threads=1`, `cargo test
+  -p phpc --test object_model
+  clone_expression_mirrors_context_property_reference_slots --
+  --test-threads=1`, `cargo fmt --check`, and scoped `git diff --check`
+  passed in the runtime lane using
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-1107`. Full gate deferred
+  until integration.
+
+- Added Milestone 1106, a parser/syntax-boundary diagnostic for unsupported
+  readonly property declarations. Class member forms such as
+  `public readonly $id`, `public readonly string $id`,
+  `private static readonly int $id`, and reordered
+  `readonly public string $id` now fail with a stable property-specific parse
+  diagnostic instead of the broader class-member modifier error. This does
+  not implement readonly property metadata, initialization rules, write-once
+  enforcement, typed property storage/enforcement, reflection behavior, exact
+  PHP diagnostics, runtime semantics, or native lowering. Verification so far:
+  `cargo test -p phpc --test syntax_boundaries
+  unsupported_readonly_property_declarations_have_stable_parse_errors --
+  --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_readonly_property_declarations_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --test-threads=1`, `cargo run -q -p
+  phpc -- test tests/fixtures/unsupported_syntax_features`, `cargo test -p
+  phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_object_features`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/unsupported_syntax_features`, `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_readonly_member_modifier.php`
+  and `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_object_features/unsupported_readonly_member_modifier.php
+  --emit-ir` both returned exit `1` with the pinned parse diagnostic, `cargo
+  test -p phpc --test syntax_boundaries -- --test-threads=1`, and `cargo fmt
+  --check` passed in the parser lane using
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-1106`. Full gate deferred
+  until integration.
+
 - Added Milestone 1105, a tests/docs roadmap reconciliation pass for the
   remaining PHP and WordPress compatibility work. `GOAL.MD` now has an
   audit-friendly gap map covering full references/copy-on-write, object

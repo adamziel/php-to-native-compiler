@@ -2631,6 +2631,134 @@ $alias =& $box->items["slot"];
 }
 
 #[test]
+fn reference_assignment_non_public_object_property_array_append_source_aliases_inside_method_context(
+) {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    private $privateItems = [];
+    protected $protectedItems = [];
+
+    public function run() {
+        $private =& $this->privateItems[];
+        $private = "private-alias";
+        echo $this->privateItems[0];
+        echo "|";
+        $this->privateItems[0] = "private-property";
+        echo $private;
+        echo "|";
+
+        $protected =& $this->protectedItems[];
+        $protected = "protected-alias";
+        echo $this->protectedItems[0];
+        echo "|";
+        $this->protectedItems[0] = "protected-property";
+        echo $protected;
+    }
+}
+
+$box = new Box();
+$box->run();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "private-alias|private-property|protected-alias|protected-property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_protected_peer_object_property_array_append_source_aliases_inside_child_context(
+) {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected $items = [];
+
+    public function readItem($key) {
+        return $this->items[$key];
+    }
+}
+
+class Child extends Base {
+    public function aliasPeer($other) {
+        $alias =& $other->items[];
+        $alias = "peer-alias";
+        echo $other->readItem(0);
+        echo "|";
+        $other->items[0] = "peer-property";
+        echo $alias;
+    }
+}
+
+$child = new Child();
+$peer = new Child();
+$child->aliasPeer($peer);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "peer-alias|peer-property");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_public_object_property_array_append_source_materializes_null_and_parent_path(
+) {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    private $privateItems;
+    protected $protectedItems = [];
+
+    public function run($outer) {
+        $private =& $this->privateItems[];
+        $private = "private-created";
+        echo $this->privateItems[0];
+        echo "|";
+
+        $protected =& $this->protectedItems[$outer][];
+        $protected = "protected-created";
+        echo $this->protectedItems[$outer][0];
+    }
+}
+
+$box = new Box();
+$box->run("outer");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "private-created|protected-created");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_non_public_object_property_array_append_source_outside_context_remains_boundary(
+) {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $items = [];
+}
+
+$box = new Box();
+$alias =& $box->items[];
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$items requires same-class method context in the current subset"
+    );
+}
+
+#[test]
 fn reference_assignment_object_property_array_offset_source_aliases_direct_slot() {
     let execution = run_source(
         r#"<?php

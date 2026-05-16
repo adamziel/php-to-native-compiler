@@ -762,6 +762,9 @@ impl Parser {
                 }
                 TokenKind::Readonly => {
                     let span = self.advance().span;
+                    if self.check_readonly_property_declaration() {
+                        return Err(self.error_at(span, unsupported_readonly_property_message()));
+                    }
                     return Err(self.error_at(span, unsupported_class_member_modifier_message()));
                 }
                 _ => None,
@@ -5751,6 +5754,10 @@ fn unsupported_static_property_type_message() -> &'static str {
     "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented"
 }
 
+fn unsupported_readonly_property_message() -> &'static str {
+    "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
+}
+
 fn unsupported_dnf_type_message() -> &'static str {
     "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
 }
@@ -6061,6 +6068,21 @@ fn unsupported_trait_use_message() -> &'static str {
 }
 
 impl Parser {
+    fn check_readonly_property_declaration(&self) -> bool {
+        for token in self.tokens[self.current..]
+            .iter()
+            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
+        {
+            match &token.kind {
+                TokenKind::Variable(_) => return true,
+                TokenKind::Function => return false,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn check_unsupported_property_type_declaration(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,

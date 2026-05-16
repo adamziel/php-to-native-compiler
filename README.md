@@ -51,11 +51,11 @@ selected folds, and a documented set of native builtin folds.
 
 Anything outside that lowerable subset is rejected before misleading IR is
 emitted. Arrays, objects, ArrayAccess object-offset dispatch, clone expressions,
-functions, general control flow, references, copy-on-write, and broad PHP
-coercions remain interpreter-only or unsupported for native lowering. The
-compile mode flag is validated before the input file is read, so invalid modes
-such as `--emit-object` report a stable CLI usage error instead of an unrelated
-file, parse, or codegen diagnostic.
+include/require expression return semantics, functions, general control flow,
+references, copy-on-write, and broad PHP coercions remain interpreter-only or
+unsupported for native lowering. The compile mode flag is validated before the
+input file is read, so invalid modes such as `--emit-object` report a stable CLI
+usage error instead of an unrelated file, parse, or codegen diagnostic.
 
 ### `phpc compile --emit-asm`
 
@@ -191,9 +191,9 @@ incorrect native code.
   methods, using fresh object handles, shallow-copied property slots, and
   bounded public-property plus context-aware non-public property reference-slot
   mirroring for direct-variable clone assignments, plus bounded direct
-  object-property array-offset reference sources for named visible public,
-  private `$this`, protected `$this`, and protected peer-object properties in
-  valid method contexts,
+  object-property array-offset and append reference sources for named visible
+  public, private `$this`, protected `$this`, and protected peer-object
+  properties in valid method contexts,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata, declared empty-trait metadata,
@@ -238,8 +238,8 @@ visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 DNF-shaped typed property declarations plus property defaults beyond the
-current untyped constant-expression instance property slice, promoted
-constructor properties,
+current untyped constant-expression instance property slice, readonly property
+metadata and write-once enforcement, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 nullsafe object access `?->`,
@@ -311,6 +311,9 @@ include a trailing newline.
 Fixtures with a sibling `.phpc-only` marker are still tested by `phpc`, but are
 skipped by optional system PHP comparison when the project intentionally reports
 different diagnostics.
+When `--compare-php` is used, the summary reports compared fixtures and skipped
+fixtures, with skipped fixtures split into missing-`php` and `.phpc-only`
+counts.
 
 Use these commands while developing:
 

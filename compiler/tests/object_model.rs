@@ -5936,7 +5936,7 @@ class Value {
 "#,
             3,
             12,
-            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
+            "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented",
         ),
         (
             r#"<?php
