@@ -521,8 +521,8 @@
   `mysqli_options`, `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_dump_debug_info`,
-  `mysqli_debug`,
+  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
+  `mysqli_prepare`, `mysqli_dump_debug_info`, `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
@@ -925,6 +925,10 @@
   `true`, without inspecting host client-library build flags, real
   thread-safety configuration, host client-library state, sockets, or host
   database state.
+  `mysqli_stmt_init($handle)` and `mysqli_prepare($handle, $query)` are
+  visible through callable metadata but reached calls report stable
+  unsupported diagnostics because statement objects, prepared SQL parsing,
+  binding, execution, and result metadata are not implemented.
   `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
   deterministic `true` without emitting MySQL DBUG trace output, inspecting
   host client-library debug state, inspecting sockets, or reading host
@@ -2507,8 +2511,8 @@
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_dump_debug_info`,
-  `mysqli_debug`,
+  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
+  `mysqli_prepare`, `mysqli_dump_debug_info`, `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
@@ -2839,8 +2843,8 @@
   `mysqli_change_user`, `mysqli_refresh`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_dump_debug_info`,
-  `mysqli_debug`,
+  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
+  `mysqli_prepare`, `mysqli_dump_debug_info`, `mysqli_debug`,
   `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
   `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
@@ -2993,7 +2997,8 @@
   `mysqli_get_charset`, `mysqli_character_set_name`,
   `mysqli_field_count`, `mysqli_get_connection_stats`,
   `mysqli_get_links_stats`, `mysqli_get_client_stats`,
-  `mysqli_thread_safe`, `mysqli_dump_debug_info`, `mysqli_debug`,
+  `mysqli_thread_safe`, `mysqli_stmt_init`, `mysqli_prepare`,
+  `mysqli_dump_debug_info`, `mysqli_debug`,
   `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`,
@@ -3070,8 +3075,8 @@
   `mysqli_kill`, `mysqli_change_user`, `mysqli_refresh`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_dump_debug_info`,
-  `mysqli_debug`,
+  `mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
+  `mysqli_prepare`, `mysqli_dump_debug_info`, `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
@@ -3116,6 +3121,9 @@
   `mysqli_thread_safe(...)` returns only deterministic client-library
   thread-safety metadata without host client-library build-flag inspection,
   real thread-safety configuration, sockets, or host database state,
+  `mysqli_stmt_init(...)`/`mysqli_prepare(...)` are explicit prepared-statement
+  lifecycle boundaries without statement objects, prepared SQL parsing,
+  parameter/result binding, statement execution, or result metadata,
   `mysqli_dump_debug_info(...)` returns only deterministic debug-dump success
   without MySQL DBUG trace output, host client-library debug state, socket
   inspection, or host database state, `mysqli_debug(...)` returns only
@@ -3164,6 +3172,7 @@
   `mysqli_field_count(...)`/
   `mysqli_get_connection_stats(...)`/`mysqli_get_links_stats(...)`/
   `mysqli_get_client_stats(...)`/`mysqli_thread_safe(...)`/
+  `mysqli_stmt_init(...)`/`mysqli_prepare(...)`/
   `mysqli_dump_debug_info(...)`/
   `mysqli_debug(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
@@ -4827,7 +4836,7 @@
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
-  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
+  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/

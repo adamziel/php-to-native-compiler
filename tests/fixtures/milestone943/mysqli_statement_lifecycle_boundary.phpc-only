@@ -1,0 +1,6 @@
+This fixture exercises phpc's explicit MySQLi prepared-statement lifecycle
+boundary. System PHP would create host statement objects or report
+host-specific connection/statement errors; phpc only exposes
+`mysqli_stmt_init()` and `mysqli_prepare()` through callable metadata and
+reports a stable unsupported diagnostic when statement lifecycle execution is
+reached.

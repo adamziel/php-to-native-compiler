@@ -1,0 +1,2 @@
+runtime error at 13:1: unsupported call mysqli_stmt_init(): mysqli statement objects and prepared statement lifecycle are not implemented in the current subset
+

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 943, explicit MySQLi prepared-statement lifecycle
+  boundaries for `mysqli_stmt_init()` and `mysqli_prepare()`. The runtime
+  exposes both names through function/callability metadata, validates the
+  current arity and placeholder handle boundary, and reports stable
+  unsupported diagnostics when statement lifecycle execution is reached.
+  Native metadata lookup knows the names while direct native lowering remains
+  rejected. This is not statement object allocation, prepared SQL parsing,
+  parameter/result binding, statement execution, result metadata, host
+  database state, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_lifecycle -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone943`.
+
 - Added Milestone 942, a synthetic WordPress-shaped `wpdb` connection
   diagnostics smoke that records bounded `mysqli_thread_safe()` metadata
   through a `wpdb`-style method, verifies deterministic thread-safety truth,

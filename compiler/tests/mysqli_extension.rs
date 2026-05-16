@@ -407,6 +407,62 @@ echo $call() ? "dynamic" : "not-safe";
 }
 
 #[test]
+fn mysqli_statement_lifecycle_is_visible_but_an_explicit_boundary() {
+    let execution = run_source(
+        r#"<?php
+$stmt_init = "mysqli_stmt_init";
+$prepare = "mysqli_prepare";
+echo function_exists($stmt_init) ? "yes" : "no";
+echo "|";
+echo is_callable($stmt_init) ? "stmt-callable" : "stmt-missing";
+echo "|";
+echo function_exists($prepare) ? "prepare-exists" : "prepare-missing";
+echo "|";
+echo is_callable($prepare) ? "prepare-callable" : "prepare-missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|stmt-callable|prepare-exists|prepare-callable"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let stmt_error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_stmt_init($handle);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(stmt_error.phase, Phase::Runtime);
+    assert_eq!(stmt_error.line, 3);
+    assert_eq!(stmt_error.column, 1);
+    assert_eq!(
+        stmt_error.message,
+        "unsupported call mysqli_stmt_init(): mysqli statement objects and prepared statement lifecycle are not implemented in the current subset"
+    );
+
+    let prepare_error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name = ?");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(prepare_error.phase, Phase::Runtime);
+    assert_eq!(prepare_error.line, 3);
+    assert_eq!(prepare_error.column, 1);
+    assert_eq!(
+        prepare_error.message,
+        "unsupported call mysqli_prepare(): mysqli prepared statement parsing, statement objects, binding, execution, and result metadata are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -2643,6 +2699,10 @@ echo function_exists("mysqli_get_client_stats") ? "1" : "0";
 echo is_callable("mysqli_get_client_stats") ? "1" : "0";
 echo function_exists("mysqli_thread_safe") ? "1" : "0";
 echo is_callable("mysqli_thread_safe") ? "1" : "0";
+echo function_exists("mysqli_stmt_init") ? "1" : "0";
+echo is_callable("mysqli_stmt_init") ? "1" : "0";
+echo function_exists("mysqli_prepare") ? "1" : "0";
+echo is_callable("mysqli_prepare") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -2741,7 +2801,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 142, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 146, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -3001,6 +3061,30 @@ mysqli_get_client_stats();
     let error = emit_ir_source(
         r#"<?php
 mysqli_thread_safe();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_stmt_init(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_prepare(mysqli_init(), "SELECT 1");
 "#,
     )
     .unwrap_err();

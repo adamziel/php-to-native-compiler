@@ -286,6 +286,11 @@ through a synthetic WordPress-shaped `wpdb` diagnostics smoke without claiming
 host client-library build-flag inspection, real thread-safety configuration,
 host client-library state, socket state, host database state,
 warning/error fidelity, or native lowering,
+plus explicit `mysqli_stmt_init()`/`mysqli_prepare()` prepared-statement
+lifecycle boundaries that expose callable metadata and stable unsupported
+diagnostics without statement object allocation, prepared SQL parsing,
+parameter/result binding, statement execution, result metadata, host database
+state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

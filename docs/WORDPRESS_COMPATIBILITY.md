@@ -1558,6 +1558,11 @@ historical blockers and remaining full-support gaps include:
   without claiming host client-library build-flag inspection, real
   thread-safety configuration, host client-library state, socket state, host
   database state, warning/error fidelity, or native database lowering.
+  Milestone 943 adds explicit `mysqli_stmt_init()`/`mysqli_prepare()`
+  prepared-statement lifecycle boundaries with callable metadata and stable
+  unsupported diagnostics, without statement object allocation, prepared SQL
+  parsing, parameter/result binding, statement execution, result metadata,
+  host database state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -10,8 +10,8 @@ Status: boundary only.
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-`mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_dump_debug_info`,
-`mysqli_debug`,
+`mysqli_get_client_stats`, `mysqli_thread_safe`, `mysqli_stmt_init`,
+`mysqli_prepare`, `mysqli_dump_debug_info`, `mysqli_debug`,
 `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
@@ -158,6 +158,12 @@ read host database state.
 `mysqli_thread_safe()` accepts no arguments and returns deterministic `true`.
 It does not inspect host client-library build flags, real thread-safety
 configuration, host client-library state, sockets, or database state.
+
+`mysqli_stmt_init($handle)` and `mysqli_prepare($handle, $query)` are visible
+through callable metadata but are explicit runtime boundaries. Reached calls
+report stable unsupported diagnostics because statement objects, prepared SQL
+parsing, parameter/result binding, statement execution, and result metadata are
+not implemented.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

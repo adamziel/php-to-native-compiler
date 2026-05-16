@@ -8785,16 +8785,26 @@ handled.
   build-flag inspection, real thread-safety configuration, host
   client-library state, sockets, host database state, warning/error fidelity,
   or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi statement or connection
+- [x] Runtime/mysqli lane: inspect the next MySQLi statement or connection
   metadata boundary after thread-safety metadata, such as statement lifecycle
   APIs (`mysqli_stmt_init`, `mysqli_prepare`) or a sharper unsupported
   diagnostic, before claiming broader mysqli extension fidelity.
+  Milestone 943 exposes `mysqli_stmt_init()` and `mysqli_prepare()` through
+  callable metadata and turns reached statement lifecycle calls into stable
+  unsupported diagnostics. This is not statement object allocation, prepared
+  SQL parsing, parameter/result binding, statement execution, result metadata,
+  host database state, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement smoke
+  that reaches the explicit `mysqli_prepare()` boundary through a
+  WordPress-shaped method without claiming statement objects, binding,
+  execution, result metadata, host database state, warning/error fidelity, or
+  native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `db05ed4 runtime: add mysqli thread safe placeholder`, covering
-  Milestone 941 before the current Milestone 942 candidate.
+  `71bc347 tests: add wordpress wpdb thread safe smoke`, covering
+  Milestone 942 before the current Milestone 943 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

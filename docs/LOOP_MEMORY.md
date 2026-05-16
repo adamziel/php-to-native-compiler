@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `71bc347 tests: add wordpress wpdb thread safe smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 943, explicit MySQLi prepared-statement lifecycle
+  boundaries for `mysqli_stmt_init()` and `mysqli_prepare()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone943/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`;
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_lifecycle -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone943`;
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: reached MySQLi prepared-statement APIs will now
+  produce stable statement-lifecycle diagnostics instead of generic unknown
+  call behavior.
+- Remaining semantic gaps: statement object allocation, prepared SQL parsing,
+  parameter/result binding, statement execution, result metadata, host
+  database state, warnings/errors, and native database lowering remain
+  missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, add a synthetic WordPress-shaped `wpdb`
+  prepared-statement smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `db05ed4 runtime: add mysqli thread safe placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 942, a synthetic WordPress-shaped `wpdb`
