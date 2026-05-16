@@ -83,6 +83,13 @@ database/request/SAPI assumptions used by the bootstrap and front-controller
 probes. This is an operator-supplied measurement, not a committed WordPress
 source fixture and not a claim of real WP-Cron behavior.
 
+After Milestone 1081, the same local WordPress 6.9.4 checkout's
+`wp-admin/admin-ajax.php` entrypoint exits `0` with no stdout/stderr under the
+current deterministic placeholder database/request/SAPI assumptions after the
+reached mutable `ini_set()` blocker. This is also an operator-supplied
+measurement, not a committed WordPress source fixture and not a claim of real
+admin/AJAX request handling.
+
 The committed synthetic harness is exercised by:
 
 ```sh

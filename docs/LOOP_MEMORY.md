@@ -26,6 +26,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T22:55:00Z
+
+- Checkpoint before this task:
+  `55c67d63 docs: record copied reference array slot gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1081, bounded mutable `ini_set()` support over the
+  existing deterministic INI registry for the WordPress admin/AJAX entry-flow
+  shape.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/ini_builtins.rs`,
+  `tests/fixtures/milestone1081/ini_set_state.*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `cargo test -p phpc --test ini_builtins --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1081 --compare-php`, `cargo check -p php_runtime -p
+  phpc`, and `git diff --check` passed. The local WordPress 6.9.4
+  `wp-admin/admin-ajax.php` probe exited 0 with no stdout/stderr under current
+  deterministic placeholder assumptions.
+- Remaining semantic gaps: host php.ini discovery, INI access-level
+  enforcement, `ini_restore()`, `ini_get_all()`, SAPI differences,
+  extension-owned option catalogs, exact warnings/`TypeError`s, real admin/AJAX
+  request state, and native lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate for Milestone 1081 if
+  the tree stays coherent.
+
 ## Loop Event 2026-05-16T22:20:00Z
 
 - Checkpoint before this task:

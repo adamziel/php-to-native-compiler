@@ -99,6 +99,7 @@ struct Interpreter {
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     ignore_user_abort: bool,
+    ini_values: HashMap<String, String>,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
     mysqli_report_mode: i64,
@@ -1448,6 +1449,7 @@ impl Interpreter {
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
             ignore_user_abort: false,
+            ini_values: HashMap::new(),
             error_handler: None,
             error_handler_mask: None,
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
@@ -13631,7 +13633,8 @@ impl Interpreter {
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
-            "ini_get" => call_ini_get(&args, span),
+            "ini_get" => self.call_ini_get(&args, span),
+            "ini_set" => self.call_ini_set(&args, span),
             "min" => call_min(&args, span),
             "rand" => call_rand(&args, span),
             "uniqid" => call_uniqid(&args, span),
@@ -18103,6 +18106,7 @@ fn is_builtin(name: &str) -> bool {
             | "microtime"
             | "date_default_timezone_set"
             | "ini_get"
+            | "ini_set"
             | "min"
             | "rand"
             | "uniqid"
@@ -21835,32 +21839,92 @@ fn call_date_default_timezone_set(args: &[Value], span: Span) -> CompileResult<V
     }
 }
 
-fn call_ini_get(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("ini_get", args, 1, span)?;
+impl Interpreter {
+    fn call_ini_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ini_get", args, 1, span)?;
 
-    let name = match &args[0] {
-        Value::String(name) => name,
-        other => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ini_get()",
-                    format!(
-                        "option argument must be string in the current subset, got {}",
-                        other.type_name()
+        let name = match &args[0] {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_get()",
+                        format!(
+                            "option argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
-                ),
-            ));
-        }
-    };
+                ));
+            }
+        };
 
-    Ok(compat_ini_value(name)
-        .map(|value| Value::String(value.to_string()))
-        .unwrap_or(Value::Bool(false)))
+        Ok(self
+            .ini_value(name)
+            .map(Value::String)
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_ini_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ini_set", args, 2, span)?;
+
+        let name = match &args[0] {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_set()",
+                        format!(
+                            "option argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let Some(previous) = self.ini_value(name) else {
+            return Ok(Value::Bool(false));
+        };
+
+        let value = match &args[1] {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                args[1].echo_string()
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_set()",
+                        format!(
+                            "value argument must be null or scalar in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        self.ini_values.insert(normalize_ini_name(name), value);
+        Ok(Value::String(previous))
+    }
+
+    fn ini_value(&self, name: &str) -> Option<String> {
+        let normalized = normalize_ini_name(name);
+        self.ini_values
+            .get(&normalized)
+            .cloned()
+            .or_else(|| compat_ini_value(&normalized).map(str::to_string))
+    }
 }
 
-fn compat_ini_value(name: &str) -> Option<&'static str> {
-    match name.to_ascii_lowercase().as_str() {
+fn normalize_ini_name(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
+fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
+    match normalized_name {
         "arg_separator.output" => Some("&"),
         "default_mimetype" => Some("text/html"),
         "disable_functions" => Some(""),

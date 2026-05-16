@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 1081, a bounded mutable `ini_set()` registry slice for the
+  WordPress admin/AJAX entry-flow shape. The interpreter now keeps
+  per-execution overrides for the existing deterministic INI registry:
+  `ini_set($option, $value)` accepts known string option names and current
+  scalar/null values, returns the previous deterministic value, updates later
+  `ini_get($option)` reads, and returns `false` for unknown options. Function
+  and callability metadata recognize `ini_set`, while direct native calls
+  still reject under the function-call boundary. This does not implement
+  host php.ini discovery, access-level enforcement, `ini_restore()`,
+  `ini_get_all()`, SAPI differences, extension-owned option catalogs, exact
+  warnings/`TypeError`s, or native lowering. Verification so far:
+  `cargo test -p phpc --test ini_builtins -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1081 --compare-php`,
+  `cargo check -p php_runtime -p phpc`, `git diff --check`, and
+  `cargo run -q -p phpc -- run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-admin/admin-ajax.php`,
+  which exited 0 with no stdout/stderr under the current deterministic
+  placeholder assumptions.
+
 - Added Milestone 1080, a bounded direct array-copy/reference-element slice.
   The interpreter now keeps array-offset alias groups for direct static array
   roots, mirrors those aliases when a direct array variable is copied into

@@ -782,13 +782,18 @@
   precision guarantees, monotonicity, deterministic virtual time, broad
   coercions, exact diagnostics, and native lowering remain unsupported.
   `ini_get($option)` accepts one string option name and returns deterministic
-  string values from the current compatibility registry, or `false` for
-  unknown names. The registry currently covers WordPress-oriented options such
-  as `memory_limit`, `max_execution_time`, `disable_functions`,
+  string values from the current compatibility registry, including
+  per-execution overrides written by the current `ini_set()` subset, or
+  `false` for unknown names. `ini_set($option, $value)` accepts known string
+  option names and current scalar/null values, returns the previous
+  deterministic value, stores the new string-coerced value for later
+  `ini_get()` reads in the same execution, and returns `false` for unknown
+  options. The registry currently covers WordPress-oriented options such as
+  `memory_limit`, `max_execution_time`, `disable_functions`,
   `mbstring.func_overload`, upload/mail/error-output defaults, and related
-  bootstrap settings. Host php.ini discovery, mutable INI state,
-  `ini_set()`/`ini_restore()`, `ini_get_all()`, SAPI differences, extension
-  ownership/access metadata, exact option catalogs, coercions, exact
+  bootstrap settings. Host php.ini discovery, access-level enforcement,
+  `ini_restore()`, `ini_get_all()`, SAPI differences, extension
+  ownership/access metadata, exact option catalogs, broad coercions, exact
   diagnostics, and native lowering remain unsupported.
   `ignore_user_abort($enable = null)` returns the previous deterministic
   placeholder setting as `0` or `1`. With no argument or `null`, it reads the
@@ -3900,10 +3905,10 @@
   section above; direct native `microtime(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `ini_get` accepts the same current deterministic registry subset as the
-  builtin section above; direct native `ini_get(...)` calls still reject under
-  the function-call boundary, while native function-table introspection
-  recognizes the name.
+  `ini_get` and `ini_set` accept the same current deterministic registry subset
+  as the builtin section above; direct native `ini_get(...)` and
+  `ini_set(...)` calls still reject under the function-call boundary, while
+  native function-table introspection recognizes the names.
   `ignore_user_abort` accepts the same current deterministic placeholder
   state subset as the builtin section above; direct native
   `ignore_user_abort(...)` calls still reject under the function-call

@@ -160,8 +160,11 @@ drains that empty result through WordPress-shaped object state. Later entry-flow
 work added a bounded `ignore_user_abort()` placeholder for the reached
 `wp-cron.php` blocker, and the local real WordPress 6.9.4 `wp-cron.php` probe
 now exits `0` with no stdout/stderr under the current deterministic
-placeholder assumptions, without claiming real WP-Cron behavior. Milestones 854
-through 862 then moved the database-consumption smoke from an explicit
+placeholder assumptions, without claiming real WP-Cron behavior. Later work
+added bounded mutable `ini_set()` support over the deterministic INI registry,
+and the local real WordPress 6.9.4 `wp-admin/admin-ajax.php` probe now exits
+`0` with no stdout/stderr under the same placeholder assumptions, without
+claiming real admin/AJAX request handling. Milestones 854 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
 synthetic `wpdb::get_results()` harnesses for those row shapes, including a

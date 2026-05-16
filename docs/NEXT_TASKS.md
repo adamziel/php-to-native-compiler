@@ -10522,12 +10522,11 @@ handled.
   variables, full PHP reference containers, copy-on-write, exact mutation
   ordering, or native lowering.
 
-## Milestone 1080: Direct Array-Copy Reference Elements
+## Milestone 1081: WordPress Admin/AJAX INI Mutation
 
-- [x] Runtime/value-model lane: add the bounded direct static array-copy case
-  where an array copied from a direct variable preserves direct array-offset
-  reference element identity for the copied slot, while plain arrays without
-  reference elements keep current copy-by-value behavior.
+- [x] Runtime/builtin lane: add a bounded mutable `ini_set()` path over the
+  existing deterministic INI registry so reached WordPress admin/AJAX setup
+  calls can update later `ini_get()` reads in the same execution.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object copied reference slots, remaining by-reference `foreach`
   fidelity, array/object copy-on-write split behavior, dynamic/magic/non-public
@@ -10535,6 +10534,10 @@ handled.
   by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity, or
   native lowering boundaries, and add the next bounded behavior or explicit
   diagnostic with PHP comparison coverage where applicable.
+- [ ] WordPress entry-flow lane: choose the next real entry blocker from a
+  stricter admin/AJAX trace, XML-RPC dynamic class instantiation, REST/front
+  controller request state, or cron/request/SAPI fidelity, and keep the probe
+  documented as an external measurement unless a normalized fixture is added.
 
 ## Latest Completed Checkpoint
 
