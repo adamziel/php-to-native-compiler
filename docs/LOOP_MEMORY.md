@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `394e5c6a runtime: add mysqli stmt diagnostic metadata boundaries`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 962, synthetic WordPress-shaped `wpdb`
+  prepared-statement diagnostics/insert metadata smokes that reach the
+  explicit `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, and
+  `mysqli_stmt_insert_id()` boundaries.
+- Files changed so far: `tests/fixtures/milestone962/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone962`.
+  Passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: WordPress-shaped statement SQLSTATE,
+  warning-count, and insert-id metadata methods now record explicit
+  diagnostics.
+- Remaining semantic gaps: statement object allocation, statement SQLSTATE
+  tracking, statement warning tracking, statement diagnostic state, statement
+  execution state, statement insert-id metadata, host database state,
+  warnings/errors, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next prepared-statement result
+  field-fetch boundary such as `mysqli_stmt_fetch_fields()` or
+  `mysqli_stmt_fetch_field()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `0ec70d9a tests: add wordpress wpdb stmt streaming reset smokes`, pushed to
   `origin/master`.
 - Task attempted: Milestone 961, explicit MySQLi statement
@@ -53,8 +81,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   tracking, statement warning tracking, statement diagnostic state, statement
   execution state, statement insert-id metadata, host database state,
   warnings/errors, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+- Checkpoint result: committed and pushed
+  `394e5c6a runtime: add mysqli stmt diagnostic metadata boundaries`.
+- Next concrete task: add synthetic WordPress-shaped `wpdb`
   diagnostics/insert metadata smokes.
 
 ## Loop Event 2026-05-16T00:00:00Z

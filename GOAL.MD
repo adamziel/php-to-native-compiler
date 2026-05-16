@@ -377,7 +377,11 @@ that expose callable metadata and stable unsupported diagnostics without
 statement object allocation, statement SQLSTATE tracking, statement warning
 tracking, statement diagnostic state, statement execution state, statement
 insert-id metadata, host database execution, warning/error fidelity, or native
-lowering,
+lowering, now wired through synthetic WordPress-shaped `wpdb`
+diagnostics/insert metadata smokes without claiming statement objects,
+statement SQLSTATE tracking, statement warning tracking, statement diagnostic
+state, statement execution state, statement insert-id metadata, host database
+state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

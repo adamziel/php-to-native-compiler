@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone962/wpdb_stmt_warning_count_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone962/wpdb_stmt_warning_count_boundary.php:12:16: unsupported call mysqli_stmt_warning_count(): mysqli statement objects, statement warning tracking, and statement diagnostic state are not implemented in the current subset
+--- stderr end ---

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone962/wpdb_stmt_insert_id_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone962/wpdb_stmt_insert_id_boundary.php:12:16: unsupported call mysqli_stmt_insert_id(): mysqli statement objects, statement execution state, and statement insert-id metadata are not implemented in the current subset
+--- stderr end ---

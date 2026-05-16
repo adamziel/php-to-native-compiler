@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 962, synthetic WordPress-shaped `wpdb`
+  prepared-statement diagnostics/insert metadata smokes that reach the
+  explicit `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, and
+  `mysqli_stmt_insert_id()` boundaries through `wpdb`-style methods. These
+  are harness smokes only; they do not add statement object allocation,
+  statement SQLSTATE tracking, statement warning tracking, statement
+  diagnostic state, statement execution state, statement insert-id metadata,
+  host database execution, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone962`.
+
 - Added Milestone 961, explicit MySQLi statement diagnostics/insert metadata
   boundaries for `mysqli_stmt_sqlstate()`,
   `mysqli_stmt_warning_count()`, and `mysqli_stmt_insert_id()`. The runtime

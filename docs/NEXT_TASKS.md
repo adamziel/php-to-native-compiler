@@ -9014,7 +9014,7 @@ handled.
   statement diagnostic state, statement execution state, statement insert-id
   metadata, host database execution, warning/error fidelity, or native
   lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement
   diagnostics/insert metadata smokes that reach the explicit
   `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, or
   `mysqli_stmt_insert_id()` boundary through WordPress-shaped methods without
@@ -9022,12 +9022,23 @@ handled.
   tracking, statement diagnostic state, statement execution state, statement
   insert-id metadata, host database state, warning/error fidelity, or native
   lowering.
+  Milestone 962 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_sqlstate()`, `mysqli_stmt_warning_count()`, and
+  `mysqli_stmt_insert_id()` unsupported diagnostics through WordPress-shaped
+  methods. These are not statement object allocation, statement SQLSTATE
+  tracking, statement warning tracking, statement diagnostic state, statement
+  execution state, statement insert-id metadata, host database state,
+  warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+  result field-fetch boundary, such as `mysqli_stmt_fetch_fields()` or
+  `mysqli_stmt_fetch_field()` callable metadata and explicit unsupported
+  diagnostics, before claiming broader prepared statement metadata fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0ec70d9a tests: add wordpress wpdb stmt streaming reset smokes`, covering
-  Milestone 960 before the current Milestone 961 candidate.
+  `394e5c6a runtime: add mysqli stmt diagnostic metadata boundaries`, covering
+  Milestone 961 before the current Milestone 962 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

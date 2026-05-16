@@ -1657,7 +1657,12 @@ historical blockers and remaining full-support gaps include:
   object allocation, statement SQLSTATE tracking, statement warning tracking,
   statement diagnostic state, statement execution state, statement insert-id
   metadata, host database execution, warning/error fidelity, or native
-  database lowering.
+  database lowering. Milestone 962 wires those boundaries through synthetic
+  WordPress-shaped `wpdb` diagnostics/insert metadata methods without claiming
+  statement objects, statement SQLSTATE tracking, statement warning tracking,
+  statement diagnostic state, statement execution state, statement insert-id
+  metadata, host database state, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
