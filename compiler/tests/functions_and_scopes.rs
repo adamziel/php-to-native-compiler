@@ -1976,6 +1976,58 @@ $catalog->entries[] =& $entry;
 }
 
 #[test]
+fn reference_assignment_array_access_offset_target_reports_stable_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return null; }
+    public function offsetSet($offset, $value) { }
+    public function offsetUnset($offset) { }
+}
+$bag = new Bag();
+$value = "Grace";
+$bag["name"] =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
+    );
+}
+
+#[test]
+fn reference_assignment_object_property_array_access_target_reports_stable_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public function offsetExists($offset) { return false; }
+    public function offsetGet($offset) { return null; }
+    public function offsetSet($offset, $value) { }
+    public function offsetUnset($offset) { }
+}
+class Holder {
+    public $bag;
+}
+$holder = new Holder();
+$holder->bag = new Bag();
+$value = "Grace";
+$holder->bag["name"] =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 14);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime"
+    );
+}
+
+#[test]
 fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
     let execution = run_source(
         r#"<?php

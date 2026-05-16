@@ -1,0 +1,2 @@
+runtime error at 14:1: unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime
+

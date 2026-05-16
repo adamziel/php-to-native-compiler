@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php:10:1: unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime
+--- stderr end ---

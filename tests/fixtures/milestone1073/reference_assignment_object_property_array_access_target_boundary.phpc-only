@@ -1,0 +1,1 @@
+phpc reports a structured runtime boundary for property-held ArrayAccess reference targets. PHP itself fatals with engine-specific text when assigning by reference to an object array dimension, so this fixture is intentionally not byte-for-byte compared against system PHP.

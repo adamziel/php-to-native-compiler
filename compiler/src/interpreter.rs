@@ -3407,6 +3407,7 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -3464,6 +3465,7 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -3484,6 +3486,7 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -3513,6 +3516,7 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
                         return Err(runtime_error(
                             span,
@@ -3547,6 +3551,9 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
                     let keys = indices
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
@@ -3573,6 +3580,9 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
                     let keys = indices
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
@@ -3591,6 +3601,56 @@ impl Interpreter {
             }
             _ => Err(unsupported()),
         }
+    }
+
+    fn reject_array_access_reference_target_if_needed(
+        &self,
+        name: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        if let Some(value) = scope.read_named(name) {
+            self.reject_array_access_reference_target_value(&value, span)?;
+        }
+        Ok(())
+    }
+
+    fn reject_object_property_array_access_reference_target_if_needed(
+        &self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(());
+        };
+        if let Ok(value) = object.read_public_property(property) {
+            self.reject_array_access_reference_target_value(&value, span)?;
+        }
+        Ok(())
+    }
+
+    fn reject_array_access_reference_target_value(
+        &self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        if let Value::Object(object) = value {
+            if self
+                .classes
+                .implements_interface(object.class_id(), "ArrayAccess")
+            {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "ArrayAccess object offsets cannot be assigned by reference in the current runtime",
+                    ),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn evaluate_reference_return_call_cell(
