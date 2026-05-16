@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 1018, bounded `Stringable` core-interface metadata. The
+  interpreter now reports `interface_exists("Stringable")`, includes
+  `Stringable` in `get_declared_interfaces()`, permits explicit
+  `implements Stringable` metadata, and treats classes with a resolved public
+  non-static `__toString()` as `Stringable` for `instanceof`, `is_a()`, and
+  `is_subclass_of()` checks, including inherited `__toString()` methods and
+  string class-name checks where already supported. The new fixture compares
+  the bounded metadata behavior against system PHP. This is not a broader
+  built-in interface catalog, interface method enforcement, PHP fatal
+  validation for non-public/static `__toString()` declarations, `Stringable`
+  type enforcement, reflection metadata, exact diagnostics, references/
+  copy-on-write, or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model stringable -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_interfaces_reports_declared_interface_table -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1018`,
+  `cargo run -p phpc -- test tests/fixtures/milestone110`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone706`.
+
 - Added Milestone 1017, bounded object string conversion through visible
   non-static `__toString()` for the current interpolation evaluator. Simple
   `$object`, array-offset object values, direct object-property values, and

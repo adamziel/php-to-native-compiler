@@ -1,1 +1,1 @@
-phpc only: system PHP reports built-in/internal interfaces, while this compiler currently has no interface metadata.
+phpc only: system PHP reports many built-in/internal interfaces, while this compiler currently exposes only the bounded Stringable core interface plus user declarations.

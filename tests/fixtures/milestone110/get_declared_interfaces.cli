@@ -2,8 +2,9 @@ exit: 0
 stdout:
 Array
 (
+    [0] => Stringable
 )
-0
-0--- stdout end ---
+1
+1--- stdout end ---
 stderr:
 --- stderr end ---

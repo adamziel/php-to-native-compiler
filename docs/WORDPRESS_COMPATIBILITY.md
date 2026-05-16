@@ -1227,10 +1227,17 @@ copy-on-write aliasing during read-modify-write, and native lowering explicit
 gaps. Milestone 1017 extends the same object string conversion to the current
 double-quoted string and heredoc interpolation evaluator for simple variables,
 array offsets, direct object properties, and supported braced chains while
-leaving `Stringable` metadata, `${...}` interpolation, dynamic/static property
-interpolation, arbitrary expression interpolation, exact non-string-return
-`TypeError` objects, references/copy-on-write, and native lowering explicit
-gaps. Milestone 1014 adds bounded direct object-offset `ArrayAccess` dispatch
+leaving `${...}` interpolation, dynamic/static property interpolation,
+arbitrary expression interpolation, exact non-string-return `TypeError`
+objects, references/copy-on-write, and native lowering explicit gaps.
+Milestone 1018 adds bounded `Stringable` core-interface metadata:
+`interface_exists("Stringable")`, `get_declared_interfaces()`, explicit
+`implements Stringable`, and relationship checks for classes with resolved
+public non-static `__toString()` now follow the current metadata slice while
+broader built-in interface catalogs, interface method enforcement, exact
+`Stringable` fatal/type diagnostics, reflection metadata, references/
+copy-on-write, and native lowering remain explicit gaps. Milestone 1014 adds
+bounded direct object-offset `ArrayAccess` dispatch
 for classes that declare `implements ArrayAccess`, covering direct
 read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while
 leaving nested/mixed object-property/ArrayAccess paths, compound assignment,

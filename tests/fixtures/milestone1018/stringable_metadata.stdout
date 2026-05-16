@@ -1,0 +1,8 @@
+interface
+instanceof
+child:is-a
+child:subclass
+explicit:is-a
+plain:no
+declared
+

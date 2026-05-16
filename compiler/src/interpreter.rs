@@ -269,6 +269,14 @@ struct SymbolTable {
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
 type VariableCell = Rc<RefCell<Value>>;
 
+const CORE_INTERFACE_NAMES: &[&str] = &["Stringable"];
+
+fn is_core_interface_name(name: &str) -> bool {
+    CORE_INTERFACE_NAMES
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case(name))
+}
+
 impl SymbolTable {
     fn new() -> Self {
         Self::default()
@@ -10434,7 +10442,7 @@ impl Interpreter {
             return false;
         };
 
-        if self.classes.implements_interface(candidate_id, class_name) {
+        if self.class_implements_or_matches_core_interface(candidate_id, class_name) {
             return true;
         }
 
@@ -10450,10 +10458,7 @@ impl Interpreter {
         let Value::Object(object) = value else {
             return false;
         };
-        if self
-            .classes
-            .implements_interface(object.class_id(), class_name)
-        {
+        if self.class_implements_or_matches_core_interface(object.class_id(), class_name) {
             return true;
         }
         let Some(target_class) = self.classes.lookup_class(class_name) else {
@@ -10476,7 +10481,7 @@ impl Interpreter {
             return false;
         };
 
-        if self.classes.implements_interface(candidate_id, class_name) {
+        if self.class_implements_or_matches_core_interface(candidate_id, class_name) {
             return true;
         }
 
@@ -10485,6 +10490,23 @@ impl Interpreter {
         };
 
         self.classes.is_subclass_of(candidate_id, target_class.id())
+    }
+
+    fn class_implements_or_matches_core_interface(
+        &self,
+        class_id: ClassId,
+        interface_name: &str,
+    ) -> bool {
+        self.classes.implements_interface(class_id, interface_name)
+            || (interface_name.eq_ignore_ascii_case("Stringable")
+                && self.class_has_public_instance_to_string(class_id))
+    }
+
+    fn class_has_public_instance_to_string(&self, class_id: ClassId) -> bool {
+        self.resolve_instance_method(class_id, "__toString")
+            .is_some_and(|(_, _, _, visibility, is_static)| {
+                visibility == Visibility::Public && !is_static
+            })
     }
 
     fn parent_class_name(&self, class_id: ClassId) -> Option<String> {
@@ -12210,15 +12232,19 @@ impl Interpreter {
             }
             "interface_exists" => match args.as_slice() {
                 [Value::String(interface_name)] => Ok(Value::Bool(
-                    self.interface_lookup
-                        .contains_key(&interface_name.to_ascii_lowercase()),
+                    is_core_interface_name(interface_name)
+                        || self
+                            .interface_lookup
+                            .contains_key(&interface_name.to_ascii_lowercase()),
                 )),
                 [Value::String(interface_name), autoload] => {
                     let _autoload =
                         metadata_exists_autoload_flag("interface_exists()", autoload, span)?;
                     Ok(Value::Bool(
-                        self.interface_lookup
-                            .contains_key(&interface_name.to_ascii_lowercase()),
+                        is_core_interface_name(interface_name)
+                            || self
+                                .interface_lookup
+                                .contains_key(&interface_name.to_ascii_lowercase()),
                     ))
                 }
                 [other] => Err(runtime_error(
@@ -12346,6 +12372,11 @@ impl Interpreter {
             "get_declared_interfaces" => {
                 expect_arity(name, &args, 0, span)?;
                 let mut interfaces = PhpArray::new();
+                for interface in CORE_INTERFACE_NAMES {
+                    interfaces
+                        .append(Value::String((*interface).to_string()))
+                        .expect("core interface count fits in array keys");
+                }
                 for interface in &self.interfaces {
                     interfaces
                         .append(Value::String(interface.name.clone()))
@@ -14522,6 +14553,13 @@ fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileR
 }
 
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
+    if is_core_interface_name(&class.name) {
+        return Err(runtime_error(
+            class.span,
+            RuntimeError::duplicate_class(&class.name),
+        ));
+    }
+
     classes
         .declare_class(&class.name)
         .map_err(|error| runtime_error(class.span, error))
@@ -14537,6 +14575,7 @@ fn register_interface_name(
 ) -> CompileResult<()> {
     let key = interface.name.to_ascii_lowercase();
     if classes.lookup_class_id(&interface.name).is_some()
+        || is_core_interface_name(&interface.name)
         || interface_lookup.contains_key(&key)
         || trait_lookup.contains_key(&key)
         || enum_lookup.contains_key(&key)
@@ -14563,6 +14602,7 @@ fn register_trait_name(
 ) -> CompileResult<()> {
     let key = trait_decl.name.to_ascii_lowercase();
     if classes.lookup_class_id(&trait_decl.name).is_some()
+        || is_core_interface_name(&trait_decl.name)
         || interface_lookup.contains_key(&key)
         || trait_lookup.contains_key(&key)
         || enum_lookup.contains_key(&key)
@@ -14589,6 +14629,7 @@ fn register_enum_name(
 ) -> CompileResult<()> {
     let key = enum_decl.name.to_ascii_lowercase();
     if classes.lookup_class_id(&enum_decl.name).is_some()
+        || is_core_interface_name(&enum_decl.name)
         || interface_lookup.contains_key(&key)
         || trait_lookup.contains_key(&key)
         || enum_lookup.contains_key(&key)

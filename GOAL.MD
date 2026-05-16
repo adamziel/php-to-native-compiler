@@ -1021,17 +1021,23 @@ object interpolation, heredoc conversion, compound concat assignment, exact
 non-string-return `TypeError` objects, recursion edge-case fidelity,
 references/copy-on-write, and native lowering explicit gaps. Milestone 1013
 extends that object string conversion to concat compound assignment `.=` over
-current supported compound-assignment targets while leaving `Stringable`
-metadata, object interpolation, heredoc conversion, exact non-string-return
-`TypeError` objects, references/copy-on-write aliasing during
-read-modify-write, and native lowering explicit gaps. Milestone 1017 extends
+current supported compound-assignment targets while leaving object
+interpolation, heredoc conversion, broader interface metadata, exact
+non-string-return `TypeError` objects, references/copy-on-write aliasing
+during read-modify-write, and native lowering explicit gaps. Milestone 1017 extends
 object string conversion through visible non-static `__toString()` to the
 current double-quoted string and heredoc interpolation evaluator for simple
 variables, array offsets, direct object properties, and supported braced
-chains while leaving `Stringable` metadata, `${...}` interpolation,
-dynamic/static property interpolation, arbitrary expression interpolation,
-exact non-string-return `TypeError` objects, references/copy-on-write, and
-native lowering explicit gaps. Milestone 833
+chains while leaving `${...}` interpolation, dynamic/static property
+interpolation, arbitrary expression interpolation, exact non-string-return
+`TypeError` objects, references/copy-on-write, and native lowering explicit
+gaps. Milestone 1018 adds bounded `Stringable` core-interface metadata for
+`interface_exists("Stringable")`, `get_declared_interfaces()`, explicit
+`implements Stringable`, and relationship checks for classes with a resolved
+public non-static `__toString()`, while leaving broader built-in interface
+catalogs, interface method enforcement, exact `Stringable` fatal/type
+diagnostics, reflection metadata, references/copy-on-write, and native
+lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
@@ -1442,8 +1448,9 @@ Scope:
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - object conversion beyond the current direct `__toString()` echo/print/cast/
-  concat/`.=` and current interpolation slice, including `Stringable`
-  metadata, unsupported interpolation forms, and exact PHP error behavior;
+  concat/`.=` and current interpolation slice, including broader built-in
+  interface catalogs, exact `Stringable` enforcement/diagnostics, unsupported
+  interpolation forms, and exact PHP error behavior;
 - object protocol behavior beyond the current direct `ArrayAccess`
   read/write/append/isset/empty/`??`/unset, compound-assignment, and
   integer/float by-value temporary increment/decrement slice, including
@@ -1625,14 +1632,13 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1017 is the active checkpoint candidate: object string conversion
-  through visible non-static `__toString()` now covers the current
-  double-quoted string and heredoc interpolation evaluator for simple
-  variables, array offsets, direct object properties, and supported braced
-  chains while `Stringable` metadata, `${...}` interpolation, dynamic/static
-  property interpolation, arbitrary expression interpolation, exact
-  non-string-return `TypeError` objects, references/copy-on-write, and native
-  lowering remain open.
+- Milestone 1018 is the active checkpoint candidate: bounded `Stringable`
+  core-interface metadata now covers `interface_exists("Stringable")`,
+  `get_declared_interfaces()`, explicit `implements Stringable`, and
+  relationship checks for classes with a resolved public non-static
+  `__toString()`, while broader built-in interface catalogs, interface method
+  enforcement, exact `Stringable` fatal/type diagnostics, reflection metadata,
+  references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

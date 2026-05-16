@@ -179,7 +179,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   `(string) $object`, binary concatenation, `.=` over the current supported
   compound-assignment targets, and the current double-quoted string/heredoc
   interpolation evaluator. The method must return a string in the current
-  subset; non-string returns, `Stringable` metadata, `${...}`/dynamic/static
+  subset. Bounded `Stringable` core-interface metadata is also available for
+  `interface_exists("Stringable")`, `get_declared_interfaces()`, explicit
+  `implements Stringable`, and relationship checks for classes with a resolved
+  public non-static `__toString()`; non-string returns, broader built-in
+  interface catalogs and enforcement, `${...}`/dynamic/static
   property/arbitrary expression interpolation, exact PHP `TypeError` objects,
   and native lowering remain unsupported;
 - explicit `parent::method(...)` and `parent::__construct(...)` calls require
@@ -410,7 +414,8 @@ fidelity,
 dynamic property-name magic, property-array-offset magic, inaccessible-property
 `__set` fidelity, inaccessible-method `__call` fidelity, dynamic method-name
 magic, inaccessible-method `__callStatic` fidelity, parent missing-method
-`__callStatic`, `Stringable` metadata, exact
+`__callStatic`, broader built-in interface catalogs and exact `Stringable`
+enforcement/diagnostics, exact
 `__toString()` non-string-return error objects, static member execution through `::` beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,

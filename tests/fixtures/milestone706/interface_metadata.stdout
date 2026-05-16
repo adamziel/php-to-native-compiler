@@ -3,7 +3,8 @@ yes
 not-class
 Array
 (
-    [0] => App\Contracts\Hookable
-    [1] => App\Contracts\Logger
+    [0] => Stringable
+    [1] => App\Contracts\Hookable
+    [2] => App\Contracts\Logger
 )
 

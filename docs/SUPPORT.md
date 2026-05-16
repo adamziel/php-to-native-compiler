@@ -1400,8 +1400,9 @@
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `interface_exists`
-  accepts string names and checks current declared interface metadata without
-  autoloading, `trait_exists` accepts string names and checks current declared
+  accepts string names and checks the bounded `Stringable` core interface plus
+  current declared interface metadata without autoloading, `trait_exists`
+  accepts string names and checks current declared
   trait metadata without autoloading,
   `enum_exists` accepts string names and checks current declared unit-enum
   metadata without autoloading,
@@ -1780,10 +1781,11 @@
   through string-valued dynamic function calls. The autoload flag does not
   trigger autoloading in the current subset.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
-  string interface names, perform case-insensitive lookup against interfaces
-  declared in the current parsed program, and are available through
-  string-valued dynamic function calls. The autoload flag accepts current
-  bool-like scalar values and does not trigger autoloading.
+  string interface names, perform case-insensitive lookup against the bounded
+  `Stringable` core interface plus interfaces declared in the current parsed
+  program, and are available through string-valued dynamic function calls. The
+  autoload flag accepts current bool-like scalar values and does not trigger
+  autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against empty top-level traits
   declared in the current parsed program, and are available through
@@ -1845,7 +1847,12 @@
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes, without enforcing interface methods,
   requiring the interface to be declared, or seeding built-in/internal
-  interfaces such as `Iterator` for `interface_exists()`.
+  interfaces such as `Iterator` for `interface_exists()`. `Stringable` is a
+  bounded core-interface exception: `interface_exists("Stringable")` is true,
+  `get_declared_interfaces()` includes it, explicit `implements Stringable`
+  metadata is accepted, and classes with a resolved public non-static
+  `__toString()` are treated as `Stringable` for `instanceof`, `is_a()`, and
+  `is_subclass_of()` relationship checks.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity, a single-parent ancestor relationship, or a
   recorded `implements` relationship against the current declared class
@@ -3733,9 +3740,10 @@
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
-  string interface names and perform case-insensitive lookup against
-  interfaces declared in the current parsed program; the autoload flag accepts
-  current bool-like scalar values and does not trigger autoloading.
+  string interface names and perform case-insensitive lookup against the
+  bounded `Stringable` core interface plus interfaces declared in the current
+  parsed program; the autoload flag accepts current bool-like scalar values and
+  does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against empty top-level
   traits declared in the current parsed program; the autoload flag accepts
@@ -3774,9 +3782,10 @@
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
-  `get_declared_interfaces()` returns a zero-indexed array containing only the
-  current parsed program's declared interface names in declaration order.
-  Built-in/internal interface entries are not represented.
+  `get_declared_interfaces()` returns a zero-indexed array containing the
+  bounded `Stringable` core interface followed by the current parsed program's
+  declared interface names in declaration order. Other built-in/internal
+  interface entries are not represented.
   `get_declared_traits()` returns a zero-indexed array containing only the
   current parsed program's empty top-level trait names in declaration order.
   Built-in/internal trait entries are not represented.
@@ -4337,10 +4346,9 @@
   native lowering are unsupported. Object string conversion is supported only
   for the documented direct `__toString()` echo/print/cast/concat/`.=` slice
   plus the current double-quoted string and heredoc interpolation evaluator;
-  `Stringable` metadata, `${...}` interpolation, dynamic/static property
-  interpolation, arbitrary expression interpolation, exact non-string-return
-  `TypeError` objects, recursion edge cases, and native lowering remain
-  unsupported.
+  `${...}` interpolation, dynamic/static property interpolation, arbitrary
+  expression interpolation, exact non-string-return `TypeError` objects,
+  recursion edge cases, and native lowering remain unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in

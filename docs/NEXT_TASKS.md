@@ -9750,12 +9750,23 @@ handled.
   property interpolation, arbitrary expression interpolation, exact
   non-string-return `TypeError` objects, recursion edge-case fidelity,
   references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded `Stringable` core-interface metadata
+  for the current object string-conversion slice.
+  Milestone 1018 covers `interface_exists("Stringable")`,
+  `get_declared_interfaces()` including the bounded core entry, explicit
+  `implements Stringable` metadata, and `instanceof`, `is_a()`, and
+  `is_subclass_of()` relationship checks for classes with a resolved public
+  non-static `__toString()`, including inherited methods. This is not a broad
+  built-in interface catalog, interface method enforcement, PHP fatal
+  validation for invalid `__toString()` declarations, exact `Stringable` type
+  diagnostics, reflection metadata, references/copy-on-write, or native
+  lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess paths,
-  ArrayAccess iteration, `Stringable` metadata, `__clone` dispatch,
-  destructors, or inaccessible-member magic fidelity, and add the next bounded
-  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
-  native rejection coverage where lowering remains unsupported.
+  ArrayAccess iteration, broader built-in interface catalogs, `__clone`
+  dispatch, destructors, or inaccessible-member magic fidelity, and add the
+  next bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9767,8 +9778,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1b5f65a9 runtime: add array access increment decrement`, covering
-  Milestone 1016 before the current Milestone 1017 candidate.
+  `d019067e runtime: add magic string interpolation`, covering Milestone 1017
+  before the current Milestone 1018 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
