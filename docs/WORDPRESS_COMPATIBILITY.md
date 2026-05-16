@@ -1166,10 +1166,12 @@ historical blockers and remaining full-support gaps include:
   Milestone 1025 extends that island to exact option `UPDATE` plus later
   readback for existing recorded option names. Milestone 1026 extends it to
   exact option `DELETE` plus later empty readback for removed option names.
-  This is still not broad SQL parsing, INSERT-on-duplicate behavior, DELETE
-  breadth, REPLACE, transactions, host database execution, PDO,
-  prepared-statement mutation state, or native database lowering. The real
-  bootstrap-shim
+  Milestone 1027 extends it to exact option-name/option-value row reads for
+  all options, autoloaded options, and explicit option-name lists. This is
+  still not broad SQL parsing, ordering/collation fidelity,
+  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
+  database execution, PDO, prepared-statement mutation state, or native
+  database lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:2312:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to the following `wpdb::query()` query-classification regex.

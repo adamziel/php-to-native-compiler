@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1027/mysqli_wp_options_row_state.php
+exit: 0
+stdout:
+1|siteurl=https://example.test|2|2|blogname=Example Blog;siteurl=https://example.test
+--- stdout end ---
+stderr:
+--- stderr end ---

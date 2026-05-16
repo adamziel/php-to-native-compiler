@@ -301,11 +301,18 @@ option with `mysqli_affected_rows($handle) === 1`; missing option names are
 successful zero-row deletes. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
-helpers; missing option names still return an empty placeholder result. This is
-not broad SQL parsing, escaping/quoting fidelity, schema/index behavior,
-INSERT-on-duplicate behavior, DELETE breadth, REPLACE support, transactions,
-host database execution, PDO, prepared-statement mutation state,
-warning/error fidelity, or native lowering.
+helpers. Exact option-row reads for
+`SELECT option_name, option_value FROM wp_options`,
+`SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
+return recorded option-name/option-value rows. All and autoload-filtered row
+reads use deterministic option-name ordering; explicit `IN (...)` reads
+preserve the requested name order and skip missing names. Missing option names
+still return an empty placeholder result. This is not broad SQL parsing,
+escaping/quoting fidelity, schema/index behavior, ordering/collation fidelity,
+autoload mutation beyond exact inserts, INSERT-on-duplicate behavior, DELETE
+breadth, REPLACE support, transactions, host database execution, PDO,
+prepared-statement mutation state, warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

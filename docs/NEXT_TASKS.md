@@ -9857,8 +9857,22 @@ handled.
   INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
   database execution, warning/error fidelity, PDO, prepared-statement mutation
   state, or native lowering.
+- [x] Runtime/database lane: add bounded `wp_options` MySQLi row readback over
+  the current per-handle state island.
+  Milestone 1027 covers exact direct
+  `SELECT option_name, option_value FROM wp_options`, exact direct
+  `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+  'on', 'auto-on', 'auto' )`, and exact direct `WHERE option_name IN (...)`
+  row reads after exact supported inserts. All/autoload reads return recorded
+  option rows in deterministic option-name order; explicit `IN (...)` reads
+  preserve requested name order and skip missing names. This is not broad SQL
+  parsing, escaped quote handling, schema/index behavior, ordering/collation
+  fidelity, autoload mutation beyond exact inserts, INSERT-on-duplicate
+  behavior, DELETE breadth, REPLACE, transactions, host database execution,
+  warning/error fidelity, PDO, prepared-statement mutation state, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as option autoload/readback,
+  audited PHP/WordPress surface, such as prepared-statement option readback,
   prepared-statement mutation state, transaction state, broader escaping
   fidelity, host-backed query execution, PDO, or the next `wpdb` state
   consumer, and add the next bounded behavior or explicit runtime boundary with
@@ -9868,8 +9882,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e07fddbe runtime: add wp options mysqli update state`, covering Milestone
-  1025 before the current Milestone 1026 candidate.
+  `9ac8aa99 runtime: add wp options mysqli delete state`, covering Milestone
+  1026 before the current Milestone 1027 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

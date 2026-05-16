@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 1027, bounded `wp_options` row readback for the current
+  per-placeholder-connection MySQLi state island. After exact supported option
+  inserts, direct `mysqli_query()` row reads for
+  `SELECT option_name, option_value FROM wp_options`,
+  `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+  'on', 'auto-on', 'auto' )`, and exact
+  `WHERE option_name IN (...)` shapes can now expose recorded option-name and
+  option-value rows through the existing placeholder result/fetch path. All
+  and autoload-filtered rows are returned in deterministic option-name order;
+  explicit `IN (...)` reads preserve the requested name order and skip missing
+  names. This is not broad SQL parsing, escaped quote handling, schema/index
+  behavior, ordering/collation fidelity, autoload mutation beyond exact
+  inserts, INSERT-on-duplicate behavior, DELETE breadth, REPLACE,
+  transactions, host database execution, warning/error fidelity, PDO,
+  prepared-statement mutation state, or native lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_reads_current_wordpress_option_rows_from_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1027`.
+
 - Added Milestone 1026, bounded exact `wp_options` delete/readback for the
   current per-placeholder-connection MySQLi state island. After an exact
   supported option insert, direct

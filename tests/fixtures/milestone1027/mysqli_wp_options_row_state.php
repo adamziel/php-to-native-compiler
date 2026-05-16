@@ -1,0 +1,20 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogname', 'Example Blog', 'no')");
+$autoload = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )");
+echo mysqli_num_rows($autoload);
+echo "|";
+$row = mysqli_fetch_assoc($autoload);
+echo $row["option_name"], "=", $row["option_value"];
+echo "|";
+$all = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+echo mysqli_num_rows($all);
+echo "|";
+$primed = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name IN ('blogname','missing','siteurl')");
+echo mysqli_num_rows($primed);
+echo "|";
+$first = mysqli_fetch_assoc($primed);
+$second = mysqli_fetch_assoc($primed);
+echo $first["option_name"], "=", $first["option_value"], ";", $second["option_name"], "=", $second["option_value"];

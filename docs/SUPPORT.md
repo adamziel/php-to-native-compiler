@@ -1243,11 +1243,20 @@
   exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
-  path. Missing option names still return an empty placeholder result. This
-  state island is not broad SQL parsing, escaping/quoting fidelity, schema or
-  index behavior, INSERT-on-duplicate behavior, DELETE breadth, REPLACE,
-  transactions, host database execution, warning/error fidelity, PDO,
-  prepared-statement mutation state, or native lowering. For the
+  path. Exact option-row reads for
+  `SELECT option_name, option_value FROM wp_options`,
+  `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
+  'on', 'auto-on', 'auto' )`, and exact
+  `WHERE option_name IN (...)` shapes return recorded name/value rows through
+  the same placeholder result path. All and autoload-filtered row reads use
+  deterministic option-name ordering; explicit `IN (...)` reads preserve the
+  requested name order and skip missing names. Missing option names still
+  return an empty placeholder result. This state island is not broad SQL
+  parsing, escaping/quoting fidelity, schema or index behavior,
+  ordering/collation fidelity, autoload mutation beyond exact inserts,
+  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
+  database execution, warning/error fidelity, PDO, prepared-statement mutation
+  state, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,

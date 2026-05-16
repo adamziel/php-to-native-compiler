@@ -105,7 +105,7 @@ struct Interpreter {
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
     mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
     mysqli_options: HashMap<i64, HashMap<i64, Value>>,
-    mysqli_wp_options: HashMap<i64, HashMap<String, String>>,
+    mysqli_wp_options: HashMap<i64, HashMap<String, WordPressOptionState>>,
     mysqli_affected_rows: HashMap<i64, i64>,
     mysqli_insert_ids: HashMap<i64, i64>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
@@ -121,6 +121,12 @@ struct Interpreter {
     called_class_context: Vec<ClassId>,
     stdout: String,
     exit_signal: Option<i32>,
+}
+
+#[derive(Clone)]
+struct WordPressOptionState {
+    value: String,
+    autoload: String,
 }
 
 #[derive(Debug, Clone)]
@@ -5960,11 +5966,16 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
-        if let Some((option_name, option_value)) = parse_wordpress_option_insert_query(query) {
-            self.mysqli_wp_options
-                .entry(handle_id)
-                .or_default()
-                .insert(option_name, option_value);
+        if let Some((option_name, option_value, autoload)) =
+            parse_wordpress_option_insert_query(query)
+        {
+            self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                option_name,
+                WordPressOptionState {
+                    value: option_value,
+                    autoload,
+                },
+            );
             self.mysqli_affected_rows.insert(handle_id, 1);
             let next_insert_id = self
                 .mysqli_insert_ids
@@ -5978,8 +5989,8 @@ impl Interpreter {
 
         if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
-                let affected_rows = if options.contains_key(&option_name) {
-                    options.insert(option_name, option_value);
+                let affected_rows = if let Some(option) = options.get_mut(&option_name) {
+                    option.value = option_value;
                     1
                 } else {
                     0
@@ -6007,7 +6018,7 @@ impl Interpreter {
                 .mysqli_wp_options
                 .get(&handle_id)
                 .and_then(|options| options.get(&option_name))
-                .cloned()
+                .map(|option| option.value.clone())
             {
                 return self.create_mysqli_result_placeholder(
                     span,
@@ -6017,6 +6028,21 @@ impl Interpreter {
                         Value::String(option_value),
                     )]],
                 );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows = wordpress_option_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec!["option_name".to_string(), "option_value".to_string()],
+                        rows,
+                    );
+                }
             }
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
@@ -15927,7 +15953,13 @@ fn mysqli_multi_result_slot_for_query(query: &str) -> Option<MysqliMultiResultSl
     mysqli_pending_result_for_query(query).map(MysqliMultiResultSlot::Result)
 }
 
-fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String)> {
+enum WordPressOptionsRowFilter {
+    All,
+    Autoload,
+    Names(Vec<String>),
+}
+
+fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, String)> {
     let query = query.trim();
     let values = query
         .strip_prefix("INSERT INTO wp_options (option_name, option_value, autoload) VALUES (")
@@ -15941,7 +15973,7 @@ fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String)> 
     if values.len() != 3 {
         return None;
     }
-    Some((values[0].clone(), values[1].clone()))
+    Some((values[0].clone(), values[1].clone(), values[2].clone()))
 }
 
 fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
@@ -15985,6 +16017,69 @@ fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
         return None;
     }
     Some(names[0].clone())
+}
+
+fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name, option_value FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT option_name, option_value FROM `wp_options`"))?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )" {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
+fn wordpress_option_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![
+                    ("option_name".to_string(), Value::String(name)),
+                    (
+                        "option_value".to_string(),
+                        Value::String(option.value.clone()),
+                    ),
+                ]
+            })
+        })
+        .collect()
+}
+
+fn is_wordpress_autoload_option_value(value: &str) -> bool {
+    matches!(value, "yes" | "on" | "auto-on" | "auto")
 }
 
 fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
