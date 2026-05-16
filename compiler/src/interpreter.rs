@@ -616,6 +616,51 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn append_object_property_array_offset_to_static_source(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(object_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let root = ArrayOffsetAliasRoot::PublicObjectProperty {
+            object: object_name.to_string(),
+            property: property.to_string(),
+        };
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        self.bind_static_to_array_offset_alias(
+            source_name,
+            ArrayOffsetAlias {
+                root,
+                keys: alias_keys,
+            },
+        );
+        Ok(())
+    }
+
     fn append_nested_array_offset_to_static_source(
         &mut self,
         array_name: &str,
@@ -3507,6 +3552,32 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     scope.bind_object_property_array_offset_to_static_source(
+                        object,
+                        property,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.append_object_property_array_offset_to_static_source(
                         object,
                         property,
                         keys,

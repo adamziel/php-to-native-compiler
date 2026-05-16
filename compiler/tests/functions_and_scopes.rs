@@ -1850,6 +1850,88 @@ echo $entry;
 }
 
 #[test]
+fn reference_assignment_object_property_array_append_target_aliases_direct_variable_source() {
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $entries;
+}
+$catalog = new Catalog();
+$entry = "Grace";
+$catalog->entries[] =& $entry;
+echo $catalog->entries[0];
+echo "|";
+$entry = "Hedy";
+echo $catalog->entries[0];
+echo "|";
+$catalog->entries[0] = "Katherine";
+echo $entry;
+unset($entry);
+$entry = "detached";
+echo "|";
+echo $catalog->entries[0], "|", $entry;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Grace|Hedy|Katherine|Katherine|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_nested_array_append_target_aliases_direct_variable_source()
+{
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $groups;
+}
+$catalog = new Catalog();
+$entry = "Ada";
+$catalog->groups["names"][] =& $entry;
+echo $catalog->groups["names"][0];
+echo "|";
+$entry = "Lovelace";
+echo $catalog->groups["names"][0];
+echo "|";
+$catalog->groups["names"][0] = "Byron";
+echo $entry;
+unset($entry);
+$entry = "detached";
+echo "|";
+echo $catalog->groups["names"][0], "|", $entry;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Ada|Lovelace|Byron|Byron|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_deeper_array_target_aliases_direct_variable_source() {
+    let execution = run_source(
+        r#"<?php
+class Catalog {
+    public $groups;
+}
+$catalog = new Catalog();
+$entry = "main";
+$catalog->groups["labels"]["primary"] =& $entry;
+$entry = "changed";
+echo $catalog->groups["labels"]["primary"];
+echo "|";
+$catalog->groups["labels"]["primary"] = "from-slot";
+echo $entry;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|from-slot");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_array_target_aliased_source_remains_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -1860,6 +1942,28 @@ $catalog = new Catalog();
 $entry = "source";
 $other =& $entry;
 $catalog->entries["slot"] =& $entry;
+"#,
+    );
+
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+    );
+}
+
+#[test]
+fn reference_assignment_object_property_array_append_target_aliased_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Catalog {
+    public $entries;
+}
+$catalog = new Catalog();
+$entry = "source";
+$other =& $entry;
+$catalog->entries[] =& $entry;
 "#,
     );
 
