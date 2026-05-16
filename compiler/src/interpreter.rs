@@ -573,6 +573,42 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn append_nested_array_offset_to_static_source(
+        &mut self,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let mut array = match self.read_storage_named(array_name) {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        self.write_storage_named(array_name, Value::Array(array));
+        self.bind_static_to_array_offset_alias(
+            source_name,
+            ArrayOffsetAlias {
+                array_name: array_name.to_string(),
+                keys: alias_keys,
+            },
+        );
+        Ok(())
+    }
+
     fn ensure_array_offset_reference_target_source(
         &self,
         array_name: &str,
@@ -747,6 +783,41 @@ impl SymbolTable {
         }
         array.insert(key.clone(), Value::Array(child));
         true
+    }
+
+    fn append_nested_array_offset_alias(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Vec<ArrayKey>> {
+        let Some((key, rest)) = keys.split_first() else {
+            let appended = array
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+            return Ok(vec![appended]);
+        };
+
+        let mut child = match array.get(key.clone()).cloned() {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let mut alias_keys = vec![key.clone()];
+        alias_keys.extend(Self::append_nested_array_offset_alias(
+            &mut child, rest, value, span,
+        )?);
+        array.insert(key.clone(), Value::Array(child));
+        Ok(alias_keys)
     }
 
     fn read_cell(&self, name: &str) -> Option<VariableCell> {
@@ -3280,6 +3351,35 @@ impl Interpreter {
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
                     scope.bind_nested_array_offset_to_static_source(
+                        name,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::NestedArrayAppend { name, indices, .. } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if name == "GLOBALS" {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "nested append reference binding through $GLOBALS is not implemented",
+                            ),
+                        ));
+                    }
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.append_nested_array_offset_to_static_source(
                         name,
                         keys,
                         source_name,

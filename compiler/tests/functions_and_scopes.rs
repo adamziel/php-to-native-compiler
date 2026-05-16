@@ -1489,6 +1489,78 @@ $items["outer"]["slot"] =& $value;
 }
 
 #[test]
+fn reference_assignment_nested_array_append_target_aliases_direct_variable_source() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+$value = "Grace";
+$items["outer"][] =& $value;
+echo $items["outer"][0];
+echo "|";
+$value = "Hedy";
+echo $items["outer"][0];
+echo "|";
+$items["outer"][0] = "Katherine";
+echo $value;
+unset($value);
+$value = "detached";
+echo "|";
+echo $items["outer"][0], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Grace|Hedy|Katherine|Katherine|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_append_target_materializes_roots_and_source() {
+    let execution = run_source(
+        r#"<?php
+$root_value = "root";
+$undefined_root["outer"][] =& $root_value;
+$root_value = "changed";
+echo $undefined_root["outer"][0];
+echo "|";
+$nullable = null;
+$null_value = "from-null";
+$nullable["outer"][] =& $null_value;
+$nullable["outer"][0] = "from-slot";
+echo $null_value;
+echo "|";
+unset($undefined_source);
+$targets = [];
+$targets["outer"][] =& $undefined_source;
+$undefined_source = "later";
+echo $targets["outer"][0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|from-slot|later");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_append_target_aliased_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$value = "source";
+$other =& $value;
+$items["outer"][] =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+    );
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php
