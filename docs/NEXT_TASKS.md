@@ -10025,6 +10025,18 @@ handled.
   option-value reads. This is not broad SQL parsing, real `REPLACE`/
   unique-index/delete-trigger/auto-increment fidelity, schema/index behavior,
   host database execution, PDO, or native lowering.
+- [x] Runtime/database lane: add bounded exact direct `wp_options` MySQLi
+  autoload readback over the current per-handle state island.
+  Milestone 1041 covers exact direct
+  `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` execution
+  through `mysqli_query()` for single-quoted string option names on the same
+  placeholder handle. Existing recorded options expose their recorded autoload
+  value through the existing placeholder result/fetch path, missing options
+  return an empty placeholder result, and the read sets
+  `mysqli_affected_rows($handle)` to `0`. This is not broad SQL parsing,
+  arbitrary projection, SQL-mode-aware escaping, character-set/collation
+  fidelity, schema/index behavior, host database execution, PDO, prepared
+  statement autoload reads, or native lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
   audited PHP/WordPress surface, such as host-backed query execution, PDO, real
   schema/index behavior, nested transactions, broader SQL-mode-aware escaping,
@@ -10035,8 +10047,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `fa1e6295 docs: record wp options escaped literal gate`, covering
-  Milestone 1038.
+  `623cf186 docs: record countable object protocol gate`, covering
+  Milestone 1040.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

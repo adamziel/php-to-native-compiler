@@ -1205,8 +1205,13 @@ historical blockers and remaining full-support gaps include:
   Milestone 1039 adds exact direct `REPLACE INTO wp_options (...) VALUES (...)`
   state for the same option island, replacing existing recorded options with
   affected rows `2` and inserting missing options with affected rows `1`.
+  Milestone 1041 adds exact direct
+  `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` readback
+  from that same option island through the existing placeholder result/fetch
+  path.
   This is still not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, ordering/collation fidelity,
+  arbitrary projection beyond exact option value/autoload/name-value shapes,
   real `REPLACE`/unique-index/delete-trigger/auto-increment fidelity,
   no-op update affected-row fidelity,
   real transaction isolation/locking/savepoint semantics, host database

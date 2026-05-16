@@ -1288,7 +1288,9 @@ The repository already has a working Rust workspace with:
   `1`, and expose deterministic insert IDs. Exact direct-query option
   insert-on-duplicate shapes now update existing recorded options with
   affected rows `2`, insert missing options with affected rows `1`, and expose
-  deterministic insert IDs. Exact prepared option updates now
+  deterministic insert IDs. Exact direct-query option autoload reads now return
+  recorded autoload values for string option-name predicates through the
+  existing placeholder result/fetch path. Exact prepared option updates now
   mutate existing recorded option values for string value/name parameters and
   expose affected-row metadata. Exact prepared option insert-on-duplicate
   shapes now update existing recorded options with affected rows `2`, insert

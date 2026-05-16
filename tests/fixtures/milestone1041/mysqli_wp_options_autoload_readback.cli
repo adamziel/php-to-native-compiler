@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1041/mysqli_wp_options_autoload_readback.php
+exit: 0
+stdout:
+no|1|0|0|auto-on
+--- stdout end ---
+stderr:
+--- stderr end ---

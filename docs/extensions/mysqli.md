@@ -311,7 +311,10 @@ option with `mysqli_affected_rows($handle) === 1`; missing option names are
 successful zero-row deletes. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
-helpers. Exact option-row reads for
+helpers. A later exact
+`SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` can return
+the recorded autoload value through the same placeholder result/fetch path.
+Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
 'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
@@ -324,7 +327,8 @@ backslash escapes used by `mysqli_real_escape_string()` for quotes, double
 quotes, backslashes, newlines, and carriage returns, plus doubled single
 quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
-ordering/collation fidelity, autoload mutation beyond exact writes, real
+ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
+projection beyond exact option value/autoload/name-value shapes, real
 unique-index enforcement, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
 transaction isolation/locking/savepoint behavior, host database execution,

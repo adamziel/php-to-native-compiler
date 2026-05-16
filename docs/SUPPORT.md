@@ -1273,7 +1273,10 @@
   exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
-  path. Exact option-row reads for
+  path, and a later exact
+  `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` returns
+  the recorded autoload value through that same placeholder result/fetch path.
+  Exact option-row reads for
   `SELECT option_name, option_value FROM wp_options`,
   `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
   'on', 'auto-on', 'auto' )`, and exact
@@ -1288,6 +1291,7 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
+  arbitrary projection beyond exact option value/autoload/name-value shapes,
   real unique-index enforcement, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
   transaction isolation/locking/savepoint behavior,

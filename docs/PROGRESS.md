@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1041, bounded direct `mysqli_query()` `wp_options`
+  autoload readback over the current per-placeholder-connection state island.
+  Exact
+  `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` query
+  strings now return the recorded autoload value from prior exact direct
+  option inserts, replaces, and upserts through the existing placeholder
+  result/fetch path. Missing option names return an empty placeholder result,
+  and the read sets `mysqli_affected_rows($handle)` to `0`. This is not broad
+  SQL parsing, arbitrary projection, ordering/collation fidelity,
+  SQL-mode-aware escaping, character-set fidelity, schema/index behavior,
+  host database execution, PDO, prepared-statement autoload reads, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_reads_current_wordpress_option_autoload_from_state -- --test-threads=1`
+  and `cargo run -p phpc -- test tests/fixtures/milestone1041`.
+
 - Added Milestone 1040, bounded `Countable` object protocol support for the
   current object model. `is_countable($object)` now returns true for object
   values whose class metadata records `implements Countable`, and

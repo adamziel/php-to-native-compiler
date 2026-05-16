@@ -1025,7 +1025,11 @@ The current placeholder MySQLi slice also supports deterministic
 reached SQL-mode probe, `mysqli_select_db()`, and
 `mysqli_real_escape_string()` for scalar/null string-convertible values over
 the placeholder handle. These calls are compatibility probes, not host DB
-integration.
+integration. The interpreter has one narrow `wp_options` state island for exact
+WordPress-shaped option writes and reads, including direct option-value,
+autoload, and option-name/option-value result shapes; it is not a general SQL
+engine, schema model, host database connection, PDO layer, or native database
+runtime.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `623cf186 docs: record countable object protocol gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1041, bounded direct `mysqli_query()` `wp_options`
+  autoload readback from the current per-placeholder-handle option state.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1041/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_reads_current_wordpress_option_autoload_from_state -- --test-threads=1`
+  and `cargo run -p phpc -- test tests/fixtures/milestone1041` passed.
+- Current WordPress frontier: exact direct option autoload reads can expose
+  the recorded `autoload` value from the placeholder `wp_options` state island
+  through the existing result/fetch path.
+- Remaining semantic gaps: broad SQL parsing, arbitrary projection beyond
+  exact option value/autoload/name-value shapes, SQL-mode-aware escaping,
+  character-set/collation fidelity, schema/index behavior, host database
+  execution, PDO, prepared-statement autoload reads, warning/error fidelity,
+  references/copy-on-write, and native lowering remain missing.
+- Next concrete task: rerun focused checks after docs, then the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ab01f1a9 docs: record wp options direct replace gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1040, bounded `Countable` object protocol support

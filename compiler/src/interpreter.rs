@@ -6414,6 +6414,23 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
+        if let Some(option_name) = parse_wordpress_option_autoload_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(autoload) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .map(|option| option.autoload.clone())
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec!["autoload".to_string()],
+                    vec![vec![("autoload".to_string(), Value::String(autoload))]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
         if let Some(filter) = parse_wordpress_options_row_select_query(query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
@@ -16499,6 +16516,22 @@ fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
         .strip_prefix("SELECT option_value FROM wp_options WHERE option_name = ")
         .or_else(|| {
             query.strip_prefix("SELECT option_value FROM `wp_options` WHERE option_name = ")
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
+fn parse_wordpress_option_autoload_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT autoload FROM wp_options WHERE option_name = ")
+        .or_else(|| query.strip_prefix("SELECT autoload FROM `wp_options` WHERE option_name = "))
+        .or_else(|| {
+            query.strip_prefix("SELECT `autoload` FROM `wp_options` WHERE `option_name` = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
     let values = parse_sql_single_quoted_list(rest)?;
