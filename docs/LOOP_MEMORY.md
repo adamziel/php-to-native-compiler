@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `5c16d1a6 runtime: add mysqli client flag placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 975, broader deterministic `mysqli_result` field
+  metadata properties for the current seed-post placeholder result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone975/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_result_field_metadata_helpers -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone975`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: deterministic `mysqli_fetch_field()`,
+  `mysqli_fetch_fields()`, and `mysqli_fetch_field_direct()` now expose common
+  field metadata property names for the seed-post `ID` and `post_title`
+  placeholder fields.
+- Remaining semantic gaps: real host field metadata, SQL-derived table or
+  database metadata, protocol flag/type fidelity, collation negotiation,
+  duplicate-column behavior, warning/error fidelity, and native database
+  lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
+  local-infile option effects, prepared-statement execution boundaries, or
+  pending result state.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1076922e runtime: broaden mysqli option placeholders`, pushed to
   `origin/master`.
 - Task attempted: Milestone 974, deterministic `MYSQLI_CLIENT_*`
@@ -52,10 +82,11 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: real client capability negotiation, TLS
   negotiation, certificate verification, option storage, host connection
   state, warning/error fidelity, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect broader escaping charset fidelity,
-  local-infile option effects, result metadata fields, or prepared-statement
-  execution boundaries.
+- Checkpoint result: committed and pushed
+  `5c16d1a6 runtime: add mysqli client flag placeholders`.
+- Next concrete task: inspect broader escaping charset fidelity, local-infile
+  option effects, result metadata fields, or prepared-statement execution
+  boundaries.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

@@ -5798,7 +5798,7 @@ impl Interpreter {
             state.field_cursor += 1;
             field
         };
-        self.create_stdclass_with_properties(vec![("name".to_string(), Value::String(field))], span)
+        self.create_stdclass_with_properties(mysqli_field_metadata_properties(&field), span)
     }
 
     fn call_mysqli_fetch_fields(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5810,10 +5810,8 @@ impl Interpreter {
             .clone();
         let mut array = PhpArray::new();
         for (index, field) in fields.into_iter().enumerate() {
-            let field = self.create_stdclass_with_properties(
-                vec![("name".to_string(), Value::String(field))],
-                span,
-            )?;
+            let field = self
+                .create_stdclass_with_properties(mysqli_field_metadata_properties(&field), span)?;
             array.insert(index as i64, field);
         }
         Ok(Value::Array(array))
@@ -5850,10 +5848,9 @@ impl Interpreter {
             .get(index)
             .cloned();
         match field {
-            Some(field) => self.create_stdclass_with_properties(
-                vec![("name".to_string(), Value::String(field))],
-                span,
-            ),
+            Some(field) => {
+                self.create_stdclass_with_properties(mysqli_field_metadata_properties(&field), span)
+            }
             None => Ok(Value::Bool(false)),
         }
     }
@@ -13807,6 +13804,33 @@ fn mysqli_row_value_lengths(row: &[(String, Value)], span: Span) -> CompileResul
                 .map_err(|error| runtime_error(span, error))
         })
         .collect()
+}
+
+fn mysqli_field_metadata_properties(name: &str) -> Vec<(String, Value)> {
+    let (field_type, length, max_length, charsetnr) = match name {
+        "ID" => (3, 20, 1, 63),
+        "post_title" => (253, 1020, 23, 45),
+        _ => (253, 1024, 0, 45),
+    };
+
+    vec![
+        ("name".to_string(), Value::String(name.to_string())),
+        ("orgname".to_string(), Value::String(name.to_string())),
+        ("table".to_string(), Value::String("wp_posts".to_string())),
+        (
+            "orgtable".to_string(),
+            Value::String("wp_posts".to_string()),
+        ),
+        ("def".to_string(), Value::String(String::new())),
+        ("db".to_string(), Value::String("wordpress".to_string())),
+        ("catalog".to_string(), Value::String("def".to_string())),
+        ("max_length".to_string(), Value::Int(max_length)),
+        ("length".to_string(), Value::Int(length)),
+        ("charsetnr".to_string(), Value::Int(charsetnr)),
+        ("flags".to_string(), Value::Int(0)),
+        ("type".to_string(), Value::Int(field_type)),
+        ("decimals".to_string(), Value::Int(0)),
+    ]
 }
 
 fn is_wordpress_empty_options_query(query: &str) -> bool {

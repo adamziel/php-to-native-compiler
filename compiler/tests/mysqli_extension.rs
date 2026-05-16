@@ -1249,8 +1249,11 @@ echo $fields[0]->name;
 echo ",";
 echo $fields[1]->name;
 echo "|";
+echo $fields[0]->orgname, ":", $fields[0]->table, ":", $fields[0]->type, ":", $fields[0]->length, ":", $fields[0]->charsetnr;
+echo "|";
 $direct = mysqli_fetch_field_direct($result, 1);
 echo $direct->name;
+echo ":", $direct->orgname, ":", $direct->orgtable, ":", $direct->db, ":", $direct->catalog, ":", $direct->type, ":", $direct->max_length;
 echo "|";
 echo mysqli_field_tell($result);
 echo "|";
@@ -1272,7 +1275,7 @@ echo mysqli_field_seek($result, 99) ? "seek" : "no-seek";
 
     assert_eq!(
         execution.stdout,
-        "yes|fetch-fields-callable|fetch-direct-exists|fetch-direct-callable|field-seek-exists|field-seek-callable|field-tell-exists|field-tell-callable|stmt-fields-missing|stmt-field-missing|ID,post_title|post_title|0|seek|1|post_title|2|no-direct|no-seek"
+        "yes|fetch-fields-callable|fetch-direct-exists|fetch-direct-callable|field-seek-exists|field-seek-callable|field-tell-exists|field-tell-callable|stmt-fields-missing|stmt-field-missing|ID,post_title|ID:wp_posts:3:20:63|post_title:post_title:wp_posts:wordpress:def:253:23|0|seek|1|post_title|2|no-direct|no-seek"
     );
     assert_eq!(execution.exit_code, 0);
 

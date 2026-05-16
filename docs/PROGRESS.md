@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 975, broader deterministic `mysqli_result` field metadata
+  objects for the current seed-post placeholder result. `mysqli_fetch_field()`,
+  `mysqli_fetch_fields()`, and `mysqli_fetch_field_direct()` now return
+  `stdClass` metadata with deterministic `name`, `orgname`, `table`,
+  `orgtable`, `def`, `db`, `catalog`, `max_length`, `length`, `charsetnr`,
+  `flags`, `type`, and `decimals` properties for the current `ID` and
+  `post_title` fields. This is not real host field metadata, SQL-derived table
+  or database metadata, protocol flag/type fidelity, collation negotiation,
+  duplicate-column behavior, warning/error fidelity, or native database
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_result_field_metadata_helpers -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone975`.
+
 - Added Milestone 974, deterministic MySQLi client-flag constants and a
   bounded `mysqli_real_connect()` client-flags boundary. The runtime now
   exposes `MYSQLI_CLIENT_SSL`, `MYSQLI_CLIENT_COMPRESS`,

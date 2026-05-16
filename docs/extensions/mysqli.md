@@ -391,14 +391,20 @@ returns a placeholder `mysqli_result` object with deterministic interpreter
 state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
 `post_title` is `Hello world placeholder`. `mysqli_num_fields()` returns `2`,
 `mysqli_num_rows()` returns `1` without advancing the shared row cursor,
-`mysqli_fetch_field()` returns `stdClass` objects with a `name` property for
+`mysqli_fetch_field()` returns deterministic `stdClass` metadata objects for
 those two fields and then `false`, `mysqli_fetch_fields()` returns a
 zero-indexed array of the current field metadata objects,
 `mysqli_fetch_field_direct()` returns one field metadata object by integer
 index or `false`, and `mysqli_field_seek()`/`mysqli_field_tell()` mutate and
-report the current field cursor. `mysqli_fetch_lengths()` returns `false`
-before any row fetch and a zero-indexed integer array for the most recently
-fetched row lengths after `mysqli_fetch_object()`, `mysqli_fetch_assoc()`,
+report the current field cursor. The metadata objects currently expose
+`name`, `orgname`, `table`, `orgtable`, `def`, `db`, `catalog`,
+`max_length`, `length`, `charsetnr`, `flags`, `type`, and `decimals` for the
+deterministic `ID` and `post_title` seed fields. This metadata is fixed
+placeholder data, not SQL-derived table/database metadata, protocol
+flag/type/collation fidelity, duplicate-column fidelity, or host result
+metadata. `mysqli_fetch_lengths()` returns `false` before any row fetch and a
+zero-indexed integer array for the most recently fetched row lengths after
+`mysqli_fetch_object()`, `mysqli_fetch_assoc()`,
 `mysqli_fetch_row()`, `mysqli_fetch_array()`, `mysqli_fetch_all()`, or
 `mysqli_fetch_column()`. `mysqli_fetch_object()` returns one `stdClass` row
 object and then `false`. `mysqli_fetch_assoc()` uses the same row cursor and

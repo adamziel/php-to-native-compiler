@@ -1703,6 +1703,11 @@ historical blockers and remaining full-support gaps include:
   `mysqli_real_connect()` flag-combination acceptance for reached SSL/options
   setup paths without claiming real client capability negotiation, TLS
   negotiation, certificate verification, host connection state,
+  warning/error fidelity, or native database lowering. Milestone 975 broadens
+  deterministic `mysqli_result` field metadata properties for the current
+  seed-post `ID` and `post_title` placeholder fields without claiming real
+  host field metadata, SQL-derived table or database metadata, protocol
+  flag/type fidelity, collation negotiation, duplicate-column behavior,
   warning/error fidelity, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

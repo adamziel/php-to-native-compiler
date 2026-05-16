@@ -434,6 +434,11 @@ plus deterministic `MYSQLI_CLIENT_*` client-flag constants and bounded
 setup paths without claiming real client capability negotiation, TLS
 negotiation, certificate verification, host connection state, warning/error
 fidelity, or native lowering,
+plus broader deterministic `mysqli_result` field metadata properties for the
+seed-post `ID` and `post_title` placeholder fields without claiming real
+host field metadata, SQL-derived table or database metadata, protocol
+flag/type fidelity, collation negotiation, duplicate-column behavior,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

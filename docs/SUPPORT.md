@@ -1061,8 +1061,15 @@
   one row. `mysqli_num_fields($result)` returns `2`,
   `mysqli_num_rows($result)` returns `1` without advancing the shared row
   cursor,
-  `mysqli_fetch_field($result)` returns `stdClass` objects whose `name`
-  properties are `ID` and `post_title` before returning `false`, and
+  `mysqli_fetch_field($result)` returns deterministic `stdClass` metadata
+  objects for `ID` and `post_title` before returning `false`; those metadata
+  objects expose `name`, `orgname`, `table`, `orgtable`, `def`, `db`,
+  `catalog`, `max_length`, `length`, `charsetnr`, `flags`, `type`, and
+  `decimals` for the current seed fields. This is fixed placeholder metadata,
+  not SQL-derived table/database metadata, protocol flag/type/collation
+  fidelity, duplicate-column fidelity, or host result metadata.
+  `mysqli_fetch_fields($result)` and `mysqli_fetch_field_direct($result, $i)`
+  return the same metadata shape, and
   `mysqli_fetch_object($result)` returns one `stdClass` row with `ID = 1` and
   `post_title = "Hello world placeholder"` before returning `false`.
   `mysqli_fetch_assoc($result)` uses the same row cursor and returns one

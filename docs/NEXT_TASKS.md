@@ -9164,18 +9164,30 @@ handled.
   including reached SSL/options setup paths. This is not real client capability
   negotiation, TLS negotiation, SSL certificate verification, option storage,
   host connection state, warning/error fidelity, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as broader escaping charset fidelity,
   local-infile option effects, result metadata fields, or prepared-statement
   execution boundaries, and add the next bounded behavior or explicit runtime
   boundary with tests, CLI fixtures, docs, and native rejection coverage where
   lowering remains unsupported.
+  Milestone 975 broadens deterministic `mysqli_result` field metadata objects
+  for the current seed-post `ID` and `post_title` placeholder fields. This is
+  not real host field metadata, SQL-derived table or database metadata,
+  protocol flag/type fidelity, collation negotiation, duplicate-column
+  behavior, warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as broader escaping charset fidelity,
+  local-infile option effects, prepared-statement execution boundaries, or
+  pending result state for `mysqli_store_result()`/`mysqli_use_result()`, and
+  add the next bounded behavior or explicit runtime boundary with tests, CLI
+  fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1076922e runtime: broaden mysqli option placeholders`, covering
-  Milestone 973 before the current Milestone 974 candidate.
+  `5c16d1a6 runtime: add mysqli client flag placeholders`, covering
+  Milestone 974 before the current Milestone 975 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
