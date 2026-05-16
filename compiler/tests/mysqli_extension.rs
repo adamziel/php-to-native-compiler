@@ -1547,6 +1547,37 @@ echo $rollback($handle, 0, null) ? "dynamic-rollback" : "failed";
 }
 
 #[test]
+fn mysqli_savepoint_helpers_accept_current_placeholder_shape() {
+    let execution = run_source(
+        r#"<?php
+$savepoint = "mysqli_savepoint";
+$release = "mysqli_release_savepoint";
+echo function_exists($savepoint) ? "yes" : "no";
+echo "|";
+echo is_callable($release) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_begin_transaction($handle);
+echo "|";
+echo mysqli_savepoint($handle, "wp") ? "savepoint" : "failed";
+echo "|";
+echo mysqli_release_savepoint($handle, "wp") ? "release" : "failed";
+echo "|";
+echo $savepoint($handle, "wp2") ? "dynamic-savepoint" : "failed";
+echo "|";
+echo $release($handle, "wp2") ? "dynamic-release" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|savepoint|release|dynamic-savepoint|dynamic-release"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php
@@ -2413,6 +2444,71 @@ mysqli_rollback($handle, 0, false);
     assert_eq!(
         bad_rollback_name.message,
         "unsupported call mysqli_rollback(): name argument must be string or null in the current subset, got bool"
+    );
+}
+
+#[test]
+fn mysqli_savepoint_helpers_reject_forms_outside_current_boundary() {
+    let bad_savepoint_handle = run_source(
+        r#"<?php
+mysqli_savepoint("not-a-handle", "wp");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_savepoint_handle.phase, Phase::Runtime);
+    assert_eq!(bad_savepoint_handle.line, 2);
+    assert_eq!(bad_savepoint_handle.column, 1);
+    assert_eq!(
+        bad_savepoint_handle.message,
+        "unsupported call mysqli_savepoint(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_release_handle = run_source(
+        r#"<?php
+mysqli_release_savepoint("not-a-handle", "wp");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_release_handle.phase, Phase::Runtime);
+    assert_eq!(bad_release_handle.line, 2);
+    assert_eq!(bad_release_handle.column, 1);
+    assert_eq!(
+        bad_release_handle.message,
+        "unsupported call mysqli_release_savepoint(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_savepoint_name = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_savepoint($handle, false);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_savepoint_name.phase, Phase::Runtime);
+    assert_eq!(bad_savepoint_name.line, 3);
+    assert_eq!(bad_savepoint_name.column, 1);
+    assert_eq!(
+        bad_savepoint_name.message,
+        "unsupported call mysqli_savepoint(): name argument must be string in the current subset, got bool"
+    );
+
+    let bad_release_name = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_release_savepoint($handle, null);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_release_name.phase, Phase::Runtime);
+    assert_eq!(bad_release_name.line, 3);
+    assert_eq!(bad_release_name.column, 1);
+    assert_eq!(
+        bad_release_name.message,
+        "unsupported call mysqli_release_savepoint(): name argument must be string in the current subset, got null"
     );
 }
 
@@ -3774,6 +3870,10 @@ echo function_exists("mysqli_commit") ? "1" : "0";
 echo is_callable("mysqli_commit") ? "1" : "0";
 echo function_exists("mysqli_rollback") ? "1" : "0";
 echo is_callable("mysqli_rollback") ? "1" : "0";
+echo function_exists("mysqli_savepoint") ? "1" : "0";
+echo is_callable("mysqli_savepoint") ? "1" : "0";
+echo function_exists("mysqli_release_savepoint") ? "1" : "0";
+echo is_callable("mysqli_release_savepoint") ? "1" : "0";
 echo function_exists("mysqli_set_charset") ? "1" : "0";
 echo is_callable("mysqli_set_charset") ? "1" : "0";
 echo function_exists("mysqli_query") ? "1" : "0";
@@ -3872,7 +3972,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 216, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 220, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4684,6 +4784,30 @@ mysqli_commit(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_rollback(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_savepoint(mysqli_init(), "wp");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_release_savepoint(mysqli_init(), "wp");
 "#,
     )
     .unwrap_err();

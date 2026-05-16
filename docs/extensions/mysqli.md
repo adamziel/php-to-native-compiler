@@ -29,6 +29,7 @@ Status: boundary only.
 `mysqli_debug`,
 `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
+`mysqli_savepoint`, `mysqli_release_savepoint`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
@@ -285,6 +286,13 @@ flags value `0`, and optional null/string transaction names, returning
 deterministic `true`. They do not commit, roll back, mutate real transaction or
 autocommit state, handle savepoints, emit warnings/errors, or touch host
 database state.
+
+`mysqli_savepoint($handle, $name)` and
+`mysqli_release_savepoint($handle, $name)` accept the placeholder object and a
+string savepoint name, returning deterministic `true`. They do not create,
+release, roll back to, validate, or persist real savepoint state, interact with
+host database transactions, emit warnings/errors, or affect later placeholder
+transaction calls.
 
 `mysqli_errno($handle)`, `mysqli_error($handle)`,
 `mysqli_sqlstate($handle)`, `mysqli_warning_count($handle)`, and

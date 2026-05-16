@@ -1679,6 +1679,10 @@ historical blockers and remaining full-support gaps include:
   seed-post `mysqli_result` placeholder without claiming real SQL execution,
   host result storage, broad result resources, duplicate-column fidelity,
   warning/error fidelity, unbuffered result behavior, or native database
+  lowering. Milestone 970 adds deterministic `mysqli_savepoint()` and
+  `mysqli_release_savepoint()` placeholder transaction helpers without
+  claiming real host transaction state, savepoint creation/release/validation,
+  rollback-to-savepoint behavior, warning/error fidelity, or native database
   lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

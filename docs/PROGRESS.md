@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 970, deterministic `mysqli_savepoint()` and
+  `mysqli_release_savepoint()` placeholder transaction helpers. Both names are
+  visible through function/callability metadata, accept the placeholder
+  `mysqli` object and a string savepoint name, and return `true` without
+  storing transaction state. Native metadata lookup knows both names while
+  direct native lowering remains rejected. This is not real host transaction
+  state, savepoint creation/release/validation, rollback-to-savepoint behavior,
+  warning/error fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_savepoint -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone970`.
+
 - Added Milestone 969, `mysqli_fetch_all()` and `mysqli_fetch_column()` over
   the current deterministic MySQLi seed-post result. `mysqli_fetch_all()`
   drains remaining placeholder rows into a zero-indexed outer array, defaults

@@ -540,7 +540,8 @@
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
+  `mysqli_rollback`, `mysqli_savepoint`, `mysqli_release_savepoint`,
+  `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
@@ -987,6 +988,11 @@
   deterministic `true` without committing, rolling back, changing real
   transaction/autocommit state, handling savepoints, or touching host database
   state.
+  `mysqli_savepoint($handle, $name)` and
+  `mysqli_release_savepoint($handle, $name)` accept the placeholder object and
+  a string savepoint name, returning deterministic `true` without creating,
+  releasing, validating, or persisting real savepoints, rolling back to
+  savepoints, warning/error behavior, or host transaction state.
   `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder handle and
   returns deterministic `true` for the reached WordPress charset setup path
   without negotiating a real connection charset or collation state.
@@ -2570,7 +2576,8 @@
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
+  `mysqli_rollback`, `mysqli_savepoint`, `mysqli_release_savepoint`,
+  `mysqli_set_charset`, `mysqli_query`,
   `mysqli_real_query`, `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
@@ -2918,6 +2925,7 @@
   `mysqli_debug`,
   `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
+  `mysqli_savepoint`, `mysqli_release_savepoint`,
   `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
@@ -3086,7 +3094,8 @@
   `mysqli_debug`,
   `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
-  `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`,
+  `mysqli_rollback`, `mysqli_savepoint`, `mysqli_release_savepoint`,
+  `mysqli_query`, `mysqli_real_query`,
   `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
@@ -3283,7 +3292,9 @@
   deterministic transaction-start success for the current placeholder shape
   without real transaction state, `mysqli_commit(...)` and
   `mysqli_rollback(...)` return only deterministic transaction-completion
-  success without real transaction state, `mysqli_set_charset(...)` returns only deterministic
+  success without real transaction state, `mysqli_savepoint(...)` and
+  `mysqli_release_savepoint(...)` return only deterministic savepoint success
+  without real savepoint state, `mysqli_set_charset(...)` returns only deterministic
   success for the current `utf8mb4` placeholder charset, and
   `mysqli_query(...)` returns only the current false
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
@@ -3340,7 +3351,8 @@
   `mysqli_dump_debug_info(...)`/
   `mysqli_debug(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
-  `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
+  `mysqli_commit(...)`/`mysqli_rollback(...)`/
+  `mysqli_savepoint(...)`/`mysqli_release_savepoint(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_real_query(...)`/`mysqli_multi_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_error_list(...)`/`mysqli_sqlstate(...)`/
   `mysqli_warning_count(...)`/`mysqli_info(...)`/`mysqli_get_warnings(...)`/
@@ -5002,7 +5014,7 @@
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
   `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_stmt_prepare()`/`mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/`mysqli_stmt_error_list()`/`mysqli_stmt_bind_param()`/`mysqli_stmt_bind_result()`/`mysqli_stmt_execute()`/`mysqli_stmt_get_result()`/`mysqli_stmt_close()`/`mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`/`mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/`mysqli_stmt_fetch()`/`mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/`mysqli_stmt_free_result()`/`mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()`/`mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()`/`mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/`mysqli_stmt_insert_id()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
-  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
+  `mysqli_commit()`/`mysqli_rollback()`/`mysqli_savepoint()`/`mysqli_release_savepoint()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/

@@ -5021,6 +5021,42 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_savepoint(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_savepoint", args, 2, span)?;
+        expect_mysqli_handle("mysqli_savepoint()", &args[0], span)?;
+        let Value::String(_) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_savepoint()",
+                    format!(
+                        "name argument must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Value::Bool(true))
+    }
+
+    fn call_mysqli_release_savepoint(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_release_savepoint", args, 2, span)?;
+        expect_mysqli_handle("mysqli_release_savepoint()", &args[0], span)?;
+        let Value::String(_) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_release_savepoint()",
+                    format!(
+                        "name argument must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_set_charset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_set_charset", args, 2, span)?;
         expect_mysqli_handle("mysqli_set_charset()", &args[0], span)?;
@@ -10304,6 +10340,8 @@ impl Interpreter {
             "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
             "mysqli_commit" => self.call_mysqli_commit(&args, span),
             "mysqli_rollback" => self.call_mysqli_rollback(&args, span),
+            "mysqli_savepoint" => self.call_mysqli_savepoint(&args, span),
+            "mysqli_release_savepoint" => self.call_mysqli_release_savepoint(&args, span),
             "mysqli_set_charset" => self.call_mysqli_set_charset(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_real_query" => self.call_mysqli_real_query(&args, span),
@@ -13311,6 +13349,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_begin_transaction"
             | "mysqli_commit"
             | "mysqli_rollback"
+            | "mysqli_savepoint"
+            | "mysqli_release_savepoint"
             | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_real_query"

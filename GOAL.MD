@@ -410,6 +410,10 @@ consumption helpers for the seed-post `mysqli_result` placeholder without
 claiming real SQL execution, host result storage, broad result resources,
 duplicate-column fidelity, warning/error fidelity, unbuffered result behavior,
 or native lowering,
+plus deterministic `mysqli_savepoint()` and `mysqli_release_savepoint()`
+placeholder transaction helpers without claiming real host transaction state,
+savepoint creation/release/validation, rollback-to-savepoint behavior,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -9102,19 +9102,31 @@ handled.
   when no row remains. This is not real SQL execution, host result storage,
   broad result resources, duplicate-column fidelity, warning/error fidelity,
   unbuffered result behavior, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+- [x] Runtime/database lane: inspect the next real MySQLi connection/helper
   gap from the audited PHP surface, such as `mysqli_savepoint()`,
   `mysqli_release_savepoint()`, `mysqli_ssl_set()`, `mysqli_set_opt()`/
   `mysqli_options()` alias behavior, or broader result metadata fields, and
   add the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 970 implements deterministic `mysqli_savepoint()` and
+  `mysqli_release_savepoint()` placeholder helpers for the current `mysqli`
+  object and string savepoint names. This is not real host transaction state,
+  savepoint creation/release/validation, rollback-to-savepoint behavior,
+  warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi connection/helper
+  gap from the audited PHP surface, such as `mysqli_ssl_set()`,
+  `mysqli_set_opt()`/`mysqli_options()` alias behavior,
+  `mysqli_escape_string()` alias behavior, or broader result metadata fields,
+  and add the next bounded behavior or explicit runtime boundary with tests,
+  CLI fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9b92c61b runtime: add mysqli fetch lengths placeholder`, covering
-  Milestone 968 before the current Milestone 969 candidate.
+  `cfe8ab95 runtime: add mysqli fetch all column placeholders`, covering
+  Milestone 969 before the current Milestone 970 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

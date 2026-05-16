@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `cfe8ab95 runtime: add mysqli fetch all column placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 970, deterministic `mysqli_savepoint()` and
+  `mysqli_release_savepoint()` placeholder helpers.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone970/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_savepoint -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone970`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder transaction helpers now include
+  deterministic savepoint and release-savepoint success for string names.
+- Remaining semantic gaps: real host transaction state, savepoint
+  creation/release/validation, rollback-to-savepoint behavior, warning/error
+  fidelity, and native database lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next audited MySQLi helper gap
+  such as SSL setup or alias behavior.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `9b92c61b runtime: add mysqli fetch lengths placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 969, `mysqli_fetch_all()` and
@@ -53,10 +81,10 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: real SQL execution, host result storage, broad
   result resources, duplicate-column fidelity, warning/error fidelity,
   unbuffered result behavior, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next audited MySQLi
-  connection/helper gap such as savepoint, SSL, alias, or broader result
-  metadata behavior.
+- Checkpoint result: committed and pushed
+  `cfe8ab95 runtime: add mysqli fetch all column placeholders`.
+- Next concrete task: inspect the next audited MySQLi connection/helper gap
+  such as savepoint, SSL, alias, or broader result metadata behavior.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
