@@ -494,6 +494,66 @@ impl SymbolTable {
         source_name: &str,
         span: Span,
     ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let alias = ArrayOffsetAlias {
+            array_name: array_name.to_string(),
+            key,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_static_to_array_offset_alias(source_name, alias);
+        Ok(())
+    }
+
+    fn append_array_offset_to_static_source(
+        &mut self,
+        array_name: &str,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let mut array = match self.read_storage_named(array_name) {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let key = array
+            .append(source_value)
+            .map_err(|error| runtime_error(span, error))?;
+        self.write_storage_named(array_name, Value::Array(array));
+        self.bind_static_to_array_offset_alias(
+            source_name,
+            ArrayOffsetAlias {
+                array_name: array_name.to_string(),
+                key,
+            },
+        );
+        Ok(())
+    }
+
+    fn ensure_array_offset_reference_target_source(
+        &self,
+        array_name: &str,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
         if array_name == source_name {
             return Err(runtime_error(
                 span,
@@ -524,19 +584,6 @@ impl SymbolTable {
             ));
         }
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
-        let alias = ArrayOffsetAlias {
-            array_name: array_name.to_string(),
-            key,
-        };
-        self.materialize_array_offset_alias(&alias, span)?;
-        if !self.write_array_offset_alias(&alias, source_value) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
-            ));
-        }
-        self.bind_static_to_array_offset_alias(source_name, alias);
         Ok(())
     }
 
@@ -3089,6 +3136,28 @@ impl Interpreter {
                         )),
                     )),
                 }
+            }
+            AssignTarget::ArrayIndex {
+                name, index: None, ..
+            } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if name == "GLOBALS" {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "append reference binding through $GLOBALS is not implemented",
+                            ),
+                        ));
+                    }
+                    scope.append_array_offset_to_static_source(name, source_name, span)?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
             }
             _ => Err(unsupported()),
         }
