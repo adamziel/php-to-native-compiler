@@ -10220,8 +10220,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8c6294d7 runtime: add magic static reference return boundary`, covering
-  Milestone 1054.
+  `f81adc95 runtime: add direct array foreach reference copyback`, covering
+  Milestone 1055.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

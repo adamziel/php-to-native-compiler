@@ -20,6 +20,9 @@ Implemented:
   Verification so far:
   `cargo test -p phpc --test foreach -- --test-threads=1` and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1055`.
+  The serialized checkpoint gate passed with 1269 fixture tests, 714 system
+  PHP comparisons, and 555 skipped comparisons, then committed
+  `f81adc95 runtime: add direct array foreach reference copyback`.
 
 - Added Milestone 1054, an explicit runtime boundary for magic
   `__callStatic` reference-return method sources in statement-form reference
