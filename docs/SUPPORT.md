@@ -341,7 +341,10 @@
   when one is declared or inherited. Missing direct-property writes call a
   visible non-static `__set($name, $value)` method when one is declared or
   inherited, ignore its return value, and preserve the assignment expression
-  result as the assigned value.
+  result as the assigned value. Missing direct-property `unset($object->name)`
+  calls visible non-static `__unset($name)` when one is declared or inherited,
+  while existing visible slots are still nulled under the current storage
+  model.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -5131,9 +5134,10 @@
   references/copy-on-write, exact native error behavior, and native lowering
 - `unset($object->name)`/`unset($object->$name)` true property removal and
   property uninitialization, typed/uninitialized property behavior,
-  non-public visibility context beyond the current visible-slot lookup, magic
-  `__unset` behavior, references/copy-on-write, exact native error behavior,
-  and native lowering
+  non-public visibility context beyond the current visible-slot lookup,
+  inaccessible-property `__unset` fidelity, dynamic property-name magic
+  `__unset`, references/copy-on-write, exact native error behavior, and native
+  lowering
 - `is_a` inheritance beyond current single-parent class chain, interfaces,
   traits, aliases/imports, namespace-aware names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, object operands, and native lowering

@@ -154,6 +154,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   variables. Missing slots call visible non-static `__isset($name)` first;
   when it returns truthy, `empty` calls `__get($name)` and checks the returned
   value's truthiness;
+- direct `unset($object->name)` nulls existing visible slots under the current
+  storage model. Missing direct property slots call visible non-static
+  `__unset($name)` when one is declared or inherited;
 - direct object-property compound assignment and pre/post increment/decrement
   work for public slots, private slots owned by the active declaring class, and
   protected slots owned by the active class or an ancestor, reusing the current
@@ -263,7 +266,8 @@ slots, ordinary reads can dispatch visible non-static `__get($name)`,
 `isset` can dispatch visible non-static `__isset($name)`, and `empty` can
 dispatch `__isset($name)` followed by `__get($name)` when `__isset` is truthy.
 Missing direct property writes can dispatch visible non-static
-`__set($name, $value)`.
+`__set($name, $value)`. Missing direct property unsets can dispatch visible
+non-static `__unset($name)`.
 Property names remain
 case-sensitive. Undefined properties, property access on non-object values,
 and non-public properties outside the current method-context slice produce
@@ -379,11 +383,12 @@ operands outside the current private/protected method context, complex object-pr
 operands, dynamic property-name `empty` operands, non-public property
 visibility context for `empty` outside the current private/protected method context, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
-dynamic property names and object-property dimensions, object-property `unset`,
-property uninitialization,
-typed/uninitialized property behavior, magic `__unset` behavior,
+dynamic property names and object-property dimensions, true object-property
+removal/uninitialization,
+typed/uninitialized property behavior, inaccessible-property `__unset`
+fidelity,
 dynamic property-name magic, property-array-offset magic, inaccessible-property
-`__set` fidelity, `__unset`, `__call`, `__toString`, static member execution
+`__set` fidelity, `__call`, `__toString`, static member execution
 through `::` beyond the current class-name constant and
 called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,

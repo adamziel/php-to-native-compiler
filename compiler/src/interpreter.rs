@@ -1211,7 +1211,7 @@ impl Interpreter {
                 property,
                 span,
             } => {
-                self.execute_unset_object_property(object, property, *span, scope)?;
+                self.execute_unset_object_property(object, property, *span, scope, true)?;
                 Ok(Flow::Normal)
             }
             Stmt::UnsetDynamicObjectProperty {
@@ -1661,7 +1661,7 @@ impl Interpreter {
             }
             UnsetTarget::ObjectProperty {
                 object, property, ..
-            } => self.execute_unset_object_property(object, property, span, scope),
+            } => self.execute_unset_object_property(object, property, span, scope, true),
             UnsetTarget::DynamicObjectProperty {
                 object, property, ..
             } => self.execute_unset_dynamic_object_property(object, property, span, scope),
@@ -1696,6 +1696,7 @@ impl Interpreter {
         property: &str,
         span: Span,
         scope: &mut SymbolTable,
+        call_magic_on_missing: bool,
     ) -> CompileResult<()> {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         let object = match scope.read_static(object_name, span)? {
@@ -1716,6 +1717,9 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?
             .is_none()
         {
+            if call_magic_on_missing {
+                self.call_magic_property_method(object, "__unset", property, span)?;
+            }
             return Ok(());
         }
 
@@ -1737,7 +1741,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
-        self.execute_unset_object_property(object_name, &property_name, span, scope)
+        self.execute_unset_object_property(object_name, &property_name, span, scope, false)
     }
 
     fn execute_unset_array_index(

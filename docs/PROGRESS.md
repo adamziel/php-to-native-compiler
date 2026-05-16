@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1009, bounded direct missing-property `__unset($name)`
+  dispatch for ordinary direct object-property `unset(...)`. Direct
+  `unset($object->name)` still nulls an existing visible slot under the
+  current storage model; when the visible slot is missing and a visible
+  non-static `__unset()` method is declared or inherited, the interpreter
+  calls it with the property name and ignores its return value. This is not
+  true PHP property removal/uninitialization, inaccessible-property `__unset`
+  fidelity, dynamic property-name magic, object-dimension magic, `ArrayAccess`,
+  typed/uninitialized property behavior, exact PHP warning/visibility
+  diagnostics, references/copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test object_model magic_unset_runs_for_missing_direct_property_unset -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1009`.
+
 - Added Milestone 1008, bounded direct missing-property `__set($name, $value)`
   dispatch for ordinary direct object-property writes. Direct
   `$object->name = expr` still mutates an existing visible slot when one is

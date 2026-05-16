@@ -198,7 +198,7 @@ copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property
-  `__get`/`__isset`/`__set` slice, typed/default property compatibility, broader
+  `__get`/`__isset`/`__set`/`__unset` slice, typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, exact nested declaration timing, and
   exact PHP object lifecycle behavior

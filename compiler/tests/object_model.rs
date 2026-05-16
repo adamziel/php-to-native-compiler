@@ -1004,6 +1004,36 @@ echo $bag->title;
 }
 
 #[test]
+fn magic_unset_runs_for_missing_direct_property_unset() {
+    let source = r#"<?php
+class Bag {
+    public $name;
+    public $log = [];
+
+    public function __unset($property) {
+        echo "unset:$property\n";
+        $this->log[$property] = "gone";
+    }
+
+    public function __get($property) {
+        return $this->log[$property];
+    }
+}
+
+$bag = new Bag();
+$bag->name = "Ada";
+unset($bag->name);
+echo isset($bag->name) ? "name:set\n" : "name:unset\n";
+unset($bag->title);
+echo $bag->title;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "name:unset\nunset:title\ngone");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

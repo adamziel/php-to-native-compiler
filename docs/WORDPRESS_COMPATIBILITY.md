@@ -1195,6 +1195,12 @@ historical blockers and remaining full-support gaps include:
   inaccessible-property `__set` fidelity, nested/compound/null-coalescing
   writes through magic, `__unset`, `__call`, ArrayAccess,
   typed/uninitialized properties, exact warning behavior,
+  references/copy-on-write, and native lowering explicit gaps. Milestone 1009
+  adds bounded direct missing-property `__unset($name)` for ordinary direct
+  object-property `unset(...)` while leaving true property
+  removal/uninitialization, inaccessible-property `__unset` fidelity, dynamic
+  property-name magic, object-dimension magic, ArrayAccess,
+  typed/uninitialized properties, exact warning behavior,
   references/copy-on-write, and native lowering explicit gaps.
   The real
   bootstrap-shim probe now advances to

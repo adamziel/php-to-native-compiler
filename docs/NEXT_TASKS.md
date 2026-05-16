@@ -9643,6 +9643,19 @@ handled.
   `__unset`, `__call`, ArrayAccess, typed/uninitialized property behavior,
   exact warning/visibility diagnostics, references/copy-on-write, or native
   lowering.
+- [x] Object semantics lane: inspect the adjacent direct object-property
+  `unset(...)` magic gap and add bounded `__unset($name)` behavior or an
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
+  Milestone 1009 adds bounded direct missing-property `__unset($name)`
+  dispatch for ordinary direct `unset($object->name)`. Existing visible slots
+  are still nulled under the current storage model; missing visible slots call
+  visible non-static `__unset` when declared or inherited and ignore its
+  return value. This is not true PHP property removal/uninitialization,
+  inaccessible-property `__unset` fidelity, dynamic property-name magic,
+  object-dimension magic, ArrayAccess, typed/uninitialized property behavior,
+  exact warning/visibility diagnostics, references/copy-on-write, or native
+  lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9654,8 +9667,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3623a408 runtime: add magic property access`, covering Milestone 1007
-  before the current Milestone 1008 candidate.
+  `d8b50939 runtime: add magic property writes`, covering Milestone 1008
+  before the current Milestone 1009 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

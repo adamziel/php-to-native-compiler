@@ -997,7 +997,12 @@ direct object-property writes while leaving dynamic property-name magic,
 inaccessible-property `__set` fidelity, nested/compound/null-coalescing writes
 through magic, `__unset`, `__call`, ArrayAccess, typed/uninitialized
 properties, exact warning behavior, references/copy-on-write, and native
-lowering explicit gaps. Milestone 833
+lowering explicit gaps. Milestone 1009 adds bounded direct missing-property
+`__unset($name)` for ordinary direct object-property `unset(...)` while
+leaving true property removal/uninitialization, inaccessible-property
+`__unset` fidelity, dynamic property-name magic, object-dimension magic,
+ArrayAccess, typed/uninitialized properties, exact warning behavior,
+references/copy-on-write, and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
