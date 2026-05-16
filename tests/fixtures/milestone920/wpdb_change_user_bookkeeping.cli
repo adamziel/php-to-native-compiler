@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone920/wpdb_change_user_bookkeeping.php
+0
+wordpress
+wordpress
+changed
+changed-null-db
+still-open
+checked

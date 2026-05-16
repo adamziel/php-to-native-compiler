@@ -8527,16 +8527,26 @@ handled.
   database selection, server session reset, transaction rollback,
   temporary-table cleanup, locked-table cleanup, host database state,
   warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_change_user()` placeholder through a WordPress-shaped
   connection user/database lifecycle method without claiming real
   authentication, selected-database, or session-reset fidelity.
+  Milestone 920 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_change_user()` placeholder metadata on local
+  user/database-change bookkeeping and verifies that the placeholder connection
+  remains open. It is not real authentication, database selection, server
+  session reset, transaction rollback, temporary-table cleanup, locked-table
+  cleanup, warnings/errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi connection/session
+  lifecycle boundary after placeholder user/database-change bookkeeping, such
+  as `mysqli_refresh()` or a sharper unsupported diagnostic, before claiming
+  broader connection/session lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f919abc tests: add wordpress wpdb thread kill smoke`, covering Milestone
-  918 before the current Milestone 919 candidate.
+  `a59b6c5 runtime: add mysqli change user placeholder`, covering Milestone
+  919 before the current Milestone 920 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

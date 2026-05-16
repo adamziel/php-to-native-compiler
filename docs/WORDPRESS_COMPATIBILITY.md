@@ -1466,7 +1466,10 @@ historical blockers and remaining full-support gaps include:
   placeholder user/database-change metadata without real authentication,
   selected-database state, server session reset, transaction rollback,
   temporary-table cleanup, locked-table cleanup, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 920 wires
+  that placeholder through a synthetic WordPress-shaped `wpdb` connection
+  user/database-change bookkeeping smoke without claiming real authentication,
+  selected-database, or session-reset fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

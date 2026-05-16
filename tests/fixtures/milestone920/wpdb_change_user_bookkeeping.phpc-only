@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_change_user()` user/database-change boundary through a WordPress-shaped
+`wpdb` connection lifecycle method. System PHP needs a real mysqli connection
+and host authentication state; phpc only records local bookkeeping around
+placeholder user/database-change acceptance and leaves the placeholder
+connection open.

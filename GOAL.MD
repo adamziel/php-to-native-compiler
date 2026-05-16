@@ -204,9 +204,11 @@ WordPress-shaped `wpdb` connection thread-lifecycle bookkeeping smoke without
 real server-thread killing, connection invalidation, reconnect behavior, host
 database state, warning/error fidelity, or native lowering, plus bounded
 deterministic `mysqli_change_user()` placeholder user/database-change metadata
-without real authentication, database selection, server session reset,
-transaction rollback, temporary-table cleanup, locked-table cleanup, host
-database state, warning/error fidelity, or native lowering, plus deterministic
+now wired through a synthetic WordPress-shaped `wpdb` connection
+user/database-change bookkeeping smoke without real authentication, database
+selection, server session reset, transaction rollback, temporary-table cleanup,
+locked-table cleanup, host database state, warning/error fidelity, or native
+lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
 smoke, plus deterministic

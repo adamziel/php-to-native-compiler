@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 920, a synthetic WordPress-shaped `wpdb` connection
+  user/database-change bookkeeping smoke that calls bounded
+  `mysqli_change_user($this->dbh, $user, $password, $database)`,
+  `mysqli_change_user($this->dbh, $user, $password, null)`, and
+  `mysqli_ping($this->dbh)`, records deterministic local placeholder
+  user/database-change metadata, and verifies that the placeholder connection
+  remains open. This is a harness smoke only; it does not add real WordPress
+  authentication, selected-database state, server session reset, transaction
+  rollback, temporary-table cleanup, locked-table cleanup, host database state,
+  PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone920`.
+
 - Added Milestone 919, bounded `mysqli_change_user()` support for
   deterministic placeholder MySQLi connection lifecycle metadata. The runtime
   accepts current placeholder `mysqli` handles, string username/password
