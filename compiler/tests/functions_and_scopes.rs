@@ -1633,6 +1633,30 @@ echo $entry, "|", $items["slot"], "|", $other;
 }
 
 #[test]
+fn reference_assignment_globals_root_target_rebinds_array_offset_alias_group() {
+    let execution = run_source(
+        r#"<?php
+$entry = "source";
+$items["slot"] =& $entry;
+$other =& $entry;
+$GLOBALS["target"] =& $entry;
+echo $target, "|", $GLOBALS["target"], "|", $items["slot"], "|", $other, "|";
+$target = "from-target";
+echo $entry, "|", $items["slot"], "|", $GLOBALS["target"], "|", $other, "|";
+$items["slot"] = "from-slot";
+echo $target, "|", $GLOBALS["target"], "|", $entry, "|", $other;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "source|source|source|source|from-target|from-target|from-target|from-target|from-slot|from-slot|from-slot|from-slot"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_target_rebinds_array_offset_alias_group() {
     let execution = run_source(
         r#"<?php

@@ -12130,7 +12130,7 @@ handled.
 
 ## Milestone 1231: Next Trait/Interface WordPress Slice
 
-- [ ] Parser/runtime lane: advance one concrete trait/interface blocker beyond
+- [x] Parser/runtime lane: advance one concrete trait/interface blocker beyond
   simple public method composition and comma-separated trait-use declarations.
   Prefer a WordPress-reached behavior such as a bounded trait adaptation
   diagnostic that preserves useful metadata, one trait property/constant parse
@@ -12140,7 +12140,7 @@ handled.
 
 ## Milestone 1232: Next Reference/COW WordPress Slice
 
-- [ ] Runtime lane: advance one remaining WordPress-shaped reference or
+- [x] Runtime lane: advance one remaining WordPress-shaped reference or
   copy-on-write behavior around globals, callback arguments, object-property
   arrays, include scope, or mutable `wpdb`/option state. Prefer a real
   execution boundary over diagnostics-only work. Keep full PHP reference
@@ -12148,22 +12148,86 @@ handled.
 
 ## Milestone 1233: Next Request/SAPI/Filesystem WordPress Slice
 
+- [x] Runtime or IR/lowering lane: implement one bounded request-state,
+  include-path, stream/filesystem, output-buffering, header/cookie, or SAPI
+  behavior that advances executable WordPress bootstrap/request progress.
+  Native lowering should reject unsupported runtime-only behavior explicitly
+  when a direct lowering would otherwise be misleading. Milestone 1233 seeds
+  deterministic empty `$_GET`, `$_POST`, and `$_REQUEST` auto-global arrays in
+  `phpc run`, routes direct function-scope reads/writes through the root symbol
+  table, and adds an explicit native request-superglobal rejection so
+  `isset(...)`/`empty(...)` are not folded as ordinary missing native
+  variables. This does not parse query strings or request bodies, merge
+  GET/POST/COOKIE into `$_REQUEST`, handle uploads, import host environment
+  state, implement `variables_order`, provide `$GLOBALS` alias fidelity,
+  references/copy-on-write, exact warning behavior, or native request-state
+  lowering.
+
+## Milestone 1234: Next WordPress Database/Bootstrap Evidence Slice
+
+- [x] Compatibility/runtime lane: advance the synthetic or operator-supplied
+  WordPress probe to a later database/bootstrap point, or implement one small
+  `mysqli`/`wpdb`/option-cache behavior required by that probe. Avoid claiming
+  real MySQL, broad SQL, plugin/theme loading, or full request support.
+  Milestone 1234 adds a synthetic `get_option()` option-cache smoke after the
+  existing alloptions probe: the bootstrap shim and front-controller paths seed
+  a non-autoloaded `blogdescription` row, miss the bounded in-memory
+  `wp_cache_get()` path, read the exact supported single-value `wp_options`
+  query through a minimal `wpdb::get_row()` wrapper, store it with
+  `wp_cache_add()`, and prove the second lookup is cache-backed. It does not
+  claim persistent object-cache behavior, real database connectivity,
+  arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
+  request/SAPI fidelity, or native support.
+
+## Milestone 1235: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1231-1234 land, refresh the queue
+  around the next largest WordPress blockers, update support/compatibility docs
+  with exact unsupported edges, run the serialized full gate, and checkpoint
+  the batch. Milestone 1235 keeps the next split on the largest WordPress
+  blockers: trait/interface semantics, reference/COW fidelity, request/SAPI/
+  filesystem behavior, and `wpdb`/bootstrap evidence. Full gate passed with
+  `1369` fixture tests, `781` system PHP comparisons, and `588` skipped
+  `phpc-only` fixtures.
+
+## Milestone 1236: Next Trait/Interface WordPress Slice
+
+- [ ] Parser/runtime lane: advance one concrete trait/interface blocker beyond
+  simple public trait method aliases. Prefer one WordPress-reached behavior
+  such as a safer qualified alias edge, a stable diagnostic for visibility
+  adaptations or `insteadof`, one trait property/constant boundary, or a small
+  interface/trait interaction required by a current probe. Prove it with
+  focused object-model tests, a CLI fixture, and PHP comparison when
+  deterministic.
+
+## Milestone 1237: Next Reference/COW WordPress Slice
+
+- [ ] Runtime lane: advance one remaining WordPress-shaped reference or
+  copy-on-write behavior around globals, callback arguments, object-property
+  arrays, include scope, request bags, or mutable `wpdb`/option/cache state.
+  Prefer a real execution boundary over diagnostics-only work. Keep full PHP
+  reference containers and native lowering unsupported unless implemented and
+  tested.
+
+## Milestone 1238: Next Request/SAPI/Filesystem WordPress Slice
+
 - [ ] Runtime or IR/lowering lane: implement one bounded request-state,
   include-path, stream/filesystem, output-buffering, header/cookie, or SAPI
   behavior that advances executable WordPress bootstrap/request progress.
   Native lowering should reject unsupported runtime-only behavior explicitly
   when a direct lowering would otherwise be misleading.
 
-## Milestone 1234: Next WordPress Database/Bootstrap Evidence Slice
+## Milestone 1239: Next WordPress Database/Bootstrap Evidence Slice
 
 - [ ] Compatibility/runtime lane: advance the synthetic or operator-supplied
   WordPress probe to a later database/bootstrap point, or implement one small
-  `mysqli`/`wpdb`/option-cache behavior required by that probe. Avoid claiming
-  real MySQL, broad SQL, plugin/theme loading, or full request support.
+  `mysqli`/`wpdb`/object-cache/option behavior required by that probe. Avoid
+  claiming real MySQL, broad SQL, plugin/theme loading, or full request
+  support.
 
-## Milestone 1235: WordPress-Focused Queue Refresh
+## Milestone 1240: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1231-1234 land, refresh the queue
+- [ ] Tests/docs lane: after Milestones 1236-1239 land, refresh the queue
   around the next largest WordPress blockers, update support/compatibility docs
   with exact unsupported edges, run the serialized full gate, and checkpoint
   the batch.

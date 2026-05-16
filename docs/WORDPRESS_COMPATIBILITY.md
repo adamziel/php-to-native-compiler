@@ -137,12 +137,36 @@ cache behavior, real database connectivity, arbitrary SQL, broad `wpdb`, full
 WordPress option APIs, plugin/theme loading, request/SAPI fidelity, or native
 support.
 
+After Milestone 1234, the synthetic harness also includes a
+`get_option()`-shaped option-cache bootstrap smoke. The generated bootstrap
+shim and `wp-blog-header.php` front-controller path seed a non-autoloaded
+`blogdescription` row through the current placeholder `mysqli_query()`
+`wp_options` state island, initialize a bounded in-memory cache array, miss
+`wp_cache_get(..., $found)`, read the exact supported
+`SELECT option_value FROM wp_options WHERE option_name = 'blogdescription'
+LIMIT 1` query through a minimal `wpdb::get_row()` wrapper, cache the value
+with `wp_cache_add()`, and prove the second `get_option()` lookup is
+cache-backed by emitting `cache-db|cache-db` (`stdout_bytes: 17` in normalized
+output). This is executable evidence for a later bounded option-cache point
+only; it does not claim persistent object-cache behavior, real database
+connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
+plugin/theme loading, request/SAPI fidelity, references/copy-on-write, or
+native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
 as missing `wordpress_test_cookie` checks in the current request scaffold only;
 it does not parse browser cookies, populate SAPI request cookies, merge
 `$_REQUEST`, send cookies, or claim request fidelity.
+
+After Milestone 1233, `phpc run` also seeds `$_GET`, `$_POST`, and
+`$_REQUEST` as deterministic empty auto-global arrays routed through the root
+symbol table. This supports WordPress-shaped request guard code that checks
+or seeds query, form, and merged request bags in function scope. It does not
+parse query strings or request bodies, merge GET/POST/COOKIE into `$_REQUEST`,
+handle uploads, import host environment state, implement `variables_order`, or
+claim request fidelity.
 
 ## Current Probe Status
 
@@ -154,8 +178,11 @@ smokes keep no-stdout coverage, and the Milestone 1224 `wpdb` option smoke
 records the database-backed `db-ok` output byte count separately. The Milestone
 1229 alloptions smoke records a later option-bootstrap byte count separately
 after exercising an autoload-filtered `wp_options` row query through a
-minimal `wpdb::get_results()` wrapper. Known historical blockers and remaining
-full-support gaps include:
+minimal `wpdb::get_results()` wrapper. The Milestone 1234 option-cache smoke
+records a later cache-miss/cache-hit `get_option()` byte count separately after
+exercising the exact single-option `wp_options` row query through a minimal
+`wpdb::get_row()` wrapper and bounded in-memory cache functions. Known
+historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice. The

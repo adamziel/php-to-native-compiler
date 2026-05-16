@@ -4,7 +4,8 @@ use crate::ast::{
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
+    UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -521,7 +522,11 @@ impl Parser {
         let mut trait_uses = Vec::new();
         loop {
             let name = self.consume_class_like_name("expected trait name after 'use'")?;
-            trait_uses.push(TraitUseDecl { name, span });
+            trait_uses.push(TraitUseDecl {
+                name,
+                aliases: Vec::new(),
+                span,
+            });
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
@@ -538,10 +543,77 @@ impl Parser {
             }
         }
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-            return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
+            self.parse_trait_adaptation_block(&mut trait_uses)?;
+            return Ok(trait_uses);
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after trait use")?;
         Ok(trait_uses)
+    }
+
+    fn parse_trait_adaptation_block(
+        &mut self,
+        trait_uses: &mut [TraitUseDecl],
+    ) -> CompileResult<()> {
+        self.consume_keyword(TokenKind::LBrace, "expected trait adaptation block")?;
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            let (first, span) =
+                self.consume_identifier_with_span("expected trait method name in adaptation")?;
+            let (trait_name, method_name) =
+                if self.match_token(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                    let method_name = self.consume_identifier("expected trait method name")?;
+                    (Some(self.resolve_class_like_name(&first)), method_name)
+                } else {
+                    (None, first)
+                };
+
+            if matches!(&self.peek().kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("insteadof"))
+            {
+                return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
+            }
+            self.consume_trait_adaptation_as()?;
+            if self.check_trait_visibility_adaptation() {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_trait_visibility_adaptation_message(),
+                ));
+            }
+            let alias = self.consume_identifier("expected trait method alias after 'as'")?;
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after trait method alias adaptation",
+            )?;
+
+            let target_index = match &trait_name {
+                Some(name) => trait_uses
+                    .iter()
+                    .position(|trait_use| trait_use.name.eq_ignore_ascii_case(name))
+                    .ok_or_else(|| {
+                        self.error_at(
+                            span,
+                            "unsupported trait use adaptation: trait-qualified aliases must target a trait in the same use declaration",
+                        )
+                    })?,
+                None if trait_uses.len() == 1 => 0,
+                None => {
+                    return Err(self.error_at(
+                        span,
+                        "unsupported trait use adaptation: unqualified aliases with multiple used traits are not implemented",
+                    ));
+                }
+            };
+
+            trait_uses[target_index].aliases.push(TraitMethodAliasDecl {
+                trait_name,
+                method_name,
+                alias,
+                span,
+            });
+        }
+        self.consume_keyword(
+            TokenKind::RBrace,
+            "expected '}' after trait adaptation block",
+        )?;
+        Ok(())
     }
 
     fn parse_interface(&mut self) -> CompileResult<Stmt> {
@@ -5500,6 +5572,14 @@ impl Parser {
         }
     }
 
+    fn consume_trait_adaptation_as(&mut self) -> CompileResult<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("as") => Ok(()),
+            _ => Err(self.error_at(token.span, "expected 'as' in trait method alias adaptation")),
+        }
+    }
+
     fn consume_while_keyword(&mut self, message: &str) -> CompileResult<()> {
         let token = self.advance().clone();
         match token.kind {
@@ -6351,11 +6431,15 @@ fn unsupported_asymmetric_property_visibility_message() -> &'static str {
 }
 
 fn unsupported_trait_use_message() -> &'static str {
-    "unsupported trait use: only simple class-body trait use without adaptations is implemented"
+    "unsupported trait use: class-body trait use is implemented only for already-declared traits with public instance methods and simple method aliases"
 }
 
 fn unsupported_trait_adaptation_message() -> &'static str {
-    "unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented"
+    "unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented"
+}
+
+fn unsupported_trait_visibility_adaptation_message() -> &'static str {
+    "unsupported trait use adaptation: trait visibility changes are not implemented"
 }
 
 impl Parser {
@@ -6372,6 +6456,19 @@ impl Parser {
             }
         }
         false
+    }
+
+    fn check_trait_visibility_adaptation(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Public | TokenKind::Protected | TokenKind::Private
+        ) || matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("public")
+                    || name.eq_ignore_ascii_case("protected")
+                    || name.eq_ignore_ascii_case("private")
+        )
     }
 
     fn check_asymmetric_property_visibility_modifier(&self) -> bool {

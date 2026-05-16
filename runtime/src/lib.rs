@@ -193,6 +193,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn unsupported_trait_use(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedTraitUse {
+            reason: reason.into(),
+        })
+    }
+
     pub fn duplicate_class_member(
         class_name: impl Into<String>,
         member_kind: ClassMemberKind,
@@ -351,6 +357,9 @@ pub enum RuntimeErrorKind {
         class_name: String,
         reason: String,
     },
+    UnsupportedTraitUse {
+        reason: String,
+    },
     DuplicateClassMember {
         class_name: String,
         member_kind: ClassMemberKind,
@@ -485,6 +494,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::UnsupportedObjectInstantiation { class_name, reason } => {
             format!("unsupported object instantiation for {class_name}: {reason}")
+        }
+        RuntimeErrorKind::UnsupportedTraitUse { reason } => {
+            format!("unsupported trait use: {reason}")
         }
         RuntimeErrorKind::DuplicateClassMember {
             class_name,

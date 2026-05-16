@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+get-array|post-array|request-array|get-empty|true|save|true:save
+stderr:

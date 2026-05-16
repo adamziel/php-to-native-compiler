@@ -1,2 +1,2 @@
-parse error at 3:16: unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented
+parse error at 4:23: unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented
 

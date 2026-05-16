@@ -3,6 +3,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -152,6 +153,61 @@ echo $_COOKIE["wordpress_test_cookie"];
 
     assert_eq!(execution.stdout, "array|empty|WP Cookie check");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn request_bag_superglobals_are_materialized_as_empty_auto_global_arrays() {
+    let execution = run_source(
+        r#"<?php
+echo is_array($_GET) ? "get-array" : "get-missing";
+echo "|";
+echo is_array($_POST) ? "post-array" : "post-missing";
+echo "|";
+echo is_array($_REQUEST) ? "request-array" : "request-missing";
+echo "|";
+echo isset($_GET["preview"]) ? "preview" : "get-empty";
+echo "|";
+echo isset($_POST["action"]) ? "action" : "post-empty";
+echo "|";
+echo isset($_REQUEST["name"]) ? "name" : "request-empty";
+
+function seed_request_bags() {
+    $_GET["preview"] = "true";
+    $_POST["action"] = "save";
+    $_REQUEST["name"] = $_GET["preview"] . ":" . $_POST["action"];
+}
+
+seed_request_bags();
+echo "|";
+echo $_GET["preview"];
+echo "|";
+echo $_POST["action"];
+echo "|";
+echo $_REQUEST["name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "get-array|post-array|request-array|get-empty|post-empty|request-empty|true|save|true:save"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() {
+    let direct = emit_ir_source("<?php\necho $_GET;\n").unwrap_err();
+    assert_eq!(direct.phase, Phase::Codegen);
+    assert_eq!(direct.line, 2);
+    assert_eq!(direct.column, 6);
+    assert_eq!(direct.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
+
+    let isset_offset = emit_ir_source("<?php\necho isset($_REQUEST['preview']);\n").unwrap_err();
+    assert_eq!(isset_offset.phase, Phase::Codegen);
+    assert_eq!(isset_offset.line, 2);
+    assert_eq!(isset_offset.column, 12);
+    assert_eq!(isset_offset.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
 }
 
 #[test]
@@ -342,9 +398,9 @@ echo "|", $bag["outer"][0];
 
 #[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
-    let error = runtime_error("<?php\necho $_GET;\n");
+    let error = runtime_error("<?php\necho $_SESSION;\n");
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$_GET'");
+    assert_eq!(error.message, "undefined variable '$_SESSION'");
 }

@@ -2524,6 +2524,71 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_alias_adaptation_composes_public_instance_method_aliases() {
+    let source = r#"<?php
+interface Registrable {
+    public function register_hooks();
+}
+
+trait HasHooks {
+    public function hooks($suffix = "default") {
+        return "hooks:" . $suffix . ":" . get_class($this);
+    }
+}
+
+class Plugin implements Registrable {
+    use HasHooks {
+        hooks as register_hooks;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->hooks("direct"), "\n";
+echo $plugin->register_hooks("alias"), "\n";
+echo method_exists($plugin, "register_hooks") ? "alias-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "hooks:direct:Plugin\nhooks:alias:Plugin\nalias-method\nArray\n(\n    [0] => hooks\n    [1] => register_hooks\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("hooks").is_some());
+    assert!(class.method("register_hooks").is_some());
+}
+
+#[test]
+fn class_trait_use_alias_requires_existing_trait_method() {
+    let error = runtime_error(
+        r#"<?php
+trait HasHooks {
+    public function hooks() {}
+}
+
+class Plugin {
+    use HasHooks {
+        missing as register_hooks;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "unsupported trait use: trait alias HasHooks::missing targets a missing method"
+    );
+}
+
+#[test]
 fn class_trait_use_requires_already_declared_trait() {
     let error = runtime_error(
         r#"<?php
@@ -7133,13 +7198,13 @@ class Box {
             r#"<?php
 class Box {
     use Labels {
-        Labels::label as title;
+        Labels::label insteadof OtherLabels;
     }
 }
 "#,
-            3,
-            16,
-            "unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented",
+            4,
+            23,
+            "unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented",
         ),
         (
             r#"<?php

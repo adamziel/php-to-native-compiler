@@ -537,16 +537,20 @@
   slot to a direct source variable cell, including from function scope. The
   source may be unaliased, part of a direct variable-to-variable alias group,
   or already routed through the current covered array-offset alias metadata;
-  in that last shape, the selected `$GLOBALS` slot joins the same bounded
-  alias group. Writes through the source variable, direct global variable path,
-  supported `$GLOBALS` offset path, and other covered alias-group slots observe
-  the same value, and `unset($value)` detaches only the source name. Nested
-  by-value writes through supported string-keyed `$GLOBALS` paths route through
-  the root global symbol table and sync covered aliases. Full PHP `$GLOBALS`
-  array materialization, recursive `$GLOBALS` contents, non-string keyed
-  `$GLOBALS` access, `$GLOBALS[] =& $value`, non-direct sources, dynamic global
-  names, exact warning/notice behavior, included-file scope interactions,
-  copy-on-write, and native lowering remain unsupported.
+  in that last shape, a direct string-keyed root target such as
+  `$GLOBALS['target'] =& $value` and nested targets such as
+  `$GLOBALS['bag']['slot'] =& $value` join the same bounded alias group without
+  losing the currently aliased value. Writes through the source variable,
+  direct global variable path, supported `$GLOBALS` offset path, and other
+  covered alias-group slots observe the same value, and `unset($value)`
+  detaches only the source name. Nested by-value writes through supported
+  string-keyed `$GLOBALS` paths route through the root global symbol table and
+  sync covered aliases. Full PHP `$GLOBALS` array materialization, recursive
+  `$GLOBALS` contents, non-string keyed `$GLOBALS` access, `$GLOBALS[] =&
+  $value`, non-direct sources, function-local alias metadata that must survive
+  after the source scope returns, dynamic global names, exact warning/notice
+  behavior, included-file scope interactions, copy-on-write, and native
+  lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
@@ -555,9 +559,9 @@
   table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
-  copy-on-write, mutation-ordering fidelity, `variables_order`, cookies,
-  uploads, sessions, other superglobals, exact warning behavior, and native
-  lowering remain unsupported.
+  copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
+  sessions, other superglobals, exact warning behavior, and native lowering
+  remain unsupported.
 - `$_COOKIE` is seeded as a bounded root superglobal for `phpc run` with an
   empty ordered array. Direct function-scope reads and writes of `$_COOKIE`
   route through the root symbol table without a `global $_COOKIE` declaration.
@@ -565,6 +569,14 @@
   `$_REQUEST` merging, cookie emission through headers, `$GLOBALS` aliasing,
   references, copy-on-write, exact warning behavior, and native lowering remain
   unsupported.
+- `$_GET`, `$_POST`, and `$_REQUEST` are seeded as bounded root superglobals
+  for `phpc run` with empty ordered arrays. Direct function-scope reads and
+  writes route through the root symbol table without `global` declarations,
+  matching the current deterministic CLI request scaffold. Query-string/body
+  parsing, request method handling, file uploads, `variables_order`,
+  automatic `$_REQUEST` merging from GET/POST/COOKIE data, host environment
+  imports, `$GLOBALS` aliasing, references, copy-on-write, exact warning
+  behavior, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -624,7 +636,8 @@
   class/interface return covariance and type subtyping, type aliases,
   union/intersection canonicalization, interface inheritance,
   built-in/internal interface method enforcement, named arguments,
-  trait composition, exact PHP `Error` objects, and readonly class semantics
+  trait composition beyond the current public-method and simple-alias slice,
+  exact PHP `Error` objects, and readonly class semantics
   are not implemented.
   Magic
   class-name instantiation through `new self`, `new parent`, and `new static`
@@ -2130,8 +2143,9 @@
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
   static interface methods, trait properties/constants, static/abstract/final
-  or non-public trait methods, adaptation blocks, conflict resolution,
-  aliases, visibility adaptations, `insteadof`, `__TRAIT__` context,
+  or non-public trait methods, adaptation blocks beyond the current simple
+  method alias shape, conflict resolution, visibility adaptations, `insteadof`,
+  `__TRAIT__` context,
   references/copy-on-write, and native trait lowering, backed enum declarations
   and enum members beyond
   bare cases,
@@ -4568,8 +4582,12 @@
   including traits with supported public instance methods. Simple class-body
   `use TraitName;`, repeated simple trait-use declarations, and
   `use TraitA, TraitB;` compose already-declared public instance trait methods
-  onto the consuming class metadata without adaptations or conflict
-  resolution. Built-in/internal trait entries are not represented.
+  onto the consuming class metadata. A single simple method alias adaptation
+  shape such as `use TraitName { method as alias; }` is also supported for
+  public instance trait methods; the original method remains available, and
+  the alias is registered as an ordinary public instance method that can
+  satisfy the current interface method-presence checks. Built-in/internal
+  trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -5091,8 +5109,9 @@
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
   trait properties/constants, static/abstract/final and non-public trait
-  methods, conflicting trait composition, trait conflict resolution, aliases,
-  visibility changes, adaptation blocks, `insteadof`, `__TRAIT__`,
+  methods, conflicting trait composition, trait conflict resolution,
+  trait aliases beyond the current simple method alias slice, visibility
+  changes, `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -6411,8 +6430,13 @@
   `variables_order`, `$_REQUEST` merging, cookie emission through headers,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
-- other superglobals such as `$_GET`, `$_POST`, `$_FILES`,
-  `$_REQUEST`, `$_ENV`, `$_SESSION`, and `$GLOBALS`
+- `$_GET`, `$_POST`, and `$_REQUEST` behavior beyond the current deterministic
+  empty array seed and direct root-symbol routing: query-string/body parsing,
+  request method handling, file uploads, `variables_order`, automatic
+  `$_REQUEST` merging from GET/POST/COOKIE data, host environment imports,
+  `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
+  exact warning behavior, and native lowering
+- other superglobals such as `$_FILES`, `$_ENV`, `$_SESSION`, and `$GLOBALS`
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:3:16: unsupported trait use adaptation: trait aliases, visibility changes, insteadof conflict resolution, and adaptation blocks are not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:4:23: unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented
 --- stderr end ---

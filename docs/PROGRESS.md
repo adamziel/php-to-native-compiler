@@ -4,6 +4,123 @@
 
 Implemented:
 
+- Added Milestone 1235, a WordPress-focused queue refresh and checkpoint for
+  the 1231-1234 implementation batch. `docs/NEXT_TASKS.md` now marks
+  Milestones 1231-1235 complete and opens Milestones 1236-1240 around the
+  same largest WordPress blockers: trait/interface semantics beyond simple
+  aliases, reference/COW fidelity, request/SAPI/filesystem behavior, and
+  `wpdb`/bootstrap evidence. `docs/LANE_WORKERS.md` records the next split.
+  Full gate passed at checkpoint: `1369` fixture tests, `781` system PHP
+  comparisons, and `588` skipped `phpc-only` fixtures.
+
+- Added Milestone 1234, a later WordPress database/bootstrap evidence slice.
+  The WordPress inventory CLI test suite now includes a synthetic
+  `get_option()`-shaped option-cache smoke after the existing alloptions probe.
+  The generated bootstrap shim and `wp-blog-header.php` front-controller seed a
+  non-autoloaded `blogdescription` row through the current placeholder
+  `mysqli_query()` `wp_options` state island, initialize a bounded in-memory
+  cache array, miss `wp_cache_get(..., $found)`, read the exact supported
+  `SELECT option_value FROM wp_options WHERE option_name = 'blogdescription'
+  LIMIT 1` query through a minimal `wpdb::get_row()` wrapper, cache the value
+  with `wp_cache_add()`, and prove the second `get_option()` read is
+  cache-backed by emitting `cache-db|cache-db` (`stdout_bytes: 17` in
+  normalized inventory output). This improves executable WordPress evidence
+  without claiming persistent object-cache behavior, real database
+  connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
+  plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
+  lowering. Focused compatibility verification passed:
+  `CARGO_TARGET_DIR=target/focused-1234-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test wordpress_inventory_cli wordpress_inventory_wpdb_option_cache_bootstrap_smoke_matches_fixture -- --test-threads=1`
+  with `1` test. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1232, a bounded WordPress-shaped `$GLOBALS` reference/COW
+  runtime slice. Direct string-keyed root `$GLOBALS` reference targets such as
+  `$GLOBALS["target"] =& $entry` now accept a source variable already routed
+  through the current covered array-offset alias metadata, seed the root global
+  with the source's currently aliased value, and keep writes through the source
+  group, direct global variable path, `$GLOBALS` offset path, and covered array
+  slot synchronized. The same source-value preservation now applies across the
+  covered array-offset/object-property/`$GLOBALS` reference-target helpers that
+  rebind an existing alias group. This remains symbol-table alias metadata, not
+  full PHP reference containers or copy-on-write. Unsupported edges remain:
+  non-string `$GLOBALS` roots, `$GLOBALS[] =& $value`, non-direct sources,
+  function-local alias metadata that must survive after the source scope
+  returns, recursive `$GLOBALS` materialization, included-file scope fidelity,
+  exact alias destruction/rebinding ordering, full reference containers,
+  copy-on-write containers, and native lowering. Focused runtime verification
+  passed with `CARGO_TARGET_DIR=target/focused-1232-refcow CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  functions_and_scopes
+  reference_assignment_globals_root_target_rebinds_array_offset_alias_group
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_globals -- --test-threads=1`
+  passed with `2` tests; direct `phpc run
+  tests/fixtures/milestone1232/globals_root_alias_group.php` printed the
+  expected three synchronized rows; `phpc test tests/fixtures/milestone1232`
+  passed with `1` fixture; `phpc test --compare-php
+  tests/fixtures/milestone1232` passed with `1` system PHP comparison and `0`
+  skips; the full `functions_and_scopes` integration test passed with `147`
+  tests; the `superglobals` integration test passed with `17` tests; `cargo
+  fmt --check` and `git diff --check` passed. Full gate/checkpoint deferred
+  until integration.
+
+- Added Milestone 1233, a bounded WordPress request-bag superglobal slice.
+  `phpc run` now materializes `$_GET`, `$_POST`, and `$_REQUEST` as empty
+  ordered arrays during interpreter startup and treats them as auto-globals
+  routed through the root symbol table, so direct function-scope reads and
+  writes observe the same deterministic request bags. Direct native reads,
+  indexed reads, `isset(...)`, and `empty(...)` over the current request
+  superglobals now reject through an explicit request-state codegen boundary
+  instead of being folded as ordinary missing native variables. This does not
+  parse query strings or request bodies, merge GET/POST/COOKIE into
+  `$_REQUEST`, handle uploads, import host environment state, implement
+  `variables_order`, provide `$GLOBALS` alias fidelity, references/copy-on-write,
+  exact warning behavior, or native request-state lowering. Focused request
+  lane verification passed with `CARGO_TARGET_DIR=target/focused-1233-request
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p
+  phpc --test superglobals request_bag -- --test-threads=1` passed with `2`
+  tests; `cargo test -p phpc --test superglobals -- --test-threads=1` passed
+  with `19` tests; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1233` passed with `1` fixture; direct `phpc run
+  tests/fixtures/milestone1233/request_bag_superglobals.php` returned
+  `get-array|post-array|request-array|get-empty|true|save|true:save` with exit
+  `0`; and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1233` passed with `1` system PHP comparison and `0`
+  skips. `cargo fmt --check` and `git diff --check -- <changed files>`
+  passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1231, a bounded WordPress-facing trait adaptation slice.
+  Class-body trait use now accepts simple public method alias adaptations such
+  as `use HasHooks { hooks as register_hooks; }` for already-declared traits.
+  The interpreter composes the original public instance trait method and a
+  cloned alias method onto the consuming class metadata, stores both executable
+  bodies under the consuming class id, exposes the alias through ordinary
+  method dispatch and `method_exists()`/`get_class_methods()`, and lets the
+  alias satisfy the current interface method-presence checks. Missing aliased
+  trait methods report a stable runtime boundary. Unsupported edges remain:
+  visibility-changing aliases, `insteadof` conflict resolution, qualified or
+  multi-trait alias edge cases beyond the current slice, conflicting trait
+  composition, trait properties/constants, static/abstract/final or non-public
+  trait methods, `__TRAIT__`, conditional/nested trait registration,
+  references/copy-on-write, exact PHP diagnostics, and native lowering.
+  Focused verification passed with `CARGO_TARGET_DIR=target/focused-1231-traits
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p
+  phpc --test object_model trait -- --test-threads=1` with `11` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1231/trait_alias_adaptation.php` printed
+  `hooks:direct:Plugin|hooks:alias:Plugin|alias-method|trait`; `cargo run -q
+  -p phpc -- test tests/fixtures/milestone1231` passed with `1` fixture;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1231` passed with `1` system PHP comparison and `0`
+  skips; `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with `33` fixtures;
+  `cargo test -p phpc --test unsupported_object_features_cli --
+  --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  syntax_boundaries trait -- --test-threads=1` passed with `4` tests; `cargo
+  fmt --check` passed; and `git diff --check -- <lane-touched files>` passed.
+  Full gate/checkpoint deferred until integration.
+
 - Added Milestone 1230, a WordPress-focused queue refresh and checkpoint for
   the 1226-1229 implementation batch. `docs/NEXT_TASKS.md` now marks
   Milestones 1226-1230 complete and opens Milestones 1231-1235 around the

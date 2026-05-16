@@ -384,8 +384,9 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
-adapted or conflicting trait use inside classes, trait aliases, visibility changes,
-`insteadof`, `__TRAIT__`, nested/conditional trait registration, backed enum
+conflicting trait use inside classes, trait aliases beyond the current simple
+public method alias slice, visibility changes, `insteadof`, `__TRAIT__`,
+nested/conditional trait registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,
 readonly class and property semantics, constructor promotion, typed properties,

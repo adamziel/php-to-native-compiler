@@ -226,8 +226,9 @@ incorrect native code.
   including declared interface metadata with concrete-class public method
   presence checks, declared trait metadata for empty traits and simple public
   instance trait methods, simple class-body `use TraitName;` and
-  `use TraitA, TraitB;` composition for already-declared traits without
-  adaptations or conflicts,
+  `use TraitA, TraitB;` composition for already-declared traits, plus simple
+  public trait method alias adaptations such as
+  `use TraitName { method as alias; }`,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -253,8 +254,9 @@ actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
 interface method enforcement/catalogs beyond the current `Countable`,
 `Iterator`, and `IteratorAggregate` shape checks, trait properties/constants,
-static/abstract/final or non-public trait methods, adapted or conflicting trait
-composition, aliases, visibility changes, `insteadof`, `__TRAIT__`,
+static/abstract/final or non-public trait methods, conflicting trait
+composition, aliases beyond the current simple public method alias slice,
+visibility changes, `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
@@ -342,6 +344,7 @@ clone expressions,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, double-quoted string
 interpolation, dynamic calls, `assert()`, runtime constant tables,
+direct request superglobal reads such as `$_GET`/`$_POST`/`$_REQUEST`,
 direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,

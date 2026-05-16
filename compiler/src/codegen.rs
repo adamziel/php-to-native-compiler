@@ -120,6 +120,8 @@ const LLVM_BITWISE_REJECTION: &str = "LLVM bitwise lowering rejects unsupported 
 const ASSEMBLY_BITWISE_REJECTION: &str = "assembly bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior";
 const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, and $_REQUEST until native request-state storage, SAPI population, variables_order policy, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -153,6 +155,20 @@ fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
         AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
     )
+}
+
+fn is_request_superglobal_name(name: &str) -> bool {
+    matches!(name, "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST")
+}
+
+fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
+    match expr {
+        Expr::Variable(name, span) if is_request_superglobal_name(name) => Some(*span),
+        Expr::Index { target, .. } | Expr::AppendIndex { target, .. } => {
+            request_superglobal_expr_span(target)
+        }
+        _ => None,
+    }
 }
 
 fn is_static_member_assign_target(target: &AssignTarget) -> bool {
@@ -682,12 +698,22 @@ impl LlvmGenerator {
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_offset_expr(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Expr::AppendIndex { target, span } => {
+                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_offset_expr(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
@@ -704,11 +730,15 @@ impl LlvmGenerator {
             | Expr::LateStaticMethodCall { span, .. } => {
                 Err(self.unsupported(*span, LLVM_METHOD_CALL_REJECTION))
             }
-            Expr::Variable(name, span) => self
-                .variables
-                .get(name)
-                .cloned()
-                .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION)),
+            Expr::Variable(name, span) => {
+                if is_request_superglobal_name(name) {
+                    return Err(self.unsupported(*span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+                }
+                self.variables
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION))
+            }
             Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
                 Err(self.unsupported(*span, LLVM_TERMINATION_REJECTION))
             }
@@ -875,6 +905,10 @@ impl LlvmGenerator {
             return Err(self.unsupported(span, LLVM_ISSET_REJECTION));
         };
 
+        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
         }
@@ -893,6 +927,10 @@ impl LlvmGenerator {
         let [arg] = args else {
             return Err(self.unsupported(span, LLVM_EMPTY_REJECTION));
         };
+
+        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+        }
 
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
@@ -2024,11 +2062,18 @@ impl LlvmGenerator {
     ) -> CompileResult<String> {
         match expr {
             Expr::String(value, _) => Ok(value.clone()),
-            Expr::Variable(name, variable_span) => match self.variables.get(name).cloned() {
-                Some(IrValue::String(value)) => Ok(value),
-                Some(_) => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
-                None => Err(self.unsupported(*variable_span, LLVM_VARIABLE_READ_REJECTION)),
-            },
+            Expr::Variable(name, variable_span) => {
+                if is_request_superglobal_name(name) {
+                    return Err(
+                        self.unsupported(*variable_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                match self.variables.get(name).cloned() {
+                    Some(IrValue::String(value)) => Ok(value),
+                    Some(_) => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
+                    None => Err(self.unsupported(*variable_span, LLVM_VARIABLE_READ_REJECTION)),
+                }
+            }
             Expr::Binary {
                 left,
                 op: BinaryOp::Concat,
@@ -3542,12 +3587,22 @@ impl CGenerator {
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Expr::Index { target, span, .. } => {
+                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_offset_expr(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::AppendIndex { target, span } => {
+                if let Some(superglobal_span) = request_superglobal_expr_span(target) {
+                    return Err(
+                        self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
                 if is_object_offset_expr(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -3564,11 +3619,15 @@ impl CGenerator {
             | Expr::LateStaticMethodCall { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_METHOD_CALL_REJECTION))
             }
-            Expr::Variable(name, span) => self
-                .variables
-                .get(name)
-                .cloned()
-                .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION)),
+            Expr::Variable(name, span) => {
+                if is_request_superglobal_name(name) {
+                    return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                }
+                self.variables
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
+            }
             Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_TERMINATION_REJECTION))
             }
@@ -3737,6 +3796,10 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_ISSET_REJECTION));
         };
 
+        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
         }
@@ -3755,6 +3818,10 @@ impl CGenerator {
         let [arg] = args else {
             return Err(self.unsupported(span, ASSEMBLY_EMPTY_REJECTION));
         };
+
+        if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
 
         if is_array_access_offset_expr(arg) {
             return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -4848,11 +4915,18 @@ impl CGenerator {
     ) -> CompileResult<String> {
         match expr {
             Expr::String(value, _) => Ok(value.clone()),
-            Expr::Variable(name, variable_span) => match self.variables.get(name).cloned() {
-                Some(CValue::String(value)) => Ok(value),
-                Some(_) => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
-                None => Err(self.unsupported(*variable_span, ASSEMBLY_VARIABLE_READ_REJECTION)),
-            },
+            Expr::Variable(name, variable_span) => {
+                if is_request_superglobal_name(name) {
+                    return Err(
+                        self.unsupported(*variable_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
+                    );
+                }
+                match self.variables.get(name).cloned() {
+                    Some(CValue::String(value)) => Ok(value),
+                    Some(_) => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
+                    None => Err(self.unsupported(*variable_span, ASSEMBLY_VARIABLE_READ_REJECTION)),
+                }
+            }
             Expr::Binary {
                 left,
                 op: BinaryOp::Concat,

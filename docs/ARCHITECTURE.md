@@ -27,14 +27,19 @@ declarations preserve existing root values and materialize missing listed names
 as `null`, matching the reached WordPress bootstrap initialization shape.
 Direct string-keyed `$GLOBALS['name']` reads and writes are a bounded
 root-symbol-table route for the reached WordPress object-cache bootstrap
-assignment. This is still a materialized-symbol-table model, not PHP's full
-reference-backed alias, recursive `$GLOBALS` array, copy-on-write, dynamic
-global-name, or included-file scope model.
-`$_COOKIE` is seeded as an empty ordered array in the same root symbol table
-and routes direct function-scope reads and writes through that root storage.
-This is deterministic request-state scaffolding only: it does not parse browser
-cookie headers, populate values from the host SAPI, merge `$_REQUEST`, emit
-cookies, or model `variables_order`.
+assignment. Direct string-keyed `$GLOBALS['name'] =& $value` may also join the
+same bounded alias metadata used by covered direct array-offset references, so
+a selected root global, the source variable group, and the covered array slot
+observe the same value in the current top-level/root-symbol-table slice. This
+is still a materialized-symbol-table model, not PHP's full reference-backed
+alias, recursive `$GLOBALS` array, copy-on-write, dynamic global-name, or
+included-file scope model.
+`$_COOKIE`, `$_GET`, `$_POST`, and `$_REQUEST` are seeded as empty ordered
+arrays in the same root symbol table and route direct function-scope reads and
+writes through that root storage. This is deterministic request-state
+scaffolding only: it does not parse browser cookie headers, query strings, or
+request bodies, populate values from the host SAPI, automatically merge
+`$_REQUEST`, emit cookies, or model `variables_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -145,11 +150,14 @@ with `use TraitName;`, repeated simple trait-use declarations, or one simple
 comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
 composes those trait public instance methods onto the consuming class metadata
 and stores the executable method bodies under the consuming class id, so
-ordinary instance method dispatch works through `phpc run`. Trait
-properties/constants, static/abstract/final or non-public trait methods,
-adaptation blocks, aliases, visibility changes, `insteadof`, `__TRAIT__` context,
-references/copy-on-write, nested or conditional trait declarations, and native
-trait lowering remain explicit boundaries.
+ordinary instance method dispatch works through `phpc run`. A narrow trait
+method alias adaptation such as `use TraitName { method as alias; }` clones
+the composed public instance method under the alias name while leaving the
+original method available. Trait properties/constants, static/abstract/final
+or non-public trait methods, conflict resolution, visibility changes,
+`insteadof`, qualified or multi-trait alias edge cases beyond the current
+slice, `__TRAIT__` context, references/copy-on-write, nested or conditional
+trait declarations, and native trait lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1353,6 +1361,12 @@ output buffers, SAPI differences, and native lowering are not modeled.
 returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
 runtime state.
+Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
+current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`, and
+`$_REQUEST` reject through a request-state codegen boundary until generated
+code has request storage, SAPI population, `variables_order` policy,
+references/copy-on-write, and exact diagnostics. This avoids folding
+unassigned request bags as ordinary missing native variables.
 `abs()` is an interpreter-only bounded numeric builtin for current integer and
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime

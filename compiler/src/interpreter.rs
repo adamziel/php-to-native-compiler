@@ -221,7 +221,7 @@ enum ArrayFilterMode {
 }
 
 fn is_auto_global_name(name: &str) -> bool {
-    matches!(name, "_SERVER" | "_COOKIE")
+    matches!(name, "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST")
 }
 
 fn globals_offset_name(key: &ArrayKey) -> Option<&str> {
@@ -471,6 +471,9 @@ impl SymbolTable {
         }
 
         self.write_storage_named(name, value);
+        if self.name_routes_to_global_storage(name) {
+            self.sync_array_offset_aliases_for_global_root(name);
+        }
     }
 
     fn write_global_name(&mut self, name: &str, value: Value) {
@@ -531,14 +534,26 @@ impl SymbolTable {
         source: &str,
         span: Span,
     ) -> CompileResult<()> {
-        if self.array_offset_aliases.contains_key(source) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "$GLOBALS",
-                    "reference binding through $GLOBALS offsets requires a direct unaliased variable source",
-                ),
-            ));
+        if let Some(existing_aliases) = self.array_offset_aliases.get(source).cloned() {
+            for alias in &existing_aliases {
+                self.materialize_array_offset_alias(alias, span)?;
+            }
+            let source_value = self.read_named(source).unwrap_or(Value::Null);
+            let alias = ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::GlobalArray {
+                    name: global_name.to_string(),
+                },
+                keys: Vec::new(),
+            };
+            self.materialize_array_offset_alias(&alias, span)?;
+            if !self.write_array_offset_alias(&alias, source_value) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access("cannot bind global reference".to_string()),
+                ));
+            }
+            self.bind_direct_alias_group_to_array_offset_alias(source, alias);
+            return Ok(());
         }
 
         let source_cell = self
@@ -1114,7 +1129,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
@@ -1141,7 +1156,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
                 name: array_name.to_string(),
@@ -1168,7 +1183,7 @@ impl SymbolTable {
         self.ensure_array_offset_reference_target_source("GLOBALS", source_name, span)?;
         let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
             keys,
@@ -1192,7 +1207,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
             Some(Value::Null) | None => PhpArray::new(),
@@ -1232,7 +1247,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(object_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::PublicObjectProperty {
                 object: object_name.to_string(),
@@ -1261,7 +1276,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(object_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let root = ArrayOffsetAliasRoot::PublicObjectProperty {
             object: object_name.to_string(),
             property: property.to_string(),
@@ -1305,7 +1320,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let mut array = match self.read_storage_named(array_name) {
             Some(Value::Array(array)) => array,
             Some(Value::Null) | None => PhpArray::new(),
@@ -1343,7 +1358,7 @@ impl SymbolTable {
         self.ensure_array_offset_reference_target_source("GLOBALS", source_name, span)?;
         let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
 
-        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let source_value = self.read_named(source_name).unwrap_or(Value::Null);
         let root = ArrayOffsetAliasRoot::GlobalArray { name: global_name };
         let root_alias = ArrayOffsetAlias {
             root: root.clone(),
@@ -1793,6 +1808,12 @@ impl SymbolTable {
         }
     }
 
+    fn name_routes_to_global_storage(&self, name: &str) -> bool {
+        self.global_symbols.is_none()
+            || self.imported_globals.contains(name)
+            || is_auto_global_name(name)
+    }
+
     fn global_storage(&self) -> &SymbolStorage {
         self.global_symbols.as_ref().unwrap_or(&self.symbols)
     }
@@ -2082,6 +2103,18 @@ impl Interpreter {
             .insert("_SERVER".to_string(), value_cell(Value::Array(server)));
         self.global_symbols.borrow_mut().insert(
             "_COOKIE".to_string(),
+            value_cell(Value::Array(PhpArray::new())),
+        );
+        self.global_symbols.borrow_mut().insert(
+            "_GET".to_string(),
+            value_cell(Value::Array(PhpArray::new())),
+        );
+        self.global_symbols.borrow_mut().insert(
+            "_POST".to_string(),
+            value_cell(Value::Array(PhpArray::new())),
+        );
+        self.global_symbols.borrow_mut().insert(
+            "_REQUEST".to_string(),
             value_cell(Value::Array(PhpArray::new())),
         );
     }
@@ -19143,7 +19176,7 @@ fn register_class_member_runtime_tables(
     for method in composed_trait_methods(class, trait_lookup)? {
         let key = (class_id, method.function.name.to_ascii_lowercase());
         method_signatures.insert(key.clone(), method_signature(&method.function));
-        methods.insert(key, Rc::new(method.function.clone()));
+        methods.insert(key, Rc::new(method.function));
     }
 
     for member in &class.members {
@@ -19273,18 +19306,18 @@ fn register_class_members(
 
     for method in composed_trait_methods(class, trait_lookup)? {
         let visibility = runtime_visibility(method.visibility);
-        validate_final_method_override(classes, id, &class.name, method, final_methods)
+        validate_final_method_override(classes, id, &class.name, &method, final_methods)
             .map_err(|error| runtime_error(method.span, error))?;
-        validate_inherited_method_static_compatibility(classes, id, &class.name, method)
+        validate_inherited_method_static_compatibility(classes, id, &class.name, &method)
             .map_err(|error| runtime_error(method.span, error))?;
-        validate_inherited_method_visibility_compatibility(classes, id, &class.name, method)
+        validate_inherited_method_visibility_compatibility(classes, id, &class.name, &method)
             .map_err(|error| runtime_error(method.span, error))?;
         validate_inherited_method_signature_compatibility(
             classes,
             method_signatures,
             id,
             &class.name,
-            method,
+            &method,
         )
         .map_err(|error| runtime_error(method.span, error))?;
         let metadata_method = PhpMethodMetadata::instance(&method.function.name, visibility);
@@ -19391,10 +19424,10 @@ fn register_class_members(
     Ok(id)
 }
 
-fn composed_trait_methods<'a>(
-    class: &'a ClassDecl,
-    trait_lookup: &'a HashMap<String, Rc<TraitDecl>>,
-) -> CompileResult<Vec<&'a ClassMethodDecl>> {
+fn composed_trait_methods(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<Vec<ClassMethodDecl>> {
     let mut methods = Vec::new();
     for trait_use in &class.trait_uses {
         let key = trait_use.name.to_ascii_lowercase();
@@ -19404,7 +19437,27 @@ fn composed_trait_methods<'a>(
                 RuntimeError::undefined_class(&trait_use.name),
             )
         })?;
-        methods.extend(trait_decl.methods.iter());
+        methods.extend(trait_decl.methods.iter().cloned());
+        for alias in &trait_use.aliases {
+            let Some(method) = trait_decl.methods.iter().find(|method| {
+                method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&alias.method_name)
+            }) else {
+                return Err(runtime_error(
+                    alias.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait alias {}::{} targets a missing method",
+                        trait_decl.name, alias.method_name
+                    )),
+                ));
+            };
+            let mut aliased = method.clone();
+            aliased.function.name = alias.alias.clone();
+            aliased.span = alias.span;
+            methods.push(aliased);
+        }
     }
     Ok(methods)
 }

@@ -546,6 +546,15 @@ pub struct TraitDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitUseDecl {
     pub name: String,
+    pub aliases: Vec<TraitMethodAliasDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitMethodAliasDecl {
+    pub trait_name: Option<String>,
+    pub method_name: String,
+    pub alias: String,
     pub span: Span,
 }
 
