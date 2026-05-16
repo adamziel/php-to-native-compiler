@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1026, bounded exact `wp_options` delete/readback for the
+  current per-placeholder-connection MySQLi state island. After an exact
+  supported option insert, direct
+  `mysqli_query($handle, "DELETE FROM wp_options WHERE option_name = ...")`
+  now removes an existing recorded option value, sets
+  `mysqli_affected_rows($handle)` to `1`, leaves missing option names as a
+  successful zero-row delete, and later exact option-value `SELECT` reads
+  return an empty placeholder result for the deleted option. Standalone
+  mutation SQL without a prior supported state island still reports the
+  existing unsupported mutation diagnostic. This is not broad SQL parsing,
+  escaped quote handling, schema/index behavior, INSERT-on-duplicate
+  behavior, DELETE breadth, REPLACE, transactions, host database execution,
+  warning/error fidelity, PDO, prepared-statement mutation state, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_delete_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1026`.
+
 - Added Milestone 1025, bounded exact `wp_options` update/readback for the
   current per-placeholder-connection MySQLi state island. After an exact
   supported option insert, direct

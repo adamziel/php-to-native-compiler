@@ -1273,9 +1273,10 @@ The repository already has a working Rust workspace with:
   execution. A bounded per-placeholder-handle `wp_options` MySQLi state island
   now covers exact synthetic option `INSERT` plus later exact option-value
   `SELECT` readback, and exact option `UPDATE` plus later readback for
-  existing recorded option names, through the existing result/fetch path
-  without claiming broad SQL parsing, INSERT-on-duplicate behavior,
-  DELETE/REPLACE, transactions, host database execution, PDO,
+  existing recorded option names, and exact option `DELETE` plus later empty
+  readback for removed option names, through the existing result/fetch path
+  without claiming broad SQL parsing, INSERT-on-duplicate behavior, DELETE
+  breadth, REPLACE, transactions, host database execution, PDO,
   prepared-statement mutation state, or native lowering.
   Bounded WordPress `preg_match()` query classifiers and empty option-name
   MySQLi reads cover the following `wpdb::query()` path. Bounded
@@ -1669,12 +1670,12 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1025 is the active checkpoint candidate: exact direct
-  `wp_options` MySQLi update/readback now updates existing string option
-  values in per-placeholder-handle state and exposes them through the existing
-  result/fetch path, while broad SQL parsing, escaping/quoting fidelity,
-  schema/index behavior, INSERT-on-duplicate behavior, DELETE/REPLACE,
-  transactions, host database execution, warning/error fidelity, PDO,
+- Milestone 1026 is the active checkpoint candidate: exact direct
+  `wp_options` MySQLi delete/readback now removes existing string option
+  values in per-placeholder-handle state and exposes an empty result for later
+  exact option-value reads, while broad SQL parsing, escaping/quoting fidelity,
+  schema/index behavior, INSERT-on-duplicate behavior, DELETE breadth,
+  REPLACE, transactions, host database execution, warning/error fidelity, PDO,
   prepared-statement mutation state, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,

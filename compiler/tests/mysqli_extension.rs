@@ -2562,6 +2562,31 @@ echo mysqli_affected_rows($handle);
 }
 
 #[test]
+fn mysqli_query_records_current_wordpress_option_delete_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name = 'siteurl'") ? "deleted" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$result = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+echo mysqli_num_rows($result);
+echo "|";
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name = 'home'") ? "missing-delete" : "failed";
+echo "|";
+echo mysqli_affected_rows($handle);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "deleted|1|0|missing-delete|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -3908,7 +3933,7 @@ mysqli_query($handle, "SET SESSION sql_mode='ansi'");
     assert_eq!(unsupported.column, 1);
     assert_eq!(
         unsupported.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got SET SESSION sql_mode='ansi'"
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/update/delete state-island queries are implemented in the current subset; got SET SESSION sql_mode='ansi'"
     );
 }
 

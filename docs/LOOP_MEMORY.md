@@ -29,6 +29,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `e07fddbe runtime: add wp options mysqli update state`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1026, bounded exact `wp_options` MySQLi delete
+  over the current per-placeholder-handle state island.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone1026/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_delete_state -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1026`,
+  `cargo run -p phpc -- test tests/fixtures/milestone873`,
+  `cargo run -p phpc -- test tests/fixtures/milestone874`, and
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`
+  passed. After updating the generic unsupported-query diagnostic,
+  `cargo fmt --check`, `git diff --check`, and
+  `cargo test -p phpc --test mysqli_extension mysqli_queries_accept_current_sql_mode_assignment_no_result_placeholder -- --test-threads=1`
+  also passed.
+- Current WordPress frontier: exact direct `wp_options` deletes can remove an
+  existing string option value in placeholder-handle state, report one
+  affected row, leave missing options as successful zero-row deletes, and
+  expose deleted options as empty results through the existing
+  `mysqli_result`/fetch path.
+- Remaining semantic gaps: broad SQL parsing, escaped quote handling,
+  schema/index behavior, INSERT-on-duplicate behavior, DELETE breadth,
+  REPLACE, transactions, host database execution, warning/error fidelity, PDO,
+  prepared-statement mutation state, references/copy-on-write, and native
+  lowering remain missing.
+- Next concrete task: run formatting, diff checks, focused verification, then
+  the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b51a3b15 runtime: add wp options mysqli state island`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1025, bounded exact `wp_options` MySQLi update

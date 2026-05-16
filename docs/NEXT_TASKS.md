@@ -9845,19 +9845,31 @@ handled.
   schema/index behavior, INSERT-on-duplicate behavior, DELETE/REPLACE,
   transactions, host database execution, warning/error fidelity, PDO,
   prepared-statement mutation state, or native lowering.
+- [x] Runtime/database lane: add bounded exact `wp_options` MySQLi
+  delete/readback over the current per-handle state island.
+  Milestone 1026 covers exact direct
+  `DELETE FROM wp_options WHERE option_name = ...` after an exact supported
+  insert has created the per-handle state island. Existing recorded option
+  names are removed, set `mysqli_affected_rows($handle)` to `1`, and later
+  exact option-value `SELECT` reads return an empty placeholder result.
+  Missing option names are successful zero-row deletes. This is not broad SQL
+  parsing, escaped quote handling, schema/index behavior,
+  INSERT-on-duplicate behavior, DELETE breadth, REPLACE, transactions, host
+  database execution, warning/error fidelity, PDO, prepared-statement mutation
+  state, or native lowering.
 - [ ] Runtime/database lane: inspect the next real database-state gap from the
-  audited PHP/WordPress surface, such as option DELETE/readback,
+  audited PHP/WordPress surface, such as option autoload/readback,
   prepared-statement mutation state, transaction state, broader escaping
   fidelity, host-backed query execution, PDO, or the next `wpdb` state
-  consumer, and add the next bounded behavior or explicit runtime boundary
-  with tests, CLI fixtures, docs, and native rejection coverage where lowering
+  consumer, and add the next bounded behavior or explicit runtime boundary with
+  tests, CLI fixtures, docs, and native rejection coverage where lowering
   remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b51a3b15 runtime: add wp options mysqli state island`, covering Milestone
-  1024 before the current Milestone 1025 candidate.
+  `e07fddbe runtime: add wp options mysqli update state`, covering Milestone
+  1025 before the current Milestone 1026 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

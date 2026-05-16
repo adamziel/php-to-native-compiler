@@ -5989,6 +5989,18 @@ impl Interpreter {
             }
         }
 
+        if let Some(option_name) = parse_wordpress_option_delete_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if options.remove(&option_name).is_some() {
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if let Some(option_name) = parse_wordpress_option_value_select_query(query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(option_value) = self
@@ -6087,7 +6099,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_query()",
                 format!(
-                    "only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
+                    "only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, empty/exact wp_options SELECT placeholders, and exact wp_options insert/update/delete state-island queries are implemented in the current subset; got {query}"
                 ),
             ),
         ))
@@ -15961,6 +15973,18 @@ fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> 
         return None;
     }
     Some((names[0].clone(), values[0].clone()))
+}
+
+fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("DELETE FROM wp_options WHERE option_name = ")
+        .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` = "))?;
+    let names = parse_sql_single_quoted_list(rest)?;
+    if names.len() != 1 {
+        return None;
+    }
+    Some(names[0].clone())
 }
 
 fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
