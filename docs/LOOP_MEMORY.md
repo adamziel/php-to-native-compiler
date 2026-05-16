@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `17073ce4 docs: record object property reference source gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `ec76ab5a runtime: add nested reference sources`.
 - Task attempted: Milestone 1086, bounded nested direct-array and direct public
   object-property array-offset reference sources. `$alias =&
   $array[$outer][$inner];` and `$alias =&
@@ -48,17 +50,22 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test functions_and_scopes
   reference_assignment_object_property_nested_array_offset_source --
   --test-threads=1`, and `cargo run -q -p phpc -- test
-  tests/fixtures/milestone1086 --compare-php` passed.
+  tests/fixtures/milestone1086 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test array_reference_literals -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed. The
+  serialized checkpoint gate passed with 1291 fixture tests, 736 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `ec76ab5a runtime: add nested reference sources`.
 - Remaining semantic gaps: append-at-depth reference sources,
   dynamic/magic/non-public property reference sources, non-direct object
   expressions, non-variable reference targets, ArrayAccess reference sources,
   full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, and native lowering remain missing.
-- Next concrete task: run full functions/scopes regression, object-model and
-  array-reference regressions, `cargo check -p php_runtime -p phpc`,
-  `git diff --check`, then checkpoint with
-  `tools/checkpoint.sh "runtime: add nested reference sources"` if focused
-  checks pass.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-17T00:55:00Z
 

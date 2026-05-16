@@ -10588,9 +10588,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `89b944f3 runtime: add object property reference sources`, covering
-  Milestone 1085. The serialized checkpoint gate passed with 1290 fixture
-  tests, 735
+  `ec76ab5a runtime: add nested reference sources`, covering Milestone 1086.
+  The serialized checkpoint gate passed with 1291 fixture tests, 736
   system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations
