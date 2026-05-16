@@ -33,12 +33,12 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1076, bounded direct string-keyed `$GLOBALS`
   reference targets for direct unaliased variable sources.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/superglobals.rs`,
   `tests/fixtures/milestone1076/globals_reference_target_direct_variable.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   local PHP 8.2.29 probes compared top-level, function-local, and unset-detach
   `$GLOBALS["name"] =& $value` behavior.
   `cargo test -p phpc --test superglobals -- --test-threads=1` passed with 8
@@ -46,7 +46,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   --compare-php` passed. `cargo test -p phpc --test functions_and_scopes
   reference_assignment_object_property_source_copies_current_container_value --
   --test-threads=1` passed, preserving the existing non-direct source copy
-  behavior.
+  behavior. `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check` passed. The serialized checkpoint gate passed with 1281
+  fixture tests, 726 system PHP comparisons, and 555 skipped comparisons, then
+  committed `c07ce1f4 runtime: add globals reference targets`.
 - Current WordPress frontier: direct string-keyed `$GLOBALS` reference targets
   can now bind root global symbols to direct unaliased source variable cells at
   top level and from function scope. Writes through the source name, the direct
@@ -63,9 +66,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   offset aliases, native lowering, exact mutation ordering, alias rebinding,
   and by-reference `ArrayAccess::offsetGet()` indirect-modification fidelity
   remain missing.
-- Next concrete task: finish verification, checkpoint Milestone 1076, then
-  choose the next reference/COW gap or native-lowering boundary with PHP
-  comparison coverage where applicable.
+- Next concrete task: choose the next reference/COW gap or native-lowering
+  boundary with PHP comparison coverage where applicable.
 
 ## Loop Event 2026-05-16T19:05:00Z
 

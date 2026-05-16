@@ -22,7 +22,11 @@ Implemented:
   top-level, function-local, and unset-detach `$GLOBALS` reference targets,
   `cargo test -p phpc --test superglobals -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone1076 --compare-php`, and
-  `cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_source_copies_current_container_value -- --test-threads=1`.
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_source_copies_current_container_value -- --test-threads=1`,
+  `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
+  `git diff --check`. The serialized checkpoint gate passed with 1281 fixture
+  tests, 726 system PHP comparisons, and 555 skipped comparisons, then
+  committed `c07ce1f4 runtime: add globals reference targets`.
 
 - Added Milestone 1075, a bounded direct-array by-reference `foreach`
   current-slot unset/reinsert slice. While a supported direct-array

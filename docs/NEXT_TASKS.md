@@ -10502,8 +10502,7 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9051cb76 runtime: detach foreach reference on current slot unset`, covering
-  Milestone 1075. Milestone 1076 is in progress and not checkpointed yet.
+  `c07ce1f4 runtime: add globals reference targets`, covering Milestone 1076.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
