@@ -357,6 +357,9 @@ impl<'a> Lexer<'a> {
         while !self.is_at_end() {
             match self.advance() {
                 '\'' | '"' => self.skip_quoted_attribute_string(start)?,
+                '(' => {
+                    return Err(self.error_at(start, unsupported_attribute_arguments_message()));
+                }
                 '[' => depth += 1,
                 ']' => {
                     depth -= 1;
@@ -1036,6 +1039,10 @@ fn unsupported_short_echo_tag_message() -> &'static str {
 
 fn unsupported_backtick_operator_message() -> &'static str {
     "unsupported backtick execution operator: shell command execution, interpolation, process I/O, error handling, platform behavior, references/copy-on-write, and native lowering are not implemented"
+}
+
+fn unsupported_attribute_arguments_message() -> &'static str {
+    "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
 }
 
 fn trim_heredoc_final_newline(value: &mut String, parts: &mut [InterpolatedStringPart]) {

@@ -41,6 +41,8 @@ counts, including `.cli` snapshot exercise files, for fixtures, summaries,
 orphan sidecars, and compatibility targets, with SHA-256 digests on text
 orphan sidecar rows, plus
 CLI exercise gap counts for fixtures without `.cli` snapshot sidecars, plus
+`.phpc-only` reason gap counts for markers whose text is empty or
+whitespace-only, plus
 `compat/<target>/source-pin.md` path, byte count, and SHA-256 metadata when a
 target pin file is present, and deterministic `compat/<target>/**/*.expected`
 probe expectation artifact path, byte count, and SHA-256 metadata.
@@ -50,9 +52,10 @@ manifest also reports sibling `.phpc-only` marker text as deterministic
 `phpc_only_reason` fields, source and recognized sidecar byte counts, SHA-256
 digests for fixture sources, recognized sidecars, and recognized orphan
 sidecars, recognized orphan sidecar byte totals, including `.cli` snapshot
-exercise files, aggregate and per-target CLI exercise gap counts, and
-per-target counts plus optional `source-pin.md` audit metadata and `.expected`
-probe expectation artifact metadata for
+exercise files, aggregate and per-target CLI exercise gap counts, aggregate
+and per-target `.phpc-only` reason gap counts, and per-target counts plus
+optional `source-pin.md` audit metadata and `.expected` probe expectation
+artifact metadata for
 `compat/<target>` directories so PHP and WordPress compatibility fixture
 coverage can be audited without executing code or CLI snapshots.
 Use `cargo run -p phpc -- test --php-versions-json` when automation needs a

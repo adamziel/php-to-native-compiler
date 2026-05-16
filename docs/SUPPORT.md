@@ -1748,12 +1748,16 @@
   fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
-  `file_get_contents($path)` currently accepts exactly the string
-  `php://input` and returns an empty string as a deterministic request-body
-  placeholder for the reached WordPress XML-RPC CLI probe. Local filesystem
-  reads, other stream wrappers, stream contexts, offsets/lengths, include-path
-  lookup, real request-body state, warning fidelity, `open_basedir`, partial
-  output behavior, and native lowering remain unsupported.
+  `file_get_contents($path)` accepts exactly one string path. The special
+  `php://input` path returns an empty string as a deterministic request-body
+  placeholder for the reached WordPress XML-RPC CLI probe. Local paths are
+  read from the host filesystem as UTF-8 text and share the same current
+  relative path policy as `file_exists`. This is a bounded WordPress bootstrap
+  compatibility slice, not full PHP filesystem support: binary string byte
+  fidelity, missing-file warning/`false` recovery, other stream wrappers,
+  stream contexts, offsets/lengths, include-path lookup, real request-body
+  state, `open_basedir`, stat-cache behavior, partial-output behavior, and
+  native lowering remain unsupported.
   `is_dir($path)` accepts one string local path, rejects stream-wrapper paths,
   returns `true` for host directories, and returns `false` for missing paths or
   non-directory paths. It shares the same current relative path policy as
@@ -2097,12 +2101,14 @@
   coerce through the current array-key rules. Dynamic property names, static
   properties, `${...}`, variable variables, arbitrary expression
   interpolation, exact diagnostics, and native lowering remain unsupported.
-- syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
-  before functions, classes, class members, and parameters. Attribute metadata,
-  reflection visibility, target validation, namespace-aware attribute names,
-  constructor argument evaluation, repeated-attribute rules, and native
-  lowering remain unsupported; ordinary `#` comments, including `# [` with
-  whitespace before the bracket, remain comments
+- simple no-argument PHP attributes such as `#[ReturnTypeWillChange]` are
+  accepted and ignored as syntax-only metadata before functions, classes,
+  class members, and parameters. Attribute blocks with constructor-style
+  arguments stop at a dedicated lex diagnostic. Attribute metadata, reflection
+  visibility, target validation, namespace-aware attribute names, constructor
+  argument evaluation, repeated-attribute rules, references/copy-on-write, and
+  native lowering remain unsupported; ordinary `#` comments, including `# [`
+  with whitespace before the bracket, remain comments
 
 ## Partially Supported
 
@@ -4380,8 +4386,12 @@
   the function-call boundary, while native function-table introspection
   recognizes the name.
   `basename` accepts the same current lexical Unix-style local path subset as
-  the builtin section above; direct native `basename(...)` calls still reject
-  under the function-call boundary.
+  the builtin section above; direct native `basename(...)` calls reject under a
+  dedicated path-basename boundary until native PHP path string conversion,
+  suffix handling, trailing-separator normalization, Windows/UNC and
+  stream-wrapper path semantics, locale/codepage behavior, argument
+  diagnostics, references/copy-on-write, and exact native diagnostics exist,
+  while native function-table introspection recognizes the name.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
@@ -5143,7 +5153,8 @@
   byte counts, including `.cli` snapshot exercise files, for fixture entries,
   summaries, recognized orphan sidecars, and compatibility-target summaries,
   plus aggregate CLI exercise gap counts for fixtures without `.cli` snapshot
-  sidecars.
+  sidecars and aggregate `.phpc-only` reason gap counts for markers whose text
+  is empty or whitespace-only.
   Compatibility-target entries also report `source-pin.md` path, byte count,
   and SHA-256 when a target pin file is present, and deterministic
   `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
@@ -5156,14 +5167,15 @@
   non-fixture compatibility metadata beyond `source-pin.md` and `.expected`
   probe artifacts, or report unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 10, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 11, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
   recognized sidecars including `.cli` snapshot exercise files, and
   recognized orphan sidecars, PHP-comparison eligibility, sibling
   `.phpc-only` marker text as `phpc_only_reason`, and per-target
-  compatibility counts, aggregate and per-target CLI exercise gap counts, plus
-  optional `source-pin.md` path, byte count, SHA-256 metadata, and
+  compatibility counts, aggregate and per-target CLI exercise gap counts,
+  aggregate and per-target `.phpc-only` reason gap counts, plus optional
+  `source-pin.md` path, byte count, SHA-256 metadata, and
   deterministic `.expected` probe expectation artifact metadata for
   `compat/<target>` directories under the fixture root, including targets with
   no executable `.php` fixtures yet. It does not parse, execute, compare

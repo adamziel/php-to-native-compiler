@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T21:49:22Z
+
+- Checkpoint before this task:
+  `79b12bdf runtime: add basename`, pushed to `origin/master`.
+- Task attempted: Milestones 1196-1200, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed: lexer/runtime/codegen/fixture-manifest code, focused tests and
+  fixtures for a dedicated PHP attribute-argument lex diagnostic while
+  preserving simple syntax-only attributes, bounded local UTF-8
+  `file_get_contents()` reads, dedicated native `basename(...)` rejection,
+  fixture-manifest `.phpc-only` reason gap metadata, plus `README.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/COMPATIBILITY.md`,
+  `docs/OPERATIONS.md`, and this memory file.
+- Tests run and result: focused lane checks passed, integration focused checks
+  passed, then `tools/checkpoint.sh "runtime: add local file_get_contents"`
+  passed with `1353` fixture tests, `768` system PHP comparisons, and `585`
+  skipped `phpc-only` fixtures.
+- Remaining semantic gaps: executable attribute metadata and argument
+  evaluation, native `basename(...)` and `file_get_contents(...)` lowering,
+  binary stream/file byte fidelity, missing-file warning/`false` recovery,
+  fixture `.cli` execution and validation, branch-specific PHP comparison
+  matrices, real reference/COW containers, real database and filesystem
+  services, web/SAPI request state, and full WordPress request/plugin/theme
+  flows remain implementation work.
+- Next concrete task: push the amended checkpoint, clean dedicated target
+  directories, close completed lane agents, then start Milestones 1201-1204 in
+  separate parser/runtime/IR/compiler-output worktrees with separate
+  `CARGO_TARGET_DIR` values.
+
 ## Loop Event 2026-05-16T21:29:12Z
 
 - Checkpoint before this task:

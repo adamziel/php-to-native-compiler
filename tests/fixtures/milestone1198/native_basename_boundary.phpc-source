@@ -1,0 +1,2 @@
+<?php
+echo basename("/tmp/wordpress/wp-includes/plugin.php", ".php");

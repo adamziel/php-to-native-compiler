@@ -1260,6 +1260,14 @@ lowering out of scope. Direct native `str_ends_with(...)` calls stop at a
 dedicated string-suffix codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.
+`basename()` is an interpreter-only bounded lexical path builtin for Unix-style
+local path strings and an optional string suffix. It does not consult the
+filesystem and leaves Windows drive/UNC paths, stream wrappers, null-byte
+behavior, locale/codepage details, broad scalar coercions, exact diagnostics,
+and native path lowering out of scope. Direct native `basename(...)` calls stop
+at a dedicated path-basename codegen boundary before argument lowering or
+backend selection, while native function-table introspection can still see the
+known builtin name.
 `substr()` is an interpreter-only bounded string-slicing builtin for current
 scalar/null string-convertible inputs, integer offsets, and optional integer
 lengths. It uses byte positions over represented runtime strings and rejects
@@ -1398,6 +1406,13 @@ include-path lookup, canonicalization, stream support, stat-cache semantics,
 open_basedir, exact warnings, or native filesystem lowering. Native
 function-table introspection recognizes the name, while direct native calls
 reject under the function-call boundary.
+`file_get_contents()` is also interpreter-only in the current runtime. It keeps
+the deterministic empty `php://input` request-body placeholder and adds a
+bounded local UTF-8 text file read using the same process-path-then-repo-root
+relative path policy as the filesystem metadata builtins. It does not model PHP
+binary strings, warning-plus-`false` recovery, stream contexts, offsets,
+lengths, include paths, `open_basedir`, stat caching, or native filesystem
+lowering.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1876,12 +1891,15 @@ and PHP's exact warning/fatal recovery details.
 
 ## Attribute Boundary
 
-PHP attributes are currently treated as syntax-only metadata. The lexer skips
-balanced `#[...]` blocks, including simple quoted strings and nested bracket
-payloads, before the parser sees the surrounding declaration. No AST metadata,
-reflection data, target validation, namespace-aware attribute name resolution,
-constructor argument evaluation, repeated-attribute rules, or native lowering
-exists yet.
+PHP attributes are currently syntax-only metadata for simple no-argument
+`#[Name]` blocks; the lexer skips them before the parser sees the surrounding
+declaration. Attribute blocks with constructor-style arguments such as
+`#[Route('/wp-json/demo')]` stop at a dedicated lex diagnostic because
+attribute argument evaluation, reflection data, target validation,
+namespace-aware attribute name resolution, repeated-attribute rules,
+references/copy-on-write behavior, and native lowering do not exist yet.
+Ordinary `#` comments remain comments, including `# [` with whitespace before
+the bracket.
 
 ## Cast Boundary
 

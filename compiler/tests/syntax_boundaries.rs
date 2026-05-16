@@ -122,6 +122,53 @@ fn emit_ir_rejects_short_echo_tags_at_lex_boundary() {
 }
 
 #[test]
+fn unsupported_php_attribute_arguments_have_stable_lex_errors() {
+    let cases = [
+        (
+            "<?php\n#[Route('/wp-json/demo')]\nfunction handler() {}\n",
+            2,
+            1,
+        ),
+        (
+            "<?php\nclass Box {\n    #[Inject]\n    public $service;\n}\n",
+            0,
+            0,
+        ),
+        (
+            "<?php\nclass Box {\n    #[Inject('service')]\n    public $service;\n}\n",
+            3,
+            5,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        if line == 0 {
+            run_source(source).unwrap();
+            continue;
+        }
+        let error = lex_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_php_attributes_at_lex_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n#[Hook('init')]\nfunction boot() {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Lex);
+    assert_eq!(
+        error.message,
+        "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_backtick_execution_operator_has_stable_lex_errors() {
     let cases = [
         ("<?php\n$output = `whoami`;\n", 2, 11),

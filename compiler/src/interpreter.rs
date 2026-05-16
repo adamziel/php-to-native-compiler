@@ -16085,13 +16085,19 @@ impl Interpreter {
                             "only php://input is supported in the current stream-wrapper subset",
                         ),
                     )),
-                    Value::String(_) => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "file_get_contents()",
-                            "local filesystem reads are not implemented in the current subset",
-                        ),
-                    )),
+                    Value::String(path) => {
+                        let filesystem_path = local_filesystem_metadata_path(path);
+                        let contents = fs::read_to_string(&filesystem_path).map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "file_get_contents()",
+                                    format!("local UTF-8 file read failed: {error}"),
+                                ),
+                            )
+                        })?;
+                        Ok(Value::String(contents))
+                    }
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(

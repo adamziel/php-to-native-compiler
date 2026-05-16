@@ -4,7 +4,7 @@ function demo(#[SensitiveParameter] $value) {
     return $value;
 }
 
-#[Example(["nested" => "value]kept"])]
+#[Example]
 class Box {
     #[Example]
     public function label(#[SensitiveParameter] $value) {

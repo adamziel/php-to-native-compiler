@@ -11711,13 +11711,68 @@ handled.
 
 ## Milestone 1196: Next Parser Boundary
 
+- [x] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed full-compatibility gap map.
+  Prefer a PHP/WordPress surface that still falls through to a broad or
+  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
+  where applicable, and keep runtime/native support claims unchanged.
+  Milestone 1196 keeps simple no-argument PHP attributes as syntax-only
+  metadata but turns constructor-style attribute argument payloads such as
+  `#[Route('/wp-json/demo')]` into a dedicated lex diagnostic naming missing
+  constructor argument evaluation, attribute metadata, target validation,
+  reflection visibility, namespace-aware attribute names, repeatability rules,
+  references/copy-on-write, and native lowering.
+
+## Milestone 1197: Next Runtime Value/Object Slice
+
+- [x] Runtime lane: choose one bounded runtime slice from the refreshed gap
+  map, preferably a remaining reference/COW, object-semantics, request-state,
+  filesystem, database, or WordPress-probe blocker already reached by fixtures
+  or external probes. Prove it with focused tests, CLI coverage, system PHP
+  comparison where applicable, and named unsupported edges.
+  Milestone 1197 extends `file_get_contents()` from the deterministic
+  `php://input` placeholder to a bounded local UTF-8 text file read for one
+  string path, using the existing filesystem relative-path policy, dynamic
+  string-valued calls, fixture CLI coverage, and system PHP comparison. Binary
+  byte fidelity, missing-file warning/`false` recovery, other stream wrappers,
+  stream contexts, offsets/lengths, include-path lookup, real request-body
+  state, `open_basedir`, stat-cache behavior, partial-output behavior, and
+  native lowering remain unsupported.
+
+## Milestone 1198: Native `basename()` Boundary
+
+- [x] IR/lowering lane: add a dedicated native `basename(...)` path rejection
+  for the documented bounded interpreter builtin. `phpc compile --emit-ir` and
+  `--emit-asm` reject direct calls before argument lowering or backend output,
+  while function-table introspection keeps recognizing the builtin name.
+
+## Milestone 1199: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: refine the deterministic fixture manifest contract
+  so text and JSON `phpc test --list-fixtures* [fixture-dir]` output reports
+  aggregate and compatibility-target `.phpc-only` reason gap counts for marker
+  files whose text is empty or whitespace-only. JSON is now
+  `contract_version` 11. This does not reject fixtures, alter fixture
+  execution, change system PHP comparison behavior, or broaden
+  parser/runtime/native PHP support claims.
+
+## Milestone 1200: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1196-1199 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing. Full gate passed with `1353`
+  fixture tests, `768` system PHP comparisons, and `585` skipped `phpc-only`
+  fixtures.
+
+## Milestone 1201: Next Parser Boundary
+
 - [ ] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
   misleading diagnostic. Add stable focused coverage, CLI fixture evidence
   where applicable, and keep runtime/native support claims unchanged.
 
-## Milestone 1197: Next Runtime Value/Object Slice
+## Milestone 1202: Next Runtime Value/Object Slice
 
 - [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
   map, preferably a remaining reference/COW, object-semantics, request-state,
@@ -11725,22 +11780,22 @@ handled.
   or external probes. Prove it with focused tests, CLI coverage, system PHP
   comparison where applicable, and named unsupported edges.
 
-## Milestone 1198: Next Native Boundary
+## Milestone 1203: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1199: Next Compiler-Output Contract
+## Milestone 1204: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1200: Next Tests/Docs Queue Refresh
+## Milestone 1205: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1196-1199 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1201-1204 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 

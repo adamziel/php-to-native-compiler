@@ -39,6 +39,7 @@ pub struct FixtureManifestSummary {
     pub cli_exercises: usize,
     pub cli_exercise_gaps: usize,
     pub phpc_only_markers: usize,
+    pub phpc_only_reason_gaps: usize,
     pub orphan_sidecars: usize,
     pub source_bytes: u64,
     pub stdout_bytes: u64,
@@ -197,6 +198,13 @@ impl FixtureManifestSummary {
             if entry.phpc_only {
                 summary.phpc_only += 1;
                 summary.phpc_only_markers += 1;
+                if entry
+                    .phpc_only_reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.trim().is_empty())
+                {
+                    summary.phpc_only_reason_gaps += 1;
+                }
             } else {
                 summary.php_comparison_eligible += 1;
             }

@@ -1,8 +1,18 @@
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{run_source, run_source_with_source_file};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+
+fn fixture_source_file() -> String {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .parent()
+        .expect("compiler has a workspace root")
+        .join("tests/fixtures/milestone1197/local_file_get_contents.php")
+        .display()
+        .to_string()
+}
 
 #[test]
 fn file_get_contents_reads_empty_php_input_placeholder() {
@@ -37,6 +47,25 @@ echo $call("php://input") === "" ? "empty" : "non-empty";
 }
 
 #[test]
+fn file_get_contents_reads_current_local_utf8_subset() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$path = __DIR__ . "/local_read_payload.txt";
+$contents = file_get_contents($path);
+echo str_contains($contents, "ABSPATH") ? "wp-config" : "missing";
+echo "|";
+$call = "file_get_contents";
+echo $call($path) === $contents ? "repeat" : "different";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "wp-config|repeat");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);
@@ -56,13 +85,18 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
         "unsupported call file_get_contents(): only php://input is supported in the current stream-wrapper subset"
     );
 
-    let local_file = run_source("<?php\nfile_get_contents(__FILE__);\n").unwrap_err();
-    assert_eq!(local_file.phase, Phase::Runtime);
-    assert_eq!(local_file.line, 2);
-    assert_eq!(local_file.column, 1);
-    assert_eq!(
-        local_file.message,
-        "unsupported call file_get_contents(): local filesystem reads are not implemented in the current subset"
+    let missing_local_file =
+        run_source("<?php\nfile_get_contents('tests/fixtures/missing-local-read.txt');\n")
+            .unwrap_err();
+    assert_eq!(missing_local_file.phase, Phase::Runtime);
+    assert_eq!(missing_local_file.line, 2);
+    assert_eq!(missing_local_file.column, 1);
+    assert!(
+        missing_local_file
+            .message
+            .starts_with("unsupported call file_get_contents(): local UTF-8 file read failed:"),
+        "{}",
+        missing_local_file.message
     );
 
     let too_many = run_source("<?php\nfile_get_contents('php://input', false);\n").unwrap_err();
