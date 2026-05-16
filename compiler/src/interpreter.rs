@@ -4815,42 +4815,55 @@ impl Interpreter {
     }
 
     fn call_mysqli_stmt_execute(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_mysqli_stmt_execute_values("mysqli_stmt_execute()", args, span)
+    }
+
+    fn call_mysqli_execute(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_mysqli_stmt_execute_values("mysqli_execute()", args, span)
+    }
+
+    fn call_mysqli_stmt_execute_values(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "mysqli_stmt_execute()",
+                    function,
                     ArityExpectation::Between { min: 1, max: 2 },
                     args.len(),
                 ),
             ));
         }
 
-        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
+        let stmt_id = expect_mysqli_stmt_handle(function, &args[0], span)?;
         if args.len() == 2 {
             if !matches!(args[1], Value::Null) {
-                let params =
-                    mysqli_execute_params_from_value("mysqli_stmt_execute()", &args[1], span)?;
-                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                let params = mysqli_execute_params_from_value(function, &args[1], span)?;
+                self.mysqli_statement_state_mut(function, stmt_id, span)?
                     .bound_parameter_values = params;
             }
         }
 
-        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+        self.execute_mysqli_stmt_placeholder(function, stmt_id, span)
     }
 
     fn execute_mysqli_stmt_placeholder(
         &mut self,
+        function: &'static str,
         stmt_id: i64,
         span: Span,
     ) -> CompileResult<Value> {
         let (query, bound_parameters) = {
-            let state = self.mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?;
+            let state = self.mysqli_statement_state(function, stmt_id, span)?;
             if state.param_count != 0 && state.bound_parameter_values.len() != state.param_count {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "mysqli_stmt_execute()",
+                        function,
                         "bound parameter values are not available for the current placeholder statement",
                     ),
                 ));
@@ -4871,7 +4884,7 @@ impl Interpreter {
         };
 
         let Some(query) = query else {
-            let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
+            let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
             state.executed_result = None;
             state.buffered_result = None;
             state.buffered_result_cursor = 0;
@@ -4882,19 +4895,19 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "mysqli_stmt_execute()",
+                    function,
                     "statement mutation execution and host database state are not implemented in the current subset",
                 ),
             ));
         }
 
         let result = mysqli_statement_result_for_query_with_params(
-            "mysqli_stmt_execute()",
+            function,
             &query,
             &bound_parameters,
             span,
         )?;
-        let state = self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?;
+        let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
         state.executed_result = result;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
@@ -8503,8 +8516,13 @@ impl Interpreter {
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
-                if key == "mysqli_stmt_execute" {
-                    return self.call_mysqli_stmt_execute_direct(args, span, caller_scope);
+                if let Some(function) = mysqli_stmt_execute_function_label(&key) {
+                    return self.call_mysqli_stmt_execute_direct(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
@@ -8577,8 +8595,13 @@ impl Interpreter {
                 if key == "mysqli_stmt_bind_param" {
                     return self.call_mysqli_stmt_bind_param_direct(args, span, caller_scope);
                 }
-                if key == "mysqli_stmt_execute" {
-                    return self.call_mysqli_stmt_execute_direct(args, span, caller_scope);
+                if let Some(function) = mysqli_stmt_execute_function_label(&key) {
+                    return self.call_mysqli_stmt_execute_direct(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "mysqli_stmt_bind_result" {
                     return self.call_mysqli_stmt_bind_result_direct(args, span, caller_scope);
@@ -8681,8 +8704,15 @@ impl Interpreter {
                 RuntimeError::undefined_function(callable_name(callback_name)),
             )
         })?;
-        if matches!(&callable, Callable::Builtin(key) if key == "mysqli_stmt_execute") {
-            return self.call_mysqli_stmt_execute_direct(&args[1..], span, caller_scope);
+        if let Callable::Builtin(key) = &callable {
+            if let Some(function) = mysqli_stmt_execute_function_label(key) {
+                return self.call_mysqli_stmt_execute_direct(
+                    function,
+                    &args[1..],
+                    span,
+                    caller_scope,
+                );
+            }
         }
 
         let mut values = Vec::with_capacity(args.len().saturating_sub(1));
@@ -8746,12 +8776,15 @@ impl Interpreter {
                         RuntimeError::undefined_function(callable_name(callback_name)),
                     )
                 })?;
-                if matches!(&callable, Callable::Builtin(key) if key == "mysqli_stmt_execute") {
-                    return self.call_mysqli_stmt_execute_with_refresh(
-                        &positional_args,
-                        span,
-                        caller_scope,
-                    );
+                if let Callable::Builtin(key) = &callable {
+                    if let Some(function) = mysqli_stmt_execute_function_label(key) {
+                        return self.call_mysqli_stmt_execute_with_refresh(
+                            function,
+                            &positional_args,
+                            span,
+                            caller_scope,
+                        );
+                    }
                 }
                 self.call_callable_with_values(callable, positional_args, span)
             }
@@ -9004,6 +9037,7 @@ impl Interpreter {
 
     fn call_mysqli_stmt_execute_direct(
         &mut self,
+        function: &'static str,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
@@ -9012,7 +9046,7 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "mysqli_stmt_execute()",
+                    function,
                     ArityExpectation::Between { min: 1, max: 2 },
                     args.len(),
                 ),
@@ -9020,26 +9054,36 @@ impl Interpreter {
         }
 
         let statement = self.evaluate(&args[0], caller_scope)?;
-        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &statement, span)?;
+        let stmt_id = expect_mysqli_stmt_handle(function, &statement, span)?;
         if let Some(params_arg) = args.get(1) {
             let params = self.evaluate(params_arg, caller_scope)?;
             if matches!(params, Value::Null) {
-                self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+                self.refresh_mysqli_stmt_bound_parameter_variables(
+                    function,
+                    stmt_id,
+                    span,
+                    caller_scope,
+                )?;
             } else {
-                let params =
-                    mysqli_execute_params_from_value("mysqli_stmt_execute()", &params, span)?;
-                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                let params = mysqli_execute_params_from_value(function, &params, span)?;
+                self.mysqli_statement_state_mut(function, stmt_id, span)?
                     .bound_parameter_values = params;
             }
         } else {
-            self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+            self.refresh_mysqli_stmt_bound_parameter_variables(
+                function,
+                stmt_id,
+                span,
+                caller_scope,
+            )?;
         }
 
-        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+        self.execute_mysqli_stmt_placeholder(function, stmt_id, span)
     }
 
     fn call_mysqli_stmt_execute_with_refresh(
         &mut self,
+        function: &'static str,
         args: &[Value],
         span: Span,
         caller_scope: &SymbolTable,
@@ -9048,38 +9092,48 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "mysqli_stmt_execute()",
+                    function,
                     ArityExpectation::Between { min: 1, max: 2 },
                     args.len(),
                 ),
             ));
         }
 
-        let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_execute()", &args[0], span)?;
+        let stmt_id = expect_mysqli_stmt_handle(function, &args[0], span)?;
         if args.len() == 2 {
             if matches!(args[1], Value::Null) {
-                self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+                self.refresh_mysqli_stmt_bound_parameter_variables(
+                    function,
+                    stmt_id,
+                    span,
+                    caller_scope,
+                )?;
             } else {
-                let params =
-                    mysqli_execute_params_from_value("mysqli_stmt_execute()", &args[1], span)?;
-                self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+                let params = mysqli_execute_params_from_value(function, &args[1], span)?;
+                self.mysqli_statement_state_mut(function, stmt_id, span)?
                     .bound_parameter_values = params;
             }
         } else {
-            self.refresh_mysqli_stmt_bound_parameter_variables(stmt_id, span, caller_scope)?;
+            self.refresh_mysqli_stmt_bound_parameter_variables(
+                function,
+                stmt_id,
+                span,
+                caller_scope,
+            )?;
         }
 
-        self.execute_mysqli_stmt_placeholder(stmt_id, span)
+        self.execute_mysqli_stmt_placeholder(function, stmt_id, span)
     }
 
     fn refresh_mysqli_stmt_bound_parameter_variables(
         &mut self,
+        function: &'static str,
         stmt_id: i64,
         span: Span,
         caller_scope: &SymbolTable,
     ) -> CompileResult<()> {
         let variable_names = self
-            .mysqli_statement_state("mysqli_stmt_execute()", stmt_id, span)?
+            .mysqli_statement_state(function, stmt_id, span)?
             .bound_parameter_variables
             .clone();
         if !variable_names.is_empty() {
@@ -9089,7 +9143,7 @@ impl Interpreter {
                 validate_mysqli_stmt_bound_parameter_value(&value, span)?;
                 variable_values.push(value);
             }
-            self.mysqli_statement_state_mut("mysqli_stmt_execute()", stmt_id, span)?
+            self.mysqli_statement_state_mut(function, stmt_id, span)?
                 .bound_parameter_values = variable_values;
         }
 
@@ -11355,6 +11409,7 @@ impl Interpreter {
             "mysqli_stmt_bind_param" => self.call_mysqli_stmt_bind_param(&args, span),
             "mysqli_stmt_bind_result" => self.call_mysqli_stmt_bind_result(&args, span),
             "mysqli_stmt_execute" => self.call_mysqli_stmt_execute(&args, span),
+            "mysqli_execute" => self.call_mysqli_execute(&args, span),
             "mysqli_stmt_get_result" => self.call_mysqli_stmt_get_result(&args, span),
             "mysqli_stmt_close" => self.call_mysqli_stmt_close(&args, span),
             "mysqli_stmt_errno" => self.call_mysqli_stmt_errno(&args, span),
@@ -14368,6 +14423,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_stmt_bind_param"
             | "mysqli_stmt_bind_result"
             | "mysqli_stmt_execute"
+            | "mysqli_execute"
             | "mysqli_stmt_get_result"
             | "mysqli_stmt_close"
             | "mysqli_stmt_errno"
@@ -18005,6 +18061,14 @@ fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpe
 
 fn callable_name(name: &str) -> String {
     format!("{name}()")
+}
+
+fn mysqli_stmt_execute_function_label(key: &str) -> Option<&'static str> {
+    match key {
+        "mysqli_stmt_execute" => Some("mysqli_stmt_execute()"),
+        "mysqli_execute" => Some("mysqli_execute()"),
+        _ => None,
+    }
 }
 
 fn value_from_array_key(key: &ArrayKey) -> Value {

@@ -1801,7 +1801,13 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` smoke, without claiming broad prepared SQL
   execution, named params-array support, hidden statement status-copy
   fidelity, mutation SQL, host database state, PHP warning/error fidelity,
-  mysqlnd behavior, or native database lowering. Milestone 990 adds deterministic
+  mysqlnd behavior, or native database lowering. Milestone 1001 adds bounded
+  `mysqli_execute()` procedural alias support over the current
+  `mysqli_stmt_execute()` placeholder subset, including a WordPress-shaped
+  `wpdb` smoke and callback refresh behavior, without claiming broader
+  statement execution, named params-array support, true by-reference aliasing,
+  mutation SQL, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering. Milestone 990 adds deterministic
   `mysqli_stmt_send_long_data()` placeholder chunk state for active
   statements, including a WordPress-shaped `wpdb` smoke, without claiming real
   blob binding, packet buffering, send timing, execution integration, host

@@ -16,6 +16,7 @@ Status: boundary only.
 `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
 `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
 `mysqli_stmt_execute`,
+`mysqli_execute`,
 `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
 `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
 `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -264,6 +265,16 @@ params arrays, mutations, unknown SELECT
 metadata, real mysqlnd result transfer, real blob packet behavior, host
 database state, PHP warning/error fidelity, named-argument callback dispatch,
 and native lowering remain unsupported.
+
+`mysqli_execute($statement, $params = null)` is exposed as the procedural
+alias for the current `mysqli_stmt_execute()` subset. Direct calls,
+string-valued dynamic calls, `call_user_func("mysqli_execute", ...)`, and
+positional `call_user_func_array("mysqli_execute", array(...))` use the same
+placeholder execution and direct-variable refresh behavior, with
+`mysqli_execute()`-specific diagnostics when that alias is the reached API.
+This is not a broader statement execution implementation; the same named
+params-array, mutation SQL, host database state, PHP warning/error fidelity,
+mysqlnd behavior, and native lowering gaps remain.
 
 `mysqli_execute_query($handle, $query, $params = null)` is implemented as a
 bounded PHP 8.2+ convenience path over the current placeholder query subset.

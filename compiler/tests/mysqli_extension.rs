@@ -698,6 +698,7 @@ fn mysqli_statement_bind_param_and_execute_have_placeholder_state() {
         r#"<?php
 $bind = "mysqli_stmt_bind_param";
 $execute = "mysqli_stmt_execute";
+$execute_alias = "mysqli_execute";
 echo function_exists($bind) ? "yes" : "no";
 echo "|";
 echo is_callable($bind) ? "bind-callable" : "bind-missing";
@@ -705,6 +706,10 @@ echo "|";
 echo function_exists($execute) ? "execute-exists" : "execute-missing";
 echo "|";
 echo is_callable($execute) ? "execute-callable" : "execute-missing";
+echo "|";
+echo function_exists($execute_alias) ? "alias-exists" : "alias-missing";
+echo "|";
+echo is_callable($execute_alias) ? "alias-callable" : "alias-missing";
 $stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
 $id = 2;
 echo "|";
@@ -743,6 +748,33 @@ $result4 = mysqli_stmt_get_result($stmt4);
 $row4 = mysqli_fetch_assoc($result4);
 echo "|";
 echo $row4["ID"], ":", $row4["post_title"];
+$stmt6 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+echo "|";
+echo mysqli_execute($stmt6, array(1)) ? "alias-executed" : "not-executed";
+$result6 = mysqli_stmt_get_result($stmt6);
+$row6 = mysqli_fetch_assoc($result6);
+echo "|";
+echo $row6["ID"], ":", $row6["post_title"];
+$stmt7 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+$id7 = 2;
+mysqli_stmt_bind_param($stmt7, "i", $id7);
+$id7 = 1;
+echo "|";
+echo call_user_func("mysqli_execute", $stmt7) ? "alias-call-user-func" : "not-executed";
+$result7 = mysqli_stmt_get_result($stmt7);
+$row7 = mysqli_fetch_assoc($result7);
+echo "|";
+echo $row7["ID"], ":", $row7["post_title"];
+$stmt8 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+$id8 = 2;
+mysqli_stmt_bind_param($stmt8, "i", $id8);
+$id8 = 1;
+echo "|";
+echo call_user_func_array("mysqli_execute", array($stmt8)) ? "alias-call-user-func-array" : "not-executed";
+$result8 = mysqli_stmt_get_result($stmt8);
+$row8 = mysqli_fetch_assoc($result8);
+echo "|";
+echo $row8["ID"], ":", $row8["post_title"];
 $stmt5 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
 $blob = "unused";
 echo "|";
@@ -760,7 +792,7 @@ echo $row5["ID"], ":", $row5["post_title"];
 
     assert_eq!(
         execution.stdout,
-        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder|array-executed|1:Hello world placeholder|blob-bound|blob-executed|1:Hello world placeholder"
+        "yes|bind-callable|execute-exists|execute-callable|alias-exists|alias-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder|array-executed|1:Hello world placeholder|alias-executed|1:Hello world placeholder|alias-call-user-func|1:Hello world placeholder|alias-call-user-func-array|1:Hello world placeholder|blob-bound|blob-executed|1:Hello world placeholder"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -795,6 +827,22 @@ mysqli_stmt_execute($stmt);
     assert_eq!(
         execute_error.message,
         "unsupported call mysqli_stmt_execute(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
+    );
+
+    let execute_alias_error = run_source(
+        r#"<?php
+$stmt = mysqli_init();
+mysqli_execute($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(execute_alias_error.phase, Phase::Runtime);
+    assert_eq!(execute_alias_error.line, 3);
+    assert_eq!(execute_alias_error.column, 1);
+    assert_eq!(
+        execute_alias_error.message,
+        "unsupported call mysqli_execute(): first argument must be mysqli_stmt object in the current subset, got mysqli object"
     );
 
     let parameter_error = run_source(
@@ -876,6 +924,22 @@ mysqli_stmt_execute($stmt, array(1 => 1));
     assert_eq!(
         sparse_params_array_error.message,
         "unsupported call mysqli_stmt_execute(): params array must be a list in the current subset"
+    );
+
+    let alias_params_array_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_execute($stmt, array("id" => 1));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(alias_params_array_error.phase, Phase::Runtime);
+    assert_eq!(alias_params_array_error.line, 3);
+    assert_eq!(alias_params_array_error.column, 1);
+    assert_eq!(
+        alias_params_array_error.message,
+        "unsupported call mysqli_execute(): params array must be a list in the current subset"
     );
 }
 
@@ -4945,6 +5009,8 @@ echo function_exists("mysqli_stmt_bind_result") ? "1" : "0";
 echo is_callable("mysqli_stmt_bind_result") ? "1" : "0";
 echo function_exists("mysqli_stmt_execute") ? "1" : "0";
 echo is_callable("mysqli_stmt_execute") ? "1" : "0";
+echo function_exists("mysqli_execute") ? "1" : "0";
+echo is_callable("mysqli_execute") ? "1" : "0";
 echo function_exists("mysqli_stmt_get_result") ? "1" : "0";
 echo is_callable("mysqli_stmt_get_result") ? "1" : "0";
 echo function_exists("mysqli_stmt_close") ? "1" : "0";
@@ -5132,7 +5198,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 253, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 255, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -5536,6 +5602,18 @@ mysqli_stmt_bind_result(mysqli_init(), $value);
     let error = emit_ir_source(
         r#"<?php
 mysqli_stmt_execute(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_execute(mysqli_init());
 "#,
     )
     .unwrap_err();

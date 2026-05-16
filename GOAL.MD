@@ -563,6 +563,13 @@ WordPress-shaped `wpdb` smokes, without claiming broad prepared SQL execution,
 named params-array support, hidden statement status-copy fidelity, mutation
 SQL, host database state, PHP warning/error fidelity, mysqlnd behavior, or
 native lowering,
+plus bounded `mysqli_execute()` procedural alias support over the current
+`mysqli_stmt_execute()` placeholder subset, including direct calls, dynamic
+string calls, callback-dispatched refresh paths, and direct MySQLi and
+WordPress-shaped `wpdb` smokes, without claiming broader statement execution,
+named params-array support, true by-reference aliasing, mutation SQL, host
+database state, PHP warning/error fidelity, mysqlnd behavior, or native
+lowering,
 plus deterministic `mysqli_stmt_send_long_data()` placeholder chunk state for
 active statements, including direct MySQLi and WordPress-shaped `wpdb` smokes,
 without claiming real blob binding, packet buffering, send timing, execution

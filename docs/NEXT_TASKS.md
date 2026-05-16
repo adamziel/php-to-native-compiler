@@ -9524,6 +9524,21 @@ handled.
   named params-array support, hidden statement status-copy fidelity, mutation
   SQL, host database state, PHP warning/error fidelity, mysqlnd behavior, or
   native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, broader escaping charset fidelity,
+  mutation SQL state, transaction state, host-backed query execution, PDO
+  visibility, or the next real database integration gap, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
+  Milestone 1001 adds bounded `mysqli_execute()` procedural alias support over
+  the current `mysqli_stmt_execute()` placeholder subset. The runtime exposes
+  the alias through direct calls, function/callability metadata, dynamic string
+  calls, and callback-dispatched refresh paths, including direct MySQLi and
+  WordPress-shaped `wpdb` smokes. This is not broader statement execution,
+  named params-array support, true by-reference aliasing, mutation SQL, host
+  database state, PHP warning/error fidelity, mysqlnd behavior, or native
+  database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9535,8 +9550,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ca30fdeb runtime: require mysqli stmt execute list params`, covering
-  Milestone 999 before the current Milestone 1000 candidate.
+  `95360df0 runtime: add mysqli execute query boundary`, covering Milestone
+  1000 before the current Milestone 1001 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

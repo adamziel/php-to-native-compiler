@@ -526,7 +526,7 @@
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
   `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
   `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
-  `mysqli_stmt_execute`,
+  `mysqli_stmt_execute`, `mysqli_execute`,
   `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
   `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
   `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -1029,6 +1029,15 @@
   broad mysqlnd parameter
   binding, mutation SQL, broad SQL execution, host database state, PHP
   warning/error fidelity, or native statement lowering.
+  `mysqli_execute($statement, $params = null)` is exposed as the procedural
+  alias for the current `mysqli_stmt_execute()` subset, including direct calls,
+  string-valued dynamic calls, `call_user_func("mysqli_execute", ...)`, and
+  positional `call_user_func_array("mysqli_execute", array(...))`. Alias calls
+  use the same direct-variable refresh and params-array validation paths while
+  reporting `mysqli_execute()` in alias-specific diagnostics. This is not
+  broader statement execution, named params-array support, true by-reference
+  aliasing, mutation SQL, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native statement lowering.
   `mysqli_execute_query($handle, $query, $params = null)` accepts a
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
@@ -2710,7 +2719,7 @@
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
   `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
   `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
-  `mysqli_stmt_execute`,
+  `mysqli_stmt_execute`, `mysqli_execute`,
   `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
   `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
   `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -3060,7 +3069,7 @@
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
   `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
   `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
-  `mysqli_stmt_execute`,
+  `mysqli_stmt_execute`, `mysqli_execute`,
   `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
   `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
   `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -3230,6 +3239,7 @@
   `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
   `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
   `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`, `mysqli_stmt_execute`,
+  `mysqli_execute`,
   `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
   `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
   `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -3324,7 +3334,7 @@
   `mysqli_prepare`, `mysqli_stmt_prepare`, `mysqli_stmt_param_count`,
   `mysqli_stmt_get_warnings`, `mysqli_stmt_error_list`,
   `mysqli_stmt_bind_param`, `mysqli_stmt_bind_result`,
-  `mysqli_stmt_execute`,
+  `mysqli_stmt_execute`, `mysqli_execute`,
   `mysqli_stmt_get_result`, `mysqli_stmt_close`, `mysqli_stmt_errno`,
   `mysqli_stmt_error`, `mysqli_stmt_affected_rows`,
   `mysqli_stmt_store_result`, `mysqli_stmt_num_rows`, `mysqli_stmt_fetch`,
@@ -5177,7 +5187,7 @@
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/
   `mysqli_options()`/`mysqli_set_opt()`/`mysqli_ssl_set()`/
-  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_stmt_prepare()`/`mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/`mysqli_stmt_error_list()`/`mysqli_stmt_bind_param()`/`mysqli_stmt_bind_result()`/`mysqli_stmt_execute()`/`mysqli_stmt_get_result()`/`mysqli_stmt_close()`/`mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`/`mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/`mysqli_stmt_fetch()`/`mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/`mysqli_stmt_free_result()`/`mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()`/`mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()`/`mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/`mysqli_stmt_insert_id()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
+  `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_thread_safe()`/`mysqli_stmt_init()`/`mysqli_prepare()`/`mysqli_stmt_prepare()`/`mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/`mysqli_stmt_error_list()`/`mysqli_stmt_bind_param()`/`mysqli_stmt_bind_result()`/`mysqli_stmt_execute()`/`mysqli_execute()`/`mysqli_stmt_get_result()`/`mysqli_stmt_close()`/`mysqli_stmt_errno()`/`mysqli_stmt_error()`/`mysqli_stmt_affected_rows()`/`mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/`mysqli_stmt_fetch()`/`mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/`mysqli_stmt_free_result()`/`mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/`mysqli_stmt_attr_set()`/`mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/`mysqli_stmt_more_results()`/`mysqli_stmt_next_result()`/`mysqli_stmt_sqlstate()`/`mysqli_stmt_warning_count()`/`mysqli_stmt_insert_id()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_savepoint()`/`mysqli_release_savepoint()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
   `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/`mysqli_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/

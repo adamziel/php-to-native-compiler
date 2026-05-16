@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `95360df0 runtime: add mysqli execute query boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1001, bounded `mysqli_execute()` procedural alias
+  support over the current `mysqli_stmt_execute()` placeholder subset, with
+  direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone1001/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1001`
+  passed. The new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: the placeholder database runtime can use
+  `mysqli_execute()` as a bounded procedural alias for exact known prepared
+  statement shapes.
+- Remaining semantic gaps: broader statement execution, named params-array
+  support, true by-reference aliasing, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, and native database lowering remain
+  missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `ca30fdeb runtime: require mysqli stmt execute list params`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1000, bounded `mysqli_execute_query()` support for

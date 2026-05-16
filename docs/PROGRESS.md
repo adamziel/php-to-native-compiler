@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 1001, bounded `mysqli_execute()` alias support over the
+  current `mysqli_stmt_execute()` placeholder execution subset. The runtime now
+  exposes the procedural alias through direct calls, function/callability
+  metadata, dynamic string-valued calls, and callback-dispatched refresh paths,
+  while preserving alias-specific diagnostics for invalid handles and params
+  arrays. The new fixtures include direct MySQLi and WordPress-shaped `wpdb`
+  smokes. This is not broader prepared statement execution, named params-array
+  support, true by-reference aliasing, mutation SQL, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1001`.
+
 - Added Milestone 1000, bounded `mysqli_execute_query()` support for exact
   known placeholder SQL shapes. The runtime now exposes the PHP 8.2+
   prepare-bind-execute convenience API through function/callability metadata,
