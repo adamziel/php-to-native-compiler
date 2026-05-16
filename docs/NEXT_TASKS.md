@@ -5593,10 +5593,15 @@ handled.
 
 ## Milestone 627: Independent Lane Candidates
 
-- [ ] Parser lane: choose the next small syntax or parse-diagnostic boundary
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
   from the documented unsupported gaps, add parser/unit coverage plus
   `phpc run` CLI snapshots where applicable, and do not widen runtime or native
   support claims unless another lane implements and tests the behavior.
+  Selected candidate: Milestone 1042 implements statement-form short
+  `[$a, $b] = expr;` destructuring as an alias for the existing positional
+  `list(...)` direct-variable subset, with skipped slots and trailing commas,
+  while keeping keyed/nested/reference/non-variable/expression-position and
+  `foreach` destructuring unsupported.
 
 ## Milestone 628: Independent Lane Candidates
 

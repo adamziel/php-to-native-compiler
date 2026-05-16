@@ -2029,6 +2029,37 @@ impl Parser {
             return Ok(Some(Stmt::Assign { target, expr, span }));
         }
 
+        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+            let saved = self.current;
+            let starts_short_destructuring = self.starts_short_destructuring_assignment();
+            if starts_short_destructuring {
+                let target = self.parse_short_list_assignment_target()?;
+                if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_array_destructuring_assignment_message(),
+                    ));
+                }
+                let span = target.span();
+                let expr = self.parse_assignment_expression()?;
+                if self.check_low_precedence_logical_operator() {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_chained_assignment_expression_message(),
+                    ));
+                }
+                if Self::expr_contains_unsupported_assignment_rhs(&expr) {
+                    return Err(self.error_at(
+                        expr.span(),
+                        unsupported_chained_assignment_expression_message(),
+                    ));
+                }
+                self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
+                return Ok(Some(Stmt::Assign { target, expr, span }));
+            }
+            self.current = saved;
+        }
+
         if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             return Ok(None);
         }
@@ -2188,9 +2219,22 @@ impl Parser {
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
+        self.parse_positional_list_assignment_target(span, TokenKind::RParen)
+    }
+
+    fn parse_short_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
+        let span = self.advance().span;
+        self.parse_positional_list_assignment_target(span, TokenKind::RBracket)
+    }
+
+    fn parse_positional_list_assignment_target(
+        &mut self,
+        span: Span,
+        closing_token: TokenKind,
+    ) -> CompileResult<AssignTarget> {
         let mut names = Vec::new();
 
-        if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+        if self.check(|kind| same_token_kind(kind, &closing_token)) {
             return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
         }
 
@@ -2199,14 +2243,16 @@ impl Parser {
                 TokenKind::Comma => {
                     names.push(None);
                     self.advance();
-                    if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                    if self.check(|kind| same_token_kind(kind, &closing_token)) {
                         break;
                     }
                     continue;
                 }
                 TokenKind::Variable(name) => {
                     self.advance();
-                    if !self.check(|kind| matches!(kind, TokenKind::Comma | TokenKind::RParen)) {
+                    if !self.check(|kind| {
+                        matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
+                    }) {
                         return Err(self.error_at(
                             self.peek().span,
                             unsupported_array_destructuring_assignment_message(),
@@ -2225,7 +2271,7 @@ impl Parser {
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
-            if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+            if self.check(|kind| same_token_kind(kind, &closing_token)) {
                 break;
             }
         }
@@ -2234,11 +2280,41 @@ impl Parser {
             return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
         }
 
-        self.consume_keyword(
-            TokenKind::RParen,
-            "expected ')' after list assignment target",
-        )?;
+        let message = if same_token_kind(&closing_token, &TokenKind::RParen) {
+            "expected ')' after list assignment target"
+        } else if same_token_kind(&closing_token, &TokenKind::RBracket) {
+            "expected ']' after short list assignment target"
+        } else {
+            unreachable!("list assignment target uses a closing delimiter")
+        };
+        self.consume_keyword(closing_token, message)?;
         Ok(AssignTarget::List { names, span })
+    }
+
+    fn starts_short_destructuring_assignment(&self) -> bool {
+        let mut depth = 0usize;
+        let mut index = self.current;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                TokenKind::LBracket => depth += 1,
+                TokenKind::RBracket => {
+                    if depth == 0 {
+                        return false;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return matches!(
+                            self.tokens.get(index + 1).map(|token| &token.kind),
+                            Some(TokenKind::Equal)
+                        );
+                    }
+                }
+                TokenKind::Semicolon | TokenKind::Eof if depth == 0 => return false,
+                _ => {}
+            }
+            index += 1;
+        }
+        false
     }
 
     fn parse_assignment_target(&mut self) -> CompileResult<AssignTarget> {
@@ -5672,7 +5748,7 @@ fn unsupported_array_spread_message() -> &'static str {
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
-    "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented"
+    "unsupported array destructuring: only positional statement-form list($a, $b) = expr and [$a, $b] = expr targets with variable or skipped slots are implemented; expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented"
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
@@ -5808,6 +5884,10 @@ fn is_magic_static_receiver(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "self" | "parent" | "static"
     )
+}
+
+fn same_token_kind(left: &TokenKind, right: &TokenKind) -> bool {
+    std::mem::discriminant(left) == std::mem::discriminant(right)
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

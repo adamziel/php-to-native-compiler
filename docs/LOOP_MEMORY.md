@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1b65aba5 docs: record wp options autoload readback gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1042, bounded statement-form short `[...]`
+  destructuring as an alias for the existing positional `list(...)` assignment
+  subset.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/list_assignment.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone1042/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`,
+  `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test list_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries array_destructuring -- --test-threads=1`,
+  `cargo test -p phpc --test native_array_boundary array_destructuring -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1042`, and
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed.
+- Current WordPress frontier: short positional destructuring syntax now reaches
+  the same runtime behavior as current `list(...)` assignment.
+- Remaining semantic gaps: keyed/nested/reference/non-variable destructuring,
+  expression-position destructuring, `foreach` destructuring targets, exact
+  PHP warning/notice fidelity, references/copy-on-write, and native lowering
+  remain missing.
+- Next concrete task: rerun focused checks after docs, then the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `623cf186 docs: record countable object protocol gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1041, bounded direct `mysqli_query()` `wp_options`

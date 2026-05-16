@@ -1,2 +1,2 @@
 <?php
-[$first] = [1];
+['first' => $first] = [1];

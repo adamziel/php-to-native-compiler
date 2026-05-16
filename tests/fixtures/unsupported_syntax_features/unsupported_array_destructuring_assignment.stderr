@@ -1,2 +1,2 @@
-parse error at 2:10: unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented
+parse error at 2:2: unsupported array destructuring: only positional statement-form list($a, $b) = expr and [$a, $b] = expr targets with variable or skipped slots are implemented; expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented
 

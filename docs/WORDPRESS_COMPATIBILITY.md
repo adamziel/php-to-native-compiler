@@ -573,9 +573,11 @@ historical blockers and remaining full-support gaps include:
   starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
   and reaches
   `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
-  This is not short `[...]` destructuring, keyed/nested/reference
-  destructuring, exact missing-offset warning behavior, native array
-  destructuring lowering, or WordPress bootstrap support.
+  Milestone 1042 later adds short `[...] = expr;` destructuring for the same
+  positional direct-variable slice. This is not keyed/nested/reference
+  destructuring, expression-position destructuring, exact missing-offset
+  warning behavior, native array destructuring lowering, or WordPress
+  bootstrap support.
   Milestone 761 implements class `implements` metadata for comma-separated
   interface names and relationship checks through `is_a`, `is_subclass_of`,
   and `instanceof`, including inherited metadata and unresolved

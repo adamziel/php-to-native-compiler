@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1042, bounded short array destructuring assignment as an
+  alias for the existing positional statement-form `list(...)` subset.
+  `[$a, $b] = expr;` now parses to the same direct-variable list assignment
+  target as `list($a, $b) = expr;`, including skipped slots and trailing
+  commas. Runtime behavior remains the existing numeric-key read semantics:
+  the right-hand side is evaluated once, missing offsets become `null`, and
+  writes happen left to right. Keyed, nested, reference, non-variable,
+  expression-position, and `foreach` destructuring targets remain unsupported,
+  and native lowering still rejects array destructuring before misleading IR or
+  assembly output. Verification so far:
+  `cargo test -p phpc --test list_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries array_destructuring -- --test-threads=1`,
+  `cargo test -p phpc --test native_array_boundary array_destructuring -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1042`, and
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`.
+
 - Added Milestone 1041, bounded direct `mysqli_query()` `wp_options`
   autoload readback over the current per-placeholder-connection state island.
   Exact

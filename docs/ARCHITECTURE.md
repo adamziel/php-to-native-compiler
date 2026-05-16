@@ -46,9 +46,10 @@ to audit while avoiding regex-based parsing. Unsupported syntax boundaries use
 stable diagnostics before AST construction when accepting the syntax would
 imply runtime or native semantics that do not exist yet. Statement-form
 `list($a, $b) = expr;` now has an AST/runtime path for direct variable targets
-and skipped positional slots, while short `[...]` destructuring,
-expression-position `list(...)`, nested/keyed/reference targets, and
-non-variable targets remain parser boundaries.
+and skipped positional slots. Statement-form short `[$a, $b] = expr;`
+destructuring reuses that same AST/runtime path for direct variable targets,
+while expression-position `list(...)`, keyed/nested/reference targets,
+`foreach` destructuring, and non-variable targets remain parser boundaries.
 
 The lexer maintains both character and byte offsets as it advances. Prefix
 checks for PHP tags, heredoc terminators, and other byte-slice comparisons use

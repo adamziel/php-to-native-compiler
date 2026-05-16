@@ -31,6 +31,33 @@ echo $left, "|", $right;
 }
 
 #[test]
+fn short_positional_list_assignment_aliases_current_list_subset() {
+    let execution = run_source(
+        r#"<?php
+[$a, $b] = ["zero", "one", "ignored"];
+echo $a, "|", $b, "\n";
+
+$items = ["name" => "Ada", 1 => "one", "0" => "zero"];
+[$first, $second] = $items;
+echo $first, "|", $second, "\n";
+
+[, $textdomain, $language] = ["full-match", "default", "en_US"];
+echo $textdomain, "|", $language, "\n";
+
+[$left, , $right,] = ["left", "skip", "right"];
+echo $left, "|", $right;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "zero|one\nzero|one\ndefault|en_US\nleft|right"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn list_assignment_evaluates_rhs_once_before_left_to_right_writes() {
     let execution = run_source(
         r#"<?php
@@ -98,4 +125,11 @@ fn emit_ir_rejects_list_assignment_until_native_array_destructuring_exists() {
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
+
+    let short_error = emit_ir_source("<?php\n[$a, $b] = missing_call();\n").unwrap_err();
+
+    assert_eq!(short_error.phase, Phase::Codegen);
+    assert_eq!(short_error.line, 2);
+    assert_eq!(short_error.column, 1);
+    assert_eq!(short_error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
 }

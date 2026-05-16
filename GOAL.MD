@@ -63,7 +63,8 @@ Recent WordPress-directed milestones have been walking the real WordPress
 runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
 instantiation, direct-object-property nested array assignment, nested
 object-property array-offset `unset(...)`, expression-form `include`/`require`
-return values, skipped positional `list(...)` destructuring, class
+return values, skipped positional `list(...)` destructuring, short `[...]`
+destructuring for the same positional direct-variable slice, class
 `implements` relationship metadata, bounded object-handle `=&`, bounded
 `str_replace()`, bounded `call_user_func()`, a bounded direct-variable
 array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
@@ -873,7 +874,10 @@ assignment and append-at-depth assignment. Milestone 758 added nested
 object-property array-offset `unset(...)`. Milestone 759 then added
 expression-form `include`, `include_once`, `require`, and `require_once` return
 values for the current local-file subset. Milestone 760 added skipped
-positional slots in statement-form `list(...) = expr;`. Milestone 761 then
+positional slots in statement-form `list(...) = expr;`. Milestone 1042 later
+added short `[...] = expr;` destructuring for the same positional
+direct-variable slice while keeping keyed/nested/reference/expression-position
+destructuring unsupported. Milestone 761 then
 recorded class `implements` metadata for relationship checks while leaving
 interface enforcement and built-in/internal interface catalogs explicit future
 work. Milestone 762 added a bounded object-handle `=&` slice for direct

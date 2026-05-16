@@ -4542,17 +4542,18 @@
   runtime diagnostics. Float identity currently follows Rust/PHP-style `f64`
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
-- Array gaps: array spread elements, reference array keys, short `[...]`
-  destructuring assignment targets, expression-position `list(...)`, and
-  keyed, nested, reference, or non-variable list targets are rejected with
-  stable parse diagnostics. Array literal reference values are parsed and
+- Array gaps: array spread elements, reference array keys,
+  expression-position `list(...)`, and keyed, nested, reference, or
+  non-variable destructuring targets are rejected with stable parse diagnostics.
+  Array literal reference values are parsed and
   evaluated by current value only; real aliases, reference containers, and
   copy-on-write are not implemented. Object-property reference-assignment
   sources are parsed and copy current array/object values only; scalar sources,
   real aliases, reference containers, and copy-on-write are not implemented.
   Positional statement-form
-  `list($a, $b) = expr;` is supported for direct variable targets and skipped
-  slots only; exact PHP warning/notice emission for missing offsets and
+  `list($a, $b) = expr;` and `[$a, $b] = expr;` are supported for direct
+  variable targets and skipped slots only; exact PHP warning/notice emission
+  for missing offsets and
   non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,
   direct/nested array-offset operands, direct/dynamic object-property operands,
   nested object-property array-offset operands, and static-property diagnostic operands,
@@ -4570,7 +4571,7 @@
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
   targets, array destructuring assignments with keyed, nested, reference,
-  short-syntax, expression-position, or non-variable target semantics,
+  expression-position, or non-variable target semantics,
   references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
