@@ -176,10 +176,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   zero-indexed PHP array of the evaluated positional arguments;
 - bounded object string conversion dispatches visible non-static
   `__toString()` with no arguments for `echo $object`, `print $object`,
-  `(string) $object`, and binary concatenation. The method must return a
-  string in the current subset; non-string returns, `Stringable` metadata,
-  object interpolation, heredoc conversion, compound concat assignment, exact
-  PHP `TypeError` objects, and native lowering remain unsupported;
+  `(string) $object`, binary concatenation, and `.=` over the current
+  supported compound-assignment targets. The method must return a string in
+  the current subset; non-string returns, `Stringable` metadata, object
+  interpolation, heredoc conversion, exact PHP `TypeError` objects, and native
+  lowering remain unsupported;
 - explicit `parent::method(...)` and `parent::__construct(...)` calls require
   active instance method context, a parent class, and a public or protected
   resolved method in the parent chain. They evaluate arguments left to right,

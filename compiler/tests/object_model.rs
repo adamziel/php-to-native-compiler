@@ -1139,6 +1139,42 @@ print $label;
 }
 
 #[test]
+fn magic_to_string_runs_for_concat_assignment() {
+    let source = r#"<?php
+class Label {
+    public $value = "core";
+
+    public function __toString() {
+        echo "toString:$this->value\n";
+        return "label:" . $this->value;
+    }
+}
+
+class Box {
+    public $text = "box:";
+}
+
+$label = new Label();
+$text = "prefix:";
+$text .= $label;
+echo $text, "\n";
+$value = $label;
+$value .= ":tail";
+echo $value, "\n";
+$box = new Box();
+$box->text .= $label;
+echo $box->text;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "toString:core\nprefix:label:core\ntoString:core\nlabel:core:tail\ntoString:core\nbox:label:core"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

@@ -1219,7 +1219,12 @@ adds bounded object string conversion through visible non-static
 leaving `Stringable` metadata, object interpolation, heredoc conversion,
 compound concat assignment, exact non-string-return `TypeError` objects,
 recursion edge-case fidelity, references/copy-on-write, and native lowering
-explicit gaps.
+explicit gaps. Milestone 1013 extends the same object string conversion to
+concat compound assignment `.=` over current supported compound-assignment
+targets while leaving `Stringable` metadata, object interpolation, heredoc
+conversion, exact non-string-return `TypeError` objects, references/
+copy-on-write aliasing during read-modify-write, and native lowering explicit
+gaps.
   The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.

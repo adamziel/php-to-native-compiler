@@ -9695,12 +9695,24 @@ handled.
   `Stringable` metadata, object interpolation, heredoc conversion, compound
   concat assignment, exact `TypeError`/fatal behavior, recursion edge-case
   fidelity, references/copy-on-write, or native lowering.
-- [ ] Object semantics lane: inspect the next object protocol gap from the
-  audited PHP/WordPress surface, such as ArrayAccess, object interpolation,
-  compound concat assignment through `__toString`, `__clone` dispatch,
+- [x] Object semantics lane: inspect the next object protocol gap from the
+  audited PHP/WordPress surface, such as concat compound assignment through
+  `__toString`, ArrayAccess, object interpolation, `__clone` dispatch,
   destructors, or inaccessible-member magic fidelity, and add the next bounded
   behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
   native rejection coverage where lowering remains unsupported.
+  Milestone 1013 extends bounded object string conversion through visible
+  non-static `__toString()` to concat compound assignment `.=` over current
+  supported compound-assignment targets. This is not `Stringable` metadata,
+  object interpolation, heredoc conversion, exact non-string-return
+  `TypeError` objects, references/copy-on-write aliasing during
+  read-modify-write, recursion edge-case fidelity, or native lowering.
+- [ ] Object semantics lane: inspect the next object protocol gap from the
+  audited PHP/WordPress surface, such as ArrayAccess, object interpolation,
+  `__clone` dispatch, destructors, or inaccessible-member magic fidelity, and
+  add the next bounded behavior or explicit runtime boundary with tests, CLI
+  fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9712,8 +9724,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9c432e94 runtime: add magic static method calls`, covering Milestone 1011
-  before the current Milestone 1012 candidate.
+  `94dfcf5d runtime: add magic string conversion`, covering Milestone 1012
+  before the current Milestone 1013 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

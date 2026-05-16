@@ -3301,7 +3301,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let (place, left) = self.read_compound_assignment_left(target, span, scope)?;
         let right = self.evaluate(expr, scope)?;
-        let value = Self::apply_compound_assignment_op(left, op, &right, span)?;
+        let value = self.apply_compound_assignment_op(left, op, right, span)?;
         self.write_compound_assignment_place(place, value.clone(), span, scope)?;
         Ok(value)
     }
@@ -3589,23 +3589,32 @@ impl Interpreter {
     }
 
     fn apply_compound_assignment_op(
+        &mut self,
         left: Value,
         op: CompoundAssignOp,
-        right: &Value,
+        right: Value,
         span: Span,
     ) -> CompileResult<Value> {
+        if matches!(op, CompoundAssignOp::Concat) {
+            let left = self.value_to_echo_string(left, span)?;
+            let right = self.value_to_echo_string(right, span)?;
+            return Ok(Value::String(format!("{left}{right}")));
+        }
+
         let value = match op {
-            CompoundAssignOp::Add => left.php_add(right),
-            CompoundAssignOp::Sub => left.php_sub(right),
-            CompoundAssignOp::Mul => left.php_mul(right),
-            CompoundAssignOp::Div => left.php_div(right),
-            CompoundAssignOp::Mod => left.php_mod(right),
-            CompoundAssignOp::Concat => left.php_concat(right),
-            CompoundAssignOp::BitwiseAnd => left.php_bitwise_and(right),
-            CompoundAssignOp::BitwiseOr => left.php_bitwise_or(right),
-            CompoundAssignOp::BitwiseXor => left.php_bitwise_xor(right),
-            CompoundAssignOp::ShiftLeft => left.php_shift_left(right),
-            CompoundAssignOp::ShiftRight => left.php_shift_right(right),
+            CompoundAssignOp::Add => left.php_add(&right),
+            CompoundAssignOp::Sub => left.php_sub(&right),
+            CompoundAssignOp::Mul => left.php_mul(&right),
+            CompoundAssignOp::Div => left.php_div(&right),
+            CompoundAssignOp::Mod => left.php_mod(&right),
+            CompoundAssignOp::Concat => {
+                unreachable!("concatenation is handled before runtime helpers")
+            }
+            CompoundAssignOp::BitwiseAnd => left.php_bitwise_and(&right),
+            CompoundAssignOp::BitwiseOr => left.php_bitwise_or(&right),
+            CompoundAssignOp::BitwiseXor => left.php_bitwise_xor(&right),
+            CompoundAssignOp::ShiftLeft => left.php_shift_left(&right),
+            CompoundAssignOp::ShiftRight => left.php_shift_right(&right),
         };
 
         value.map_err(|error| runtime_error(span, error))

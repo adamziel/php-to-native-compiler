@@ -360,12 +360,13 @@
   or inherited, with `$args` materialized as a zero-indexed PHP array of the
   evaluated positional arguments.
 - bounded object string conversion through visible non-static `__toString()`
-  for `echo $object`, `print $object`, `(string) $object`, and binary
-  concatenation. Objects without `__toString()` keep the existing invalid
-  string-conversion diagnostic, static `__toString()` remains rejected through
-  the current magic instance-method boundary, and non-string `__toString()`
-  returns report a stable unsupported diagnostic instead of constructing exact
-  PHP `TypeError` objects.
+  for `echo $object`, `print $object`, `(string) $object`, binary
+  concatenation, and concat compound assignment `.=` over the current
+  supported compound-assignment targets. Objects without `__toString()` keep
+  the existing invalid string-conversion diagnostic, static `__toString()`
+  remains rejected through the current magic instance-method boundary, and
+  non-string `__toString()` returns report a stable unsupported diagnostic
+  instead of constructing exact PHP `TypeError` objects.
 - explicit parent method calls by static method name:
   `parent::method(...)` and `parent::__construct(...)` are supported in active
   class method/constructor context when the current class has a parent and the
@@ -4314,10 +4315,10 @@
   broader `self`/`parent`/`static` behavior, object comparisons, full
   `instanceof` interface/class relationship metadata, object callables, and
   native lowering are unsupported. Object string conversion is supported only
-  for the documented direct `__toString()` echo/print/cast/concat slice;
-  object interpolation, heredoc conversion, compound concat assignment,
-  `Stringable` metadata, exact non-string-return `TypeError` objects,
-  recursion edge cases, and native lowering remain unsupported.
+  for the documented direct `__toString()` echo/print/cast/concat/`.=` slice;
+  object interpolation, heredoc conversion, `Stringable` metadata, exact
+  non-string-return `TypeError` objects, recursion edge cases, and native
+  lowering remain unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in

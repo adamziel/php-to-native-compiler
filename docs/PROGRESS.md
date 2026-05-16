@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 1013, bounded object string conversion for concat compound
+  assignment through visible non-static `__toString()`. The shared compound
+  assignment path now dispatches `__toString()` for `.=` on direct variables,
+  direct object properties, direct array offsets, object-property array-offset
+  paths, and supported static-property targets when either side currently
+  holds an object value. The result remains the PHP-shaped concatenated string
+  assigned back to the target. This is not `Stringable` interface metadata,
+  object interpolation, heredoc/object conversion, array-to-string warning
+  recovery, exact PHP `TypeError` objects for non-string `__toString()`
+  returns, references/copy-on-write aliasing during read-modify-write,
+  recursion edge-case fidelity, visibility diagnostic fidelity, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test object_model magic_to_string_runs_for_concat_assignment -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1013`.
+
 - Added Milestone 1012, bounded object string conversion through visible
   non-static `__toString()` for the interpreter string contexts that can
   safely dispatch userland methods today: `echo $object`, `print $object`,

@@ -1019,7 +1019,12 @@ conversion through visible non-static `__toString()` for `echo`, `print`,
 `(string)`, and binary concatenation while leaving `Stringable` metadata,
 object interpolation, heredoc conversion, compound concat assignment, exact
 non-string-return `TypeError` objects, recursion edge-case fidelity,
-references/copy-on-write, and native lowering explicit gaps. Milestone 833
+references/copy-on-write, and native lowering explicit gaps. Milestone 1013
+extends that object string conversion to concat compound assignment `.=` over
+current supported compound-assignment targets while leaving `Stringable`
+metadata, object interpolation, heredoc conversion, exact non-string-return
+`TypeError` objects, references/copy-on-write aliasing during
+read-modify-write, and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
@@ -1430,8 +1435,8 @@ Scope:
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - object conversion beyond the current direct `__toString()` echo/print/cast/
-  concat slice, including `Stringable` metadata, interpolation, heredoc,
-  compound concat assignment, and exact PHP error behavior;
+  concat/`.=` slice, including `Stringable` metadata, interpolation, heredoc,
+  and exact PHP error behavior;
 - inheritance after the single-class model is stable.
 
 Exit criteria:
@@ -1607,11 +1612,11 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1012 is the active checkpoint candidate: visible non-static
-  `__toString()` now runs for direct object echo, print, `(string)` cast, and
-  binary concatenation while object interpolation, heredoc conversion,
-  compound concat assignment, `Stringable` metadata, exact error objects,
-  references/copy-on-write, and native lowering remain open.
+- Milestone 1013 is the active checkpoint candidate: visible non-static
+  `__toString()` now also runs for concat compound assignment `.=` over
+  supported compound-assignment targets while object interpolation, heredoc
+  conversion, `Stringable` metadata, exact error objects, references/
+  copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and
