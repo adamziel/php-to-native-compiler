@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+set:null:tail
+get:0
+tail
+--- stdout end ---
+stderr:
+--- stderr end ---

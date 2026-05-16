@@ -1049,6 +1049,11 @@ property value is an `ArrayAccess` object, covering single-key read/write,
 compound assignment, increment/decrement, magic-property containers,
 iteration, by-reference `offsetGet()` mutation, protocol enforcement, exact
 diagnostics, references/copy-on-write, and native lowering explicit gaps.
+Milestone 1021 adds direct append writes for that property-held `ArrayAccess`
+slice through `offsetSet(null, $value)`, while leaving nested chains, keyed
+compound/increment property-held `ArrayAccess`, magic-property containers,
+iteration, protocol enforcement, exact diagnostics, references/copy-on-write,
+and native lowering explicit gaps.
 Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
@@ -1467,8 +1472,8 @@ Scope:
   read/write/append/isset/empty/`??`/unset, compound-assignment, and
   integer/float by-value temporary increment/decrement slice plus the current
   direct object-property `ArrayAccess` single-key read/write/isset/empty/`??`/
-  unset slice, including by-reference `offsetGet()` mutation, nested chains,
-  append and object-property compound/increment paths, iteration, signature
+  unset/append slice, including by-reference `offsetGet()` mutation, nested
+  chains, object-property compound/increment paths, iteration, signature
   enforcement, string increment/decrement semantics, exact diagnostics,
   references/copy-on-write, and native lowering;
 - inheritance after the single-class model is stable.
@@ -1646,13 +1651,12 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1020 is the active checkpoint candidate: direct object-property
-  `ArrayAccess` dispatch now covers visible property-held `ArrayAccess`
-  objects for single-key read/write, `isset`, `empty`, `??`, and `unset`,
-  while nested chains, append offsets, compound assignment,
-  increment/decrement, magic-property containers, iteration, by-reference
-  `offsetGet()` mutation, protocol enforcement, exact diagnostics,
-  references/copy-on-write, and native lowering remain open.
+- Milestone 1021 is the active checkpoint candidate: direct object-property
+  `ArrayAccess` append now covers visible property-held `ArrayAccess` objects
+  through `offsetSet(null, $value)`, while nested chains, keyed compound
+  assignment, increment/decrement, magic-property containers, iteration,
+  by-reference `offsetGet()` mutation, protocol enforcement, exact
+  diagnostics, references/copy-on-write, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

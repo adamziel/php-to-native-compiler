@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `ea418ac5 runtime: add object property array access`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1021, bounded direct object-property
+  `ArrayAccess` append dispatch when a visible property value is itself an
+  `ArrayAccess` object.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1021/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test object_model object_property_array_access_append -- --test-threads=1`,
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1021`
+  passed.
+- Current WordPress frontier: direct visible property-held `ArrayAccess`
+  objects now support append writes through `offsetSet(null, $value)`.
+- Remaining semantic gaps: nested `ArrayAccess` chains, keyed compound
+  assignment, increment/decrement, magic-property-provided containers,
+  ArrayAccess iteration, by-reference `offsetGet()` mutation, protocol/
+  signature enforcement, exact diagnostics, references/copy-on-write, and
+  native lowering remain missing.
+- Next concrete task: run diff checks and the serialized checkpoint gate under
+  `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `01196b87 runtime: add core interface catalog`, pushed to `origin/master`.
 - Task attempted: Milestone 1020, bounded direct object-property
   `ArrayAccess` offset dispatch when a visible property value is itself an

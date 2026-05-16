@@ -9781,8 +9781,19 @@ handled.
   magic-property-provided containers, ArrayAccess iteration, by-reference
   `offsetGet()` mutation, protocol/signature enforcement, exact diagnostics,
   references/copy-on-write, or native lowering.
+- [x] Object semantics lane: add bounded direct object-property `ArrayAccess`
+  append dispatch for visible properties whose value is an `ArrayAccess`
+  object.
+  Milestone 1021 covers `$holder->bag[] = $value` by dispatching
+  `offsetSet(null, $value)` on the property-held object and preserving the
+  assignment expression result. This is not nested `ArrayAccess` chains,
+  keyed object-property `ArrayAccess` compound assignment,
+  increment/decrement, magic-property-provided containers, ArrayAccess
+  iteration, by-reference `offsetGet()` mutation, protocol/signature
+  enforcement, exact diagnostics, references/copy-on-write, or native
+  lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
-  audited PHP/WordPress surface, such as nested ArrayAccess chains, append/
+  audited PHP/WordPress surface, such as nested ArrayAccess chains, keyed
   compound/increment object-property ArrayAccess paths, ArrayAccess iteration,
   method enforcement for internal interfaces, `__clone` dispatch, destructors,
   or inaccessible-member magic fidelity, and add the next bounded behavior or
@@ -9799,8 +9810,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `01196b87 runtime: add core interface catalog`, covering Milestone 1019
-  before the current Milestone 1020 candidate.
+  `ea418ac5 runtime: add object property array access`, covering Milestone
+  1020 before the current Milestone 1021 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -3150,6 +3150,27 @@ impl Interpreter {
             slot = Value::Array(PhpArray::new());
         }
 
+        if let Value::Object(object) = slot {
+            if keys.is_empty()
+                && self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess")
+            {
+                self.call_array_access_method(
+                    object,
+                    "offsetSet",
+                    vec![Self::array_key_value(None), value],
+                    span,
+                )?;
+                return Ok(());
+            }
+
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot write offset on object".to_string()),
+            ));
+        }
+
         match &mut slot {
             Value::Array(array) => {
                 Self::append_nested_array_value(array, keys, value, span)?;

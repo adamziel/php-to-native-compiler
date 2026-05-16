@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 1021, bounded direct object-property `ArrayAccess` append
+  dispatch when the visible property value is itself an object whose metadata
+  records `implements ArrayAccess`. Direct `$holder->bag[] = $value` now
+  calls `offsetSet(null, $value)` on the property-held object and preserves
+  the assignment expression result. This is not nested `ArrayAccess` chains,
+  keyed object-property `ArrayAccess` compound assignment,
+  increment/decrement, magic-property-provided containers, ArrayAccess
+  iteration, by-reference `offsetGet()` mutation, protocol/signature
+  enforcement, exact diagnostics, references/copy-on-write, or native
+  lowering. Verification so far:
+  `cargo test -p phpc --test object_model object_property_array_access_append -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1021`.
+
 - Added Milestone 1020, bounded direct object-property `ArrayAccess` offset
   dispatch when the visible property value is itself an object whose metadata
   records `implements ArrayAccess`. Direct `$holder->bag[$key]` reads already
@@ -12,7 +26,7 @@ Implemented:
   `offsetExists($key)` and fetch through `offsetGet($key)` only when needed,
   direct `empty(...)` calls `offsetExists($key)` and then `offsetGet($key)`
   for present offsets, and direct `unset(...)` calls `offsetUnset($key)`. This
-  is not nested `ArrayAccess` chains, append offsets, compound assignment,
+  is not nested `ArrayAccess` chains, compound assignment,
   increment/decrement, magic-property-provided containers, ArrayAccess
   iteration, by-reference `offsetGet()` mutation, protocol/signature
   enforcement, exact diagnostics, references/copy-on-write, or native

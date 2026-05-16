@@ -1412,6 +1412,54 @@ echo isset($holder->bag["name"]) ? "isset" : "missing";
 }
 
 #[test]
+fn object_property_array_access_append_dispatches_to_offset_set_null() {
+    let source = r#"<?php
+class Bag implements ArrayAccess {
+    public $items = [];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        echo "get:$offset\n";
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:" . ($offset === null ? "null" : $offset) . ":$value\n";
+        if ($offset === null) {
+            $this->items[] = $value;
+        } else {
+            $this->items[$offset] = $value;
+        }
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->items[$offset]);
+    }
+}
+
+class Holder {
+    public $bag;
+}
+
+$holder = new Holder();
+$holder->bag = new Bag();
+$holder->bag[] = "tail";
+echo $holder->bag[0];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "set:null:tail\nget:0\ntail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php
