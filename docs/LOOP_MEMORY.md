@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `ebfeaad1 runtime: add mysqli sql mode assignment boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 999, stricter `mysqli_stmt_execute($stmt,
+  $params)` params-array validation requiring a PHP list array in the current
+  subset, with direct MySQLi and WordPress-shaped `wpdb` boundary fixtures.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone999/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone999`
+  passed. The new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: optional `mysqli_stmt_execute()` params arrays
+  are no longer treated as positional when they are named/string-keyed or
+  sparse integer-keyed arrays.
+- Remaining semantic gaps: named params-array support, broad mysqlnd
+  parameter binding, true by-reference aliasing, mutation SQL, host database
+  state, PHP warning/error fidelity, and native database lowering remain
+  missing.
+- Next concrete task: run focused MySQLi and fixture gates, then formatting,
+  diff checks, and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `b429ab75 runtime: add mysqli init command boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 998, bounded SQL-mode assignment no-result

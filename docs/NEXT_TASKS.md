@@ -9491,7 +9491,7 @@ handled.
   SQL-mode mutation, server session state, broad SQL parsing, mutation SQL
   support, host database state, PHP warning/error fidelity, mysqlnd behavior,
   or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, named params-array behavior,
   broader escaping charset fidelity, mutation SQL state, transaction state,
@@ -9499,12 +9499,27 @@ handled.
   add the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 999 tightens `mysqli_stmt_execute($stmt, $params)` params-array
+  validation to require a PHP list array in the current subset. Named/string
+  keyed arrays and sparse integer-keyed arrays now fail with a stable
+  unsupported diagnostic instead of being silently treated as positional
+  values, including direct MySQLi and WordPress-shaped `wpdb` boundary
+  fixtures. This is not named params-array support, broad mysqlnd parameter
+  binding, true by-reference aliasing, mutation SQL, host database state, PHP
+  warning/error fidelity, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, broader escaping charset fidelity,
+  mutation SQL state, transaction state, host-backed query execution, PDO
+  visibility, or the next real database integration gap, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b429ab75 runtime: add mysqli init command boundary`, covering Milestone
-  997 before the current Milestone 998 candidate.
+  `ebfeaad1 runtime: add mysqli sql mode assignment boundary`, covering
+  Milestone 998 before the current Milestone 999 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

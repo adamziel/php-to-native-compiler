@@ -1,0 +1,1 @@
+system PHP requires a real mysqli prepared statement and database state for mysqli_stmt_execute() params-array boundary comparison.

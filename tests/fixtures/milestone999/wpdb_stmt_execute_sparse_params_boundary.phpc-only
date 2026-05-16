@@ -1,0 +1,1 @@
+system PHP requires a real mysqli prepared statement and database state for WordPress-shaped mysqli_stmt_execute() sparse params-array boundary comparison.

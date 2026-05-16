@@ -14907,17 +14907,18 @@ fn mysqli_stmt_execute_params_from_value(value: &Value, span: Span) -> CompileRe
         ));
     };
 
+    if !array.is_list() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_stmt_execute()",
+                "params array must be a list in the current subset",
+            ),
+        ));
+    }
+
     let mut params = Vec::with_capacity(array.len());
     for entry in array.entries() {
-        if matches!(entry.key, ArrayKey::String(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_stmt_execute()",
-                    "params array must be positional in the current subset",
-                ),
-            ));
-        }
         validate_mysqli_stmt_parameter_value("mysqli_stmt_execute()", &entry.value, span)?;
         params.push(entry.value.clone());
     }

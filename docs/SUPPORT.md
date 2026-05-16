@@ -1021,10 +1021,12 @@
   aliasing, cross-scope reference cells, named-argument callback dispatch,
   mutation SQL, broad SQL execution, host database state, PHP warning/error
   fidelity, real mysqlnd blob behavior, or native statement lowering.
-  `mysqli_stmt_execute($statement, array(...))` also accepts positional
-  integer-keyed scalar/null parameter arrays for the exact known statement SQL
-  shapes, including through `call_user_func("mysqli_stmt_execute", $statement,
-  array(...))`. This is not named params arrays, broad mysqlnd parameter
+  `mysqli_stmt_execute($statement, array(...))` also accepts PHP list
+  scalar/null parameter arrays for the exact known statement SQL shapes,
+  including through `call_user_func("mysqli_stmt_execute", $statement,
+  array(...))`; named/string-keyed arrays and sparse integer-keyed arrays
+  fail with a stable unsupported diagnostic. This is not named params arrays,
+  broad mysqlnd parameter
   binding, mutation SQL, broad SQL execution, host database state, PHP
   warning/error fidelity, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable

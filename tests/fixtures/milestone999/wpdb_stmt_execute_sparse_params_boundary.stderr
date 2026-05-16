@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_execute(): params array must be a list in the current subset
+

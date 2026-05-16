@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 999, stricter `mysqli_stmt_execute($stmt, $params)` params
+  array validation. The runtime now requires the optional params argument to
+  be a PHP list array in the current subset, so named/string-keyed arrays and
+  sparse integer-keyed arrays fail with a stable unsupported diagnostic
+  instead of being silently treated as positional values. The new fixtures
+  include direct MySQLi and WordPress-shaped `wpdb` boundaries. This is not
+  named params-array support, full mysqlnd parameter binding, true
+  by-reference aliasing, mutation SQL, broad SQL execution, host database
+  state, PHP warning/error fidelity, or native database lowering. Verification
+  so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone999`.
+
 - Added Milestone 998, bounded SQL-mode assignment no-result placeholders for
   the WordPress `SET SESSION sql_mode='...'` shape. `mysqli_query()` now
   returns deterministic `true` for the strict quoted mode-list subset, while

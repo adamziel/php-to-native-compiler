@@ -758,7 +758,23 @@ mysqli_stmt_execute($stmt, array("id" => 1));
     assert_eq!(params_array_error.column, 1);
     assert_eq!(
         params_array_error.message,
-        "unsupported call mysqli_stmt_execute(): params array must be positional in the current subset"
+        "unsupported call mysqli_stmt_execute(): params array must be a list in the current subset"
+    );
+
+    let sparse_params_array_error = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_execute($stmt, array(1 => 1));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(sparse_params_array_error.phase, Phase::Runtime);
+    assert_eq!(sparse_params_array_error.line, 3);
+    assert_eq!(sparse_params_array_error.column, 1);
+    assert_eq!(
+        sparse_params_array_error.message,
+        "unsupported call mysqli_stmt_execute(): params array must be a list in the current subset"
     );
 }
 

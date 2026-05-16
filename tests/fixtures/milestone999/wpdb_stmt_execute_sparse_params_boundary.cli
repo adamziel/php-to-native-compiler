@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone999/wpdb_stmt_execute_sparse_params_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone999/wpdb_stmt_execute_sparse_params_boundary.php:12:16: unsupported call mysqli_stmt_execute(): params array must be a list in the current subset
+--- stderr end ---

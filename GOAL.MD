@@ -552,7 +552,11 @@ plus bounded positional params-array support for
 including direct MySQLi and WordPress-shaped `wpdb` smokes, without claiming
 named params arrays, true by-reference aliasing, mutation SQL, broad SQL
 execution, host database state, PHP warning/error fidelity, mysqlnd behavior,
-or native lowering,
+or native lowering, plus stricter params-array list validation for
+`mysqli_stmt_execute($stmt, $params)` so named/string-keyed arrays and sparse
+integer-keyed arrays fail explicitly instead of being treated as positional,
+without claiming named params-array support, broad mysqlnd parameter binding,
+true by-reference aliasing, host database state, or native lowering,
 plus deterministic `mysqli_stmt_send_long_data()` placeholder chunk state for
 active statements, including direct MySQLi and WordPress-shaped `wpdb` smokes,
 without claiming real blob binding, packet buffering, send timing, execution
