@@ -18,7 +18,9 @@ Implemented:
   `cargo test -p php_runtime array_slot_cells_clone_by_value_until_reference_cells_exist -- --test-threads=1`,
   `cargo test -p php_runtime -- --test-threads=1`,
   `cargo check -p php_runtime -p phpc`, `cargo fmt --check`, and
-  `git diff --check`.
+  `git diff --check`. The serialized checkpoint gate passed with 1269
+  fixture tests, 714 system PHP comparisons, and 555 skipped comparisons, then
+  committed `73168c23 runtime: add array slot cell boundary`.
 
 - Added Milestone 1059, a precise direct array-offset reference-source
   runtime boundary that now reaches array slot lookup before rejecting.

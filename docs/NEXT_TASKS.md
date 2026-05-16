@@ -10275,8 +10275,7 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `439b275b runtime: clarify array offset reference boundary`, covering
-  Milestone 1059.
+  `73168c23 runtime: add array slot cell boundary`, covering Milestone 1060.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

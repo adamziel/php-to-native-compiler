@@ -33,14 +33,17 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1060, private `ArraySlotCell` layer under
   `ArraySlot` while preserving clone-by-value behavior.
-- Files changed so far: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
+- Files changed: `runtime/src/lib.rs`, `docs/PROGRESS.md`,
   `docs/ARCHITECTURE.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p php_runtime array_slot_cells_clone_by_value_until_reference_cells_exist -- --test-threads=1`
   passed with 1 test. `cargo test -p php_runtime -- --test-threads=1` passed
   with 110 tests. `cargo check -p php_runtime -p phpc`,
-  `cargo fmt --check`, and `git diff --check` passed.
+  `cargo fmt --check`, and `git diff --check` passed. The serialized
+  checkpoint gate passed with 1269 fixture tests, 714 system PHP comparisons,
+  and 555 skipped comparisons, then committed
+  `73168c23 runtime: add array slot cell boundary`.
 - Current WordPress frontier: `ArraySlot` now has an internal cell object that
   can later become reference-aware while its current clone path still creates
   an independent cell/value for PHP array clone-by-value behavior.
