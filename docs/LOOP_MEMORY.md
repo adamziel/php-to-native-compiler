@@ -38,7 +38,17 @@ injects this file into every prompt. Each Codex pass should update it with:
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
   `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far: not yet run after implementation.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test mysqli_extension mysqli_query_records_current_wordpress_option_replace_state -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_queries_accept_current_sql_mode_assignment_no_result_placeholder -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1039`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1038`
+  passed. The full checkpoint gate initially found one expected unsupported
+  message assertion that needed `insert/replace/update/delete`; after updating
+  that assertion, the full checkpoint gate passed with 1254 fixture tests, 701
+  system PHP comparisons, and 553 skipped comparisons, then committed
+  `5d7c0e98 runtime: add wp options direct replace state`.
 - Current WordPress frontier: exact direct option insert, replace, upsert,
   update, delete, value-select, and option-row readback state is represented
   for single-quoted string values on a placeholder MySQLi handle.
@@ -46,8 +56,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   unique-index/delete-trigger/auto-increment fidelity, schema/index behavior,
   SQL-mode-aware escaping, character-set/collation fidelity, host database
   execution, PDO, references/copy-on-write, and native lowering remain missing.
-- Next concrete task: run formatting, diff checks, focused verification, then
-  the serialized checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint and continue with the next bounded
+  WordPress compatibility lane.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
