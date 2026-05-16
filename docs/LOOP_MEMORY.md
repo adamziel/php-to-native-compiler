@@ -26,6 +26,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T21:05:00Z
+
+- Checkpoint before this task:
+  `d2f216d9 runtime: extend compatibility roadmap batch`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1111-1115, four-lane implementation batch plus
+  queue refresh toward full PHP and WordPress compatibility.
+- Files changed so far: parser/runtime/codegen/CLI test-runner code, focused
+  tests and fixtures for readonly class diagnostics, non-public clone
+  array-offset reference-slot mirroring, native exit/die rejection, fixture
+  manifest reporting, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, and this memory file.
+- Tests run so far: each lane reported focused checks passing in its own
+  worktree and target directory; integration focused checks and the serialized
+  checkpoint gate are pending in the main workspace.
+- Remaining semantic gaps: full references/copy-on-write, real readonly and
+  typed property semantics, native object/termination/multifile execution,
+  native boxed runtime integration, standard-library/extensions,
+  database/PDO/MySQLi realism, filesystem/streams, request/SAPI/server state,
+  Composer/autoload/multifile behavior, WordPress entry flows, and
+  compatibility verification gates remain implementation work.
+- Next concrete task: run integrated focused checks, run the serialized full
+  checkpoint gate, commit, push, then start Milestones 1116-1119 from separate
+  worktrees.
+
 ## Loop Event 2026-05-16T20:05:00Z
 
 - Task attempted: Milestones 1106-1110, four-lane implementation batch plus

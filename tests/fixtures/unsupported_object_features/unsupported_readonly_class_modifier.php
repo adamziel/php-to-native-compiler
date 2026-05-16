@@ -1,2 +1,4 @@
 <?php
-readonly readonly class Value {}
+readonly class Value {
+    public $id;
+}

@@ -325,6 +325,7 @@ impl Parser {
         let mut is_final = false;
         let mut is_readonly = false;
         let mut modifier_span = None;
+        let mut readonly_span = None;
 
         loop {
             match self.peek().kind {
@@ -358,6 +359,7 @@ impl Parser {
                         ));
                     }
                     is_readonly = true;
+                    readonly_span = Some(self.peek().span);
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
@@ -370,6 +372,10 @@ impl Parser {
                 modifier_span.expect("abstract/final modifier should set span"),
                 "unsupported class modifier combination: abstract final classes are not implemented",
             ));
+        }
+
+        if let Some(readonly_span) = readonly_span {
+            return Err(self.error_at(readonly_span, unsupported_readonly_class_message()));
         }
 
         let class_span = self
@@ -5756,6 +5762,10 @@ fn unsupported_static_property_type_message() -> &'static str {
 
 fn unsupported_readonly_property_message() -> &'static str {
     "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
+}
+
+fn unsupported_readonly_class_message() -> &'static str {
+    "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented"
 }
 
 fn unsupported_dnf_type_message() -> &'static str {

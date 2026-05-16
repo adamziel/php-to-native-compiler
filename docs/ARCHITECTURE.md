@@ -151,7 +151,9 @@ preserves stdout accumulated so far and returns the current exit code for the
 top-level CLI result. The construct is intentionally absent from
 `function_exists()`/`is_callable()` lookup. Shutdown functions, destructors,
 finally-during-exit ordering, output buffers, SAPI interaction, and native
-termination lowering remain future runtime work.
+termination lowering remain future runtime work. Native `--emit-ir` and
+`--emit-asm` reject `exit()`/`die()` through a dedicated termination diagnostic
+instead of the generic function-call boundary.
 
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
@@ -186,8 +188,8 @@ Implemented now:
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
-  parsed abstract/final/readonly class modifiers plus abstract/final method
-  modifiers as metadata, with abstract class instantiation rejected at runtime,
+  parsed abstract/final class modifiers plus abstract/final method modifiers
+  as metadata, with abstract class instantiation rejected at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,

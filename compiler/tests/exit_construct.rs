@@ -1,8 +1,5 @@
-use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
-
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -91,19 +88,4 @@ exit(true);
         unsupported.message,
         "unsupported call exit(): argument must be null, int, or string in the current subset, got bool"
     );
-}
-
-#[test]
-fn emit_ir_rejects_exit_until_native_termination_lowering_exists() {
-    let error = emit_ir_source(
-        r#"<?php
-exit(1);
-"#,
-    )
-    .unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }

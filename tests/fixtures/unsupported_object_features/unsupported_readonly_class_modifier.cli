@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_readonly_class_modifier.php:2:10: duplicate readonly modifier in class declaration
+parse error at tests/fixtures/unsupported_object_features/unsupported_readonly_class_modifier.php:2:1: unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented
 --- stderr end ---

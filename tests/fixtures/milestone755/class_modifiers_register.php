@@ -9,7 +9,5 @@ final class Leaf extends Base {
     }
 }
 
-readonly class Marker {}
-
 $leaf = new Leaf();
 echo $leaf->compute();

@@ -25,6 +25,10 @@ comparison while remaining covered by committed `phpc` expectations.
 The comparison summary breaks skipped fixtures down by reason so CI logs show
 how many skips came from a missing `php` binary and how many came from
 `.phpc-only` markers.
+For fixture audits that should not execute code, use
+`cargo run -p phpc -- test --list-fixtures [fixture-dir]`; it prints a sorted
+manifest of fixtures, recognized expectation files, and PHP-comparison
+eligibility.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

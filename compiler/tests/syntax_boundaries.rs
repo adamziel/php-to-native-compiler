@@ -589,6 +589,54 @@ fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_readonly_class_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nreadonly class Value {\n    public $id;\n}\n",
+            2,
+            1,
+            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
+        ),
+        (
+            "<?php\nfinal readonly class Value {}\n",
+            2,
+            7,
+            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
+        ),
+        (
+            "<?php\nreadonly final class Value {}\n",
+            2,
+            1,
+            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
+        ),
+        (
+            "<?php\nreadonly readonly class Value {}\n",
+            2,
+            10,
+            "duplicate readonly modifier in class declaration",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_readonly_class_declarations_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\nfinal readonly class Value {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_readonly_property_declarations_have_stable_parse_errors() {
     let cases = [
         ("<?php\nclass Value {\n    public readonly $id;\n}\n", 3, 12),

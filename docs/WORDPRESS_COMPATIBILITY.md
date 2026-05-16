@@ -536,7 +536,7 @@ historical blockers and remaining full-support gaps include:
   enforcement, final inheritance/method enforcement, readonly class semantics,
   real PHP alias/reference semantics, copy-on-write, exact PHP diagnostics, or
   WordPress bootstrap support.
-  Milestone 755 parses `abstract`, `final`, and `readonly` class modifiers plus
+  Milestone 755 parses `abstract` and `final` class modifiers plus
   `abstract`/`final` method modifiers as metadata, and rejects abstract class
   instantiation as a runtime boundary. After that slice, the direct
   `wp-settings.php` probe still reports

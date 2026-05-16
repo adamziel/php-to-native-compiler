@@ -1,2 +1,2 @@
-parse error at 2:10: duplicate readonly modifier in class declaration
+parse error at 2:1: unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented
 

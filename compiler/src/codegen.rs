@@ -12,6 +12,8 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
+const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -583,6 +585,9 @@ impl LlvmGenerator {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION)),
+            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
+                Err(self.unsupported(*span, LLVM_TERMINATION_REJECTION))
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
@@ -3410,6 +3415,9 @@ impl CGenerator {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION)),
+            Expr::Call { name, span, .. } if is_exit_construct_name(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_TERMINATION_REJECTION))
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("defined") => {
                 self.emit_defined_call(args, *span)
             }
@@ -6256,6 +6264,10 @@ fn is_native_type_introspection_builtin(name: &str) -> bool {
             | "is_a"
             | "is_subclass_of"
     )
+}
+
+fn is_exit_construct_name(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "exit" | "die")
 }
 
 fn is_native_metadata_exists_builtin(name: &str) -> bool {

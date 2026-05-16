@@ -3431,6 +3431,65 @@ alias-shared|alias-shared|alias-shared"
 }
 
 #[test]
+fn clone_expression_mirrors_context_property_array_offset_reference_slots() {
+    let source = r#"<?php
+class Base {
+    protected $items = ["slot" => "base"];
+
+    public function readItem($key) {
+        return $this->items[$key];
+    }
+}
+
+class Box extends Base {
+    private $privateItems = ["slot" => "private"];
+    private $privateAppends = [];
+
+    public function exercisePrivate($key) {
+        $alias =& $this->privateItems[$key];
+        $copy = clone $this;
+        $copy->privateItems[$key] = "copy-private";
+        echo $alias, "|", $this->privateItems[$key], "|", $copy->privateItems[$key], "\n";
+        $alias = "alias-private";
+        echo $alias, "|", $this->privateItems[$key], "|", $copy->privateItems[$key], "\n";
+    }
+
+    public function exercisePrivateAppend() {
+        $alias =& $this->privateAppends[];
+        $copy = clone $this;
+        $copy->privateAppends[0] = "copy-append";
+        echo $alias, "|", $this->privateAppends[0], "|", $copy->privateAppends[0], "\n";
+    }
+
+    public function exerciseProtectedPeer($other, $key) {
+        $alias =& $other->items[$key];
+        $copy = clone $other;
+        $copy->items[$key] = "copy-protected";
+        echo $alias, "|", $other->readItem($key), "|", $copy->readItem($key), "\n";
+        $alias = "alias-protected";
+        echo $alias, "|", $other->readItem($key), "|", $copy->readItem($key);
+    }
+}
+
+$box = new Box();
+$box->exercisePrivate("slot");
+$box->exercisePrivateAppend();
+$box->exerciseProtectedPeer(new Box(), "slot");
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "copy-private|copy-private|copy-private\n\
+alias-private|alias-private|alias-private\n\
+copy-append|copy-append|copy-append\n\
+copy-protected|copy-protected|copy-protected\n\
+alias-protected|alias-protected|alias-protected"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 
@@ -5769,8 +5828,6 @@ final class Leaf extends Base {
         return "ok";
     }
 }
-
-readonly class Marker {}
 
 $leaf = new Leaf();
 echo $leaf->compute();

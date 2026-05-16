@@ -159,17 +159,18 @@
   property-root alias metadata before later copies. When a direct variable is
   assigned `clone $object` from another direct object variable, existing public
   object-property, public object-property array-offset, and context-aware
-  non-public object-property alias metadata is mirrored to the cloned variable
+  non-public object-property or object-property array-offset alias metadata is
+  mirrored to the cloned variable
   so writes through the original property, the clone property, or the alias
   observe the same bounded reference slot for the covered direct clone slice.
   Non-public clone mirroring is limited to aliases that were created through a
   valid method visibility context, such as private `$this->property` or
   protected same-class/child peer-object property sources. Arbitrary nested
-  copied reference slots, non-public property array-offset clone alias
-  mirroring, magic-property clone alias mirroring, reference array literals,
-  ArrayAccess reference containers, exact alias destruction ordering, full PHP
-  reference containers, copy-on-write containers, and native lowering remain
-  unsupported. Direct public
+  copied reference slots beyond the covered direct array-offset paths,
+  dynamic non-public clone mirroring, magic-property clone alias mirroring,
+  reference array literals, ArrayAccess reference containers, exact alias
+  destruction ordering, full PHP reference containers, copy-on-write
+  containers, and native lowering remain unsupported. Direct public
   object-property reference sources such as `$alias =& $object->property;`
   alias a direct variable target to the selected property on a direct object
   variable when that property is visible through the current
@@ -547,7 +548,7 @@
   lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
-  `readonly class Name { ... }`, and `class Child extends Parent { ... }` with
+  and `class Child extends Parent { ... }` with
   single-parent metadata, property names, class constant names, method names,
   visibility, static flags, and abstract/final method flags for the documented
   subset, including abstract method signatures, final methods, compatible
@@ -1960,11 +1961,12 @@
   static interface methods, trait members,
   trait use inside classes, backed enum declarations and enum members beyond
   bare cases,
-  `abstract`/`final`/`readonly` class
-  modifiers, `abstract`/`final`/`readonly` class member modifiers,
-  readonly property declarations before readonly metadata, initialization
-  rules, write-once enforcement, reflection behavior, and native lowering
-  exist,
+  unsupported class modifier combinations, readonly class declarations before
+  readonly class metadata, typed-property enforcement, initialization/write
+  rules, reflection behavior, and native lowering exist,
+  `abstract`/`final`/`readonly` class member modifiers, readonly property
+  declarations before readonly metadata, initialization rules, write-once
+  enforcement, reflection behavior, and native lowering exist,
   typed instance property declarations, typed static property declarations
   before typed metadata/uninitialized state/write enforcement exist, instance
   property default values, multiple property declarations, unsupported class
@@ -2055,6 +2057,10 @@
   `$result = include 'file.php';` through a dedicated codegen diagnostic that
   names include return values, `_once` de-duplication results, caller-scope
   side effects, and multi-file execution.
+- Native lowering rejects `exit()`/`die()` through a dedicated termination
+  diagnostic until generated code has termination control flow, exit
+  status/stdout handoff, shutdown functions, destructors/finally ordering,
+  output buffers, SAPI interaction, and exact native diagnostics.
 - Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
   with a stable parse diagnostic. The planned first executable slice treats
   `eval` as a language construct with one string-valued argument, parses that
@@ -4895,6 +4901,9 @@
   `php`, when available, and compares stdout, stderr, and exit code against
   `phpc run` behavior. If `php` is not installed, the comparison is skipped and
   committed fixture expectations still run.
+- `phpc test --list-fixtures [fixture-dir]` prints a sorted fixture manifest
+  with each fixture's recognized expectation files and PHP-comparison
+  eligibility. It does not parse, execute, or compare fixtures.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -4902,8 +4911,9 @@
 - A fixture can opt out of system PHP comparison with a sibling `.phpc-only`
   marker file when the committed `phpc` behavior intentionally differs from
   system PHP, such as stable project-specific runtime diagnostics. The
-  `phpc test --compare-php` CLI summary reports compared and skipped counts so
-  these opt-outs stay visible in fixture-runner output.
+  `phpc test --compare-php` CLI summary reports compared and skipped counts,
+  split by missing-system-`php` and `.phpc-only` reasons, so these opt-outs stay
+  visible in fixture-runner output.
 
 ## Unsupported
 

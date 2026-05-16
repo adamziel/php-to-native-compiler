@@ -988,7 +988,7 @@ impl SymbolTable {
                         property,
                         current_class_id,
                         protected_class_ids,
-                    } if object == source_object_name && alias.keys.is_empty() => Some((
+                    } if object == source_object_name => Some((
                         alias_name.clone(),
                         ArrayOffsetAlias {
                             root: ArrayOffsetAliasRoot::ContextObjectProperty {

@@ -106,7 +106,8 @@ by-reference `offsetGet()`/reference-container work, plus bounded magic
 `__get` reference sources for missing direct object properties when `__get()`
 returns a direct variable by reference, plus bounded clone reference-slot
 mirroring for direct-variable public and context-aware non-public property
-aliases.
+aliases, including covered non-public property array-offset aliases created
+inside valid method visibility contexts.
 The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
@@ -1345,8 +1346,9 @@ The repository already has a working Rust workspace with:
   static method reference-return assignment path for direct variable returns,
   plus a bounded `self::` static method reference-return assignment path for
   direct variable returns, plus
-  `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
-  modifiers as metadata, and `new self`/`new parent`/`new static` magic
+  `abstract`/`final` class modifiers and `abstract`/`final` method modifiers
+  as metadata, readonly class declarations as a parse boundary, and `new
+  self`/`new parent`/`new static` magic
   class-name instantiation in active class/method contexts, and bounded
   `strcasecmp()`, bounded no-argument `headers_sent()`, bounded `abs()`,
   bounded `header_remove()`, a `mysqli_connect` boundary, top-level `global`

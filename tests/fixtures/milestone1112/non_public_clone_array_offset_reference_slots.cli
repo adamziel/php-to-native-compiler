@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1112/non_public_clone_array_offset_reference_slots.php
+copy-private|copy-private|copy-private
+alias-private|alias-private|alias-private
+copy-append|copy-append|copy-append
+copy-protected|copy-protected|copy-protected
+alias-protected|alias-protected|alias-protected

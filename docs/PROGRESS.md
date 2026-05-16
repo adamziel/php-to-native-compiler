@@ -4,6 +4,86 @@
 
 Implemented:
 
+- Added Milestone 1115, a tests/docs lane queue refresh after the 1111-1114
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1111-1115
+  complete and opens Milestones 1116-1120, `docs/LANE_WORKERS.md` points the
+  next parser/runtime/IR/compiler-output/tests-docs lanes at that queue, and
+  support/architecture/operations docs now describe the readonly-class parse
+  boundary, non-public array-offset clone mirroring, native exit/die
+  rejection, and fixture manifest command. This does not change runtime
+  behavior, native lowering, fixture execution, or PHP/WordPress compatibility
+  claims beyond the implemented 1111-1114 slices. Full gate pending at the
+  1111-1115 checkpoint.
+
+- Added Milestone 1114, a deterministic compiler-output fixture-manifest
+  contract. `phpc test --list-fixtures [fixture-dir]` now prints sorted
+  fixture paths, recognized `.stdout`, `.stderr`, `.exit`, and `.phpc-only`
+  metadata, and PHP-comparison eligibility without parsing, executing, or
+  comparing fixtures. This improves fixture auditability without changing
+  runtime behavior, parser behavior, fixture execution semantics, system PHP
+  comparison normalization, native lowering, or PHP support claims.
+  Verification so far: `cargo test -p phpc --test fixture_manifest --
+  --test-threads=1`, `cargo test -p phpc --test php_comparison --
+  --test-threads=1`, direct `cargo run -q -p phpc -- test --list-fixtures
+  <temp-fixture-dir>`, `cargo fmt --check`, and scoped `git diff --check`
+  passed in the compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1113, a dedicated native termination boundary for
+  `exit()` and `die()` calls. `phpc compile --emit-ir` and `--emit-asm` now
+  reject those constructs before the generic function-call boundary with a
+  diagnostic naming termination control flow, exit status/stdout handoff,
+  shutdown functions, destructors/finally ordering, output buffers, SAPI
+  interaction, and exact native diagnostics. This does not implement native
+  termination control flow, shutdown functions, destructors, output buffers,
+  SAPI behavior, or native execution. Verification so far: direct `cargo run
+  -q -p phpc -- compile
+  tests/fixtures/milestone1113/native_exit_boundary.phpc-source --emit-ir`
+  returned exit `1` with the pinned diagnostic, `cargo test -p phpc --test
+  native_exit_boundary -- --test-threads=1`, `cargo test -p phpc --test
+  exit_construct -- --test-threads=1`, `cargo test -p phpc --test
+  native_function_call_boundary -- --test-threads=1`, `cargo fmt --check`,
+  and scoped `git diff --check` passed in the IR lane. Full gate deferred
+  until integration.
+
+- Added Milestone 1112, bounded clone/reference-slot mirroring for
+  context-aware non-public object-property array-offset aliases. Direct
+  `$copy = clone $object` assignments now mirror alias metadata for covered
+  non-public property array slots created inside valid method visibility
+  contexts, including private `$this->items[$key]`, private appended slots,
+  and protected peer-object slots. Public clone mirroring and prior
+  non-public offset/append reference-source behavior remain covered. This does
+  not implement dynamic non-public clone mirroring, magic-property clone
+  mirroring, non-direct object expressions, ArrayAccess reference containers,
+  full PHP reference containers, copy-on-write, exact alias destruction
+  ordering, or native lowering. Verification so far: `cargo test -p phpc
+  --test object_model
+  clone_expression_mirrors_context_property_array_offset_reference_slots --
+  --test-threads=1`, `cargo test -p phpc --test object_model
+  clone_expression_mirrors -- --test-threads=1`, focused reference-source
+  tests in `functions_and_scopes`, direct `phpc run` for
+  `tests/fixtures/milestone1112/non_public_clone_array_offset_reference_slots.php`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1112`, `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1112`, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the runtime lane. Full
+  gate deferred until integration.
+
+- Added Milestone 1111, a parser/syntax-boundary diagnostic for unsupported
+  readonly class declarations. `readonly class Value { ... }`, `final
+  readonly class Value {}`, and `readonly final class Value {}` now fail with
+  a stable parse diagnostic instead of registering class metadata. Duplicate
+  `readonly readonly class` declarations still report the existing duplicate
+  readonly modifier diagnostic. This does not implement readonly class
+  metadata, typed-property enforcement, initialization/write rules,
+  reflection behavior, exact PHP diagnostics, runtime semantics, or native
+  lowering. Verification so far: focused syntax-boundary tests for readonly
+  class diagnostics and emit-IR parse rejection, the unsupported object
+  feature CLI snapshot test, `cargo test -p phpc --test syntax_boundaries --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_object_features`, direct `phpc run` and
+  `phpc compile --emit-ir` checks for the readonly-class fixture, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the parser lane. Full
+  gate deferred until integration.
+
 - Added Milestone 1110, a tests/docs lane queue refresh after the 1106-1109
   implementation batch. `GOAL.MD` now names the latest bounded non-public
   object-property array-offset and append reference-source work in the
@@ -11,9 +91,10 @@ Implemented:
   complete and opens Milestones 1111-1115, and `docs/LANE_WORKERS.md` points
   the next parser/runtime/IR/compiler-output/tests-docs lanes at that queue.
   This does not change runtime behavior, native lowering, fixture behavior, or
-  PHP/WordPress compatibility claims. Verification so far: queue inspection,
-  progress-log inspection, and scoped `git diff --check` passed in the main
-  integration tree. Full gate pending at the 1106-1110 checkpoint.
+  PHP/WordPress compatibility claims. Verification: queue inspection,
+  progress-log inspection, scoped `git diff --check`, and the serialized full
+  gate passed before commit `d2f216d9 runtime: extend compatibility roadmap
+  batch`.
 
 - Added Milestone 1109, a deterministic compiler-output contract for
   `phpc test --compare-php` skip reporting. The fixture runner now tracks
@@ -6311,9 +6392,10 @@ Implemented:
   `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
 
 - Added Milestone 755, class and method modifier parsing for the current object
-  metadata subset. The parser now accepts `abstract`, `final`, and `readonly`
-  class modifiers and accepts `abstract`/`final` method modifiers, including
-  abstract method signatures ending in `;` and final methods with bodies.
+  metadata subset. The parser accepts `abstract` and `final` class modifiers
+  and accepts `abstract`/`final` method modifiers, including abstract method
+  signatures ending in `;` and final methods with bodies. Readonly class
+  declarations are now a stable parse boundary as of Milestone 1111.
   Abstract classes register into metadata but `new AbstractClass()` reports the
   stable runtime boundary `unsupported object instantiation for <class>:
   abstract classes are not instantiable in the current subset`. This is not

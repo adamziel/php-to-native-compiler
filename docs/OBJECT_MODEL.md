@@ -382,7 +382,8 @@ The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
 trait members, trait use inside classes, backed enum declarations, enum case
 objects, enum methods/constants/properties, enum interface implementation,
-abstract/final/readonly modifiers, constructor promotion, typed properties,
+abstract-method enforcement, final inheritance/method enforcement, readonly
+class and property semantics, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
 binding, magic methods beyond the current direct missing-property

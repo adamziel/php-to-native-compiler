@@ -17,9 +17,42 @@ pub struct TestSummary {
     pub failures: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifest {
+    pub entries: Vec<FixtureManifestEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestEntry {
+    pub path: String,
+    pub has_stdout: bool,
+    pub has_stderr: bool,
+    pub has_exit: bool,
+    pub phpc_only: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FixtureRunOptions {
     pub compare_php: bool,
+}
+
+pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
+    let mut files = Vec::new();
+    collect_php_files(root, &mut files)?;
+    files.sort();
+
+    let entries = files
+        .into_iter()
+        .map(|path| FixtureManifestEntry {
+            path: fixture_manifest_path(root, &path),
+            has_stdout: path.with_extension("stdout").exists(),
+            has_stderr: path.with_extension("stderr").exists(),
+            has_exit: path.with_extension("exit").exists(),
+            phpc_only: path.with_extension("phpc-only").exists(),
+        })
+        .collect();
+
+    Ok(FixtureManifest { entries })
 }
 
 pub fn run_fixture_dir(root: &Path) -> CompileResult<TestSummary> {
@@ -194,6 +227,18 @@ fn fixture_source_name(path: &Path) -> String {
         .unwrap_or(normalized)
         .to_string_lossy()
         .into_owned()
+}
+
+fn fixture_manifest_path(root: &Path, path: &Path) -> String {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    normalize_path_for_display(relative)
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn normalize_path_for_display(path: &Path) -> PathBuf {

@@ -6915,7 +6915,7 @@ handled.
   `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
 - [x] Parser/object lane: implement or explicitly bound class modifiers for
   the next real WordPress bootstrap-shim blocker at `<bootstrap-shim>:15:1`.
-  Milestone 755 parses `abstract`, `final`, and `readonly` class modifiers plus
+  Milestone 755 parses `abstract` and `final` class modifiers plus
   `abstract`/`final` method modifiers as metadata, rejects abstract class
   instantiation as a runtime boundary, and advances the real bootstrap-shim
   probe to
@@ -10901,36 +10901,80 @@ handled.
 
 ## Milestone 1111: Next Parser Boundary
 
-- [ ] Parser lane: choose one small unsupported syntax or parse-diagnostic
-  boundary from the refreshed gap map, with preference for a PHP/WordPress
-  surface that currently falls through to a broad or misleading diagnostic.
-  Add stable focused coverage, CLI fixture evidence where applicable, and
-  keep runtime/native support claims unchanged.
+- [x] Parser lane: add a stable parse diagnostic for unsupported readonly
+  class declarations. `readonly class Value { ... }`, `final readonly class
+  Value {}`, and `readonly final class Value {}` now fail before class metadata
+  registration with a diagnostic naming the missing readonly class metadata,
+  typed-property enforcement, initialization/write rules, reflection, and
+  native lowering. Duplicate `readonly readonly class` declarations still use
+  the existing duplicate-modifier diagnostic.
 
 ## Milestone 1112: Next Runtime Value/Object Slice
 
-- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
-  map, preferably a reference/COW, object-semantics, request-state, filesystem,
-  database, or WordPress-probe blocker already reached by fixtures or external
-  probes. Prove it with focused tests, CLI coverage, system PHP comparison
-  where applicable, and named unsupported edges.
+- [x] Runtime lane: add bounded clone/reference-slot mirroring for
+  context-aware non-public object-property array-offset aliases created inside
+  valid method visibility contexts. The covered slice includes private
+  `$this->items[$key]`, private appended slots, and protected peer-object
+  slots while preserving public clone mirroring and the non-public reference
+  source behavior from the prior lanes. Dynamic non-public clone mirroring,
+  magic-property clone mirroring, non-direct object expressions, ArrayAccess
+  reference containers, full PHP reference containers, copy-on-write, exact
+  alias destruction ordering, and native lowering remain unsupported.
 
 ## Milestone 1113: Next Native Boundary
+
+- [x] IR/lowering lane: add a dedicated native termination rejection for
+  `exit()` and `die()` calls. `phpc compile --emit-ir` and `--emit-asm` now
+  reject those constructs before generic function-call lowering with a
+  diagnostic naming termination control flow, exit status/stdout handoff,
+  shutdown functions, destructors/finally ordering, output buffers, SAPI
+  interaction, and exact native diagnostics.
+
+## Milestone 1114: Next Compiler-Output Contract
+
+- [x] Compiler-output lane: add `phpc test --list-fixtures [fixture-dir]`, a
+  deterministic audit-only fixture manifest. The command prints sorted fixture
+  paths, recognized expectation files, and PHP-comparison eligibility without
+  parsing, executing, or comparing fixtures.
+
+## Milestone 1115: Next Tests/Docs Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1111-1114 land, refresh the lane
+  queue, progress log, support docs, and compatibility-gap notes, then run the
+  serialized full gate before checkpointing.
+
+## Milestone 1116: Next Parser Boundary
+
+- [ ] Parser lane: choose the next small unsupported syntax or
+  parse-diagnostic boundary from the refreshed gap map, with preference for a
+  PHP/WordPress surface that still falls through to a broad or misleading
+  diagnostic. Add stable focused coverage, CLI fixture evidence where
+  applicable, and keep runtime/native support claims unchanged.
+
+## Milestone 1117: Next Runtime Value/Object Slice
+
+- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
+  map, preferably a remaining reference/COW, object-semantics, request-state,
+  filesystem, database, or WordPress-probe blocker already reached by fixtures
+  or external probes. Prove it with focused tests, CLI coverage, system PHP
+  comparison where applicable, and named unsupported edges.
+
+## Milestone 1118: Next Native Boundary
 
 - [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
   slice or reject it before misleading backend output.
 
-## Milestone 1114: Next Compiler-Output Contract
+## Milestone 1119: Next Compiler-Output Contract
 
 - [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
   compatibility-manifest, or backend artifact contract that improves
   auditability without broadening PHP support claims.
 
-## Milestone 1115: Next Tests/Docs Queue Refresh
+## Milestone 1120: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1111-1114 land, refresh the lane
+- [ ] Tests/docs lane: after Milestones 1116-1119 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
   serialized full gate before checkpointing.
 
