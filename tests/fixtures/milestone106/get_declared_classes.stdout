@@ -5,8 +5,10 @@ Array
     [2] => mysqli
     [3] => mysqli_result
     [4] => mysqli_stmt
-    [5] => Box
-    [6] => Profile
+    [5] => PDO
+    [6] => PDOStatement
+    [7] => Box
+    [8] => Profile
 )
-7|Exception|stdClass|mysqli
+9|Exception|stdClass|mysqli
 Exception|stdClass|mysqli

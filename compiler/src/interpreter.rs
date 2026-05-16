@@ -2221,6 +2221,15 @@ impl Interpreter {
                 .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&class_name)))?;
             (class.id(), class.name().to_string())
         };
+        if declared_class_name.eq_ignore_ascii_case("PDO") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "PDO connections, drivers, statements, and host database state are not implemented in the current subset",
+                ),
+            ));
+        }
         if self.abstract_classes.contains(&class_id) {
             return Err(runtime_error(
                 span,
@@ -14852,7 +14861,10 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 }
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "json" | "hash" | "pdo" | "pdo_mysql"
+    )
 }
 
 fn mysql_escape_string(value: &str) -> String {

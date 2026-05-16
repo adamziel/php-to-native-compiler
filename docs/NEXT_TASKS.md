@@ -9556,6 +9556,21 @@ handled.
   authentication, real database selection, init-command execution, server-state
   population, liveness proof, PHP warning/error fidelity, mysqlnd behavior, or
   native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi/PDO gap from the
+  audited PHP surface, such as PDO visibility, real reference aliasing around
+  bound parameters/results, broader escaping charset fidelity, mutation SQL
+  state, transaction state, host-backed query execution, or the next real
+  database integration gap, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
+  Milestone 1003 adds bounded PDO/pdo_mysql visibility with an explicit
+  connection boundary. The deterministic extension registry reports `pdo` and
+  `pdo_mysql`, the core class table seeds metadata-only `PDO` and
+  `PDOStatement`, and reached `new PDO(...)` attempts fail with a stable
+  unsupported diagnostic. This is not DSN parsing, host database connections,
+  authentication, PDO driver behavior, statement preparation/execution, result
+  fetching, transactions, attributes, error modes, `PDOException`, persistent
+  connections, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9567,8 +9582,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `985a586f runtime: add mysqli execute alias boundary`, covering Milestone
-  1001 before the current Milestone 1002 candidate.
+  `d80b619b runtime: add mysqli connect placeholder boundary`, covering
+  Milestone 1002 before the current Milestone 1003 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

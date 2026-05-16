@@ -29,6 +29,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `d80b619b runtime: add mysqli connect placeholder boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1003, bounded PDO/pdo_mysql visibility with
+  metadata-only `PDO`/`PDOStatement` core class seeds and explicit `new
+  PDO(...)` connection boundary diagnostics.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/pdo_extension.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/type_introspection_builtins.rs`,
+  `tests/fixtures/milestone1003/*`,
+  `tests/fixtures/milestone106/get_declared_classes.*`,
+  `tests/fixtures/milestone708/enum_metadata.*`,
+  `tests/fixtures/milestone734/wordpress_db_dropin_probe.phpc-only`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/pdo_mysql.md`,
+  `docs/NEXT_TASKS.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test pdo_extension -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_classes -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1003`,
+  `cargo run -p phpc -- test tests/fixtures/milestone106`,
+  `cargo run -p phpc -- test tests/fixtures/milestone708`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone734`
+  passed. The new PDO fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: PDO-dependent code can now observe deterministic
+  PDO/pdo_mysql metadata and fail at an explicit PDO connection boundary
+  rather than an undefined class/extension boundary.
+- Remaining semantic gaps: DSN parsing, host database connection,
+  authentication, PDO driver behavior, statement preparation/execution, result
+  fetching, transactions, attributes, error modes, `PDOException`, persistent
+  connections, PHP warning/error fidelity, and native database lowering remain
+  missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `985a586f runtime: add mysqli execute alias boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1002, bounded `mysqli_connect()` placeholder handle

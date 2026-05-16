@@ -1444,7 +1444,14 @@ historical blockers and remaining full-support gaps include:
   deterministic query boundaries, without claiming host socket connections,
   authentication, real database selection, init-command execution, server-state
   population, liveness proof, PHP warning/error fidelity, mysqlnd behavior, or
-  native database lowering. Milestone 911 adds deterministic
+  native database lowering. Milestone 1003 adds bounded PDO/pdo_mysql
+  visibility by reporting deterministic extension metadata, seeding
+  metadata-only `PDO` and `PDOStatement` core classes, and rejecting reached
+  `new PDO(...)` attempts with an explicit unsupported connection boundary,
+  without claiming DSN parsing, host database connections, authentication, PDO
+  driver behavior, statement preparation/execution, result fetching,
+  transactions, attributes, error modes, `PDOException`, persistent
+  connections, or native database lowering. Milestone 911 adds deterministic
   `mysqli_info()` clean statement-information metadata without real SQL
   statement-info tracking, mutation summaries, host database state,
   warning/error fidelity, or native database lowering. Milestone 912 wires

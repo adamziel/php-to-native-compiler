@@ -1,0 +1,1 @@
+Project-specific PDO visibility boundary: phpc exposes deterministic PDO/pdo_mysql metadata while system PHP depends on host-loaded extensions.

@@ -1345,10 +1345,11 @@
   native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
-  It returns `true` for `json` and `hash`, and `false` for other names,
-  including WordPress probe names such as `mbstring` and `sodium`, without
-  querying host PHP modules, `php.ini`, SAPI state, or dynamically loading
-  extensions; non-string names are rejected in the current subset.
+  It returns `true` for `json`, `hash`, `pdo`, and `pdo_mysql`, and `false`
+  for other names, including WordPress probe names such as `mbstring` and
+  `sodium`, without querying host PHP modules, `php.ini`, SAPI state, or
+  dynamically loading extensions; non-string names are rejected in the current
+  subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -1379,12 +1380,17 @@
   validating the supported object/string and class-name argument boundary,
   `get_parent_class` returns the immediate parent class name for supported
   object/declared-string inputs with parent metadata and false otherwise,
-  `get_declared_classes` returns a zero-indexed array of classes declared in
-  the current program followed by declared unit enums,
+  `get_declared_classes` returns a zero-indexed array containing metadata-only
+  core class seeds followed by classes declared in the current program and then
+  declared unit enums,
   `get_declared_interfaces` returns a zero-indexed array of interfaces
   declared in the current program in declaration order,
   `get_declared_traits` returns a zero-indexed array of traits declared in the
   current program in declaration order,
+  `PDO` and `PDOStatement` are metadata-only core class seeds. They are visible
+  through `class_exists()` and `get_declared_classes()`, but `new PDO(...)`
+  reports an explicit unsupported object-instantiation boundary because PDO
+  connections, drivers, statements, and host database state are not implemented.
   and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, modulo by zero, non-numeric string
@@ -1903,7 +1909,8 @@
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries beyond the current
-  metadata-only `Exception` and `stdClass` seeds for `get_declared_classes`,
+  metadata-only `Exception`, `stdClass`, `PDO`, and `PDOStatement` seeds for
+  `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
   declared/built-in/internal trait entries for `get_declared_traits`,
   anonymous classes, exact native class/interface/trait ordering, exact PHP
@@ -3703,8 +3710,9 @@
   `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns the immediate parent class name when
   one is recorded, otherwise false.
-  `get_declared_classes()` returns a zero-indexed array containing only the
-  current parsed program's declared class names in declaration order.
+  `get_declared_classes()` returns a zero-indexed array containing the current
+  metadata-only core class seeds followed by the parsed program's declared
+  class names in declaration order.
   `get_declared_interfaces()` returns a zero-indexed array containing only the
   current parsed program's declared interface names in declaration order.
   Built-in/internal interface entries are not represented.

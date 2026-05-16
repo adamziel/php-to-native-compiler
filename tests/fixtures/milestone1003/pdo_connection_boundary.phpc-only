@@ -1,0 +1,1 @@
+Project-specific PDO boundary: phpc exposes PDO metadata but does not create host database connections.

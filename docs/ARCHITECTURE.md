@@ -144,7 +144,8 @@ Implemented now:
   public instance properties including inherited public slots, inherited
   non-public instance slots with declaring-class ownership, single-parent
   metadata, execution-time registration for reached nested class declarations,
-  metadata-only core `Exception` and `stdClass` class seeds,
+  metadata-only core `Exception`, `stdClass`, `PDO`, and `PDOStatement` class
+  seeds,
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
@@ -1002,12 +1003,14 @@ deterministic compatibility registry rather than host php.ini. It is intended
 to make bootstrap decisions reproducible while leaving mutable INI state,
 `ini_get_all()`, SAPI policy, extension-owned option catalogs, and native
 runtime integration explicit future work.
-`mysqli_connect()` is a database-extension boundary, not database support. The
+`mysqli_connect()` is a placeholder-handle boundary, not database support. The
 runtime and native function tables expose the name so early application
-extension guards can move to the next compatibility blocker, but direct or
-dynamic connection attempts report a stable unsupported runtime diagnostic
-until mysqli/PDO host integration, connection handles, query/result behavior,
-errors, full escaping, charset state, and native database calls are designed.
+extension guards can move to the next compatibility blocker, and direct or
+dynamic connection attempts now return deterministic placeholder `mysqli`
+objects after validating the current scalar/null argument subset. Host socket
+connections, authentication, real database selection, query/result behavior,
+errors, full escaping, charset state, and native database calls are still
+future work.
 The current placeholder MySQLi slice also supports deterministic
 `mysqli_real_connect()`, `mysqli_get_server_info()`, `mysqli_query()` for the
 reached SQL-mode probe, `mysqli_select_db()`, and
@@ -1560,6 +1563,9 @@ Until that exists, `extension_loaded()` uses a bounded compiler/runtime
 compatibility registry. It is intentionally just enough for current WordPress
 bootstrap requirement checks and does not claim host extension support,
 extension functions/constants, extension versions, or dynamic loading.
-The current `mysqli_connect()` visibility is a narrower function-table boundary
-used to get past WordPress' early MySQL-extension guard; it does not mark the
-`mysqli` extension loaded and does not provide executable database behavior.
+The current `mysqli_connect()` path is a placeholder-handle boundary used to
+get past WordPress-shaped procedural connection code; it does not mark the
+`mysqli` extension loaded and does not provide executable host database
+behavior. PDO is currently a visibility boundary only: `pdo`/`pdo_mysql`
+extension names and `PDO`/`PDOStatement` class metadata are exposed, while
+`new PDO(...)` remains an explicit unsupported host-database boundary.

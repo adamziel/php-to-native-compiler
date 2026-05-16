@@ -603,6 +603,13 @@ WordPress-shaped `wpdb` smokes that feed the handle into deterministic query
 boundaries, without claiming host socket connections, authentication, real
 database selection, init-command execution, server-state population, liveness
 proof, PHP warning/error fidelity, mysqlnd behavior, or native lowering, plus
+bounded PDO/pdo_mysql visibility that reports deterministic extension metadata,
+seeds metadata-only `PDO` and `PDOStatement` core classes, and rejects reached
+`new PDO(...)` connection attempts with an explicit unsupported boundary,
+without claiming DSN parsing, host database connection, authentication, PDO
+driver behavior, statement preparation/execution, result fetching,
+transactions, attributes, error modes, `PDOException`, persistent connections,
+or native database lowering, plus
 deterministic `mysqli_info()` clean
 statement-information metadata, now wired through a synthetic
 WordPress-shaped `wpdb` query-info bookkeeping smoke, plus deterministic

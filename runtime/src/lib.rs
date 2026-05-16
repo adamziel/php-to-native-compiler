@@ -1823,6 +1823,12 @@ impl PhpClassTable {
             .declare_class("mysqli_stmt")
             .expect("core class table should contain mysqli_result before mysqli_stmt");
         classes
+            .declare_class("PDO")
+            .expect("core class table should contain mysqli_stmt before PDO");
+        classes
+            .declare_class("PDOStatement")
+            .expect("core class table should contain PDO before PDOStatement");
+        classes
     }
 
     pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
@@ -7121,6 +7127,20 @@ mod tests {
         assert!(mysqli_stmt.parent_id().is_none());
         assert!(mysqli_stmt.properties().is_empty());
         assert!(mysqli_stmt.methods().is_empty());
+
+        let pdo = classes.lookup_class("pdo").unwrap();
+        assert_eq!(pdo.name(), "PDO");
+        assert_eq!(pdo.id().index(), 5);
+        assert!(pdo.parent_id().is_none());
+        assert!(pdo.properties().is_empty());
+        assert!(pdo.methods().is_empty());
+
+        let pdo_statement = classes.lookup_class("pdostatement").unwrap();
+        assert_eq!(pdo_statement.name(), "PDOStatement");
+        assert_eq!(pdo_statement.id().index(), 6);
+        assert!(pdo_statement.parent_id().is_none());
+        assert!(pdo_statement.properties().is_empty());
+        assert!(pdo_statement.methods().is_empty());
     }
 
     #[test]

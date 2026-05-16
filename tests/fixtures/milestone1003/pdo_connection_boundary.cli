@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1003/pdo_connection_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1003/pdo_connection_boundary.php:2:1: unsupported object instantiation for PDO: PDO connections, drivers, statements, and host database state are not implemented in the current subset
+--- stderr end ---

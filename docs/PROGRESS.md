@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 1003, bounded PDO/pdo_mysql visibility with an explicit PDO
+  connection boundary. The deterministic extension registry now reports
+  `pdo` and `pdo_mysql` as present, the core class table seeds metadata-only
+  `PDO` and `PDOStatement` entries, and reached `new PDO(...)` attempts fail
+  with a stable unsupported object-instantiation diagnostic instead of
+  accidentally creating a non-functional object. The updated declared-class
+  snapshots now include those metadata-only seeds. This is not DSN parsing,
+  host database connection, authentication, PDO driver behavior, statement
+  preparation/execution, result fetching, transactions, attributes, error
+  modes, `PDOException`, persistent connections, or native database lowering.
+  Verification so far:
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test pdo_extension -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_classes -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1003`,
+  `cargo run -p phpc -- test tests/fixtures/milestone106`,
+  `cargo run -p phpc -- test tests/fixtures/milestone708`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone734`.
+
 - Added Milestone 1002, bounded `mysqli_connect()` placeholder handle
   construction. Direct and dynamic string-valued calls now accept zero to six
   current connection arguments, validate string/null host/user/password/database

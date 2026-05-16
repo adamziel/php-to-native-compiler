@@ -6143,7 +6143,10 @@ fn is_native_relationship_metadata_builtin(name: &str) -> bool {
 }
 
 fn is_builtin_class_name(name: &str) -> bool {
-    name.eq_ignore_ascii_case("Exception")
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "exception" | "pdo" | "pdostatement"
+    )
 }
 
 fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Option<bool> {
@@ -6524,7 +6527,10 @@ fn is_native_known_function_name(name: &str) -> bool {
 }
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "json" | "hash" | "pdo" | "pdo_mysql"
+    )
 }
 
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {

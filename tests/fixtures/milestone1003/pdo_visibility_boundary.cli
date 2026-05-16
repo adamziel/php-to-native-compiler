@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1003/pdo_visibility_boundary.php
+exit: 0
+stdout:
+pdo|pdo-mysql|class|statement
+--- stdout end ---
+stderr:
+--- stderr end ---

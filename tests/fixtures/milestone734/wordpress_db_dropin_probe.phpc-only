@@ -1,1 +1,1 @@
-Project-specific function-table policy: phpc does not expose host mysqli_connect(), while system PHP depends on host-loaded extensions.
+Project-specific function-table policy: phpc exposes deterministic placeholder mysqli_connect() metadata/handles, while system PHP depends on host-loaded extensions.
