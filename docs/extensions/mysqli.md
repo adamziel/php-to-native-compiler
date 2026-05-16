@@ -396,11 +396,17 @@ warning/error behavior, and escaping charset effects are not implemented.
 object and that exact SQL mode probe, returning `false` as a deterministic
 empty/no-result boundary. This lets WordPress skip SQL mode normalization
 without executing SQL or producing a result resource.
+`mysqli_query($handle, "SET SESSION sql_mode='...'")` also accepts the bounded
+WordPress SQL-mode assignment shape when the right-hand side is a single-quoted
+empty string or comma-separated uppercase/digit/underscore mode list, returning
+deterministic `true` without mutating server session state.
 
 `mysqli_real_query($handle, 'SET NAMES \'utf8mb4\' COLLATE
 \'utf8mb4_unicode_520_ci\'')` accepts the placeholder object and that exact
 WordPress charset setup statement, returning deterministic `true` without
-creating pending result state. `mysqli_real_query()` also accepts the exact
+creating pending result state. `mysqli_real_query()` also accepts the bounded
+`SET SESSION sql_mode='...'` assignment shape as a no-result placeholder,
+without recording real SQL-mode state. `mysqli_real_query()` also accepts the exact
 deterministic seed-post and empty-result SQL shapes already supported by
 `mysqli_query()`, queues one pending placeholder result on the connection, and
 returns `true`. `mysqli_field_count($handle)` reports the pending result field
@@ -423,10 +429,11 @@ multi-result queue when every statement is one of those exact known result
 placeholders; `mysqli_more_results()` reports queued future placeholders, and
 `mysqli_next_result()` advances after the current pending result is consumed.
 Known no-result charset setup statements and the exact
-`SELECT @@SESSION.sql_mode` probe can also appear before or after those exact
-result placeholders; they expose field count `0`, `mysqli_store_result() ===
-false`, and advance through `mysqli_next_result()`. `mysqli_real_query()` also
-accepts the exact SQL-mode probe as a no-result placeholder. Real SQL
+`SELECT @@SESSION.sql_mode` probe and bounded `SET SESSION sql_mode='...'`
+assignment shape can also appear before or after those exact result
+placeholders; they expose field count `0`, `mysqli_store_result() === false`,
+and advance through `mysqli_next_result()`. `mysqli_real_query()` also accepts
+the exact SQL-mode probe as a no-result placeholder. Real SQL
 execution, broad multi-statement parsing, mutation state, arbitrary no-result
 statements, warning/error behavior, host database state, mysqlnd fidelity, and
 native lowering are not implemented.

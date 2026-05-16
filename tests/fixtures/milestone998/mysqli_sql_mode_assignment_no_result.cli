@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone998/mysqli_sql_mode_assignment_no_result.php
+exit: 0
+stdout:
+query-ok|real-ok|0|no-result
+--- stdout end ---
+stderr:
+--- stderr end ---

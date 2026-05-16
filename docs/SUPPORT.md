@@ -1099,12 +1099,18 @@
   handle and that exact WordPress SQL mode probe, returning `false` as a
   deterministic empty/no-result boundary so WordPress skips SQL mode
   normalization without executing SQL. `mysqli_query(...)` also accepts the
+  bounded WordPress SQL-mode assignment shape
+  `SET SESSION sql_mode='...'` when the right-hand side is a single-quoted
+  empty string or comma-separated uppercase/digit/underscore mode list,
+  returning deterministic `true` without mutating real server session state.
+  `mysqli_query(...)` also accepts the
   reached WordPress charset setup query
   `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`, returning `true`
   as a deterministic successful no-result boundary without changing real
   connection charset state. `mysqli_real_query($handle, ...)` accepts that
-  same exact charset setup statement and returns deterministic `true` without
-  creating pending result state. It also accepts the exact deterministic
+  same exact charset setup statement and bounded SQL-mode assignment shape,
+  returning deterministic `true` without creating pending result state or
+  recording real SQL-mode state. It also accepts the exact deterministic
   seed-post and empty-result SQL shapes already supported by `mysqli_query()`,
   queues one pending placeholder result on the connection, and lets
   `mysqli_field_count($handle)` report the pending field count until
@@ -1125,8 +1131,9 @@
   known result placeholders; `mysqli_more_results($handle)` reports queued
   future placeholder results, and `mysqli_next_result($handle)` advances after
   the current pending result has been consumed. Known no-result charset setup
-  statements and the exact `SELECT @@SESSION.sql_mode` probe can also appear
-  before or after those exact result placeholders: they expose
+  statements, the exact `SELECT @@SESSION.sql_mode` probe, and the bounded
+  `SET SESSION sql_mode='...'` assignment shape can also appear before or
+  after those exact result placeholders: they expose
   `mysqli_field_count($handle) === 0`,
   `mysqli_store_result($handle) === false`, and advance through
   `mysqli_next_result($handle)`. `mysqli_real_query($handle,

@@ -9474,7 +9474,7 @@ handled.
   negotiation, server-side init-command execution, broad SQL execution,
   mutation state, connection charset mutation, host database state, PHP
   warning/error fidelity, mysqlnd behavior, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as additional exact
   no-result statements, real reference aliasing around bound
   parameters/results, named params-array behavior, broader escaping charset
@@ -9482,12 +9482,29 @@ handled.
   the next bounded behavior or explicit runtime boundary with tests, CLI
   fixtures, docs, and native rejection coverage where lowering remains
   unsupported.
+  Milestone 998 adds bounded SQL-mode assignment no-result placeholders for
+  the WordPress `SET SESSION sql_mode='...'` shape. `mysqli_query()` returns
+  deterministic `true` for a strict quoted mode-list subset, and
+  `mysqli_real_query()`/`mysqli_multi_query()` expose the same shape as a
+  no-result slot that can participate in deterministic queues, including a
+  WordPress-shaped `wpdb` smoke. This is not arbitrary `SET` execution, real
+  SQL-mode mutation, server session state, broad SQL parsing, mutation SQL
+  support, host database state, PHP warning/error fidelity, mysqlnd behavior,
+  or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, named params-array behavior,
+  broader escaping charset fidelity, mutation SQL state, transaction state,
+  host-backed query execution, or the next real database integration gap, and
+  add the next bounded behavior or explicit runtime boundary with tests, CLI
+  fixtures, docs, and native rejection coverage where lowering remains
+  unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `95adbc63 runtime: add mysqli local infile option boundary`, covering
-  Milestone 996 before the current Milestone 997 candidate.
+  `b429ab75 runtime: add mysqli init command boundary`, covering Milestone
+  997 before the current Milestone 998 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

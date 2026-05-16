@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone998/wpdb_sql_mode_assignment_no_result.php
+exit: 0
+stdout:
+Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 998, bounded SQL-mode assignment no-result placeholders for
+  the WordPress `SET SESSION sql_mode='...'` shape. `mysqli_query()` now
+  returns deterministic `true` for the strict quoted mode-list subset, while
+  `mysqli_real_query()` and `mysqli_multi_query()` expose the same shape as a
+  no-result slot that can participate in deterministic multi-result queues.
+  The new fixtures include direct MySQLi and WordPress-shaped `wpdb` smokes.
+  This is not arbitrary `SET` execution, real SQL-mode mutation, server
+  session state, broad SQL parsing, mutation SQL support, host database state,
+  PHP warning/error fidelity, mysqlnd behavior, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_queries_accept_current_sql_mode_assignment_no_result_placeholder -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone998`.
+
 - Added Milestone 997, bounded `MYSQLI_INIT_COMMAND` placeholder behavior on
   `mysqli_real_connect()`. Accepted `mysqli_options()`/`mysqli_set_opt()`
   init-command strings are now consulted at placeholder connect time: exact

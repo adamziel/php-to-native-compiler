@@ -249,7 +249,11 @@ bounded `MYSQLI_INIT_COMMAND` handling at `mysqli_real_connect()` for exact
 deterministic no-result init commands without real client option negotiation,
 server-side init-command execution, broad SQL execution, mutation state,
 connection charset mutation, host database state, mysqlnd fidelity, or native
-lowering, now wired through synthetic WordPress-shaped `wpdb` connection query
+lowering, plus bounded SQL-mode assignment no-result placeholders for the
+WordPress `SET SESSION sql_mode='...'` shape without arbitrary `SET`
+execution, real SQL-mode mutation, server session state, broad SQL parsing,
+host database state, mysqlnd fidelity, or native lowering, now wired through
+synthetic WordPress-shaped `wpdb` connection query
 bookkeeping smokes without claiming real SQL execution, broad multi-statement
 behavior, mutation state, connection charset mutation, host database state,
 warning/error fidelity, or native lowering, plus bounded deterministic

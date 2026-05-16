@@ -5464,7 +5464,8 @@ impl Interpreter {
             ));
         };
 
-        if is_wordpress_charset_setup_query(query) {
+        if is_wordpress_charset_setup_query(query) || is_wordpress_sql_mode_assignment_query(query)
+        {
             return Ok(Value::Bool(true));
         }
 
@@ -5543,7 +5544,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_query()",
                 format!(
-                    "only the WordPress SQL mode probe, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
+                    "only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got {query}"
                 ),
             ),
         ))
@@ -5631,7 +5632,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_real_query()",
                 format!(
-                    "only the WordPress charset setup query and deterministic pending result placeholders are implemented for mysqli_real_query() in the current subset; got {query}"
+                    "only the WordPress charset setup query, SQL-mode assignment, and deterministic pending result placeholders are implemented for mysqli_real_query() in the current subset; got {query}"
                 ),
             ),
         ))
@@ -5736,7 +5737,7 @@ impl Interpreter {
             RuntimeError::unsupported_call(
                 "mysqli_multi_query()",
                 format!(
-                    "only the WordPress charset setup query is implemented for mysqli_multi_query() in the current subset; got {query}"
+                    "only the WordPress charset setup query and SQL-mode assignment are implemented for mysqli_multi_query() in the current subset; got {query}"
                 ),
             ),
         ))
@@ -14968,8 +14969,30 @@ fn is_wordpress_charset_setup_query(query: &str) -> bool {
     query == "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'"
 }
 
+fn is_wordpress_sql_mode_assignment_query(query: &str) -> bool {
+    let Some(modes) = query.strip_prefix("SET SESSION sql_mode=") else {
+        return false;
+    };
+    let Some(modes) = modes
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))
+    else {
+        return false;
+    };
+
+    modes.is_empty()
+        || modes.split(',').all(|mode| {
+            !mode.is_empty()
+                && mode
+                    .chars()
+                    .all(|ch| ch == '_' || ch.is_ascii_uppercase() || ch.is_ascii_digit())
+        })
+}
+
 fn is_mysqli_no_result_placeholder_query(query: &str) -> bool {
-    is_wordpress_charset_setup_query(query) || query == "SELECT @@SESSION.sql_mode"
+    is_wordpress_charset_setup_query(query)
+        || is_wordpress_sql_mode_assignment_query(query)
+        || query == "SELECT @@SESSION.sql_mode"
 }
 
 fn is_mysqli_init_command_placeholder_query(query: &str) -> bool {

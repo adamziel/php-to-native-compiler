@@ -1837,7 +1837,13 @@ historical blockers and remaining full-support gaps include:
   smoke, without claiming real client option negotiation, server-side
   init-command execution, broad SQL execution, mutation state, connection
   charset mutation, host database state, PHP warning/error fidelity, mysqlnd
-  behavior, or native database lowering.
+  behavior, or native database lowering. Milestone 998 adds bounded SQL-mode
+  assignment no-result placeholders for the WordPress
+  `SET SESSION sql_mode='...'` shape, including a WordPress-shaped `wpdb`
+  smoke, without claiming arbitrary `SET` execution, real SQL-mode mutation,
+  server session state, broad SQL parsing, mutation SQL support, host database
+  state, PHP warning/error fidelity, mysqlnd behavior, or native database
+  lowering.
   Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

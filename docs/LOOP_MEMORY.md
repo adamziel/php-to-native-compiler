@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b429ab75 runtime: add mysqli init command boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 998, bounded SQL-mode assignment no-result
+  placeholders for the WordPress `SET SESSION sql_mode='...'` shape, with
+  direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone998/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_queries_accept_current_sql_mode_assignment_no_result_placeholder -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone998`
+  passed. The new fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: the placeholder database runtime can treat the
+  strict WordPress SQL-mode assignment shape as a no-result query slot for
+  direct `mysqli_query()`, `mysqli_real_query()`, and queued
+  `mysqli_multi_query()` paths.
+- Remaining semantic gaps: arbitrary `SET` execution, real SQL-mode mutation,
+  server session state, broad SQL parsing, mutation SQL support, host database
+  state, PHP warning/error fidelity, mysqlnd behavior, and native database
+  lowering remain missing.
+- Next concrete task: run focused MySQLi and fixture gates, then formatting,
+  diff checks, and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `95adbc63 runtime: add mysqli local infile option boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 997, bounded `MYSQLI_INIT_COMMAND` handling at

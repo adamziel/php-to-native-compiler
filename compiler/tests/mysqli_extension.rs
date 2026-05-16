@@ -3591,6 +3591,61 @@ echo $row["ID"], ":", $row["post_title"];
 }
 
 #[test]
+fn mysqli_queries_accept_current_sql_mode_assignment_no_result_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_query($handle, "SET SESSION sql_mode=''") ? "query-ok" : "query-failed";
+echo "|";
+echo mysqli_real_query($handle, "SET SESSION sql_mode='NO_ENGINE_SUBSTITUTION'") ? "real-ok" : "real-failed";
+echo "|";
+echo mysqli_field_count($handle);
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-result" : "result";
+
+$handle2 = mysqli_init();
+mysqli_real_connect($handle2, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_multi_query($handle2, "SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE'; SELECT ID, post_title FROM wp_posts WHERE ID = 1") ? "queued" : "failed";
+echo "|";
+echo mysqli_field_count($handle2);
+echo "|";
+echo mysqli_store_result($handle2) === false ? "no-result" : "result";
+echo "|";
+echo mysqli_next_result($handle2) ? "next" : "blocked";
+$result = mysqli_store_result($handle2);
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "query-ok|real-ok|0|no-result|queued|0|no-result|next|1:Hello world placeholder"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let unsupported = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_query($handle, "SET SESSION sql_mode='ansi'");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported.phase, Phase::Runtime);
+    assert_eq!(unsupported.line, 3);
+    assert_eq!(unsupported.column, 1);
+    assert_eq!(
+        unsupported.message,
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe, SQL-mode assignment, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got SET SESSION sql_mode='ansi'"
+    );
+}
+
+#[test]
 fn mysqli_reap_async_query_returns_current_clean_placeholder_state() {
     let execution = run_source(
         r#"<?php
