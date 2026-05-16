@@ -8859,17 +8859,29 @@ handled.
   statement object allocation, statement error-state tracking, statement
   error-message tracking, statement execution state, affected-row metadata,
   host database execution, warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add a synthetic `wpdb` prepared-statement
   metadata/error smoke that reaches the explicit statement errno/error or
   affected-row boundary through a WordPress-shaped method without claiming
   statement objects, statement error state, affected-row metadata, host
   database state, warning/error fidelity, or native lowering.
+  Milestone 950 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_errno()`, `mysqli_stmt_error()`, and
+  `mysqli_stmt_affected_rows()` unsupported diagnostics through
+  WordPress-shaped methods. These are not statement object allocation,
+  statement error-state tracking, statement error-message tracking, statement
+  execution state, affected-row metadata, host database state, warning/error
+  fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi statement result/cursor
+  boundary after statement metadata visibility, such as
+  `mysqli_stmt_store_result()`/`mysqli_stmt_num_rows()`/
+  `mysqli_stmt_fetch()` callable metadata and explicit unsupported
+  diagnostics, before claiming broader prepared statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5716ef8 tests: add wordpress wpdb stmt result close smokes`, covering
-  Milestone 948 before the current Milestone 949 candidate.
+  `4b55b14 runtime: add mysqli stmt metadata boundaries`, covering
+  Milestone 949 before the current Milestone 950 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

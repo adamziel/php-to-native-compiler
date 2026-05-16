@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 950, synthetic WordPress-shaped `wpdb` prepared-statement
+  metadata/error smokes that reach the explicit `mysqli_stmt_errno()`,
+  `mysqli_stmt_error()`, and `mysqli_stmt_affected_rows()` boundaries through
+  `wpdb`-style methods. These are harness smokes only; they do not add
+  statement object allocation, statement error-state tracking, statement
+  error-message tracking, statement execution state, affected-row metadata,
+  host database execution, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone950`.
+
 - Added Milestone 949, explicit MySQLi statement metadata/error boundaries
   for `mysqli_stmt_errno()`, `mysqli_stmt_error()`, and
   `mysqli_stmt_affected_rows()`. The runtime exposes the names through

@@ -1591,7 +1591,11 @@ historical blockers and remaining full-support gaps include:
   callable metadata and stable unsupported diagnostics, without statement
   object allocation, statement error-state tracking, statement error-message
   tracking, statement execution state, affected-row metadata, host database
-  execution, warning/error fidelity, or native database lowering.
+  execution, warning/error fidelity, or native database lowering. Milestone
+  950 wires those boundaries through synthetic WordPress-shaped `wpdb`
+  metadata/error methods without claiming statement objects, statement error
+  state, affected-row metadata, host database state, warning/error fidelity,
+  or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
