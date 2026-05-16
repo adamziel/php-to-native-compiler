@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 932, a synthetic WordPress-shaped `wpdb` host-link
+  bookkeeping smoke that calls bounded `mysqli_get_links_stats()`, records the
+  deterministic zeroed `total`, `active_plinks`, and `cached_plinks` metadata,
+  and verifies that the bookkeeping path ran. This is a harness smoke only; it
+  does not add real WordPress persistent-link tracking, sockets, host
+  client-library state, connection reuse state, PHP warning/error fidelity, or
+  native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone932`.
+
 - Added Milestone 931, bounded `mysqli_get_links_stats()` support for
   deterministic placeholder MySQLi host-link metadata. The runtime accepts the
   no-argument call, returns a zeroed `total`, `active_plinks`, and

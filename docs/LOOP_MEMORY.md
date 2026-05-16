@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `be0cb84 runtime: add mysqli links stats placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 932, a synthetic WordPress-shaped `wpdb`
+  host-link bookkeeping smoke over deterministic `mysqli_get_links_stats()`
+  placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone932/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone932`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped bookkeeping method now records
+  zeroed `mysqli_get_links_stats()` persistent-link metadata.
+- Remaining semantic gaps: real persistent-link tracking, sockets, host
+  client-library state, connection reuse state, warnings/errors, host database
+  state, and native database lowering remain missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, inspect the next MySQLi host
+  diagnostics boundary such as `mysqli_dump_debug_info()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `f93976d tests: add wordpress wpdb poll boundary smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 931, bounded deterministic

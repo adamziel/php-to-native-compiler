@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_links_stats()` host-link metadata through a WordPress-shaped `wpdb`
+bookkeeping method. System PHP reports host process mysqli link state; phpc
+returns zeroed local metadata without inspecting real persistent links, sockets,
+host client-library state, connection reuse state, or database connections.

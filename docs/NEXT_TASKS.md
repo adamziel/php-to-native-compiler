@@ -8667,16 +8667,25 @@ handled.
   runtime and native metadata lookup. This is not real persistent-link
   tracking, host client-library state, sockets, connection reuse state,
   warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_get_links_stats()` host-link metadata through a
   WordPress-shaped connection method without claiming real persistent-link,
   socket, host client-library, or connection reuse fidelity.
+  Milestone 932 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic zeroed `mysqli_get_links_stats()` host-link metadata through a
+  WordPress-shaped bookkeeping method. It is not real persistent-link
+  tracking, sockets, host client-library state, connection reuse state,
+  warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi host diagnostics boundary
+  after host-link stats, such as `mysqli_dump_debug_info()` or a sharper
+  unsupported diagnostic, before claiming broader mysqli debug or host-state
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f93976d tests: add wordpress wpdb poll boundary smoke`, covering
-  Milestone 930 before the current Milestone 931 candidate.
+  `be0cb84 runtime: add mysqli links stats placeholder`, covering
+  Milestone 931 before the current Milestone 932 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

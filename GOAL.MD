@@ -246,7 +246,10 @@ claiming real polling, by-reference result arrays, socket readiness, host query
 execution, warning/error fidelity, or native lowering, plus bounded
 deterministic `mysqli_get_links_stats()` host-link metadata without real
 persistent-link tracking, host client-library state, sockets, connection reuse
-state, warning/error fidelity, or native lowering, plus
+state, warning/error fidelity, or native lowering, now wired through a
+synthetic WordPress-shaped `wpdb` host-link bookkeeping smoke without claiming
+real persistent-link tracking, sockets, host client-library state, connection
+reuse state, warning/error fidelity, or native lowering, plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
