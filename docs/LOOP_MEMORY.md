@@ -29,6 +29,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `82d85c77 docs: record late static reference return gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1053, bounded direct-variable reference-return
+  assignment cells for dynamic static receiver method calls where the receiver
+  evaluates to an object or class string.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1053/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt` was run after `cargo fmt --check` reported wrapping drift.
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  passed with 12 tests.
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1053`
+  passed with 1 fixture and 1 system PHP comparison.
+- Current WordPress frontier: `$class::method()` and `$object::method()`
+  reference-return sources now have one executable alias-cell path when the
+  dynamic receiver resolves to a visible static method returning a direct
+  variable.
+- Remaining semantic gaps: normal reference-return invocation,
+  non-object/non-string dynamic receivers, non-static dynamic static receiver
+  sources, magic `__callStatic` reference-return method sources, non-direct
+  return expressions, nested-control-flow returns, array/object offset
+  references, by-reference `foreach`, full PHP reference containers,
+  copy-on-write, and native lowering remain missing.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, and the
+  serialized checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add dynamic static reference return cells"` if
+  the full gate passes.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `6921ce3f docs: record parent static reference return gate`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1052, bounded direct-variable reference-return

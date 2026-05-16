@@ -1077,6 +1077,35 @@ echo "childValue=", $value;
 }
 
 #[test]
+fn dynamic_static_receiver_reference_return_assignment_binds_returned_cell() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public static function &identity(&$value) {
+        return $value;
+    }
+}
+
+$class = "Box";
+$value = 1;
+$alias =& $class::identity($value);
+$alias = 2;
+echo "class=", $value, "|";
+
+$box = new Box();
+$value = 3;
+$alias =& $box::identity($value);
+$alias = 4;
+echo "object=", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "class=2|object=4");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_return_invocation_reports_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php

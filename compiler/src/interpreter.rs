@@ -2783,11 +2783,19 @@ impl Interpreter {
                 args,
                 span: call_span,
             } => self.call_reference_return_late_static_method(method, args, *call_span, scope),
+            Expr::ObjectStaticMethodCall {
+                target,
+                method,
+                args,
+                span: call_span,
+            } => self.call_reference_return_dynamic_static_method(
+                target, method, args, *call_span, scope,
+            ),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "reference assignment",
-                    "only direct function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, and static:: late-static method-call reference-return sources are implemented in the current subset",
+                    "only direct function-call, object method-call, named static method-call, self:: static method-call, parent:: static method-call, static:: late-static method-call, and dynamic static receiver method-call reference-return sources are implemented in the current subset",
                 ),
             )),
         }
@@ -11469,6 +11477,105 @@ impl Interpreter {
             None,
             Some(class_id),
             Some(called_class_id),
+            reference_bindings,
+        )
+    }
+
+    fn call_reference_return_dynamic_static_method(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let target_value = self.evaluate(target, caller_scope)?;
+        let receiver_class_id = match target_value {
+            Value::Object(object) => object.class_id(),
+            Value::String(class_name) => self
+                .classes
+                .lookup_class_id(&class_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&class_name)))?,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{method_name}()"),
+                        format!(
+                            "dynamic static method receiver must be object or class string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let receiver_class = self
+            .classes
+            .get(receiver_class_id)
+            .expect("receiver class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            visibility,
+            is_static,
+        )) = self.resolve_instance_method(receiver_class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+            ));
+        };
+
+        self.ensure_instance_method_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "non-static dynamic static receiver reference-return method sources are not implemented",
+                ),
+            ));
+        }
+
+        let function = self.method_function(
+            declaring_class_id,
+            &declaring_class_name,
+            &resolved_method_name,
+            span,
+        )?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "function does not return by reference",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+
+        self.call_reference_return_function_with_checked_values(
+            function,
+            values,
+            None,
+            Some(declaring_class_id),
+            Some(receiver_class_id),
             reference_bindings,
         )
     }

@@ -787,10 +787,11 @@ Reconciliation into concrete workstreams:
   method calls plus `self::` static method calls in active class/method
   context and `parent::` static method calls in active child class/method
   context, plus `static::` late-static method calls in active class/method
-  context, documented runtime boundaries, and focused reference fixtures.
+  context and dynamic static receiver method calls for object/class-string
+  receivers, documented runtime boundaries, and focused reference fixtures.
   Missing artifact: full runtime reference containers, array/object offset
-  aliases, dynamic/magic and broader by-reference returns, by-reference
-  `foreach`, and COW tests that compare against PHP.
+  aliases, magic and broader by-reference returns, by-reference `foreach`, and
+  COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,
   interface enforcement, enum cases, destructors, reflection, and exact

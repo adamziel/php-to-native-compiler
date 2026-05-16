@@ -42,14 +42,19 @@
   visible inherited static methods in that same direct-variable return shape.
   In an active class/method context, `static::method()` sources are executable
   for visible late-bound static methods in that same direct-variable return
+  shape. Dynamic static receiver sources such as `$class::method()` and
+  `$object::method()` are executable for object or class-string receivers when
+  they resolve to visible static methods in that same direct-variable return
   shape. In those shapes, the assigned alias binds to the returned variable
   cell and `unset($alias)` detaches only the alias name. Normal invocation such
   as `identity($value)`, `$object->identity($value)`,
   `Box::identity($value)`, `self::identity($value)`,
-  `parent::identity($value)`, or `static::identity($value)`, non-static
-  `self::`/`parent::`/`static::` sources, missing-parent parent calls,
-  `static::` sources outside class/method context, dynamic static receiver,
-  and magic `__callStatic`
+  `parent::identity($value)`, `static::identity($value)`,
+  `$class::identity($value)`, or `$object::identity($value)`, non-static
+  `self::`/`parent::`/`static::` sources, non-static dynamic static receiver
+  sources, missing-parent parent calls, `static::` sources outside
+  class/method context, non-object/non-string dynamic receivers, and magic
+  `__callStatic`
   reference-return method sources, non-direct return expressions,
   nested-control-flow returns, full PHP reference containers, copy-on-write,
   and native lowering remain unsupported.
@@ -80,11 +85,11 @@
   the existing object-handle value model. Direct free-function and direct
   object method-call sources, direct named static method-call sources, and
   `self::` static method-call sources, `parent::` static method-call sources,
-  and `static::` late-static method-call sources are executable only for the
-  bounded direct-variable reference-return shapes documented above.
-  Array-offset sources, direct array-offset targets for array values,
-  object-property array targets, by-reference `foreach`, broader reference
-  returns,
+  `static::` late-static method-call sources, and dynamic static receiver
+  method-call sources are executable only for the bounded direct-variable
+  reference-return shapes documented above. Array-offset sources, direct
+  array-offset targets for array values, object-property array targets,
+  by-reference `foreach`, broader reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names, PHP reference-container edge cases,
   copy-on-write, and native lowering remain unsupported and report stable

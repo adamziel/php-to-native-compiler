@@ -192,12 +192,14 @@ class/method context. `parent::` static method-call sources have the same path
 from active child class/method context when the resolved inherited method is
 static. `static::` late-static method-call sources have the same path from
 active class/method context when the called-class context resolves a visible
+static method. Dynamic static receiver method-call sources have the same path
+when the receiver evaluates to an object or class string and resolves a visible
 static method. Array-offset sources, direct array-offset targets for array
 values, object-property array targets, non-static
-`self::`/`parent::`/`static::` sources, dynamic/magic method reference sources,
-source/target rebinding beyond direct names, full PHP reference containers,
-by-reference `foreach`, mutation-ordering guarantees, and copy-on-write remain
-future runtime work.
+`self::`/`parent::`/`static::`/dynamic-static sources, magic method reference
+sources, source/target rebinding beyond direct names, full PHP reference
+containers, by-reference `foreach`, mutation-ordering guarantees, and
+copy-on-write remain future runtime work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

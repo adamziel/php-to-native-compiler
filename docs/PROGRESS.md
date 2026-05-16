@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 1053, bounded direct-variable reference-return cells for
+  statement-form reference assignment from dynamic static receiver method calls
+  where the receiver evaluates to an object or class string. In the current
+  subset, `$alias =& $class::identity($value);` and
+  `$alias =& $object::identity($value);` can bind `$alias` to the same caller
+  cell returned by the visible static
+  `public static function &identity(&$value) { return $value; }` when the
+  resolved receiver class has a static method, the return expression is a
+  direct variable, and the argument is a direct variable already covered by the
+  by-reference parameter path. Normal reference-return invocation still
+  reports the existing runtime boundary, and non-object/non-string dynamic
+  receivers, non-static dynamic static receiver sources, magic `__callStatic`,
+  non-direct return expressions, nested-control-flow returns, array/object
+  offset aliases, by-reference `foreach`, full PHP reference containers,
+  copy-on-write, and native lowering remain unsupported. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1053`.
+
 - Added Milestone 1052, bounded direct-variable reference-return cells for
   statement-form reference assignment from `static::` late-static method calls
   inside an active class/method context. In the current subset,

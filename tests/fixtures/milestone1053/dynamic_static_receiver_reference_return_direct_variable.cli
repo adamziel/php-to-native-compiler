@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1053/dynamic_static_receiver_reference_return_direct_variable.php
+exit: 0
+stdout:
+class=2|object=4
+--- stdout end ---
+stderr:
+--- stderr end ---
