@@ -7,6 +7,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
+const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 
 #[test]
 fn phpc_run_still_handles_current_object_class_subset() {
@@ -120,6 +121,37 @@ fn emit_ir_rejects_public_property_reads_and_writes_with_specific_boundary() {
 }
 
 #[test]
+fn emit_ir_rejects_object_array_access_offsets_with_specific_boundary() {
+    for source in [
+        "<?php\necho $holder->bag[\"name\"];\n",
+        "<?php\n$holder->bag[\"name\"] = \"Ada\";\n",
+        "<?php\n$holder->bag[] = \"Ada\";\n",
+        "<?php\necho isset($holder->bag[\"name\"]) ? 1 : 0;\n",
+        "<?php\necho empty($holder->bag[\"name\"]) ? 1 : 0;\n",
+        "<?php\nunset($holder->bag[\"name\"]);\n",
+        "<?php\n$holder->bag[\"name\"] += 1;\n",
+        "<?php\necho ($holder->bag[\"name\"] += 1);\n",
+        "<?php\n++$holder->bag[\"name\"];\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_ARRAY_ACCESS_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_keeps_direct_array_offsets_on_array_boundary() {
+    let error = emit_ir_source("<?php\necho $items[\"name\"];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(
+        error.message,
+        "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_instance_method_calls_with_specific_boundary() {
     let error = emit_ir_source("<?php\n$box->label();\n").unwrap_err();
 
@@ -203,6 +235,14 @@ fn emit_asm_rejects_instance_method_calls_before_backend_execution() {
 }
 
 #[test]
+fn emit_asm_rejects_object_array_access_offsets_before_backend_execution() {
+    let error = emit_asm_source("<?php\necho $holder->bag[\"name\"];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ARRAY_ACCESS_REJECTION);
+}
+
+#[test]
 fn native_object_class_emit_ir_cli_snapshot_matches_committed_output() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -227,6 +267,37 @@ fn native_object_class_emit_ir_cli_snapshot_matches_committed_output() {
         workspace_root.join("tests/fixtures/milestone173/native_object_class_boundary_emit_ir.cli"),
     )
     .expect("native object/class CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_array_access_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1104/native_array_access_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1104/native_array_access_boundary_emit_ir.cli"),
+    )
+    .expect("native ArrayAccess CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

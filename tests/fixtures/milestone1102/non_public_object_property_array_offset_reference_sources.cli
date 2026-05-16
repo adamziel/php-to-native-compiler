@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1102/non_public_object_property_array_offset_reference_sources.php
+private-alias|private-property|protected-alias|protected-property|peer-alias|peer-property|private-created|protected-created

@@ -10793,6 +10793,91 @@ handled.
   new backends, backend fallback recovery, parser/runtime behavior, or native
   lowering support.
 
+## Milestone 1102: Non-Public Property Array-Offset Reference Sources
+
+- [x] Runtime/value-model lane: add a bounded non-public
+  object-property array-offset reference-source slice for active method
+  visibility contexts. `$alias =& $this->privateItems[$key];`,
+  `$alias =& $this->protectedItems[$key];`, and protected peer-object sources
+  such as `$alias =& $other->items[$key];` parse and execute when the alias
+  target is a direct variable, the source object is a direct variable, the
+  property name is explicit, the offset path is explicit, and the selected
+  property is visible under the current public/private/protected method
+  context. Missing selected slots and `null` property roots materialize the
+  same way as the existing visible public-property route. This is not dynamic
+  non-public property source support, non-public append-source support,
+  non-public property array-offset clone alias mirroring, non-direct object
+  expressions, inaccessible private/protected property magic fallback from
+  outside context, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, or
+  native lowering.
+
+## Milestone 1103: DNF Type Declaration Boundary
+
+- [x] Parser/syntax-boundary lane: add a stable parse diagnostic for
+  unsupported parenthesized DNF-shaped type declarations such as `(A&B)|C` in
+  parameter, return, instance property, and static property declaration
+  positions. This is not DNF type metadata, runtime type enforcement,
+  coercion, variance, reflection, typed property storage, or native lowering.
+
+## Milestone 1104: Native ArrayAccess Boundary
+
+- [x] IR/lowering lane: add a dedicated native codegen rejection boundary for
+  property-held `ArrayAccess` object-offset read, write, `isset`, `empty`,
+  `unset`, and compound/increment paths in `phpc compile --emit-ir` and
+  `--emit-asm`. The diagnostic names missing native ArrayAccess dispatch
+  through `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset`, object
+  handles, references/copy-on-write, and exact PHP diagnostics. This does not
+  implement native ArrayAccess execution or infer direct `$bag[$key]` roots as
+  objects when the syntax is indistinguishable from ordinary arrays.
+
+## Milestone 1105: Compatibility Gap Map Refresh
+
+- [x] Tests/docs/roadmap lane: reconcile the remaining PHP and WordPress
+  compatibility work into `GOAL.MD` as an audit-friendly gap map. The map
+  covers full references/copy-on-write, object semantics, native lowering,
+  standard library/extensions, database/PDO/MySQLi realism,
+  filesystem/streams, request/SAPI/server state, Composer/autoload/multifile
+  behavior, WordPress entry flows, and verification gates. This is a roadmap
+  and documentation milestone only; it does not claim PHP or WordPress
+  compatibility and does not change implementation, fixtures, or support
+  status.
+
+## Milestone 1106: Next Parser Boundary
+
+- [ ] Parser lane: choose one small unsupported syntax or parse-diagnostic
+  boundary from the refreshed gap map, add stable focused coverage, CLI
+  fixture evidence where applicable, and keep runtime/native support claims
+  unchanged.
+
+## Milestone 1107: Next Runtime Value/Object Slice
+
+- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
+  map, preferably a reference/COW, object-semantics, or request-state blocker
+  already reached by fixtures or WordPress probes. Prove it with focused
+  tests, CLI coverage, system PHP comparison where applicable, and named
+  unsupported edges.
+
+## Milestone 1108: Next Native Boundary
+
+- [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
+  refinement from interpreter behavior that is already documented. `phpc
+  compile --emit-ir` and `--emit-asm` must either lower the exact supported
+  slice or reject it before misleading backend output.
+
+## Milestone 1109: Next Compiler-Output Contract
+
+- [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner, or
+  backend artifact contract that makes verification or native rejection easier
+  to audit without broadening PHP support claims.
+
+## Milestone 1110: Next Tests/Docs Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1106-1109 land, refresh
+  `GOAL.MD`, `docs/LANE_WORKERS.md`, `docs/NEXT_TASKS.md`,
+  `docs/PROGRESS.md`, and affected support docs so the next batch has one
+  active milestone per lane and a clear full-gate checkpoint point.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

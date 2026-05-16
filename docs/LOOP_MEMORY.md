@@ -26,6 +26,23 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T19:05:00Z
+
+- Task attempted: Milestone 1105, tests/docs roadmap reconciliation for the
+  remaining PHP and WordPress compatibility work.
+- Files changed so far: `GOAL.MD`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: documentation grep checks for the requested gap-map terms,
+  next-lane queue inspection, and scoped `git diff --check` passed.
+- Remaining semantic gaps: full references/copy-on-write, object semantics,
+  native runtime integration, standard library/extensions,
+  database/PDO/MySQLi realism, filesystem/streams, request/SAPI/server state,
+  Composer/autoload/multifile behavior, WordPress entry flows, and
+  compatibility verification gates remain implementation work.
+- Next concrete task: run the next implementation-lane batch from
+  Milestones 1106-1109, then run Milestone 1110 to refresh docs and run the
+  serialized full gate before checkpointing.
+
 ## Loop Event 2026-05-16T17:05:00Z
 
 - Checkpoint before this task:

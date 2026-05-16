@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt, UnaryOp};
+use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt, UnaryOp, UnsetTarget};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -36,6 +36,8 @@ const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespac
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
+const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
+const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
@@ -95,6 +97,43 @@ pub fn emit_assembly(program: &Program) -> CompileResult<String> {
         0,
         "no assembly backend found; install clang, llc, or cc",
     ))
+}
+
+fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
+    matches!(
+        target,
+        AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+    )
+}
+
+fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
+    matches!(target, UnsetTarget::ObjectPropertyArrayIndex { .. })
+}
+
+fn is_array_access_offset_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Index { target, .. } | Expr::AppendIndex { target, .. } => {
+            is_object_offset_expr(target)
+        }
+        _ => false,
+    }
+}
+
+fn is_object_offset_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Property { .. }
+            | Expr::DynamicProperty { .. }
+            | Expr::MethodCall { .. }
+            | Expr::New { .. }
+            | Expr::Clone { .. }
+            | Expr::ObjectStaticProperty { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,9 +426,12 @@ impl LlvmGenerator {
             Stmt::ReferenceAssign { span, .. } => {
                 Err(self.unsupported(*span, LLVM_REFERENCE_ASSIGNMENT_REJECTION))
             }
-            Stmt::CompoundAssign { span, .. }
-            | Stmt::IncrementDecrement { span, .. }
-            | Stmt::NullCoalesceAssign { span, .. } => {
+            Stmt::CompoundAssign { target, span, .. }
+            | Stmt::IncrementDecrement { target, span, .. }
+            | Stmt::NullCoalesceAssign { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::Expr { expr, .. } => {
@@ -433,7 +475,15 @@ impl LlvmGenerator {
             Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { span, .. } => Err(self.unsupported(*span, LLVM_MUTATION_REJECTION)),
+            Stmt::UnsetMany { targets, span } => {
+                if targets
+                    .iter()
+                    .any(is_object_property_array_access_unset_target)
+                {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
             Stmt::ConstDeclaration { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
@@ -493,8 +543,18 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Expr::Index { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Expr::AppendIndex { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
+            Expr::Index { target, span, .. } => {
+                if is_object_offset_expr(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
+            Expr::AppendIndex { target, span } => {
+                if is_object_offset_expr(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
@@ -597,10 +657,13 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
-            Expr::Assign { span, .. }
-            | Expr::CompoundAssign { span, .. }
-            | Expr::NullCoalesceAssign { span, .. }
-            | Expr::IncrementDecrement { span, .. } => {
+            Expr::Assign { target, span, .. }
+            | Expr::CompoundAssign { target, span, .. }
+            | Expr::NullCoalesceAssign { target, span, .. }
+            | Expr::IncrementDecrement { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Expr::Ternary {
@@ -647,6 +710,10 @@ impl LlvmGenerator {
             return Err(self.unsupported(span, LLVM_ISSET_REJECTION));
         };
 
+        if is_array_access_offset_expr(arg) {
+            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
+
         let Expr::Variable(name, _) = arg else {
             return Err(self.unsupported(arg.span(), LLVM_ISSET_REJECTION));
         };
@@ -661,6 +728,10 @@ impl LlvmGenerator {
         let [arg] = args else {
             return Err(self.unsupported(span, LLVM_EMPTY_REJECTION));
         };
+
+        if is_array_access_offset_expr(arg) {
+            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
 
         let Expr::Variable(name, _) = arg else {
             return Err(self.unsupported(arg.span(), LLVM_EMPTY_REJECTION));
@@ -960,10 +1031,11 @@ impl LlvmGenerator {
             | AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. }
-            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. } => {
+                Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION))
+            }
+            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
@@ -3177,9 +3249,12 @@ impl CGenerator {
             Stmt::ReferenceAssign { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION))
             }
-            Stmt::CompoundAssign { span, .. }
-            | Stmt::IncrementDecrement { span, .. }
-            | Stmt::NullCoalesceAssign { span, .. } => {
+            Stmt::CompoundAssign { target, span, .. }
+            | Stmt::IncrementDecrement { target, span, .. }
+            | Stmt::NullCoalesceAssign { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Stmt::Expr { expr, .. } => {
@@ -3227,7 +3302,13 @@ impl CGenerator {
             Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { span, .. } => {
+            Stmt::UnsetMany { targets, span } => {
+                if targets
+                    .iter()
+                    .any(is_object_property_array_access_unset_target)
+                {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Stmt::ConstDeclaration { span, .. } => {
@@ -3289,8 +3370,16 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
-            Expr::Index { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
-            Expr::AppendIndex { span, .. } => {
+            Expr::Index { target, span, .. } => {
+                if is_object_offset_expr(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            Expr::AppendIndex { target, span } => {
+                if is_object_offset_expr(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
@@ -3397,10 +3486,13 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION)),
-            Expr::Assign { span, .. }
-            | Expr::CompoundAssign { span, .. }
-            | Expr::NullCoalesceAssign { span, .. }
-            | Expr::IncrementDecrement { span, .. } => {
+            Expr::Assign { target, span, .. }
+            | Expr::CompoundAssign { target, span, .. }
+            | Expr::NullCoalesceAssign { target, span, .. }
+            | Expr::IncrementDecrement { target, span, .. } => {
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Expr::Ternary {
@@ -3447,6 +3539,10 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_ISSET_REJECTION));
         };
 
+        if is_array_access_offset_expr(arg) {
+            return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
+
         let Expr::Variable(name, _) = arg else {
             return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
         };
@@ -3461,6 +3557,10 @@ impl CGenerator {
         let [arg] = args else {
             return Err(self.unsupported(span, ASSEMBLY_EMPTY_REJECTION));
         };
+
+        if is_array_access_offset_expr(arg) {
+            return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
 
         let Expr::Variable(name, _) = arg else {
             return Err(self.unsupported(arg.span(), ASSEMBLY_EMPTY_REJECTION));
@@ -3760,10 +3860,11 @@ impl CGenerator {
             | AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::Property { span, .. }
-            | AssignTarget::ObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::DynamicProperty { span, .. } => {
+            AssignTarget::ObjectPropertyArrayIndex { span, .. }
+            | AssignTarget::ObjectPropertyArrayAppend { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION))
+            }
+            AssignTarget::Property { span, .. } | AssignTarget::DynamicProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }

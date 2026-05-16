@@ -1,0 +1,3 @@
+<?php
+$holder->bag["name"] = "Ada";
+echo $holder->bag["name"];

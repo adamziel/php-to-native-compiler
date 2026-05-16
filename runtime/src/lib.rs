@@ -2572,6 +2572,19 @@ impl PhpObject {
         Ok(property.value.clone())
     }
 
+    pub fn property_visibility_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<Visibility> {
+        let properties = self.properties.borrow();
+        let property =
+            self.context_property(&properties, name, current_class_id, protected_class_ids)?;
+
+        Ok(property.visibility)
+    }
+
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
         let Some(property) = self.public_property_or_none(&properties, name)? else {

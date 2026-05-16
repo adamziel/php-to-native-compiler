@@ -539,6 +539,56 @@ fn emit_ir_rejects_promoted_property_parameters_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_dnf_type_declarations_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
+            2,
+            18,
+        ),
+        (
+            "<?php\nfunction returns(): (Iterator&Countable)|ArrayAccess { return null; }\n",
+            2,
+            21,
+        ),
+        (
+            "<?php\nclass Box {\n    public (Iterator&Countable)|ArrayAccess $value;\n}\n",
+            3,
+            12,
+        ),
+        (
+            "<?php\nclass Box {\n    public static (Iterator&Countable)|ArrayAccess $value;\n}\n",
+            3,
+            19,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
+    );
+}
+
+#[test]
 fn malformed_clone_expression_has_stable_parse_errors() {
     let cases = [
         (

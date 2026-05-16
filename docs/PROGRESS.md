@@ -4,6 +4,104 @@
 
 Implemented:
 
+- Added Milestone 1105, a tests/docs roadmap reconciliation pass for the
+  remaining PHP and WordPress compatibility work. `GOAL.MD` now has an
+  audit-friendly gap map covering full references/copy-on-write, object
+  semantics, native lowering, standard library/extensions,
+  database/PDO/MySQLi realism, filesystem/streams, request/SAPI/server state,
+  Composer/autoload/multifile behavior, WordPress entry flows, and
+  verification gates. `docs/NEXT_TASKS.md` and `docs/LANE_WORKERS.md` now
+  point the next lane batch at Milestones 1106-1110. This does not change
+  implementation code, fixtures, runtime behavior, native lowering, support
+  status, or WordPress compatibility claims. Verification so far:
+  documentation grep checks for the requested gap-map terms, inspection of
+  the refreshed next-lane queue, and scoped `git diff --check` passed in the
+  tests/docs lane. Full gate deferred because this milestone is docs-only and
+  the next checkpoint batch should run `tools/run-tests.sh`.
+
+- Added Milestone 1103, a parser/syntax-boundary diagnostic for unsupported
+  parenthesized DNF-shaped PHP type declarations. Parameter, return, instance
+  property, and static property declaration forms such as `(A&B)|C` now fail
+  with a stable parse diagnostic instead of falling through to generic
+  parameter/property type errors or malformed parameter parsing. This does not
+  implement DNF type metadata, type enforcement, coercion, `TypeError`
+  behavior, variance, reflection, typed property storage, exact PHP
+  diagnostics, or native lowering. Verification so far: `cargo test -p phpc
+  --test syntax_boundaries unsupported_dnf_type_declarations_have_stable_parse_errors
+  -- --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_dnf_type_declarations_at_parse_boundary --
+  --test-threads=1`, `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --test-threads=1`, `cargo run -q -p
+  phpc -- test tests/fixtures/unsupported_syntax_features`, `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`,
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_dnf_type_declaration.php`
+  and `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_dnf_type_declaration.php
+  --emit-ir` both returned exit `1` with the pinned parse diagnostic, `cargo
+  test -p phpc --test syntax_boundaries -- --test-threads=1`, and `cargo fmt
+  --check` passed in the parser lane using
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-1103`; scoped `git diff
+  --check -- README.md compiler/src/parser.rs
+  compiler/tests/syntax_boundaries.rs docs/ARCHITECTURE.md docs/NEXT_TASKS.md
+  docs/PROGRESS.md docs/SUPPORT.md
+  tests/fixtures/unsupported_syntax_features/unsupported_dnf_type_declaration.*`
+  also passed. Full gate deferred until integration.
+
+- Added Milestone 1104, a dedicated native `ArrayAccess` lowering rejection
+  boundary for property-held object-offset paths. `phpc compile --emit-ir` and
+  `--emit-asm` now reject object-property `ArrayAccess` read, write, append,
+  `isset`, `empty`, `unset`, compound-assignment, and increment/decrement
+  shapes with a diagnostic that names the missing native `offsetGet`,
+  `offsetSet`, `offsetExists`, and `offsetUnset` dispatch, object handles,
+  references/copy-on-write, and exact PHP diagnostics. Direct `$bag[$key]`
+  remains on the generic array boundary unless future analysis can prove the
+  root is an `ArrayAccess` object. This does not implement native ArrayAccess
+  execution, object handles, native method dispatch, references/COW, or exact
+  PHP diagnostic fidelity. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary
+  emit_ir_rejects_object_array_access_offsets_with_specific_boundary --
+  --test-threads=1`, `cargo test -p phpc --test
+  native_object_class_boundary -- --test-threads=1`, direct `cargo run -q -p
+  phpc -- compile
+  tests/fixtures/milestone1104/native_array_access_boundary.phpc-source --emit-ir`
+  returned exit `1` with the pinned ArrayAccess diagnostic, `cargo fmt
+  --check`, and scoped `git diff --check` passed in the IR lane. Full gate
+  deferred until integration.
+
+- Added Milestone 1102, a bounded non-public object-property array-offset
+  reference-source slice for active method visibility contexts. Direct-variable
+  aliases can now bind to explicit offset paths under visible named
+  non-public properties, covering `$alias =& $this->privateItems[$key];`,
+  `$alias =& $this->protectedItems[$key];`, and protected peer-object forms
+  such as `$alias =& $other->items[$key];`. The implementation reuses the
+  context-aware object-property alias root, so missing selected slots and
+  `null` property roots materialize consistently with the existing visible
+  public-property array-offset route. This does not implement dynamic
+  non-public property sources, non-public append-source paths, non-public
+  property array-offset clone alias mirroring, non-direct object expressions,
+  inaccessible private/protected magic fallback from outside context,
+  ArrayAccess reference sources, full PHP reference containers, copy-on-write,
+  exact alias destruction ordering, or native lowering. Verification so far:
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public_object_property_array_offset_source_aliases_inside_method_context
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_protected_peer_object_property_array_offset_source_aliases_inside_child_context
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public_object_property_array_offset_source_materializes_null_property
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public_object_property_array_offset_source_outside_context_remains_boundary
+  -- --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment -- --test-threads=1`, `cargo test -p phpc --test
+  object_model same_class_non_public_instance_properties -- --test-threads=1`,
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1102/non_public_object_property_array_offset_reference_sources.php`
+  printed the expected alias output, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1102`, `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1102`, and `cargo fmt --check` passed
+  in the runtime lane. Scoped `git diff --check` passed for the changed files.
+  Full gate deferred until integration.
+
 - Added Milestone 1101, deterministic compiler-output/CLI coverage for compile
   mode validation precedence. `phpc compile` now rejects unsupported emit modes
   such as `--emit-object` before reading or parsing the input file, so usage

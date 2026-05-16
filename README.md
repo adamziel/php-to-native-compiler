@@ -50,11 +50,12 @@ variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
 selected folds, and a documented set of native builtin folds.
 
 Anything outside that lowerable subset is rejected before misleading IR is
-emitted. Arrays, objects, clone expressions, functions, general control flow,
-references, copy-on-write, and broad PHP coercions remain interpreter-only or
-unsupported for native lowering. The compile mode flag is validated before the
-input file is read, so invalid modes such as `--emit-object` report a stable
-CLI usage error instead of an unrelated file, parse, or codegen diagnostic.
+emitted. Arrays, objects, ArrayAccess object-offset dispatch, clone expressions,
+functions, general control flow, references, copy-on-write, and broad PHP
+coercions remain interpreter-only or unsupported for native lowering. The
+compile mode flag is validated before the input file is read, so invalid modes
+such as `--emit-object` report a stable CLI usage error instead of an unrelated
+file, parse, or codegen diagnostic.
 
 ### `phpc compile --emit-asm`
 
@@ -104,7 +105,8 @@ incorrect native code.
   inert no-capture anonymous and arrow closure values,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
-  type enforcement
+  type enforcement, while parenthesized DNF-shaped type declarations remain a
+  parse boundary
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
@@ -188,7 +190,10 @@ incorrect native code.
   `clone $object` for current object values without declared `__clone`
   methods, using fresh object handles, shallow-copied property slots, and
   bounded public-property plus context-aware non-public property reference-slot
-  mirroring for direct-variable clone assignments,
+  mirroring for direct-variable clone assignments, plus bounded direct
+  object-property array-offset reference sources for named visible public,
+  private `$this`, protected `$this`, and protected peer-object properties in
+  valid method contexts,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata, declared empty-trait metadata,
@@ -232,8 +237,9 @@ properties, heredoc/nowdoc,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
-property defaults beyond the current untyped constant-expression instance
-property slice, promoted constructor properties,
+DNF-shaped typed property declarations plus property defaults beyond the
+current untyped constant-expression instance property slice, promoted
+constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 nullsafe object access `?->`,
@@ -283,7 +289,8 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, array destructuring, objects, clone expressions, user functions,
+Native lowering rejects arrays, array destructuring, objects, ArrayAccess
+object-offset dispatch, clone expressions, user functions,
 closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, dynamic calls, `assert()`,

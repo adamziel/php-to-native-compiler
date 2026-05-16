@@ -267,6 +267,9 @@ impl Parser {
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             text.push('?');
         }
+        if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+            return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
+        }
         self.parse_type_name(&mut text, message)?;
 
         loop {
@@ -281,6 +284,9 @@ impl Parser {
             };
             self.advance();
             text.push(separator);
+            if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
+            }
             self.parse_type_name(&mut text, message)?;
         }
 
@@ -653,6 +659,12 @@ impl Parser {
                     self.peek().span,
                     unsupported_class_member_modifier_message(),
                 ));
+            }
+            if matches!(self.peek().kind, TokenKind::LParen)
+                || (matches!(self.peek().kind, TokenKind::Question)
+                    && matches!(self.peek_next().kind, TokenKind::LParen))
+            {
+                return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
             }
             let message = if modifiers.is_static {
                 unsupported_static_property_type_message()
@@ -5703,6 +5715,7 @@ fn is_parameter_type_start(kind: &TokenKind) -> bool {
         kind,
         TokenKind::Identifier(_)
             | TokenKind::Question
+            | TokenKind::LParen
             | TokenKind::Backslash
             | TokenKind::Static
             | TokenKind::Null
@@ -5736,6 +5749,10 @@ fn unsupported_property_type_message() -> &'static str {
 
 fn unsupported_static_property_type_message() -> &'static str {
     "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented"
+}
+
+fn unsupported_dnf_type_message() -> &'static str {
+    "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
 }
 
 fn unsupported_multiple_properties_message() -> &'static str {
@@ -6047,7 +6064,10 @@ impl Parser {
     fn check_unsupported_property_type_declaration(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
-            TokenKind::Identifier(_) | TokenKind::Question | TokenKind::Backslash => {}
+            TokenKind::Identifier(_)
+            | TokenKind::Question
+            | TokenKind::LParen
+            | TokenKind::Backslash => {}
             _ => return false,
         }
 

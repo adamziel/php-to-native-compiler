@@ -654,46 +654,6 @@ impl SymbolTable {
         Ok(())
     }
 
-    fn bind_static_to_existing_object_property_array_offset(
-        &mut self,
-        target: &str,
-        object_name: &str,
-        property: &str,
-        key: ArrayKey,
-        span: Span,
-    ) -> CompileResult<()> {
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.to_string(),
-                property: property.to_string(),
-            },
-            keys: vec![key],
-        };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
-    }
-
-    fn bind_static_to_existing_object_property_nested_array_offset(
-        &mut self,
-        target: &str,
-        object_name: &str,
-        property: &str,
-        keys: Vec<ArrayKey>,
-        span: Span,
-    ) -> CompileResult<()> {
-        let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.to_string(),
-                property: property.to_string(),
-            },
-            keys,
-        };
-        self.materialize_array_offset_alias(&alias, span)?;
-        self.bind_static_to_array_offset_alias(target, alias);
-        Ok(())
-    }
-
     fn bind_static_to_appended_object_property_array_offset(
         &mut self,
         target: &str,
@@ -4343,8 +4303,13 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
-                    scope.bind_static_to_existing_object_property_array_offset(
-                        name, object, property, key, span,
+                    self.bind_static_to_context_object_property_array_offset(
+                        name,
+                        object,
+                        property,
+                        vec![key],
+                        span,
+                        scope,
                     )?;
                 } else if let ReferenceSource::ObjectPropertyNestedArrayIndex {
                     object,
@@ -4360,8 +4325,8 @@ impl Interpreter {
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
-                    scope.bind_static_to_existing_object_property_nested_array_offset(
-                        name, object, property, keys, span,
+                    self.bind_static_to_context_object_property_array_offset(
+                        name, object, property, keys, span, scope,
                     )?;
                 } else if let ReferenceSource::ObjectPropertyArrayAppend {
                     object,
@@ -4684,9 +4649,58 @@ impl Interpreter {
         let Some(Value::Object(object)) = scope.read_named(object_name) else {
             return Ok(());
         };
-        if let Ok(value) = object.read_public_property(property) {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        if let Ok(value) =
+            object.read_property_from_context(property, current_class_id, &protected_class_ids)
+        {
             self.reject_array_access_reference_source_value(&value, span)?;
         }
+        Ok(())
+    }
+
+    fn bind_static_to_context_object_property_array_offset(
+        &self,
+        target_name: &str,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let visibility = object
+            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        let root = if visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+                current_class_id,
+                protected_class_ids,
+            }
+        };
+        let alias = ArrayOffsetAlias { root, keys };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        scope.bind_static_to_array_offset_alias(target_name, alias);
         Ok(())
     }
 

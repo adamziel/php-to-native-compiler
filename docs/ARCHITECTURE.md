@@ -111,6 +111,10 @@ specific unsupported syntax diagnostic before creating any AST node. Faithful
 support still needs null-aware property/method chain evaluation,
 short-circuiting, call argument ordering, assignment-target restrictions, and
 native lowering.
+Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
+a parse boundary for parameters, return types, and typed properties until the
+type metadata model can represent those shapes without implying runtime
+enforcement.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -234,14 +238,16 @@ the selected `null` slot. Direct object-property array-offset reference sources
 have a similarly narrow direct-variable target path:
 `$alias =& $object->items[$key];` and
 `$alias =& $object->items[$outer][$inner];` can bind the alias variable to an
-explicit offset path inside a declared public property on a direct object
-variable, materializing a `null` property as an array and missing selected
-slots as `null`. Writes through the alias and through the direct array or
-supported object-property offset observe the same value, and `unset($alias)`
-removes only the alias binding. Append-at-depth reference sources and dynamic
-public object-property reference sources have similarly bounded routes for
-direct object variables. Named visible object-property sources can bind through
-the current public/private/protected method context. Missing direct object
+explicit offset path inside a named visible property on a direct object
+variable, including private `$this` and protected `$this`/peer-object roots
+inside valid method visibility contexts. The route materializes a `null`
+property as an array and missing selected slots as `null`. Writes through the
+alias and through the direct array or supported object-property offset observe
+the same value, and `unset($alias)` removes only the alias binding.
+Append-at-depth reference sources and dynamic public object-property reference
+sources have similarly bounded routes for direct object variables. Named
+visible object-property sources can bind through the current
+public/private/protected method context. Missing direct object
 properties can also dispatch to a visible non-static magic `__get()`
 reference source when the method is declared by reference and returns a direct
 variable through the existing reference-return method path; the alias target
@@ -250,8 +256,9 @@ missing public-property names use the same magic route after the property
 expression resolves to a string or integer. Non-array roots, non-direct object
 expressions, inaccessible private/protected magic fallback fidelity, `__get()`
 returns of properties/offsets/expressions, dynamic non-public magic-property
-behavior, `ArrayAccess` offsets, exact by-reference `foreach`, full reference
-containers, copy-on-write, and native lowering remain future work. Direct variable sources
+behavior, non-public append-source paths, `ArrayAccess` offsets, exact
+by-reference `foreach`, full reference containers, copy-on-write, and native
+lowering remain future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
 call sources have a narrow reference-return execution path when the function
@@ -442,6 +449,15 @@ object-property, function-call, method-call, static-call, magic `__get`, and
 `ArrayAccess`-shaped sources or targets. Real support depends on native
 reference containers, alias-aware symbol tables, copy-on-write, object/property
 alias roots, and exact diagnostic behavior.
+Object-property `ArrayAccess` offset shapes also have a dedicated native
+rejection boundary for reads, writes, `isset`, `empty`, `unset`, and compound
+paths. This prevents property-held object offsets that `phpc run` can dispatch
+through `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset` from being
+reported as only generic array or object lowering gaps. Native execution still
+requires object handles, ArrayAccess method dispatch, reference/COW semantics,
+and exact PHP diagnostics. Direct `$value[$key]` remains on the generic array
+boundary at codegen time unless later analysis proves `$value` is an
+`ArrayAccess` object.
 
 Current assembly emission order:
 

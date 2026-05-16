@@ -109,20 +109,22 @@
   explicit parent key paths: missing roots or parent containers materialize as
   arrays, the runtime append cursor chooses the selected slot, and that slot
   is bound to the direct alias variable as `null` until either side writes.
-  Non-array roots, object-property offsets outside the documented
-  public-property source subset, `ArrayAccess` offsets, exact by-reference
+  Non-array roots, object-property offsets outside the documented visible
+  named-property source subset, `ArrayAccess` offsets, exact by-reference
   `foreach`, full PHP reference containers, copy-on-write, and native lowering
   remain unsupported. Direct
   object-property array-offset
   reference sources such as `$alias =& $object->items[$key];` execute when the
   target is a direct variable, the source object is a direct variable, the
-  property is a named declared public property, and the offset is explicit.
-  The selected public-property array slot is materialized as `null` when
-  missing, a `null` property materializes as an array, and writes through the
-  alias or the object-property array offset observe the same selected value.
+  property is a named visible property, and the offset is explicit. Covered
+  non-public forms are limited to valid method visibility contexts such as
+  `$this->privateItems[$key]`, `$this->protectedItems[$key]`, and protected
+  peer-object roots. The selected property array slot is materialized as
+  `null` when missing, a `null` property materializes as an array, and writes
+  through the alias or the object-property array offset observe the same value.
   Nested object-property source paths such as
   `$alias =& $object->items[$outer][$inner];` execute for explicit key paths
-  with the same public-property root materialization. Append source paths such
+  with the same visible-property root materialization. Append source paths such
   as `$alias =& $object->items[];` and
   `$alias =& $object->items[$outer][];` execute for direct object variables
   and named declared public properties, materializing `null` properties and
@@ -132,9 +134,10 @@
   `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
   selected slot under the real global symbol table, including from function
   scope. `$GLOBALS[]` append sources, non-string root keys, recursive
-  `$GLOBALS` materialization, dynamic/magic/non-public property sources,
-  non-direct object expressions, non-variable reference targets, ArrayAccess
-  offset reference sources, full PHP reference containers, copy-on-write
+  `$GLOBALS` materialization, dynamic/magic property sources, non-public
+  append-source paths, non-direct object expressions, non-variable reference
+  targets, ArrayAccess offset reference sources, full PHP reference containers,
+  copy-on-write
   containers, exact alias destruction ordering, and native lowering remain
   unsupported for these source forms. When a direct static array
   variable with a covered direct array-offset reference alias is copied into
@@ -2798,6 +2801,17 @@
   lowering source operands or invoking an assembly backend. Native support
   still needs reference containers, alias-aware symbol tables, copy-on-write,
   object/property alias roots, and exact native diagnostics.
+  Object-property `ArrayAccess` offset shapes such as
+  `$holder->bag[$key]`, `$holder->bag[$key] = $value`,
+  `isset($holder->bag[$key])`, `empty($holder->bag[$key])`,
+  `unset($holder->bag[$key])`, and `$holder->bag[$key] op= expr` also have a
+  dedicated native codegen boundary instead of falling through to broader
+  array/object diagnostics. Native support still needs object handles,
+  `offsetGet`/`offsetSet`/`offsetExists`/`offsetUnset` dispatch,
+  references/copy-on-write, and exact PHP diagnostics. Direct `$bag[$key]`
+  remains syntax-ambiguous with ordinary array offsets at this layer, so the
+  native array boundary still covers it unless a future analysis can prove the
+  root is an `ArrayAccess` object.
   Native binary arithmetic currently lowers `+`, `-`, and `*` when both
   operands are already same-type lowerable floats, or when both operands are
   lowerable integers and the integer result is statically proven not to
@@ -3604,10 +3618,12 @@
   as `function f(,)` remain rejected. Parameter and return type declarations,
   including nullable, union, intersection, and namespace-qualified names, are
   accepted as syntax-only metadata so WordPress-style helper signatures can be
-  registered. Invoking a function with parameter/return type annotations fails
-  with a stable runtime error because type enforcement, coercion, exact
-  `TypeError` behavior, `strict_types`, variance, and reflection metadata are
-  not implemented. Reference parameter declarations are also accepted as
+  registered, except parenthesized DNF-shaped declarations such as
+  `(A&B)|C`, which fail with a stable parse diagnostic. Invoking a function
+  with parameter/return type annotations fails with a stable runtime error
+  because type enforcement, coercion, exact `TypeError` behavior,
+  `strict_types`, variance, and reflection metadata are not implemented.
+  Reference parameter declarations are also accepted as
   metadata, but invoking those functions fails with a stable runtime error until
   reference binding exists. Anonymous closure syntax with parameter lists,
   optional return-type metadata, block bodies, and `use (...)` capture lists is
@@ -3658,8 +3674,8 @@
   parse diagnostic tied to the
   current missing trait declaration/use and trait-context tracking boundary.
   `__NAMESPACE__` fails with a stable parse diagnostic tied to the current
-  missing namespace-aware name-resolution boundary. Nullable, union, and intersection
-  types, `mixed`, `void`/`never`, class/interface type names, coercive versus
+  missing namespace-aware name-resolution boundary. DNF-shaped parenthesized
+  type declarations, `mixed`, `void`/`never`, class/interface type names, coercive versus
   strict typing, variance, static local behavior outside the bounded
   declaration/default subset, reference-backed static locals,
   recursion/reentrancy edge behavior, canonical absolute
@@ -4913,7 +4929,8 @@
   implementation,
   autoload-triggered parent class resolution,
   promoted constructor properties,
-  typed property storage/enforcement, non-constant instance property defaults, multiple properties in
+  typed property storage/enforcement, DNF-shaped typed property declarations,
+  non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,
   storage-removing static-property unset,
