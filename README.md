@@ -150,12 +150,13 @@ incorrect native code.
   unqualified same-namespace calls
 - declared interface metadata: top-level `interface Name {}` declarations and
   public method signatures parse, register class-like interface names, power
-  `interface_exists()` and `get_declared_interfaces()`, and otherwise execute
-  as declaration metadata only; class `implements` clauses record
-  comma-separated interface names as relationship metadata for `is_a`,
-  `is_subclass_of`, and `instanceof`, including inherited metadata and
-  unresolved built-in/internal interface names without seeding
-  `interface_exists()`
+  `interface_exists()` and `get_declared_interfaces()`, and require concrete
+  classes that implement declared interfaces, including through inherited
+  `implements` metadata, to expose public methods with the required names at
+  class registration time; class `implements` clauses record comma-separated
+  interface names as relationship metadata for `is_a`, `is_subclass_of`, and
+  `instanceof`, including unresolved built-in/internal interface names without
+  seeding `interface_exists()` or enforcing built-in/internal methods
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -205,7 +206,8 @@ incorrect native code.
   properties in valid method contexts,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
-  including declared interface metadata, declared empty-trait metadata,
+  including declared interface metadata with concrete-class public method
+  presence checks, declared empty-trait metadata,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable`, and bounded `is_iterable()` metadata for
   `Traversable`/`Iterator`/`IteratorAggregate`
@@ -224,8 +226,8 @@ callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
-interface inheritance/implementation enforcement, built-in/internal interface
-catalogs, trait members and trait
+full interface inheritance/signature enforcement, built-in/internal interface
+method enforcement/catalogs, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
@@ -335,9 +337,11 @@ manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 2. When the fixture
-root contains `compat/<target>` directories, the JSON also includes per-target
-compatibility counts, including targets with no executable `.php` fixtures yet.
+manifest as deterministic JSON with `contract_version` 3. The JSON records
+sibling `.phpc-only` marker text as `phpc_only_reason` so comparison opt-outs
+are visible without executing fixtures. When the fixture root contains
+`compat/<target>` directories, the JSON also includes per-target compatibility
+counts, including targets with no executable `.php` fixtures yet.
 
 Use these commands while developing:
 

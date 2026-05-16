@@ -603,6 +603,18 @@ fn unsupported_grouped_use_declarations_have_stable_parse_errors() {
             5,
             "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
         ),
+        (
+            "<?php\nuse function App\\{make, build};\n",
+            2,
+            18,
+            "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
+        ),
+        (
+            "<?php\nuse const App\\{VALUE, OTHER};\n",
+            2,
+            15,
+            "unsupported grouped use declaration: grouped class, function, and const imports are not implemented",
+        ),
     ];
 
     for (source, line, column, message) in cases {

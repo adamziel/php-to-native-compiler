@@ -1,2 +1,2 @@
-parse error at 2:1: unsupported use declaration: only simple class imports are implemented
+parse error at 2:1: unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering
 

@@ -642,7 +642,15 @@ use function App\Demo\make_service;
 "#,
             2,
             1,
-            "unsupported use declaration: only simple class imports are implemented",
+            "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering",
+        ),
+        (
+            r#"<?php
+use const App\Demo\VALUE;
+"#,
+            2,
+            1,
+            "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering",
         ),
     ];
 

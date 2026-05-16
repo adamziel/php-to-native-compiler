@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_use_declaration.php:2:1: unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering
+--- stderr end ---

@@ -1393,10 +1393,10 @@ constant reads, top-level `const` declarations, `define()`/`constant()`, and
 unsupported `defined(...)` forms before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
-Native lowering rejects class declarations, object instantiation, public
-property reads/writes, clone expressions, method-call expressions, and object
-metadata builtins before body, operand, receiver, or argument lowering, except
-for direct static false-folding of
+Native lowering rejects class declarations, object instantiation, clone
+expressions, method-call expressions, and object metadata builtins before
+body, operand, receiver, or argument lowering, except for direct static
+false-folding of
 `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists` when
 their name argument is already lowerable as a string and the optional autoload
 argument is already lowerable as a boolean. That metadata-exists native slice
@@ -1411,6 +1411,11 @@ Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
 metadata access, property-slot cloning, `__clone` dispatch, reference-slot
 metadata, inheritance, autoload interaction, and exact native error behavior.
+Instance property reads/writes and dynamic property-name access have a
+separate native object-property boundary until generated code has native
+object layout, property tables/slots, visibility checks, magic property hooks,
+dynamic property policy, references/copy-on-write, and exact native
+object-property errors.
 The method-call boundary is more specific: native method support still needs
 method tables and lookup, instance and static receiver resolution, `$this` and
 called-class/late-static-binding context, argument/arity diagnostics,
@@ -1614,10 +1619,15 @@ single-parent chain plus inherited `implements` metadata while keeping
 exact-class and missing-class cases false.
 `$value instanceof Name` uses the same current object class metadata,
 single-parent chain, and recorded `implements` metadata for object values.
-Non-object values return false. `implements` names are recorded as metadata
-without enforcing interface methods or requiring the interface to be declared,
-so internal names can participate in relationships. A bounded core interface
-catalog seeds `interface_exists()` and `get_declared_interfaces()` for
+Non-object values return false. `implements` names are recorded as metadata so
+internal names can participate in relationships without being declared. For
+interfaces declared in the current parsed program, runtime class registration
+checks concrete classes, including concrete children of abstract implementors,
+for public methods with the required interface method names. This is a bounded
+presence check only; parameter and return type compatibility, interface
+inheritance, built-in/internal interface method enforcement, exact PHP error
+objects, autoload behavior, and native lowering remain separate work. A bounded
+core interface catalog seeds `interface_exists()` and `get_declared_interfaces()` for
 `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
 `Countable`, and `Stringable`. Protocol execution is added one narrow slice at
 a time: current `ArrayAccess` paths dispatch selected offset methods, current
@@ -1695,10 +1705,14 @@ static-property unset, and top-level `static::$prop` execution remain
 unsupported.
 Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
-constants, static properties, object instantiation,
-object property reads/writes including dynamic property-name and magic-property
-forms, and object metadata builtins with a specific object/class codegen
-diagnostic. The narrow direct string-name metadata-exists false-folding slice,
+constants, static properties, object instantiation, and object metadata
+builtins with a specific object/class codegen diagnostic. Instance
+object-property reads/writes, including dynamic property-name and
+magic-property forms, are rejected with a separate object-property diagnostic
+that names missing native object layout, property tables/slots, visibility,
+magic property hooks, dynamic property policy, references/copy-on-write, and
+exact native object-property errors. The narrow direct string-name
+metadata-exists false-folding slice,
 string/string `property_exists`/`method_exists` false-folding slice, and
 string/string `is_a`/`is_subclass_of` false-folding slice remain the only
 native object/class metadata exceptions. Native method-call lowering

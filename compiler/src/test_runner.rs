@@ -46,6 +46,7 @@ pub struct FixtureManifestEntry {
     pub has_stderr: bool,
     pub has_exit: bool,
     pub phpc_only: bool,
+    pub phpc_only_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,16 +97,18 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
     collect_php_files(root, &mut files)?;
     files.sort();
 
-    let entries = files
-        .into_iter()
-        .map(|path| FixtureManifestEntry {
+    let mut entries = Vec::new();
+    for path in files {
+        let phpc_only_reason = read_phpc_only_reason(&path)?;
+        entries.push(FixtureManifestEntry {
             path: fixture_manifest_path(root, &path),
             has_stdout: path.with_extension("stdout").exists(),
             has_stderr: path.with_extension("stderr").exists(),
             has_exit: path.with_extension("exit").exists(),
-            phpc_only: path.with_extension("phpc-only").exists(),
-        })
-        .collect::<Vec<_>>();
+            phpc_only: phpc_only_reason.is_some(),
+            phpc_only_reason,
+        });
+    }
     let orphan_sidecars = collect_orphan_sidecars(root)?;
     let summary = FixtureManifestSummary::from_entries(&entries, &orphan_sidecars);
     let compatibility_targets = collect_compatibility_targets(root, &entries, &orphan_sidecars)?;
@@ -690,6 +693,23 @@ fn read_optional(path: PathBuf) -> Result<String, String> {
         Err(error) => Err(format!(
             "{}: failed to read fixture: {error}",
             path.display()
+        )),
+    }
+}
+
+fn read_phpc_only_reason(path: &Path) -> CompileResult<Option<String>> {
+    let marker = path.with_extension("phpc-only");
+    match fs::read_to_string(&marker) {
+        Ok(value) => Ok(Some(strip_fixture_editor_newline(value))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!(
+                "failed to read phpc-only marker {}: {error}",
+                marker.display()
+            ),
         )),
     }
 }

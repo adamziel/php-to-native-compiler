@@ -37,9 +37,10 @@ manifest of fixtures, recognized expectation files, aggregate sidecar counts,
 recognized orphan sidecars, and PHP-comparison eligibility.
 Use `cargo run -p phpc -- test --list-fixtures-json [fixture-dir]` when
 automation needs the same audit-only manifest as deterministic JSON. The JSON
-manifest also reports per-target counts for `compat/<target>` directories so
-PHP and WordPress compatibility fixture coverage can be audited without
-executing code.
+manifest also reports sibling `.phpc-only` marker text as deterministic
+`phpc_only_reason` fields and per-target counts for `compat/<target>`
+directories so PHP and WordPress compatibility fixture coverage can be audited
+without executing code.
 Use `cargo run -p phpc -- test --php-versions-json` when automation needs a
 machine-readable manifest of configured local PHP comparison binaries. By
 default it probes `php`; set `PHPC_PHP_BINARIES=php8.2,php8.3,php8.4,php8.5`

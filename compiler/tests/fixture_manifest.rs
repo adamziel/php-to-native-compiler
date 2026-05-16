@@ -103,7 +103,11 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
     fs::write(nested_dir.join("beta.php"), "<?php echo 'beta';\n").unwrap();
     fs::write(nested_dir.join("beta.stderr"), "beta stderr\n").unwrap();
     fs::write(nested_dir.join("beta.exit"), "7\n").unwrap();
-    fs::write(nested_dir.join("beta.phpc-only"), "").unwrap();
+    fs::write(
+        nested_dir.join("beta.phpc-only"),
+        "project diagnostic differs from system PHP\nsecond line",
+    )
+    .unwrap();
     fs::write(fixture_dir.join("alpha.php"), "<?php echo 'alpha';\n").unwrap();
     fs::write(fixture_dir.join("alpha.stdout"), "alpha\n").unwrap();
     fs::write(fixture_dir.join("orphan.stdout"), "stale\n").unwrap();
@@ -126,7 +130,7 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 2,\n",
+            "  \"contract_version\": 3,\n",
             "  \"fixture_count\": 3,\n",
             "  \"summary\": {\n",
             "    \"total\": 3,\n",
@@ -144,17 +148,20 @@ fn cli_list_fixtures_json_prints_deterministic_machine_readable_manifest() {
             "    {\n",
             "      \"path\": \"alpha.php\",\n",
             "      \"expectations\": [\"stdout\"],\n",
-            "      \"php_comparison\": \"eligible\"\n",
+            "      \"php_comparison\": \"eligible\",\n",
+            "      \"phpc_only_reason\": null\n",
             "    },\n",
             "    {\n",
             "      \"path\": \"nested/beta.php\",\n",
             "      \"expectations\": [\"stderr\", \"exit\"],\n",
-            "      \"php_comparison\": \"phpc-only\"\n",
+            "      \"php_comparison\": \"phpc-only\",\n",
+            "      \"phpc_only_reason\": \"project diagnostic differs from system PHP\\nsecond line\"\n",
             "    },\n",
             "    {\n",
             "      \"path\": \"zeta.php\",\n",
             "      \"expectations\": [],\n",
-            "      \"php_comparison\": \"eligible\"\n",
+            "      \"php_comparison\": \"eligible\",\n",
+            "      \"phpc_only_reason\": null\n",
             "    }\n",
             "  ],\n",
             "  \"compatibility_targets\": [\n",
@@ -183,7 +190,11 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
     fs::write(php_dir.join("cross_feature.php"), "<?php echo 'ok';\n").unwrap();
     fs::write(php_dir.join("cross_feature.stdout"), "ok\n").unwrap();
     fs::write(php_dir.join("skipped.php"), "<?php echo 'skip';\n").unwrap();
-    fs::write(php_dir.join("skipped.phpc-only"), "").unwrap();
+    fs::write(
+        php_dir.join("skipped.phpc-only"),
+        "compat target uses a project-only diagnostic\n",
+    )
+    .unwrap();
     fs::write(php_dir.join("stale.stderr"), "stale\n").unwrap();
     fs::write(wordpress_dir.join("source-pin.md"), "operator supplied\n").unwrap();
 
@@ -205,7 +216,7 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
         stdout,
         concat!(
             "{\n",
-            "  \"contract_version\": 2,\n",
+            "  \"contract_version\": 3,\n",
             "  \"fixture_count\": 2,\n",
             "  \"summary\": {\n",
             "    \"total\": 2,\n",
@@ -223,12 +234,14 @@ fn cli_list_fixtures_json_reports_compatibility_targets_as_data() {
             "    {\n",
             "      \"path\": \"compat/php/cross_feature.php\",\n",
             "      \"expectations\": [\"stdout\"],\n",
-            "      \"php_comparison\": \"eligible\"\n",
+            "      \"php_comparison\": \"eligible\",\n",
+            "      \"phpc_only_reason\": null\n",
             "    },\n",
             "    {\n",
             "      \"path\": \"compat/php/skipped.php\",\n",
             "      \"expectations\": [],\n",
-            "      \"php_comparison\": \"phpc-only\"\n",
+            "      \"php_comparison\": \"phpc-only\",\n",
+            "      \"phpc_only_reason\": \"compat target uses a project-only diagnostic\"\n",
             "    }\n",
             "  ],\n",
             "  \"compatibility_targets\": [\n",

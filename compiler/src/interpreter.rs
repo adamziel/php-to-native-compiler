@@ -1902,6 +1902,7 @@ impl Interpreter {
                     &abstract_methods,
                     &final_methods,
                     &method_signatures,
+                    &interface_lookup,
                     class,
                 )?;
                 register_class_member_runtime_tables(
@@ -2148,6 +2149,7 @@ impl Interpreter {
                 &self.abstract_methods,
                 &self.final_methods,
                 &self.method_signatures,
+                &self.interface_lookup,
                 class,
             )?;
             register_class_member_runtime_tables(
@@ -2189,6 +2191,7 @@ impl Interpreter {
             &self.abstract_methods,
             &self.final_methods,
             &self.method_signatures,
+            &self.interface_lookup,
             class,
         ) {
             self.abstract_classes.remove(&class_id);
@@ -18943,6 +18946,7 @@ fn register_class_members(
     abstract_methods: &HashSet<(ClassId, String)>,
     final_methods: &HashMap<(ClassId, String), String>,
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -19037,8 +19041,94 @@ fn register_class_members(
 
     validate_abstract_method_implementation(classes, abstract_methods, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
+    validate_interface_method_implementation(classes, interface_lookup, id, class)
+        .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn validate_interface_method_implementation(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract {
+        return Ok(());
+    }
+
+    let mut missing = Vec::new();
+    let mut covered_names = HashSet::new();
+    for interface_name in implemented_interface_names(classes, class_id) {
+        let Some(interface) = interface_lookup.get(&interface_name.to_ascii_lowercase()) else {
+            continue;
+        };
+
+        for method in &interface.methods {
+            let lookup_name = method.function.name.to_ascii_lowercase();
+            if !covered_names.insert(format!(
+                "{}::{lookup_name}",
+                interface.name.to_ascii_lowercase()
+            )) {
+                continue;
+            }
+            if class_has_public_method(classes, class_id, &lookup_name) {
+                continue;
+            }
+            missing.push(format!("{}::{}()", interface.name, method.function.name));
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!(
+            "concrete class {} must implement interface {method_word} {method_list}",
+            class.name
+        ),
+    ))
+}
+
+fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = Some(class_id);
+    while let Some(current_id) = current {
+        let current_class = classes
+            .get(current_id)
+            .expect("class id should resolve to class metadata");
+        names.extend(current_class.interfaces().iter().cloned());
+        current = current_class.parent_id();
+    }
+
+    names
+}
+
+fn class_has_public_method(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    method_lookup_name: &str,
+) -> bool {
+    let mut current = Some(class_id);
+    while let Some(current_id) = current {
+        let current_class = classes
+            .get(current_id)
+            .expect("class id should resolve to class metadata");
+        if let Some(method) = current_class.method(method_lookup_name) {
+            return method.visibility() == Visibility::Public;
+        }
+        current = current_class.parent_id();
+    }
+
+    false
 }
 
 fn validate_abstract_method_implementation(

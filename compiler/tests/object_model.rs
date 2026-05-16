@@ -1937,6 +1937,107 @@ if (interface_exists("Iterator")) {
 }
 
 #[test]
+fn interface_required_method_presence_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    public function log($message) {
+        return "log:" . $message;
+    }
+}
+
+$service = new Service();
+echo $service->log("ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "log:ok");
+    assert_eq!(execution.exit_code, 0);
+
+    let missing_method_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {}
+"#,
+    );
+    assert_eq!(missing_method_error.line, 6);
+    assert_eq!(missing_method_error.column, 1);
+    assert_eq!(
+        missing_method_error.message,
+        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+    );
+
+    let non_public_method_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+class Service implements Logger {
+    protected function log($message) {}
+}
+"#,
+    );
+    assert_eq!(non_public_method_error.line, 6);
+    assert_eq!(non_public_method_error.column, 1);
+    assert_eq!(
+        non_public_method_error.message,
+        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+    );
+}
+
+#[test]
+fn inherited_interface_required_method_presence_is_enforced_for_concrete_classes() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+abstract class Base implements Logger {}
+
+class Child extends Base {
+    public function log($message) {
+        return "child:" . $message;
+    }
+}
+
+$child = new Child();
+echo $child->log("ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child:ok");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log($message);
+}
+
+abstract class Base implements Logger {}
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log()"
+    );
+}
+
+#[test]
 fn core_interface_catalog_reports_bounded_internal_interfaces() {
     let execution = run_source(
         r#"<?php

@@ -4,6 +4,103 @@
 
 Implemented:
 
+- Added Milestone 1150, a tests/docs queue refresh after the 1146-1149
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1146-1150
+  complete and opens Milestones 1151-1155, public docs describe function/const
+  namespace-import parse boundaries, declared-interface public method presence
+  enforcement, dedicated native object-property rejection, and fixture manifest
+  `.phpc-only` reason text. This does not change runtime behavior, native
+  lowering, fixture execution, or PHP/WordPress compatibility claims beyond
+  the implemented 1146-1149 slices. Full gate passed at checkpoint: `1328`
+  fixture tests, `756` system PHP comparisons, and `572` skipped `phpc-only`
+  fixtures.
+
+- Added Milestone 1149, a deterministic compiler-output/audit contract
+  refinement for fixture comparison opt-outs. `phpc test --list-fixtures-json
+  [fixture-dir]` now emits `contract_version: 3` JSON and includes a stable
+  `phpc_only_reason` field for each fixture: `null` for system-PHP-comparable
+  fixtures and the sibling `.phpc-only` marker text, with one final editor
+  newline stripped, for fixtures intentionally excluded from system PHP
+  comparison. This does not change normal fixture execution, `--compare-php`
+  behavior, text fixture manifests, compatibility-target counts,
+  PHP-version-specific comparison behavior, or PHP/WordPress support claims.
+  Unsupported/remaining gaps: the manifest does not require non-empty marker
+  text, classify reason categories, validate reasons against unsupported
+  feature inventories, execute fixtures, compare system PHP, or prove
+  branch-specific compatibility. Verification so far: `cargo test -p phpc
+  --test fixture_manifest
+  cli_list_fixtures_json_prints_deterministic_machine_readable_manifest --
+  --test-threads=1`, `cargo test -p phpc --test fixture_manifest --
+  --test-threads=1`, `cargo test -p phpc --test php_comparison --
+  --test-threads=1`, direct `cargo run -q -p phpc -- test
+  --list-fixtures-json <temp-fixture-dir>` showing
+  `"phpc_only_reason": "project diagnostic has no system PHP equivalent"`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the
+  compiler-output lane. Full gate deferred until integration.
+
+- Added Milestone 1148, a dedicated native object-property rejection for
+  documented interpreter property behavior. `phpc compile --emit-ir` and
+  `--emit-asm` now reject instance property reads/writes and dynamic
+  property-name access with a diagnostic naming missing native object layout,
+  property tables/slots, visibility checks, magic property hooks, dynamic
+  property policy, references/copy-on-write, and exact native
+  object-property errors instead of using the broader object/class boundary.
+  This does not implement native object layout, property tables or slots,
+  visibility checks, magic `__get()`/`__set()`/`__isset()`/`__unset()` hooks,
+  dynamic property creation policy, references, copy-on-write, or exact native
+  object-property errors. Verification so far: `cargo test -p phpc --test
+  native_object_class_boundary -- --test-threads=1`, `cargo test -p phpc
+  --test milestone1 object_property -- --test-threads=1`, `cargo test -p
+  phpc --test object_model method_calls_until_native_object_lowering_exists
+  -- --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1148/native_object_property_boundary.phpc-source
+  --emit-ir` returning exit `1`, and direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1148/native_object_property_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and scoped `git diff
+  --check` passed in the IR lane. Full gate deferred until integration.
+
+- Added Milestone 1147, a bounded runtime interface method compatibility slice.
+  Concrete classes that implement interfaces declared in the current parsed
+  program, including concrete children of abstract classes that carry inherited
+  `implements` metadata, now report the stable class-registration boundary
+  `unsupported class inheritance for Service: concrete class Service must
+  implement interface method Logger::log()` when they do not expose a public
+  method required by the interface. Compatible concrete implementations
+  continue to execute, abstract classes may defer the requirement, unresolved
+  built-in/internal interface names remain metadata-only, and inherited public
+  methods count. This does not implement interface inheritance, interface
+  constants, parameter or return type compatibility, full method signature
+  variance, trait composition, exact PHP `Error` objects/diagnostics/exit
+  parity, autoload/declaration-order fidelity beyond the current registration
+  model, or native object/interface lowering.
+  Verification so far: `cargo test -p phpc --test object_model interface_required_method_presence_is_enforced_for_concrete_classes -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1147`, and
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1147`,
+  `cargo fmt --check`, and scoped `git diff --check` passed in the runtime
+  lane. Full gate deferred until integration.
+
+- Added Milestone 1146, a parser boundary refinement for unsupported namespace
+  import forms beyond simple class imports. `use function App\Demo\fn_name;`
+  now fails with a stable diagnostic naming missing function import metadata,
+  namespace-aware function lookup, alias handling, fallback lookup, and native
+  lowering, while `use const App\Demo\VALUE as DEMO_VALUE;` names the
+  corresponding missing constant import metadata and lookup pieces. Existing
+  simple class `use` behavior remains supported, and grouped class/function/const
+  imports continue to use the grouped-use parse boundary. This does not
+  implement function or constant import metadata, namespace-aware
+  function/constant import lookup, alias application, fallback lookup changes,
+  exact PHP diagnostics, or native lowering.
+  Verification so far: `cargo test -p phpc --test namespace_resolution -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features unsupported_namespace_and_use_forms_are_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries grouped_use -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  direct `cargo run -q -p phpc -- compile tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.php --emit-ir`
+  returning exit `1`, direct `cargo run -q -p phpc -- compile tests/fixtures/unsupported_dynamic_features/unsupported_const_use_declaration.php --emit-ir`
+  returning exit `1`, and `cargo fmt --check` passed in the parser lane. Full
+  gate deferred until integration.
+
 - Added Milestone 1145, a tests/docs queue refresh after the 1141-1144
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1141-1145
   complete and opens Milestones 1146-1150, `GOAL.MD` now reflects the current

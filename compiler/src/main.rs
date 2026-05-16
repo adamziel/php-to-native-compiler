@@ -357,7 +357,7 @@ fn render_fixture_manifest_compatibility_target(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 2,\n");
+    output.push_str("  \"contract_version\": 3,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -417,9 +417,15 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             "eligible"
         };
         output.push_str(&format!(
-            "      \"php_comparison\": {}\n",
+            "      \"php_comparison\": {},\n",
             json_string_literal(comparison)
         ));
+        output.push_str("      \"phpc_only_reason\": ");
+        match &entry.phpc_only_reason {
+            Some(reason) => output.push_str(&json_string_literal(reason)),
+            None => output.push_str("null"),
+        }
+        output.push('\n');
         output.push_str("    }");
         if index + 1 < manifest.entries.len() {
             output.push(',');

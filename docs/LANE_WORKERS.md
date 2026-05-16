@@ -194,20 +194,20 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1145 closes the 1141-1144 implementation-batch
-  queue refresh. Milestone 1150 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1150 closes the 1146-1149 implementation-batch
+  queue refresh. Milestone 1155 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 1146 is the next parser slot, selecting a small
+- Parser lane: Milestone 1151 is the next parser slot, selecting a small
   syntax or parse-diagnostic boundary from the refreshed PHP/WordPress gap map
   without widening runtime or native support claims.
-- Runtime lane: Milestone 1147 is the next runtime slot, selecting a bounded
+- Runtime lane: Milestone 1152 is the next runtime slot, selecting a bounded
   value-model, object-semantics, request-state, filesystem, database, or
   WordPress-probe blocker with focused tests, CLI coverage, and named
   unsupported edges.
-- IR/lowering lane: Milestone 1148 is the next native slot, selecting a narrow
+- IR/lowering lane: Milestone 1153 is the next native slot, selecting a narrow
   native IR/lowering refinement or precise rejection boundary from already
   documented interpreter behavior.
-- Compiler-output lane: Milestone 1149 is the next compiler-output slot,
+- Compiler-output lane: Milestone 1154 is the next compiler-output slot,
   choosing a deterministic CLI, fixture-runner, compatibility-manifest, or
   backend artifact contract that improves auditability without broadening PHP
   support claims.
@@ -244,8 +244,10 @@ closed a parser/runtime/IR/compiler-output implementation batch, and
 Milestone 1135 refreshed the next-lane queue. Milestones 1136 through 1139
 closed a parser/runtime/IR/compiler-output implementation batch, and
 Milestone 1140 refreshed the next-lane queue. Milestones 1141 through 1144
+closed a parser/runtime/IR/compiler-output implementation batch, and
+Milestone 1145 refreshed the next-lane queue. Milestones 1146 through 1149
 closed the latest parser/runtime/IR/compiler-output implementation batch, and
-Milestone 1145 refreshed the next-lane queue.
+Milestone 1150 refreshed the next-lane queue.
 The next batch should again keep one active milestone per lane and should use
 separate worktrees and separate `CARGO_TARGET_DIR` values when workers run in
 parallel.

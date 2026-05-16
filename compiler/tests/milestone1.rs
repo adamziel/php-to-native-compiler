@@ -295,7 +295,7 @@ fn emit_ir_rejects_object_property_access_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\necho $box->name;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("public property reads/writes"),
+        error.message.contains("object-property lowering"),
         "{}",
         error.message
     );
@@ -306,7 +306,7 @@ fn emit_ir_rejects_object_property_assignment_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$box->name = \"Ada\";\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("public property reads/writes"),
+        error.message.contains("object-property lowering"),
         "{}",
         error.message
     );

@@ -906,12 +906,16 @@ impl Parser {
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_use_message()));
         }
-        if self.check(|kind| matches!(kind, TokenKind::Function))
-            || self.check(|kind| {
-                matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
-            })
-        {
-            return Err(self.error_at(span, unsupported_use_message()));
+        if let Some(grouped_span) = self.grouped_use_brace_span() {
+            return Err(self.error_at(grouped_span, unsupported_grouped_use_message()));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::Function)) {
+            return Err(self.error_at(span, unsupported_function_use_message()));
+        }
+        if self.check(|kind| {
+            matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
+        }) {
+            return Err(self.error_at(span, unsupported_const_use_message()));
         }
 
         let (name, import_span) = self.parse_use_import_name()?;
@@ -941,6 +945,18 @@ impl Parser {
             }],
             span,
         })
+    }
+
+    fn grouped_use_brace_span(&self) -> Option<Span> {
+        let mut offset = 0;
+        loop {
+            let token = self.peek_n(offset);
+            match token.kind {
+                TokenKind::LBrace => return Some(token.span),
+                TokenKind::Semicolon | TokenKind::Eof => return None,
+                _ => offset += 1,
+            }
+        }
     }
 
     fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
@@ -5967,6 +5983,14 @@ fn unsupported_nested_namespace_message() -> &'static str {
 
 fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: only simple class imports are implemented"
+}
+
+fn unsupported_function_use_message() -> &'static str {
+    "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering"
+}
+
+fn unsupported_const_use_message() -> &'static str {
+    "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering"
 }
 
 fn unsupported_grouped_use_message() -> &'static str {

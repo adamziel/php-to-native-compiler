@@ -1,0 +1,6 @@
+<?php
+echo $box->name;
+$box->name = "Ada";
+$name = "name";
+echo $box->$name;
+$box->$name = "Ada";
