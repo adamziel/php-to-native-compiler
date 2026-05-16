@@ -26,7 +26,10 @@ Implemented:
   `cargo run -q -p phpc -- test tests/fixtures/milestone1089 --compare-php`,
   `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
   `cargo test -p phpc --test object_model -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check`.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check`. The
+  serialized checkpoint gate passed with 1294 fixture tests, 739 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `14addaea runtime: add public property reference sources`.
 
 - Added Milestone 1088, a bounded `$GLOBALS` append array-offset
   reference-source slice. Statement-form `$alias =& $GLOBALS["bag"][];` and

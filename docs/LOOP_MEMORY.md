@@ -31,6 +31,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `a698fc00 docs: record globals append reference source gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `14addaea runtime: add public property reference sources`.
 - Task attempted: Milestone 1089, bounded direct public object-property
   reference-source aliases. `$alias =& $object->property;` now binds a direct
   variable alias target to a named declared public property on a direct object
@@ -53,15 +55,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -q -p phpc -- test tests/fixtures/milestone1089 --compare-php`,
   `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
   `cargo test -p phpc --test object_model -- --test-threads=1`,
-  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed.
+  `cargo check -p php_runtime -p phpc`, and `git diff --check` passed. The
+  serialized checkpoint gate passed with 1294 fixture tests, 739 system PHP
+  comparisons, and 555 skipped PHP comparisons before commit
+  `14addaea runtime: add public property reference sources`.
 - Remaining semantic gaps: dynamic property source aliases, magic `__get`
   by-reference behavior, non-public property source aliases, non-direct object
   expressions, non-variable reference targets, ArrayAccess reference sources,
   full PHP reference containers, copy-on-write containers, exact alias
   destruction ordering, and native lowering remain missing.
-- Next concrete task: checkpoint with
-  `tools/checkpoint.sh "runtime: add public property reference sources"` if
-  the working tree still matches the focused checks.
+- Next concrete task: checkpoint these gate notes, push `master`, then choose
+  the next reference/COW or WordPress entry-flow blocker from
+  `docs/NEXT_TASKS.md`.
 
 ## Loop Event 2026-05-16T15:49:49Z
 
