@@ -812,14 +812,15 @@ Reconciliation into concrete workstreams:
   unaliased direct variable source shape, and a bounded nested direct
   array-append reference-target slice for `$array[$outer][] =& $value;`,
   plus a bounded direct string-keyed `$GLOBALS["name"] =& $value;`
-  reference-target slice for direct unaliased variable sources, documented
+  reference-target slice and bounded nested/append string-keyed `$GLOBALS`
+  reference-target slices for direct unaliased variable sources, documented
   runtime boundaries, and focused reference fixtures. Missing
   artifact: existing alias-group and source-rebinding cases, nested and
   object-property offset aliases beyond the documented target slices, full
   runtime reference containers, magic reference-return dispatch and broader
   by-reference returns, remaining exact by-reference `foreach` mutation and
-  target fidelity, append/nested `$GLOBALS` reference targets, non-direct
-  `$GLOBALS` reference sources, ArrayAccess indirect-modification fidelity, and
+  target fidelity, non-direct `$GLOBALS` reference sources, recursive
+  `$GLOBALS` materialization, ArrayAccess indirect-modification fidelity, and
   COW tests that compare against PHP.
 - **Object/runtime semantics:** turn metadata-heavy class support into full
   execution semantics for magic methods, typed properties, trait composition,

@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 1077, a bounded nested/append string-keyed `$GLOBALS`
+  reference-target slice for direct variable sources. Statement-form
+  `$GLOBALS["bag"]["slot"] =& $value;` and `$GLOBALS["list"][] =& $value;`
+  now bind the selected root-global array slot to the source variable when the
+  first `$GLOBALS` key is a string, every nested parent key is explicit for the
+  nested-offset form, and the source is a direct unaliased variable name. The
+  route materializes missing root globals, `null` root globals, and missing
+  intermediate containers as arrays; append targets use the runtime array
+  append cursor under the selected root global array. Writes through the source
+  variable, the direct global variable array path, and the supported nested
+  `$GLOBALS` path observe the same selected value. Nested `$GLOBALS` by-value
+  writes also route through the root global table for these direct string-keyed
+  paths, so writes such as `$GLOBALS["bag"]["slot"] = "changed";` update the
+  aliased slot. Non-string root keys, `$GLOBALS[] =& $value`, non-direct
+  sources, source names already routed through array-offset aliases, recursive
+  `$GLOBALS` array materialization, full PHP reference containers,
+  copy-on-write, exact alias rebinding/mutation ordering, and native lowering
+  remain unsupported. Verification so far: local PHP 8.2.29 probes for nested
+  `$GLOBALS` reference targets, function-local nested sources, and nested
+  append targets, `cargo test -p phpc --test superglobals -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone1077 --compare-php`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone1076 --compare-php`.
+
 - Added Milestone 1076, a bounded direct string-keyed `$GLOBALS` reference
   target slice for direct variable sources. Statement-form
   `$GLOBALS["target"] =& $value;` now binds the named root global symbol to the

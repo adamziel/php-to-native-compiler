@@ -10491,6 +10491,21 @@ handled.
   sources, recursive `$GLOBALS` materialization, full PHP reference
   containers, copy-on-write, exact alias rebinding/mutation ordering, or
   native lowering.
+
+## Milestone 1077: Reference/COW Continuation
+
+- [x] Runtime/value-model lane: add bounded nested/append string-keyed
+  `$GLOBALS` reference-target slices for direct unaliased variable sources. In
+  the current subset, `$GLOBALS["bag"]["slot"] =& $value;` and
+  `$GLOBALS["list"][] =& $value;` bind the selected root-global array slot to
+  the source variable cell when the first `$GLOBALS` key is a string. Missing
+  root globals, `null` root globals, and missing intermediate containers
+  materialize as arrays; append targets use the runtime array append cursor.
+  Supported nested `$GLOBALS` by-value writes route through the root global
+  table. This is not non-string root keys, `$GLOBALS[] =& $value`, non-direct
+  sources, source names already routed through array-offset aliases, recursive
+  `$GLOBALS` materialization, full PHP reference containers, copy-on-write,
+  exact alias rebinding/mutation ordering, or native lowering.
 - [ ] Runtime/value-model lane: choose the next reference/COW gap from
   nested/object offset aliases, remaining by-reference `foreach` fidelity,
   array/object copy-on-write split behavior, dynamic/magic/non-public property
@@ -10503,6 +10518,7 @@ handled.
 
 - The latest committed checkpoint is
   `c07ce1f4 runtime: add globals reference targets`, covering Milestone 1076.
+  Milestone 1077 is in progress and not checkpointed yet.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

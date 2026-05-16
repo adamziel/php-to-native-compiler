@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1077/globals_nested_reference_targets.php
+exit: 0
+stdout:
+first|first|second|third|third
+changed|changed|global-write
+append|changed-append|slot-write
+--- stdout end ---
+stderr:
+--- stderr end ---

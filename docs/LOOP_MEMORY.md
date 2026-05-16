@@ -26,6 +26,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T20:05:00Z
+
+- Checkpoint before this task:
+  `4cdd7974 docs: record globals reference target gate`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1077, bounded nested/append string-keyed
+  `$GLOBALS` reference targets for direct unaliased variable sources.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/superglobals.rs`,
+  `tests/fixtures/milestone1077/globals_nested_reference_targets.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  local PHP 8.2.29 probes compared nested `$GLOBALS` reference targets,
+  function-local nested sources, and nested append targets.
+  `cargo test -p phpc --test superglobals -- --test-threads=1` passed with 11
+  tests. `cargo run -p phpc -- test tests/fixtures/milestone1077
+  --compare-php` and `cargo run -p phpc -- test tests/fixtures/milestone1076
+  --compare-php` passed.
+- Current WordPress frontier: nested string-keyed `$GLOBALS` reference targets
+  such as `$GLOBALS["bag"]["slot"] =& $value;` and nested append targets such
+  as `$GLOBALS["list"][] =& $value;` now bind selected root-global array slots
+  to direct unaliased source variables. Supported nested `$GLOBALS` by-value
+  writes route through the root global table, so writes through the source,
+  direct global variable path, and `$GLOBALS` nested path observe the same
+  selected value.
+- Remaining semantic gaps: non-string `$GLOBALS` root keys,
+  `$GLOBALS[] =& $value`, non-direct `$GLOBALS` reference sources, source names
+  already routed through array-offset aliases, recursive `$GLOBALS`
+  materialization, full PHP reference containers, copy-on-write, non-direct
+  iterables, object/`Traversable` iteration, foreach destructuring,
+  array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
+  broad array reordering/replacement during iteration, existing alias groups,
+  dynamic/magic/non-public properties, nested/object offset aliases, native
+  lowering, exact mutation ordering, alias rebinding, and by-reference
+  `ArrayAccess::offsetGet()` indirect-modification fidelity remain missing.
+- Next concrete task: finish verification, checkpoint Milestone 1077, then
+  choose the next reference/COW gap or native-lowering boundary with PHP
+  comparison coverage where applicable.
+
 ## Loop Event 2026-05-16T19:35:00Z
 
 - Checkpoint before this task:

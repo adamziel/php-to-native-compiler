@@ -259,16 +259,21 @@ offset targets such as `$bag[$key] =& $value;` and property-held
 `$holder->bag[$key] =& $value;` are an explicit runtime boundary with a stable
 diagnostic, reflecting PHP's fatal behavior for assigning by reference to an
 object array dimension while avoiding engine-specific notice/fatal text.
-Direct string-keyed `$GLOBALS` reference targets also have a narrow route:
-`$GLOBALS["name"] =& $value;` binds the named root global symbol to a direct
-unaliased source variable cell, including from function scope. Writes through
-the source name, the direct global variable, and the string-keyed `$GLOBALS`
-offset observe the same value, and unsetting the source name detaches only
-that name. Non-string `$GLOBALS` keys, append/nested `$GLOBALS` reference
-targets, source names already routed through array-offset aliases, non-direct
-sources, recursive `$GLOBALS` materialization, full reference containers,
-copy-on-write, exact mutation ordering, and native lowering remain future
-work.
+String-keyed `$GLOBALS` reference targets also have narrow routes:
+`$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
+`$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
+root-global array slot to a direct unaliased source variable cell, including
+from function scope. Missing root globals, `null` root globals, and missing
+intermediate containers materialize as arrays for the nested/append forms, and
+append targets use the runtime array append cursor under the selected root
+global array. Writes through the source name, the direct global variable path,
+and the supported string-keyed `$GLOBALS` offset path observe the same value,
+and unsetting the source name detaches only that name. Nested by-value writes
+through supported string-keyed `$GLOBALS` paths route through the root global
+symbol table. Non-string root keys, `$GLOBALS[] =& $value`, source names
+already routed through array-offset aliases, non-direct sources, recursive
+`$GLOBALS` materialization, full reference containers, copy-on-write, exact
+mutation ordering, and native lowering remain future work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
 of reference-return functions and methods still reports stable runtime

@@ -310,6 +310,7 @@ struct ArrayOffsetAlias {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ArrayOffsetAliasRoot {
     StaticArray { name: String },
+    GlobalArray { name: String },
     PublicObjectProperty { object: String, property: String },
 }
 
@@ -592,6 +593,31 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_global_nested_array_offset_to_static_source(
+        &mut self,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source("GLOBALS", source_name, span)?;
+        let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+            keys,
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_static_to_array_offset_alias(source_name, alias);
+        Ok(())
+    }
+
     fn append_array_offset_to_static_source(
         &mut self,
         array_name: &str,
@@ -742,6 +768,72 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn append_global_nested_array_offset_to_static_source(
+        &mut self,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source("GLOBALS", source_name, span)?;
+        let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let root = ArrayOffsetAliasRoot::GlobalArray { name: global_name };
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys =
+            Self::append_nested_array_offset_alias(&mut array, &keys, source_value, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        self.bind_static_to_array_offset_alias(
+            source_name,
+            ArrayOffsetAlias {
+                root,
+                keys: alias_keys,
+            },
+        );
+        Ok(())
+    }
+
+    fn split_globals_reference_path(
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<(String, Vec<ArrayKey>)> {
+        let Some((first, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "$GLOBALS",
+                    "nested reference bindings require a string-keyed root global",
+                ),
+            ));
+        };
+        let ArrayKey::String(global_name) = first else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "$GLOBALS",
+                    "only string-keyed nested reference bindings are implemented",
+                ),
+            ));
+        };
+        Ok((global_name.clone(), rest.to_vec()))
+    }
+
     fn ensure_array_offset_reference_target_source(
         &self,
         array_name: &str,
@@ -840,6 +932,7 @@ impl SymbolTable {
     ) -> CompileResult<Option<Value>> {
         match &alias.root {
             ArrayOffsetAliasRoot::StaticArray { name } => Ok(self.read_storage_named(name)),
+            ArrayOffsetAliasRoot::GlobalArray { name } => Ok(self.read_global_name(name)),
             ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
                 match self.read_storage_named(object) {
                     Some(Value::Object(object)) => object
@@ -871,6 +964,10 @@ impl SymbolTable {
         match &alias.root {
             ArrayOffsetAliasRoot::StaticArray { name } => {
                 self.write_storage_named(name, value);
+                Ok(())
+            }
+            ArrayOffsetAliasRoot::GlobalArray { name } => {
+                self.write_global_name(name, value);
                 Ok(())
             }
             ArrayOffsetAliasRoot::PublicObjectProperty { object, property } => {
@@ -3576,19 +3673,18 @@ impl Interpreter {
                 } = source
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
-                    if name == "GLOBALS" {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "$GLOBALS",
-                                "nested reference binding through $GLOBALS is not implemented",
-                            ),
-                        ));
-                    }
                     let keys = indices
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if name == "GLOBALS" {
+                        scope.bind_global_nested_array_offset_to_static_source(
+                            keys,
+                            source_name,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     scope.bind_nested_array_offset_to_static_source(
                         name,
                         keys,
@@ -3606,19 +3702,18 @@ impl Interpreter {
                 } = source
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
-                    if name == "GLOBALS" {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "$GLOBALS",
-                                "nested append reference binding through $GLOBALS is not implemented",
-                            ),
-                        ));
-                    }
                     let keys = indices
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if name == "GLOBALS" {
+                        scope.append_global_nested_array_offset_to_static_source(
+                            keys,
+                            source_name,
+                            span,
+                        )?;
+                        return Ok(());
+                    }
                     scope.append_nested_array_offset_to_static_source(
                         name,
                         keys,
@@ -3998,6 +4093,10 @@ impl Interpreter {
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
                 let value = self.evaluate(expr, scope)?;
+                if name == "GLOBALS" {
+                    Self::write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
+                    return Ok(value);
+                }
                 Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
                 Ok(value)
             }
@@ -4011,6 +4110,10 @@ impl Interpreter {
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
                 let value = self.evaluate(expr, scope)?;
+                if name == "GLOBALS" {
+                    Self::write_global_nested_array_append(&keys, value.clone(), *span, scope)?;
+                    return Ok(value);
+                }
                 Self::write_nested_array_append(name, &keys, value.clone(), *span, scope)?;
                 Ok(value)
             }
@@ -4165,6 +4268,37 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::write_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
+                Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_global_nested_array_assignment(
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (global_name, keys) = SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
+        let mut slot = scope
+            .read_global_name(&global_name)
+            .unwrap_or_else(|| Value::Array(PhpArray::new()));
+
+        if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                Self::write_nested_array_value(array, &keys, value, span)?;
+                scope.write_global_name(&global_name, slot);
                 Ok(())
             }
             other => Err(runtime_error(
@@ -4421,6 +4555,37 @@ impl Interpreter {
             Value::Array(array) => {
                 Self::append_nested_array_value(array, keys, value, span)?;
                 scope.write_static(name, slot);
+                Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_global_nested_array_append(
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (global_name, keys) = SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
+        let mut slot = scope
+            .read_global_name(&global_name)
+            .unwrap_or_else(|| Value::Array(PhpArray::new()));
+
+        if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                Self::append_nested_array_value(array, &keys, value, span)?;
+                scope.write_global_name(&global_name, slot);
                 Ok(())
             }
             other => Err(runtime_error(

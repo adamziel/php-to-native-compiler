@@ -418,16 +418,19 @@
   `unset($name)` after import as removing the local import without deleting the
   root global value. Direct string-keyed `$GLOBALS['name']` reads and writes
   route to the same root global symbol table from top-level and function scope.
-  Direct string-keyed `$GLOBALS['name'] =& $value` reference targets bind the
-  root global symbol to a direct unaliased source variable cell, including from
-  function scope. Writes through the source variable, direct global variable,
-  and `$GLOBALS` offset observe the same value, and `unset($value)` detaches
-  only the source name. Full PHP `$GLOBALS` array materialization, recursive
-  `$GLOBALS` contents, non-string keyed `$GLOBALS` access, append/nested
-  `$GLOBALS` reference targets, source names already routed through
-  array-offset aliases, non-direct sources, dynamic global names, exact
-  warning/notice behavior, included-file scope interactions, copy-on-write,
-  and native lowering remain unsupported.
+  Direct string-keyed `$GLOBALS['name'] =& $value`,
+  `$GLOBALS['bag']['slot'] =& $value`, and `$GLOBALS['list'][] =& $value`
+  reference targets bind the selected root global symbol or root-global array
+  slot to a direct unaliased source variable cell, including from function
+  scope. Writes through the source variable, direct global variable path, and
+  supported `$GLOBALS` offset path observe the same value, and
+  `unset($value)` detaches only the source name. Nested by-value writes through
+  supported string-keyed `$GLOBALS` paths route through the root global symbol
+  table. Full PHP `$GLOBALS` array materialization, recursive `$GLOBALS`
+  contents, non-string keyed `$GLOBALS` access, `$GLOBALS[] =& $value`,
+  source names already routed through array-offset aliases, non-direct sources,
+  dynamic global names, exact warning/notice behavior, included-file scope
+  interactions, copy-on-write, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
@@ -4768,11 +4771,12 @@
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - full `global`/`$GLOBALS` semantics beyond direct string-keyed `$GLOBALS`
-  root-symbol reads/writes and the bounded direct-variable reference-target
-  slice: recursive `$GLOBALS` materialization, dynamic global names,
-  append/nested `$GLOBALS` reference targets, non-direct reference sources,
-  superglobals, included-file scope interactions, copy-on-write, exact
-  warning/notice behavior, and native lowering
+  root-symbol reads/writes, nested by-value writes, and the bounded direct-
+  variable reference-target slices: recursive `$GLOBALS` materialization,
+  dynamic global names, `$GLOBALS[] =& $value`, non-direct reference sources,
+  source names already routed through array-offset aliases, superglobals,
+  included-file scope interactions, copy-on-write, exact warning/notice
+  behavior, and native lowering
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters

@@ -157,6 +157,67 @@ echo $value;
 }
 
 #[test]
+fn globals_nested_reference_targets_bind_direct_sources_to_root_arrays() {
+    let execution = run_source(
+        r#"<?php
+$value = "first";
+$GLOBALS["bag"]["slot"] =& $value;
+echo $bag["slot"], "|", $GLOBALS["bag"]["slot"], "|";
+$value = "second";
+echo $bag["slot"], "|";
+$GLOBALS["bag"]["slot"] = "third";
+echo $value, "|", $bag["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|first|second|third|third");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_nested_reference_targets_can_bind_function_local_sources() {
+    let execution = run_source(
+        r#"<?php
+function bind_nested() {
+    $value = "local";
+    $GLOBALS["bag"]["slot"] =& $value;
+    $value = "changed";
+    echo $GLOBALS["bag"]["slot"], "|";
+}
+
+bind_nested();
+echo $bag["slot"], "|";
+$bag["slot"] = "global-write";
+echo $GLOBALS["bag"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|changed|global-write");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_nested_append_reference_targets_bind_selected_auto_key() {
+    let execution = run_source(
+        r#"<?php
+$value = "first";
+$GLOBALS["bag"][] =& $value;
+echo $bag[0], "|";
+$value = "second";
+echo $GLOBALS["bag"][0], "|";
+$bag[0] = "third";
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|second|third");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
     let error = runtime_error("<?php\necho $_GET;\n");
 
