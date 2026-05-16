@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `0000452 runtime: add mysqli client stats placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 938, a synthetic WordPress-shaped `wpdb`
+  diagnostics smoke over deterministic `mysqli_get_client_stats()` placeholder
+  mysqlnd client-statistics metadata.
+- Files changed so far: `tests/fixtures/milestone938/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone938`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped diagnostics method now records
+  the small zeroed `mysqli_get_client_stats()` subset.
+- Remaining semantic gaps: PHP's full mysqlnd client statistics table, real
+  client-library traffic accounting, memory accounting, connection reuse
+  state, sockets, warnings/errors, host database state, and native database
+  lowering remain missing.
+- Next concrete task: run the focused Milestone 938 fixture, then whitespace
+  checks and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, inspect the next MySQLi error-list or statement boundary such as
+  `mysqli_error_list()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `e00be10 tests: add wordpress wpdb mysqli debug smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 937, bounded deterministic

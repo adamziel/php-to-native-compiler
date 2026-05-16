@@ -267,7 +267,10 @@ warning/error fidelity, or native lowering, plus bounded deterministic
 `mysqli_get_client_stats()` mysqlnd client-statistics metadata without PHP's
 full mysqlnd table, real client-library traffic accounting, memory accounting,
 connection reuse state, sockets, host database state, warning/error fidelity,
-or native lowering,
+or native lowering, now wired through a synthetic WordPress-shaped `wpdb`
+diagnostics smoke without claiming PHP's full mysqlnd table, real
+client-library accounting, memory accounting, connection reuse state, sockets,
+host database state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

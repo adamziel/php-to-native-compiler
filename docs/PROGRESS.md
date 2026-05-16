@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 938, a synthetic WordPress-shaped `wpdb` connection
+  diagnostics smoke that records bounded `mysqli_get_client_stats()` metadata
+  through a `wpdb`-style method, verifies the zeroed traffic counters, records
+  zeroed placeholder connection counters, and verifies that the diagnostics
+  path ran. This is a harness smoke only; it does not add PHP's full mysqlnd
+  client statistics table, real client-library accounting, memory accounting,
+  connection reuse state, sockets, host database state, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone938`.
+
 - Added Milestone 937, bounded `mysqli_get_client_stats()` support for
   deterministic placeholder mysqlnd client-statistics metadata. The runtime
   accepts the no-argument call, returns a small zeroed local subset

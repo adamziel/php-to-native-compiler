@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_client_stats()` mysqlnd client-statistics metadata through a
+WordPress-shaped `wpdb` connection diagnostics method. System PHP returns a
+broad host mysqlnd statistics table; phpc returns only a small zeroed local
+subset without tracking real client-library traffic, memory, connection reuse,
+socket, or database state.

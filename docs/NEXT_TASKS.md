@@ -8731,17 +8731,26 @@ handled.
   This is not PHP's full mysqlnd client statistics table, real client-library
   traffic accounting, memory accounting, connection reuse state, sockets, host
   database state, warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+- [x] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
   records bounded `mysqli_get_client_stats()` metadata through a
   WordPress-shaped connection diagnostics method without claiming PHP's full
   mysqlnd client statistics table, real client-library accounting, sockets,
   host database state, warning/error fidelity, or native lowering.
+  Milestone 938 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  small zeroed `mysqli_get_client_stats()` subset through a WordPress-shaped
+  diagnostics method. It is not PHP's full mysqlnd client statistics table,
+  real client-library accounting, memory accounting, connection reuse state,
+  sockets, host database state, warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi error-list or statement
+  boundary after client stats, such as `mysqli_error_list()` or a sharper
+  unsupported diagnostic for real warning/error list state, before claiming
+  broader database error fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e00be10 tests: add wordpress wpdb mysqli debug smoke`, covering
-  Milestone 936 before the current Milestone 937 candidate.
+  `0000452 runtime: add mysqli client stats placeholder`, covering
+  Milestone 937 before the current Milestone 938 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

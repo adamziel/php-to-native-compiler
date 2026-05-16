@@ -1538,6 +1538,11 @@ historical blockers and remaining full-support gaps include:
   statistics subset without PHP's full mysqlnd table, real client-library
   traffic accounting, memory accounting, connection reuse state, sockets, host
   database state, warning/error fidelity, or native database lowering.
+  Milestone 938 wires that metadata through a synthetic WordPress-shaped
+  `wpdb` diagnostics smoke without claiming PHP's full mysqlnd table, real
+  client-library accounting, memory accounting, connection reuse state,
+  sockets, host database state, warning/error fidelity, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
