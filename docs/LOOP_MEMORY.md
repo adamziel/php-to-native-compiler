@@ -33,18 +33,24 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1040, bounded `Countable` object protocol support
   for `is_countable()` and `count()` over the current object model.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/countable_type_builtin.rs`,
   `compiler/tests/runtime_errors.rs`, `tests/fixtures/milestone1040/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
   `docs/NEXT_TASKS.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`,
   `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check`,
   `cargo test -p phpc --test countable_type_builtin -- --test-threads=1`,
   `cargo test -p phpc --test runtime_errors unsupported_builtin_call_has_stable_runtime_error -- --test-threads=1`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1040`,
-  and `git diff --check` passed.
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, `git diff --check`,
+  and the serialized checkpoint gate passed. The first full gate found a
+  stale runtime-error fixture snapshot; after updating the fixture, the full
+  gate passed with 1255 fixture tests, 702 system PHP comparisons, and 553
+  skipped comparisons, then committed
+  `acd8168e runtime: add countable object protocol`.
 - Current WordPress frontier: current object metadata can mark classes as
   `Countable`, `is_countable($object)` observes that metadata, and
   `count($object)` dispatches a visible non-static `count()` method when it
@@ -53,8 +59,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   `__call` fallback, `Traversable`/iterator protocols, inaccessible/static
   count methods, non-integer result coercion, exact diagnostics,
   references/copy-on-write, and native lowering remain missing.
-- Next concrete task: run focused verification after docs, then the serialized
-  checkpoint gate under `umask 0022`.
+- Next concrete task: push the checkpoint, then continue with the next bounded
+  WordPress compatibility lane.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
