@@ -8794,17 +8794,27 @@ handled.
   unsupported diagnostics. This is not statement object allocation, prepared
   SQL parsing, parameter/result binding, statement execution, result metadata,
   host database state, warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement smoke
+- [x] WordPress harness lane: add a synthetic `wpdb` prepared-statement smoke
   that reaches the explicit `mysqli_prepare()` boundary through a
   WordPress-shaped method without claiming statement objects, binding,
   execution, result metadata, host database state, warning/error fidelity, or
   native lowering.
+  Milestone 944 adds a `phpc-only` synthetic `wpdb` fixture that reaches the
+  explicit `mysqli_prepare()` unsupported diagnostic through a WordPress-shaped
+  option lookup method. It is not statement object allocation, prepared SQL
+  parsing, parameter/result binding, statement execution, result metadata,
+  host database state, warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi statement API boundary
+  after prepared-statement lifecycle visibility, such as
+  `mysqli_stmt_bind_param()`/`mysqli_stmt_execute()` callable metadata and
+  explicit unsupported diagnostics, before claiming broader prepared statement
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `71bc347 tests: add wordpress wpdb thread safe smoke`, covering
-  Milestone 942 before the current Milestone 943 candidate.
+  `fad8f58 runtime: add mysqli statement lifecycle boundary`, covering
+  Milestone 943 before the current Milestone 944 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

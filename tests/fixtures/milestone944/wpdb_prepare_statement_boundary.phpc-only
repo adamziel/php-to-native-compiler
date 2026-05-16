@@ -1,0 +1,6 @@
+This fixture exercises phpc's explicit MySQLi prepared-statement lifecycle
+boundary through a WordPress-shaped `wpdb` method. System PHP would use host
+statement objects or report host-specific connection/statement errors; phpc
+only records the reached `mysqli_prepare()` boundary with a stable unsupported
+diagnostic and does not implement prepared SQL parsing, binding, execution,
+result metadata, or host database state.

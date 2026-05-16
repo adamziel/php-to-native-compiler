@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone944/wpdb_prepare_statement_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone944/wpdb_prepare_statement_boundary.php:14:16: unsupported call mysqli_prepare(): mysqli prepared statement parsing, statement objects, binding, execution, and result metadata are not implemented in the current subset
+--- stderr end ---

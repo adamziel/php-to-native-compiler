@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `fad8f58 runtime: add mysqli statement lifecycle boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 944, a synthetic WordPress-shaped `wpdb`
+  prepared-statement smoke that reaches the explicit `mysqli_prepare()`
+  boundary.
+- Files changed so far: `tests/fixtures/milestone944/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone944`;
+  `cargo fmt --check`.
+  Both passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: a WordPress-shaped option lookup method now
+  records the prepared-statement lifecycle boundary through
+  `mysqli_prepare()`.
+- Remaining semantic gaps: statement object allocation, prepared SQL parsing,
+  parameter/result binding, statement execution, result metadata, host
+  database state, warnings/errors, and native database lowering remain
+  missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`;
+  after checkpoint, inspect the next MySQLi statement API boundary such as
+  bind or execute metadata.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `71bc347 tests: add wordpress wpdb thread safe smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 943, explicit MySQLi prepared-statement lifecycle

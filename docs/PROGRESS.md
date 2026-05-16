@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 944, a synthetic WordPress-shaped `wpdb` prepared-statement
+  smoke that reaches the explicit `mysqli_prepare()` boundary through a
+  `wpdb`-style option lookup method. This is a harness smoke only; it does
+  not add statement object allocation, prepared SQL parsing, parameter/result
+  binding, statement execution, result metadata, host database state, PHP
+  warning/error fidelity, or native database lowering. Focused verification
+  so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone944`.
+
 - Added Milestone 943, explicit MySQLi prepared-statement lifecycle
   boundaries for `mysqli_stmt_init()` and `mysqli_prepare()`. The runtime
   exposes both names through function/callability metadata, validates the

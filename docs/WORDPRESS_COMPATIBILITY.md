@@ -1563,6 +1563,10 @@ historical blockers and remaining full-support gaps include:
   unsupported diagnostics, without statement object allocation, prepared SQL
   parsing, parameter/result binding, statement execution, result metadata,
   host database state, warning/error fidelity, or native database lowering.
+  Milestone 944 wires that boundary through a synthetic WordPress-shaped
+  `wpdb` option lookup method without claiming statement objects, binding,
+  execution, result metadata, host database state, warning/error fidelity, or
+  native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
