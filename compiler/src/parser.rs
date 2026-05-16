@@ -4696,10 +4696,7 @@ impl Parser {
                 "unsupported reference argument: references are not implemented",
             )),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
-                Err(self.error_at(
-                    token.span,
-                    "unsupported named argument: named arguments are not implemented",
-                ))
+                Err(self.error_at(token.span, unsupported_named_argument_message()))
             }
             _ => Ok(()),
         }
@@ -6085,6 +6082,10 @@ fn unsupported_reference_assignment_source_message() -> &'static str {
 
 fn unsupported_first_class_callable_message() -> &'static str {
     "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+}
+
+fn unsupported_named_argument_message() -> &'static str {
+    "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
 }
 
 fn unsupported_unset_message() -> &'static str {

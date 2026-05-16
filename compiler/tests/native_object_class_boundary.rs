@@ -10,7 +10,8 @@ const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation low
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
-const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
@@ -104,7 +105,6 @@ fn emit_ir_rejects_inherited_class_declarations_with_specific_boundary() {
 #[test]
 fn emit_ir_rejects_static_members_with_specific_boundary() {
     for source in [
-        "<?php\necho Box::class;\n",
         "<?php\necho Box::NAME;\n",
         "<?php\necho Box::$name;\n",
         "<?php\nBox::$name = \"Ada\";\n",
@@ -114,6 +114,21 @@ fn emit_ir_rejects_static_members_with_specific_boundary() {
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_class_name_constants_with_specific_boundary() {
+    for source in [
+        "<?php\necho Box::class;\n",
+        "<?php\nself::class;\n",
+        "<?php\nparent::class;\n",
+        "<?php\nstatic::class;\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_CLASS_NAME_CONSTANT_REJECTION);
     }
 }
 
@@ -470,7 +485,6 @@ fn native_object_instantiation_emit_asm_cli_snapshot_matches_committed_output() 
 #[test]
 fn emit_asm_rejects_static_members_before_backend_execution() {
     for source in [
-        "<?php\necho Box::class;\n",
         "<?php\necho Box::NAME;\n",
         "<?php\necho Box::$name;\n",
         "<?php\nBox::$name = \"Ada\";\n",
@@ -480,6 +494,21 @@ fn emit_asm_rejects_static_members_before_backend_execution() {
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+    }
+}
+
+#[test]
+fn emit_asm_rejects_class_name_constants_before_backend_execution() {
+    for source in [
+        "<?php\necho Box::class;\n",
+        "<?php\nself::class;\n",
+        "<?php\nparent::class;\n",
+        "<?php\nstatic::class;\n",
+    ] {
+        let error = emit_asm_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_CLASS_NAME_CONSTANT_REJECTION);
     }
 }
 
@@ -844,6 +873,26 @@ fn native_instanceof_emit_asm_cli_snapshot_matches_committed_output() {
         "tests/fixtures/milestone1178/native_instanceof_boundary.phpc-source",
         "tests/fixtures/milestone1178/native_instanceof_boundary_emit_asm.cli",
         "native instanceof assembly CLI snapshot is readable",
+    );
+}
+
+#[test]
+fn native_class_name_constant_emit_ir_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-ir",
+        "tests/fixtures/milestone1183/native_class_name_constant_boundary.phpc-source",
+        "tests/fixtures/milestone1183/native_class_name_constant_boundary_emit_ir.cli",
+        "native class-name constant IR CLI snapshot is readable",
+    );
+}
+
+#[test]
+fn native_class_name_constant_emit_asm_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-asm",
+        "tests/fixtures/milestone1183/native_class_name_constant_boundary.phpc-source",
+        "tests/fixtures/milestone1183/native_class_name_constant_boundary_emit_asm.cli",
+        "native class-name constant assembly CLI snapshot is readable",
     );
 }
 

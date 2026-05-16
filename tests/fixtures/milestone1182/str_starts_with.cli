@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+yes|callable|admin|prefix|empty
+--- stdout end ---
+stderr:
+--- stderr end ---

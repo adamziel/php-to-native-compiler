@@ -1,2 +1,2 @@
-parse error at 5:12: unsupported named argument: named arguments are not implemented
+parse error at 5:12: unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering
 

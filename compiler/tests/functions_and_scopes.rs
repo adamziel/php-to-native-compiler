@@ -3223,7 +3223,7 @@ echo greet(name: "Ada");
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported named argument: named arguments are not implemented"
+        "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
     );
 }
 

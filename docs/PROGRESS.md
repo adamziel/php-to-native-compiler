@@ -4,6 +4,117 @@
 
 Implemented:
 
+- Added Milestone 1185, a tests/docs queue refresh after the 1181-1184
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1181-1185
+  complete and opens Milestones 1186-1190, public docs describe the dedicated
+  named-argument parse diagnostic, bounded `str_starts_with()` runtime
+  support, dedicated native class-name constant rejection, and fixture-manifest
+  `.cli` sidecar audit metadata. This does not change runtime behavior,
+  native lowering, fixture execution, or PHP/WordPress compatibility claims
+  beyond the implemented 1181-1184 slices. Full gate passed at checkpoint:
+  `1346` fixture tests, `763` system PHP comparisons, and `583` skipped
+  `phpc-only` fixtures.
+
+- Added Milestone 1181, a parser diagnostic refinement for unsupported named
+  call arguments. Forms such as `greet(name: "Ada")`, `$box->set(value: 1)`,
+  `Box::make(value: 1)`, and `new Box(value: 1)` now fail with a dedicated
+  parse diagnostic naming the missing parameter-name metadata, duplicate and
+  unknown-name diagnostics, positional/named ordering, by-reference binding,
+  variadic collection, unpacking interaction, and native lowering instead of
+  the broader "named arguments are not implemented" message. This does not
+  implement named-argument runtime dispatch, method/constructor/static-call
+  named arguments, unpacking interaction, parameter-name reflection fidelity,
+  exact PHP diagnostics, or native lowering. Verification so far:
+  `cargo test -p phpc --test syntax_boundaries unsupported_named_arguments
+  -- --test-threads=1`, `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_named_arguments_at_parse_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes
+  named_arguments_are_rejected_with_stable_parse_error -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_function_features_cli --
+  --test-threads=1`, direct `cargo run -q -p phpc -- run
+  tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
+  returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/unsupported_function_features/unsupported_named_argument.php
+  --emit-ir` returning exit `1`, `cargo run -q -p phpc -- test
+  tests/fixtures/unsupported_function_features`, and `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/unsupported_function_features` passed in
+  the parser lane. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1182, a bounded runtime `str_starts_with()` string-prefix
+  slice. `phpc run` now supports exactly two scalar/null string-convertible
+  haystack and needle arguments, including PHP's empty-needle `true` result,
+  dynamic string-valued calls, `function_exists()`/`is_callable()` lookup, and
+  a WordPress-shaped path-prefix fixture. Native `function_exists()` and
+  `is_callable()` introspection recognize the name, while direct native calls
+  still reject under the existing function-call lowering boundary. This does
+  not implement binary string edge cases beyond represented UTF-8 runtime
+  strings, array/object/resource coercions, exact PHP diagnostics, or native
+  lowering beyond function-table introspection. Verification so far:
+  `CARGO_TARGET_DIR=target/focused-1182-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test str_starts_with_builtin -- --test-threads=1`,
+  `CARGO_TARGET_DIR=target/focused-1182-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/milestone1182`,
+  `CARGO_TARGET_DIR=target/focused-1182-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1182`,
+  direct `CARGO_TARGET_DIR=target/focused-1182-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- run tests/fixtures/milestone1182/str_starts_with.php`,
+  `CARGO_TARGET_DIR=target/focused-1182-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`,
+  and scoped `git diff --check` passed in the runtime lane. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1183, a dedicated native class-name constant rejection for
+  the documented bounded runtime `ClassName::class`, `self::class`,
+  `parent::class`, and `static::class` behavior. `phpc compile --emit-ir` and
+  `--emit-asm` now reject those AST nodes with a diagnostic naming missing
+  native class-name resolution, active class/parent and late-static-binding
+  context, namespace/import canonicalization, autoload-free class lookup
+  interaction, references/copy-on-write, and exact native class-name constant
+  diagnostics instead of using the broader static-member boundary. This does
+  not implement native class-name constant lowering, native class context,
+  late-static binding, namespace/import canonicalization, autoload behavior,
+  references/copy-on-write, or exact native class-name constant diagnostics.
+  Verification so far: `cargo test -p phpc --test native_object_class_boundary
+  emit_ir_rejects_class_name_constants_with_specific_boundary --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  emit_asm_rejects_class_name_constants_before_backend_execution --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  native_class_name_constant_emit_ir_cli_snapshot_matches_committed_output --
+  --test-threads=1`, `cargo test -p phpc --test native_object_class_boundary
+  native_class_name_constant_emit_asm_cli_snapshot_matches_committed_output --
+  --test-threads=1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1183/native_class_name_constant_boundary.phpc-source
+  --emit-ir` returning exit `1`, direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1183/native_class_name_constant_boundary.phpc-source
+  --emit-asm` returning exit `1`, `cargo fmt --check`, and `git diff
+  --check` passed in the IR lane. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1184, a deterministic compiler-output fixture-manifest audit
+  refinement. `phpc test --list-fixtures-json [fixture-dir]` now emits
+  `contract_version: 8`, and both JSON and text fixture manifests report
+  deterministic `.cli` snapshot exercise sidecars with aggregate and
+  per-fixture counts/byte counts, JSON SHA-256 digests, compatibility-target
+  summaries, and recognized orphan `.cli` sidecars. This does not execute CLI
+  snapshots, change fixture execution, change system PHP comparison behavior,
+  alter parser/runtime behavior, alter native lowering, or broaden PHP support
+  claims. Unsupported/unchanged audit gaps: the manifests do not execute or
+  validate `.cli` snapshots, validate compatibility probe expectations, parse
+  expected inventory output, compare external WordPress checkouts, validate
+  non-empty `.phpc-only` reasons, inspect non-fixture compatibility metadata
+  beyond `source-pin.md` and `.expected` probe artifacts, inspect
+  unrecognized sidecars, or prove branch-specific compatibility. Verification
+  in the compiler-output lane:
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test fixture_manifest -- --test-threads=1`
+  passed; direct
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --list-fixtures tests/fixtures/milestone42`
+  showed `cli-exercises=1` and `cli=624`; direct
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --list-fixtures-json tests/fixtures/milestone42`
+  showed `contract_version: 8`, `cli_exercises: 1`, and a `.cli` SHA-256
+  digest; direct
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/milestone42`
+  passed with `1 passed, 0 failed`; direct
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone42`
+  passed with `1 compared, 0 skipped`;
+  `CARGO_TARGET_DIR=target/focused-1184-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`
+  and scoped `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
 - Added Milestone 1180, a tests/docs queue refresh after the 1176-1179
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1176-1180
   complete and opens Milestones 1181-1185, public docs describe the

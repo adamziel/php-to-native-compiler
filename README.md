@@ -54,13 +54,14 @@ variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
 selected folds, and a documented set of native builtin folds.
 
 Anything outside that lowerable subset is rejected before misleading IR is
-emitted. Arrays, objects, `instanceof` relationship checks, ArrayAccess
-object-offset dispatch, clone expressions, include/require expression return
-semantics, functions, general control flow, try/catch/finally exception
-control, references, copy-on-write, and broad PHP coercions remain
-interpreter-only or unsupported for native lowering. Try blocks are rejected
-through a dedicated native diagnostic until catch matching, catch variable
-binding, finally execution, and stack unwinding have native semantics.
+emitted. Arrays, objects, class-name constants, `instanceof` relationship
+checks, ArrayAccess object-offset dispatch, clone expressions, include/require
+expression return semantics, functions, general control flow,
+try/catch/finally exception control, references, copy-on-write, and broad PHP
+coercions remain interpreter-only or unsupported for native lowering. Try
+blocks are rejected through a dedicated native diagnostic until catch matching,
+catch variable binding, finally execution, and stack unwinding have native
+semantics.
 The compile mode flag is validated before the input file is read, so invalid
 modes such as `--emit-object` report a stable CLI usage error instead of an
 unrelated file, parse, or codegen diagnostic.
@@ -239,7 +240,7 @@ leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path statement
 and expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
-callback integration, type declaration enforcement, cast
+callback integration, named call arguments, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
@@ -360,21 +361,22 @@ manifest without parsing or executing fixtures. The manifest lists each fixture,
 its committed expectation files, aggregate expectation/comparison counts, and
 whether it is eligible for system PHP comparison. `.phpc-only` fixture entries
 also include their marker text as `phpc-only-reason=<reason>`, and the text
-manifest reports deterministic source and recognized sidecar byte counts for
-fixtures, summaries, orphan sidecars, and compatibility targets. Compatibility
-target entries also report `source-pin.md` path, byte count, and SHA-256 when a
-target pin file is present, plus deterministic `compat/<target>/**/*.expected`
-probe expectation artifacts with path, byte count, and SHA-256.
+manifest reports deterministic source and recognized sidecar byte counts,
+including `.cli` snapshot exercise files, for fixtures, summaries, orphan
+sidecars, and compatibility targets. Compatibility target entries also report
+`source-pin.md` path, byte count, and SHA-256 when a target pin file is
+present, plus deterministic `compat/<target>/**/*.expected` probe expectation
+artifacts with path, byte count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 7. The JSON records
+manifest as deterministic JSON with `contract_version` 8. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
 sidecar byte counts, and SHA-256 digests for fixture sources, recognized
 sidecars, and recognized orphan sidecars so comparison opt-outs and committed
-expectation payloads are visible without executing fixtures. When the fixture
-root contains `compat/<target>` directories, the JSON also includes per-target
-compatibility counts, optional `source-pin.md` audit metadata, and `.expected`
-probe expectation artifact metadata, including targets with no executable
-`.php` fixtures yet.
+expectation and `.cli` exercise payloads are visible without executing
+fixtures or CLI snapshots. When the fixture root contains `compat/<target>`
+directories, the JSON also includes per-target compatibility counts, optional
+`source-pin.md` audit metadata, and `.expected` probe expectation artifact
+metadata, including targets with no executable `.php` fixtures yet.
 
 Use these commands while developing:
 

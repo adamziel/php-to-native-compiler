@@ -469,6 +469,53 @@ fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_named_arguments_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nfunction greet($name) { return $name; }\necho greet(name: 'Ada');\n",
+            3,
+            12,
+        ),
+        (
+            "<?php\nclass Box { public function set($value) {} }\n$box = new Box();\n$box->set(value: 1);\n",
+            4,
+            11,
+        ),
+        (
+            "<?php\nclass Box { public static function make($value) {} }\nBox::make(value: 1);\n",
+            3,
+            11,
+        ),
+        (
+            "<?php\nclass Box { public function __construct($value) {} }\n$box = new Box(value: 1);\n",
+            3,
+            16,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_named_arguments_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\necho strlen(string: 'abc');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_magic_class_name_instantiation_after_parse() {
     let error = php_compiler::emit_ir_source("<?php\necho new self();\n").unwrap_err();
 

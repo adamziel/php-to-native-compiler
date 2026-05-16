@@ -36,12 +36,14 @@ pub struct FixtureManifestSummary {
     pub stdout_expectations: usize,
     pub stderr_expectations: usize,
     pub exit_expectations: usize,
+    pub cli_exercises: usize,
     pub phpc_only_markers: usize,
     pub orphan_sidecars: usize,
     pub source_bytes: u64,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
     pub exit_bytes: u64,
+    pub cli_bytes: u64,
     pub phpc_only_bytes: u64,
 }
 
@@ -53,14 +55,17 @@ pub struct FixtureManifestEntry {
     pub has_stdout: bool,
     pub has_stderr: bool,
     pub has_exit: bool,
+    pub has_cli: bool,
     pub phpc_only: bool,
     pub stdout_bytes: Option<u64>,
     pub stderr_bytes: Option<u64>,
     pub exit_bytes: Option<u64>,
+    pub cli_bytes: Option<u64>,
     pub phpc_only_bytes: Option<u64>,
     pub stdout_sha256: Option<String>,
     pub stderr_sha256: Option<String>,
     pub exit_sha256: Option<String>,
+    pub cli_sha256: Option<String>,
     pub phpc_only_sha256: Option<String>,
     pub phpc_only_reason: Option<String>,
 }
@@ -137,6 +142,7 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
         let stdout_bytes = optional_file_size(&path.with_extension("stdout"))?;
         let stderr_bytes = optional_file_size(&path.with_extension("stderr"))?;
         let exit_bytes = optional_file_size(&path.with_extension("exit"))?;
+        let cli_bytes = optional_file_size(&path.with_extension("cli"))?;
         let phpc_only_bytes = optional_file_size(&path.with_extension("phpc-only"))?;
         entries.push(FixtureManifestEntry {
             path: fixture_manifest_path(root, &path),
@@ -145,14 +151,17 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
             has_stdout: stdout_bytes.is_some(),
             has_stderr: stderr_bytes.is_some(),
             has_exit: exit_bytes.is_some(),
+            has_cli: cli_bytes.is_some(),
             phpc_only: phpc_only_reason.is_some(),
             stdout_bytes,
             stderr_bytes,
             exit_bytes,
+            cli_bytes,
             phpc_only_bytes,
             stdout_sha256: optional_file_sha256(&path.with_extension("stdout"))?,
             stderr_sha256: optional_file_sha256(&path.with_extension("stderr"))?,
             exit_sha256: optional_file_sha256(&path.with_extension("exit"))?,
+            cli_sha256: optional_file_sha256(&path.with_extension("cli"))?,
             phpc_only_sha256: optional_file_sha256(&path.with_extension("phpc-only"))?,
             phpc_only_reason,
         });
@@ -196,10 +205,14 @@ impl FixtureManifestSummary {
             if entry.has_exit {
                 summary.exit_expectations += 1;
             }
+            if entry.has_cli {
+                summary.cli_exercises += 1;
+            }
             summary.source_bytes += entry.source_bytes;
             summary.stdout_bytes += entry.stdout_bytes.unwrap_or(0);
             summary.stderr_bytes += entry.stderr_bytes.unwrap_or(0);
             summary.exit_bytes += entry.exit_bytes.unwrap_or(0);
+            summary.cli_bytes += entry.cli_bytes.unwrap_or(0);
             summary.phpc_only_bytes += entry.phpc_only_bytes.unwrap_or(0);
         }
 
@@ -807,6 +820,7 @@ fn recognized_sidecar_kind(path: &Path) -> Option<&'static str> {
         Some("stdout") => Some("stdout"),
         Some("stderr") => Some("stderr"),
         Some("exit") => Some("exit"),
+        Some("cli") => Some("cli"),
         Some("phpc-only") => Some("phpc-only"),
         _ => None,
     }

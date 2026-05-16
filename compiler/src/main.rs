@@ -296,18 +296,20 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
         summary.stderr_expectations,
         summary.exit_expectations,
         summary.phpc_only_markers,
+        summary.cli_exercises,
         summary.orphan_sidecars,
         summary.source_bytes,
         summary.stdout_bytes,
         summary.stderr_bytes,
         summary.exit_bytes,
+        summary.cli_bytes,
         summary.phpc_only_bytes
     )
 }
@@ -342,15 +344,17 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         .unwrap_or_default();
 
     format!(
-        "{} expectations={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} phpc-only={}",
+        "{} expectations={} cli-exercise={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
         entry.path,
         expectations,
+        if entry.has_cli { "yes" } else { "no" },
         comparison,
         reason,
         entry.source_bytes,
         text_optional_u64(entry.stdout_bytes),
         text_optional_u64(entry.stderr_bytes),
         text_optional_u64(entry.exit_bytes),
+        text_optional_u64(entry.cli_bytes),
         text_optional_u64(entry.phpc_only_bytes)
     )
 }
@@ -382,7 +386,7 @@ fn render_fixture_manifest_compatibility_target(
         .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} phpc-only={} probe expectations={} bytes={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} cli-exercises={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -392,11 +396,13 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.stderr_expectations,
         target.summary.exit_expectations,
         target.summary.phpc_only_markers,
+        target.summary.cli_exercises,
         target.summary.orphan_sidecars,
         target.summary.source_bytes,
         target.summary.stdout_bytes,
         target.summary.stderr_bytes,
         target.summary.exit_bytes,
+        target.summary.cli_bytes,
         target.summary.phpc_only_bytes,
         target.probe_expectations.len(),
         probe_expectation_bytes,
@@ -416,7 +422,7 @@ fn render_fixture_manifest_compatibility_probe_expectation(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 7,\n");
+    output.push_str("  \"contract_version\": 8,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -450,6 +456,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     ));
     output.push_str("    },\n");
     output.push_str(&format!(
+        "    \"cli_exercises\": {},\n",
+        manifest.summary.cli_exercises
+    ));
+    output.push_str(&format!(
         "    \"orphan_sidecars\": {},\n",
         manifest.summary.orphan_sidecars
     ));
@@ -470,6 +480,7 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         "      \"exit\": {},\n",
         manifest.summary.exit_bytes
     ));
+    output.push_str(&format!("      \"cli\": {},\n", manifest.summary.cli_bytes));
     output.push_str(&format!(
         "      \"phpc_only\": {}\n",
         manifest.summary.phpc_only_bytes
@@ -507,6 +518,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             json_optional_u64(entry.exit_bytes)
         ));
         output.push_str(&format!(
+            "        \"cli\": {},\n",
+            json_optional_u64(entry.cli_bytes)
+        ));
+        output.push_str(&format!(
             "        \"phpc_only\": {}\n",
             json_optional_u64(entry.phpc_only_bytes)
         ));
@@ -527,6 +542,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         output.push_str(&format!(
             "        \"exit\": {},\n",
             json_optional_string_literal(entry.exit_sha256.as_deref())
+        ));
+        output.push_str(&format!(
+            "        \"cli\": {},\n",
+            json_optional_string_literal(entry.cli_sha256.as_deref())
         ));
         output.push_str(&format!(
             "        \"phpc_only\": {}\n",
@@ -595,6 +614,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         ));
         output.push_str("        },\n");
         output.push_str(&format!(
+            "        \"cli_exercises\": {},\n",
+            target.summary.cli_exercises
+        ));
+        output.push_str(&format!(
             "        \"orphan_sidecars\": {},\n",
             target.summary.orphan_sidecars
         ));
@@ -614,6 +637,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         output.push_str(&format!(
             "          \"exit\": {},\n",
             target.summary.exit_bytes
+        ));
+        output.push_str(&format!(
+            "          \"cli\": {},\n",
+            target.summary.cli_bytes
         ));
         output.push_str(&format!(
             "          \"phpc_only\": {}\n",

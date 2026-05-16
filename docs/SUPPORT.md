@@ -813,7 +813,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
-  `rtrim`, `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
+  `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`, `file_get_contents`,
@@ -1004,6 +1004,12 @@
   `str_contains($haystack, $needle)` supports exactly two scalar/null
   string-convertible arguments and returns whether the current UTF-8 runtime
   haystack contains the current UTF-8 runtime needle. Empty needles return
+  `true`. Array operands, object/resource coercions, binary string edge cases
+  beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
+  lowering remain unsupported.
+  `str_starts_with($haystack, $needle)` supports exactly two scalar/null
+  string-convertible arguments and returns whether the current UTF-8 runtime
+  haystack starts with the current UTF-8 runtime needle. Empty needles return
   `true`. Array operands, object/resource coercions, binary string edge cases
   beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
   lowering remain unsupported.
@@ -1932,7 +1938,8 @@
   inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic argument
   unpacking, reference expressions, function-scope reference parameter
-  invocation, reference returns, type declaration enforcement, named arguments,
+  invocation, reference returns, type declaration enforcement, named arguments
+  such as `call(name: $value)`,
   first-class callable syntax such as `strlen(...)` and `$callback(...)`,
   `declare(strict_types=1)`, `declare(ticks=1)`, and
   `declare(encoding="UTF-8")`. Declare behavior remains unsupported:
@@ -2964,10 +2971,17 @@
   resolution, `$this` and late-static-binding context, argument/arity
   diagnostics, visibility enforcement, reference/copy-on-write parameter and
   return behavior, and exact native method-call errors.
-  Static class members have a dedicated native codegen boundary:
-  `phpc compile --emit-ir` and `--emit-asm` reject `::class` constants, class
-  constants, static property reads/writes, and dynamic static-property
-  receivers before lowering class/member operands. Native support still needs
+  Class-name constants have a dedicated native codegen boundary:
+  `phpc compile --emit-ir` and `--emit-asm` reject `ClassName::class`,
+  `self::class`, `parent::class`, and `static::class` before lowering
+  class-name resolution. Native support still needs native class-name
+  resolution, active class/parent and late-static-binding context,
+  namespace/import canonicalization, autoload-free class lookup interaction,
+  references/copy-on-write, and exact native class-name constant diagnostics.
+  Static class members also have a dedicated native codegen boundary:
+  `phpc compile --emit-ir` and `--emit-asm` reject class constants, static
+  property reads/writes, and dynamic static-property receivers before lowering
+  class/member operands. Native support still needs
   class constant tables, static property storage, class context and
   late-static-binding resolution, visibility checks, autoload/class lookup,
   references/copy-on-write, and exact native static-member errors.
@@ -3345,7 +3359,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
+  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`, `file_get_contents`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -3711,7 +3725,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
-  `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
+  `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
@@ -3881,7 +3895,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
-  `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
+  `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -4282,6 +4296,10 @@
   `str_contains` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
   `str_contains(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
+  `str_starts_with` accepts the same current scalar/null string-convertible
+  haystack and needle subset as the builtin section above; direct native
+  `str_starts_with(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
   `str_ends_with` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
@@ -5087,33 +5105,35 @@
   and recognized sidecars. `.phpc-only` fixture entries include
   `phpc-only-reason=<reason>` from the marker text, while comparable fixtures
   omit the field. It also reports deterministic source and recognized sidecar
-  byte counts for fixture entries, summaries, recognized orphan sidecars, and
-  compatibility-target summaries. Compatibility-target entries also report
-  `source-pin.md` path, byte count, and SHA-256 when a target pin file is
-  present, and deterministic `compat/<target>/**/*.expected` probe
-  expectation artifacts with path, byte count, and SHA-256. It also reports
-  recognized orphan sidecars that do not have a matching `.php` fixture. It
-  does not parse, execute, or compare fixtures, validate compatibility probe
+  byte counts, including `.cli` snapshot exercise files, for fixture entries,
+  summaries, recognized orphan sidecars, and compatibility-target summaries.
+  Compatibility-target entries also report `source-pin.md` path, byte count,
+  and SHA-256 when a target pin file is present, and deterministic
+  `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
+  count, and SHA-256. It also reports recognized orphan sidecars that do not
+  have a matching `.php` fixture. It does not parse, execute, or compare
+  fixtures, execute or validate `.cli` snapshots, validate compatibility probe
   expectations, parse expected inventory output, hash fixture or sidecar
-  payloads outside the documented source-pin/probe metadata, validate that
-  `.phpc-only` reason text is non-empty, inspect non-fixture compatibility
-  metadata beyond `source-pin.md` and `.expected` probe artifacts, or report
-  unrecognized sidecars.
+  payloads outside the documented JSON digest fields and source-pin/probe
+  metadata, validate that `.phpc-only` reason text is non-empty, inspect
+  non-fixture compatibility metadata beyond `source-pin.md` and `.expected`
+  probe artifacts, or report unrecognized sidecars.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 7, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 8, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
-  recognized sidecars, and recognized orphan sidecars, PHP-comparison
-  eligibility, sibling `.phpc-only` marker text as `phpc_only_reason`, and
-  per-target compatibility counts plus optional `source-pin.md` path, byte
-  count, SHA-256 metadata, and deterministic `.expected` probe expectation
-  artifact metadata for `compat/<target>` directories under the fixture root,
-  including targets with no executable `.php` fixtures yet. It does not parse,
-  execute, compare fixtures, report fixture execution results, validate
-  compatibility probe expectations, parse expected inventory output, validate
-  that `.phpc-only` reason text is non-empty, inspect non-fixture
-  compatibility metadata beyond `source-pin.md` and `.expected` probe
-  artifacts, or report unrecognized sidecars.
+  recognized sidecars including `.cli` snapshot exercise files, and
+  recognized orphan sidecars, PHP-comparison eligibility, sibling
+  `.phpc-only` marker text as `phpc_only_reason`, and per-target
+  compatibility counts plus optional `source-pin.md` path, byte count,
+  SHA-256 metadata, and deterministic `.expected` probe expectation artifact
+  metadata for `compat/<target>` directories under the fixture root, including
+  targets with no executable `.php` fixtures yet. It does not parse, execute,
+  compare fixtures, report fixture execution results, execute or validate
+  `.cli` snapshots, validate compatibility probe expectations, parse expected
+  inventory output, validate that `.phpc-only` reason text is non-empty,
+  inspect non-fixture compatibility metadata beyond `source-pin.md` and
+  `.expected` probe artifacts, or report unrecognized sidecars.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -5889,7 +5909,9 @@
 - `get_declared_traits` built-in/internal trait entries, autoloading,
   namespaces/import aliases beyond parsed declarations, exact native ordering,
   and native lowering
-- named arguments
+- named arguments, including parameter-name metadata, duplicate and unknown-name
+  diagnostics, positional/named ordering, by-reference binding, variadic
+  collection, unpacking interaction, and native lowering
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
@@ -6024,6 +6046,10 @@
   `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
   warnings/errors, and native lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null
+  string-convertible subset: binary string edge cases beyond valid UTF-8
+  runtime strings, array/object/resource coercions, exact PHP diagnostics, and
+  native lowering beyond function-table introspection
+- `str_starts_with()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and
   native lowering beyond function-table introspection

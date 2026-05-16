@@ -2,7 +2,8 @@ use php_compiler::error::{Diagnostic, Phase};
 use php_compiler::{class_metadata_source, run_source};
 use php_runtime::Visibility;
 
-const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -4632,7 +4633,7 @@ fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+        assert_eq!(error.message, LLVM_CLASS_NAME_CONSTANT_REJECTION);
     }
 }
 

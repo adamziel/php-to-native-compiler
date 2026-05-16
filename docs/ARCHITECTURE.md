@@ -75,6 +75,10 @@ and skipped positional slots. Statement-form short `[$a, $b] = expr;`
 destructuring reuses that same AST/runtime path for direct variable targets,
 while expression-position `list(...)`, keyed/nested/reference targets,
 `foreach` destructuring, and non-variable targets remain parser boundaries.
+Named call arguments stop at a dedicated parse boundary before AST
+construction because correct support needs parameter-name metadata, duplicate
+and unknown-name diagnostics, positional/named ordering, by-reference binding,
+variadic collection, unpacking interaction, and native lowering.
 
 The lexer maintains both character and byte offsets as it advances. Prefix
 checks for PHP tags, heredoc terminators, and other byte-slice comparisons use
@@ -498,14 +502,22 @@ receiver resolution, `$this` and late-static-binding context, argument/arity
 diagnostics, visibility checks, references/copy-on-write, and exact native
 method-call errors stay visible instead of collapsing into the broader
 object/class diagnostic.
-Static class members have a dedicated native rejection boundary for `::class`
-constants, class constants, static property reads/writes, and dynamic
-static-property receivers. Both LLVM IR emission and the C assembly fallback
-path reject those AST nodes before lowering class/member operands, so missing
-native class constant tables, static property storage, class context,
-late-static-binding resolution, visibility checks, autoload/class lookup,
-references/copy-on-write, and exact native static-member errors stay visible
-instead of collapsing into the broader object/class diagnostic.
+Class-name constants have a dedicated native rejection boundary for
+`ClassName::class`, `self::class`, `parent::class`, and `static::class`. LLVM
+IR emission rejects those AST nodes before lowering class-name resolution, so
+missing native class-name resolution, active class/parent and
+late-static-binding context, namespace/import canonicalization, autoload-free
+class lookup interaction, references/copy-on-write, and exact native
+class-name constant diagnostics stay visible instead of collapsing into the
+broader static-member diagnostic.
+Static class members have a dedicated native rejection boundary for class
+constants, static property reads/writes, and dynamic static-property
+receivers. Both LLVM IR emission and the C assembly fallback path reject those
+AST nodes before lowering class/member operands, so missing native class
+constant tables, static property storage, class context, late-static-binding
+resolution, visibility checks, autoload/class lookup, references/copy-on-write,
+and exact native static-member errors stay visible instead of collapsing into
+the broader object/class diagnostic.
 
 Current assembly emission order:
 
@@ -1224,6 +1236,11 @@ operands, exact diagnostics, and native lowering remain out of scope.
 current scalar/null string-convertible haystack and needle values. It uses the
 current UTF-8 runtime string representation, keeps PHP's empty-needle `true`
 result, and leaves binary string edge cases and native lowering out of scope.
+`str_starts_with()` is an interpreter-only bounded string-prefix builtin for
+the same scalar/null string-convertible haystack and needle subset. It keeps
+PHP's empty-needle `true` result for represented runtime strings, and leaves
+binary string edge cases, object/resource coercions, exact diagnostics, and
+native lowering out of scope.
 `str_ends_with()` is an interpreter-only bounded string-suffix builtin for the
 same scalar/null string-convertible haystack and needle subset. It keeps PHP's
 empty-needle `true` result for represented runtime strings, and leaves binary

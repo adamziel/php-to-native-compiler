@@ -44,8 +44,10 @@ const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering reje
 const ASSEMBLY_OBJECT_METADATA_REJECTION: &str = "assembly object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
 const ASSEMBLY_INSTANCEOF_REJECTION: &str = "assembly instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
-const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
-const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects ::class constants, class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
+const ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION: &str = "assembly class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
+const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
@@ -650,8 +652,10 @@ impl LlvmGenerator {
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
-            | Expr::StaticClassNameConstant { span }
-            | Expr::ClassConstant { span, .. }
+            | Expr::StaticClassNameConstant { span } => {
+                Err(self.unsupported(*span, LLVM_CLASS_NAME_CONSTANT_REJECTION))
+            }
+            Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
@@ -3487,8 +3491,10 @@ impl CGenerator {
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
-            | Expr::StaticClassNameConstant { span }
-            | Expr::ClassConstant { span, .. }
+            | Expr::StaticClassNameConstant { span } => {
+                Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
+            }
+            Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
@@ -6575,6 +6581,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "rtrim"
             | "strcasecmp"
             | "str_contains"
+            | "str_starts_with"
             | "str_ends_with"
             | "strpos"
             | "substr"
