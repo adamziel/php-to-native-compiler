@@ -547,7 +547,7 @@
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
-  `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_num_fields`, `mysqli_num_rows`,
+  `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`, `header`,
@@ -1039,8 +1039,11 @@
   array shape, `mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys
   `0` and `1`, and `mysqli_fetch_array($result, MYSQLI_BOTH)` plus omitted
   mode/default `MYSQLI_BOTH` returns both numeric and associative keys. All
-  fetch-array modes share that row cursor. The `MYSQLI_ASSOC`, `MYSQLI_NUM`,
-  and `MYSQLI_BOTH` constants are exposed with their PHP integer values.
+  fetch-array modes share that row cursor. `mysqli_fetch_lengths($result)`
+  returns `false` before any row fetch, then returns a zero-indexed integer
+  array with the most recently fetched row lengths. The `MYSQLI_ASSOC`,
+  `MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed with their PHP integer
+  values.
   `mysqli_data_seek($result, $offset)` accepts integer offsets for placeholder
   results, resets the row cursor for in-range offsets, and returns `false` for
   negative or out-of-range offsets.
@@ -2568,7 +2571,7 @@
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
-  `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_num_fields`, `mysqli_num_rows`,
+  `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`,
   `mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
   `mysqli_store_result`, `mysqli_use_result`, `mysqli_reap_async_query`,
@@ -3175,7 +3178,7 @@
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`, `mysqli_fetch_fields`,
-  `mysqli_fetch_field_direct`, `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
+  `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
@@ -3337,7 +3340,7 @@
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
   `mysqli_fetch_row(...)`/`mysqli_fetch_array(...)`/
-  `mysqli_fetch_field(...)`/`mysqli_fetch_fields(...)`/`mysqli_fetch_field_direct(...)`/`mysqli_num_fields(...)`/
+  `mysqli_fetch_field(...)`/`mysqli_fetch_fields(...)`/`mysqli_fetch_field_direct(...)`/`mysqli_fetch_lengths(...)`/`mysqli_num_fields(...)`/
   `mysqli_num_rows(...)`/`mysqli_data_seek(...)`/`mysqli_field_seek(...)`/`mysqli_field_tell(...)`/
   `mysqli_free_result(...)`/`mysqli_more_results(...)`/
   `mysqli_next_result(...)`/`mysqli_store_result(...)`/
@@ -4995,7 +4998,7 @@
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
-  `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_fetch_fields()`/`mysqli_fetch_field_direct()`/`mysqli_num_fields()`/
+  `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_fetch_fields()`/`mysqli_fetch_field_direct()`/`mysqli_fetch_lengths()`/`mysqli_num_fields()`/
   `mysqli_num_rows()`/`mysqli_data_seek()`/`mysqli_field_seek()`/`mysqli_field_tell()`/`mysqli_free_result()`/
   `mysqli_more_results()`/`mysqli_next_result()`/`mysqli_store_result()`/
   `mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/`mysqli_report()`/

@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `9223da69 runtime: correct mysqli result field metadata surface`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 968, `mysqli_fetch_lengths()` over the current
+  deterministic MySQLi seed-post result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone968/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_lengths -- --test-threads=1`;
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone968`.
+  All passed; the fixture is `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: placeholder result state now records last-row
+  value lengths for current row-fetch helpers, and
+  `mysqli_fetch_lengths()` exposes those lengths for the deterministic
+  seed-post result.
+- Remaining semantic gaps: real host result metadata, binary/protocol length
+  accounting, full result resources, warnings/errors, and native database
+  lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next real MySQLi result or
+  connection helper gap from the audited PHP surface.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `83ae82f8 tests: add wordpress wpdb stmt prepare diagnostics smokes`, pushed
   to `origin/master`.
 - Task attempted: Milestone 967, MySQLi result-field metadata surface
@@ -51,11 +81,12 @@ injects this file into every prompt. Each Codex pass should update it with:
   `mysqli_field_seek()`, and `mysqli_field_tell()` helpers execute over the
   deterministic seed-post result metadata.
 - Remaining semantic gaps: real host database metadata, complete field
-  metadata objects, `mysqli_fetch_lengths()`, broad result helpers, real result
-  resources, warnings/errors, and native database lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, inspect the next real MySQLi result or
-  connection helper gap from the audited PHP surface.
+  metadata objects, broad result helpers, real result resources,
+  warnings/errors, and native database lowering remain missing.
+- Checkpoint result: committed and pushed
+  `9223da69 runtime: correct mysqli result field metadata surface`.
+- Next concrete task: inspect the next real MySQLi result or connection helper
+  gap from the audited PHP surface.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

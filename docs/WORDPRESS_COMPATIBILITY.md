@@ -1670,7 +1670,12 @@ historical blockers and remaining full-support gaps include:
   `mysqli_field_tell()` now execute for the deterministic seed-post result
   without claiming real host database metadata, full result resources,
   complete field metadata objects, warning/error fidelity, or native database
-  lowering. Milestone 965 adds explicit `mysqli_stmt_prepare()`/
+  lowering. Milestone 968 adds deterministic `mysqli_fetch_lengths()`
+  last-row length metadata for the seed-post `mysqli_result` placeholder after
+  current row-fetch helpers without claiming real host result metadata,
+  binary/protocol length accounting, full result resources, warning/error
+  fidelity, or native database lowering. Milestone 965 adds explicit
+  `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and
   diagnostic-list boundaries with callable metadata and stable unsupported

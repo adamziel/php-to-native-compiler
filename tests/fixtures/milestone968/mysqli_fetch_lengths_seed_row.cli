@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone968/mysqli_fetch_lengths_seed_row.php

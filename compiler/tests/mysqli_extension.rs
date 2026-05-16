@@ -2744,6 +2744,38 @@ echo mysqli_fetch_row($result) === false ? "no-row" : "row";
 }
 
 #[test]
+fn mysqli_fetch_lengths_reports_last_seed_post_row_lengths() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_fetch_lengths";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+echo "|";
+echo mysqli_fetch_lengths($result) === false ? "no-lengths" : "lengths";
+$row = mysqli_fetch_row($result);
+$lengths = mysqli_fetch_lengths($result);
+echo "|";
+echo $lengths[0];
+echo ",";
+echo $lengths[1];
+echo "|";
+$lengths = $call($result);
+echo $lengths[0];
+echo ",";
+echo $lengths[1];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|no-lengths|1,23|1,23");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_data_seek_resets_current_seed_post_row_cursor() {
     let execution = run_source(
         r#"<?php
@@ -3663,6 +3695,8 @@ echo function_exists("mysqli_num_fields") ? "1" : "0";
 echo is_callable("mysqli_num_fields") ? "1" : "0";
 echo function_exists("mysqli_num_rows") ? "1" : "0";
 echo is_callable("mysqli_num_rows") ? "1" : "0";
+echo function_exists("mysqli_fetch_lengths") ? "1" : "0";
+echo is_callable("mysqli_fetch_lengths") ? "1" : "0";
 echo function_exists("mysqli_data_seek") ? "1" : "0";
 echo is_callable("mysqli_data_seek") ? "1" : "0";
 echo function_exists("mysqli_field_seek") ? "1" : "0";
@@ -3707,7 +3741,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 210, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 212, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -4375,6 +4409,18 @@ mysqli_field_seek(mysqli_init(), 0);
     let error = emit_ir_source(
         r#"<?php
 mysqli_field_tell(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_fetch_lengths(mysqli_init());
 "#,
     )
     .unwrap_err();

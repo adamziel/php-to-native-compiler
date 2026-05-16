@@ -9074,19 +9074,32 @@ handled.
   the real placeholder-result helpers `mysqli_fetch_fields()`,
   `mysqli_fetch_field_direct()`, `mysqli_field_seek()`, and
   `mysqli_field_tell()` now execute for the current seed-post result subset.
-- [ ] Runtime/database lane: inspect the next real MySQLi result/connection
+- [x] Runtime/database lane: inspect the next real MySQLi result/connection
   helper gap from the audited PHP surface, such as `mysqli_fetch_lengths()`,
   `mysqli_fetch_all()`, `mysqli_fetch_column()`,
   `mysqli_fetch_field_direct()` metadata breadth, or savepoint/SSL/alias
   helpers, and add the next bounded behavior or explicit runtime boundary with
   tests, CLI fixtures, docs, and native rejection coverage where lowering
   remains unsupported.
+  Milestone 968 implements `mysqli_fetch_lengths()` for the current
+  deterministic seed-post result: it returns `false` before any row fetch and
+  returns a zero-indexed integer array for the most recently fetched row after
+  `mysqli_fetch_object()`, `mysqli_fetch_assoc()`, `mysqli_fetch_row()`, or
+  `mysqli_fetch_array()`. This is not real host result metadata,
+  binary/protocol length accounting, full result resources, warning/error
+  fidelity, or native lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi result/connection
+  helper gap from the audited PHP surface, such as `mysqli_fetch_all()`,
+  `mysqli_fetch_column()`, savepoint/SSL/alias helpers, or broader result
+  metadata fields, and add the next bounded behavior or explicit runtime
+  boundary with tests, CLI fixtures, docs, and native rejection coverage where
+  lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `83ae82f8 tests: add wordpress wpdb stmt prepare diagnostics smokes`,
-  covering Milestone 966 before the current Milestone 967 candidate.
+  `9223da69 runtime: correct mysqli result field metadata surface`, covering
+  Milestone 967 before the current Milestone 968 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -35,7 +35,7 @@ Status: boundary only.
 `mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
-`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_num_fields`,
+`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
 `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`,
@@ -357,7 +357,10 @@ those two fields and then `false`, `mysqli_fetch_fields()` returns a
 zero-indexed array of the current field metadata objects,
 `mysqli_fetch_field_direct()` returns one field metadata object by integer
 index or `false`, and `mysqli_field_seek()`/`mysqli_field_tell()` mutate and
-report the current field cursor. `mysqli_fetch_object()` returns one
+report the current field cursor. `mysqli_fetch_lengths()` returns `false`
+before any row fetch and a zero-indexed integer array for the most recently
+fetched row lengths after `mysqli_fetch_object()`, `mysqli_fetch_assoc()`,
+`mysqli_fetch_row()`, or `mysqli_fetch_array()`. `mysqli_fetch_object()` returns one
 `stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
 row cursor and returns one associative PHP array with keys `ID` and
 `post_title` and then `false`. `mysqli_fetch_row()` uses the same row cursor and

@@ -1,0 +1,3 @@
+This fixture exercises the compiler's deterministic placeholder MySQLi result
+length metadata for the synthetic seed-post query. It is not compared against
+system PHP because it does not connect to a real host database.

@@ -122,6 +122,7 @@ struct MysqliResultState {
     rows: Vec<Vec<(String, Value)>>,
     row_cursor: usize,
     field_cursor: usize,
+    last_lengths: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4006,6 +4007,7 @@ impl Interpreter {
                 rows,
                 row_cursor: 0,
                 field_cursor: 0,
+                last_lengths: None,
             },
         );
         Ok(Value::Object(PhpObject::from_class_with_id(
@@ -5440,6 +5442,7 @@ impl Interpreter {
             }
             let row = state.rows[state.row_cursor].clone();
             state.row_cursor += 1;
+            state.last_lengths = Some(mysqli_row_value_lengths(&row, span)?);
             row
         };
         self.create_stdclass_with_properties(row, span)
@@ -5501,6 +5504,7 @@ impl Interpreter {
             }
             let row = state.rows[state.row_cursor].clone();
             state.row_cursor += 1;
+            state.last_lengths = Some(mysqli_row_value_lengths(&row, span)?);
             row
         };
 
@@ -5525,6 +5529,7 @@ impl Interpreter {
             }
             let row = state.rows[state.row_cursor].clone();
             state.row_cursor += 1;
+            state.last_lengths = Some(mysqli_row_value_lengths(&row, span)?);
             row
         };
 
@@ -5624,6 +5629,20 @@ impl Interpreter {
         let result_id = expect_mysqli_result_handle("mysqli_num_rows()", &args[0], span)?;
         let state = self.mysqli_result_state("mysqli_num_rows()", result_id, span)?;
         Ok(Value::Int(state.rows.len() as i64))
+    }
+
+    fn call_mysqli_fetch_lengths(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_lengths", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_lengths()", &args[0], span)?;
+        let state = self.mysqli_result_state("mysqli_fetch_lengths()", result_id, span)?;
+        let Some(lengths) = &state.last_lengths else {
+            return Ok(Value::Bool(false));
+        };
+        let mut array = PhpArray::new();
+        for (index, length) in lengths.iter().enumerate() {
+            array.insert(index as i64, Value::Int(*length as i64));
+        }
+        Ok(Value::Array(array))
     }
 
     fn call_mysqli_data_seek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -10204,6 +10223,7 @@ impl Interpreter {
             "mysqli_fetch_field_direct" => self.call_mysqli_fetch_field_direct(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
             "mysqli_num_rows" => self.call_mysqli_num_rows(&args, span),
+            "mysqli_fetch_lengths" => self.call_mysqli_fetch_lengths(&args, span),
             "mysqli_data_seek" => self.call_mysqli_data_seek(&args, span),
             "mysqli_field_seek" => self.call_mysqli_field_seek(&args, span),
             "mysqli_field_tell" => self.call_mysqli_field_tell(&args, span),
@@ -13208,6 +13228,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_fetch_field_direct"
             | "mysqli_num_fields"
             | "mysqli_num_rows"
+            | "mysqli_fetch_lengths"
             | "mysqli_data_seek"
             | "mysqli_field_seek"
             | "mysqli_field_tell"
@@ -13465,6 +13486,17 @@ fn mysql_escape_string(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn mysqli_row_value_lengths(row: &[(String, Value)], span: Span) -> CompileResult<Vec<usize>> {
+    row.iter()
+        .map(|(_, value)| {
+            value
+                .try_echo_string()
+                .map(|value| value.len())
+                .map_err(|error| runtime_error(span, error))
+        })
+        .collect()
 }
 
 fn is_wordpress_empty_options_query(query: &str) -> bool {

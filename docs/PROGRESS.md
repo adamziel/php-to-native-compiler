@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 968, `mysqli_fetch_lengths()` over the current
+  deterministic MySQLi seed-post result. Result state now records the string
+  lengths of the last fetched row for `mysqli_fetch_object()`,
+  `mysqli_fetch_assoc()`, `mysqli_fetch_row()`, and `mysqli_fetch_array()`;
+  `mysqli_fetch_lengths($result)` returns `false` before any row fetch and a
+  zero-indexed integer array after a row is fetched. Native metadata lookup
+  knows the name while direct native lowering remains rejected. This is not
+  real host result metadata, binary/protocol length accounting, charset-aware
+  byte-length fidelity beyond current runtime strings, full result resources,
+  PHP warning/error fidelity, or native result-helper lowering. Verification
+  so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_fetch_lengths -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls -- --test-threads=1`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone968`.
+
 - Added Milestone 967, a MySQLi result-field metadata surface correction and
   helper slice. The audit confirmed local PHP exposes result helpers such as
   `mysqli_fetch_fields()`, `mysqli_fetch_field_direct()`,
@@ -13,7 +28,7 @@ Implemented:
   while the current deterministic `mysqli_result` placeholder supports the
   real field-list, direct-field, field-seek, and field-tell helpers for the
   seed-post result. This is not real host database metadata, full `mysqli`
-  result resources, `mysqli_fetch_lengths()`, complete field metadata objects,
+  result resources, complete field metadata objects,
   PHP warning/error fidelity, or native result-helper lowering. Verification
   so far:
   `cargo test -p phpc --test mysqli_extension mysqli_result_field_metadata_helpers -- --test-threads=1`,

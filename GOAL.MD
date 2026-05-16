@@ -401,6 +401,10 @@ function table does not expose the non-PHP
 seed-post `mysqli_result` placeholder without claiming real host database
 metadata, full result resources, complete field metadata objects, warning/error
 fidelity, or native lowering,
+plus deterministic `mysqli_fetch_lengths()` last-row length metadata for the
+seed-post `mysqli_result` placeholder after current row-fetch helpers without
+claiming real host result metadata, binary/protocol length accounting, full
+result resources, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

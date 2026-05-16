@@ -6438,6 +6438,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_fetch_field_direct"
             | "mysqli_num_fields"
             | "mysqli_num_rows"
+            | "mysqli_fetch_lengths"
             | "mysqli_data_seek"
             | "mysqli_field_seek"
             | "mysqli_field_tell"
