@@ -9507,6 +9507,23 @@ handled.
   fixtures. This is not named params-array support, broad mysqlnd parameter
   binding, true by-reference aliasing, mutation SQL, host database state, PHP
   warning/error fidelity, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as real reference
+  aliasing around bound parameters/results, broader escaping charset fidelity,
+  mutation SQL state, transaction state, host-backed query execution, PDO
+  visibility, or the next real database integration gap, and add the next
+  bounded behavior or explicit runtime boundary with tests, CLI fixtures,
+  docs, and native rejection coverage where lowering remains unsupported.
+  Milestone 1000 adds bounded `mysqli_execute_query()` support for exact
+  known placeholder SQL shapes. The runtime exposes the PHP 8.2+
+  prepare-bind-execute convenience API through function/callability metadata,
+  accepts optional PHP-list scalar/null params arrays, returns deterministic
+  `mysqli_result` placeholders for exact known SELECT shapes, and returns
+  `true` for current deterministic no-result shapes, including a
+  WordPress-shaped `wpdb` smoke. This is not broad prepared SQL execution,
+  named params-array support, hidden statement status-copy fidelity, mutation
+  SQL, host database state, PHP warning/error fidelity, mysqlnd behavior, or
+  native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9518,8 +9535,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ebfeaad1 runtime: add mysqli sql mode assignment boundary`, covering
-  Milestone 998 before the current Milestone 999 candidate.
+  `ca30fdeb runtime: require mysqli stmt execute list params`, covering
+  Milestone 999 before the current Milestone 1000 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

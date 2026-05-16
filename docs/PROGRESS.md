@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 1000, bounded `mysqli_execute_query()` support for exact
+  known placeholder SQL shapes. The runtime now exposes the PHP 8.2+
+  prepare-bind-execute convenience API through function/callability metadata,
+  accepts optional PHP-list params arrays using the same scalar/null
+  validation as `mysqli_stmt_execute($stmt, $params)`, returns deterministic
+  `mysqli_result` placeholders for exact known SELECT shapes, and returns
+  `true` for current deterministic no-result shapes. The new fixtures include
+  direct MySQLi and WordPress-shaped `wpdb` smokes. This is not broad prepared
+  SQL execution, named params-array support, statement object exposure,
+  status-copy fidelity, mutation SQL, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, or native database lowering. Verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_execute_query -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1000`.
+
 - Added Milestone 999, stricter `mysqli_stmt_execute($stmt, $params)` params
   array validation. The runtime now requires the optional params argument to
   be a PHP list array in the current subset, so named/string-keyed arrays and

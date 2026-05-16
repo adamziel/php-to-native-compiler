@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1000/wpdb_execute_query_placeholder.php
+exit: 0
+stdout:
+Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

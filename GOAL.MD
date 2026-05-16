@@ -557,6 +557,12 @@ or native lowering, plus stricter params-array list validation for
 integer-keyed arrays fail explicitly instead of being treated as positional,
 without claiming named params-array support, broad mysqlnd parameter binding,
 true by-reference aliasing, host database state, or native lowering,
+plus bounded `mysqli_execute_query()` convenience support for exact known
+placeholder SQL shapes and PHP-list params arrays, including direct MySQLi and
+WordPress-shaped `wpdb` smokes, without claiming broad prepared SQL execution,
+named params-array support, hidden statement status-copy fidelity, mutation
+SQL, host database state, PHP warning/error fidelity, mysqlnd behavior, or
+native lowering,
 plus deterministic `mysqli_stmt_send_long_data()` placeholder chunk state for
 active statements, including direct MySQLi and WordPress-shaped `wpdb` smokes,
 without claiming real blob binding, packet buffering, send timing, execution

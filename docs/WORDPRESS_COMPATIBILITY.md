@@ -1795,7 +1795,13 @@ historical blockers and remaining full-support gaps include:
   a PHP list array in the current subset, including a WordPress-shaped `wpdb`
   sparse-array boundary, without claiming named params-array support, broad
   mysqlnd parameter binding, true by-reference aliasing, host database state,
-  PHP warning/error fidelity, or native database lowering. Milestone 990 adds deterministic
+  PHP warning/error fidelity, or native database lowering. Milestone 1000 adds
+  bounded `mysqli_execute_query()` convenience support for exact known
+  placeholder SQL shapes and PHP-list params arrays, including a
+  WordPress-shaped `wpdb` smoke, without claiming broad prepared SQL
+  execution, named params-array support, hidden statement status-copy
+  fidelity, mutation SQL, host database state, PHP warning/error fidelity,
+  mysqlnd behavior, or native database lowering. Milestone 990 adds deterministic
   `mysqli_stmt_send_long_data()` placeholder chunk state for active
   statements, including a WordPress-shaped `wpdb` smoke, without claiming real
   blob binding, packet buffering, send timing, execution integration, host

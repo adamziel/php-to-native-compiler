@@ -536,7 +536,7 @@
   `mysqli_stmt_send_long_data`, `mysqli_stmt_reset`,
   `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
   `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
-  `mysqli_stmt_insert_id`,
+  `mysqli_stmt_insert_id`, `mysqli_execute_query`,
   `mysqli_dump_debug_info`,
   `mysqli_debug`,
   `mysqli_stat`, `mysqli_autocommit`,
@@ -1029,6 +1029,15 @@
   broad mysqlnd parameter
   binding, mutation SQL, broad SQL execution, host database state, PHP
   warning/error fidelity, or native statement lowering.
+  `mysqli_execute_query($handle, $query, $params = null)` accepts a
+  placeholder `mysqli` object, string query, and optional PHP list scalar/null
+  params array for the same exact known placeholder SQL shapes. It returns a
+  placeholder `mysqli_result` for deterministic SELECT placeholders and
+  `true` for current deterministic no-result shapes, and rejects params arrays
+  whose length does not match the query `?` placeholder count. This is not
+  broad prepared SQL execution, named params-array support, hidden statement
+  status-copy fidelity, mutation SQL, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, or native statement lowering.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into

@@ -26,6 +26,7 @@ Status: boundary only.
 `mysqli_stmt_more_results`, `mysqli_stmt_next_result`,
 `mysqli_stmt_sqlstate`, `mysqli_stmt_warning_count`,
 `mysqli_stmt_insert_id`,
+`mysqli_execute_query`,
 `mysqli_dump_debug_info`,
 `mysqli_debug`,
 `mysqli_autocommit`,
@@ -263,6 +264,18 @@ params arrays, mutations, unknown SELECT
 metadata, real mysqlnd result transfer, real blob packet behavior, host
 database state, PHP warning/error fidelity, named-argument callback dispatch,
 and native lowering remain unsupported.
+
+`mysqli_execute_query($handle, $query, $params = null)` is implemented as a
+bounded PHP 8.2+ convenience path over the current placeholder query subset.
+It accepts a placeholder `mysqli` object, a string query, and an optional PHP
+list params array using the same scalar/null value validation as
+`mysqli_stmt_execute($statement, array(...))`. For exact known SELECT shapes it
+returns a deterministic placeholder `mysqli_result`; for current deterministic
+no-result shapes it returns `true`. It rejects params arrays whose length does
+not match the query `?` placeholder count. This is not broad prepared SQL
+execution, named params-array support, hidden statement status-copy fidelity,
+mutation SQL, host database state, PHP warning/error fidelity, mysqlnd
+behavior, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

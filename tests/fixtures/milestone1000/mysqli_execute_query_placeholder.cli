@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1000/mysqli_execute_query_placeholder.php
+exit: 0
+stdout:
+1:Hello world placeholder|0:0|no-result
+--- stdout end ---
+stderr:
+--- stderr end ---

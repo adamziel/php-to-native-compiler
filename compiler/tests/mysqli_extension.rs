@@ -18,7 +18,108 @@ echo is_callable($call) ? "callable" : "missing";
 
     assert_eq!(execution.stdout, "yes|callable");
     assert_eq!(execution.exit_code, 0);
+}
 
+#[test]
+fn mysqli_execute_query_runs_current_placeholder_shapes() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_execute_query";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_execute_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = ?", array(1));
+$row = mysqli_fetch_assoc($result);
+echo "|";
+echo $row["ID"], ":", $row["post_title"];
+echo "|";
+$empty = $call($handle, "SELECT option_value FROM wp_options WHERE option_name = ?", array("siteurl"));
+echo mysqli_num_rows($empty);
+echo ":";
+echo mysqli_num_fields($empty);
+echo "|";
+echo mysqli_execute_query($handle, "SET SESSION sql_mode=''") ? "no-result" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|1:Hello world placeholder|0:0|no-result"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_execute_query_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_execute_query("not-a-handle", "SELECT ID, post_title FROM wp_posts WHERE ID = ?", array(1));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_execute_query(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let named_params = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_execute_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = ?", array("id" => 1));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(named_params.phase, Phase::Runtime);
+    assert_eq!(named_params.line, 3);
+    assert_eq!(named_params.column, 1);
+    assert_eq!(
+        named_params.message,
+        "unsupported call mysqli_execute_query(): params array must be a list in the current subset"
+    );
+
+    let param_count = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_execute_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = ?", array());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(param_count.phase, Phase::Runtime);
+    assert_eq!(param_count.line, 3);
+    assert_eq!(param_count.column, 1);
+    assert_eq!(
+        param_count.message,
+        "unsupported call mysqli_execute_query(): params array length must match query placeholder count 1, got 0"
+    );
+
+    let unsupported_select = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_execute_query($handle, "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_select.phase, Phase::Runtime);
+    assert_eq!(unsupported_select.line, 3);
+    assert_eq!(unsupported_select.column, 1);
+    assert_eq!(
+        unsupported_select.message,
+        "unsupported call mysqli_execute_query(): statement result metadata is implemented only for current WordPress placeholder SELECT shapes"
+    );
+}
+
+#[test]
+fn mysqli_connect_rejects_current_connection_boundary() {
     let error = run_source(
         r#"<?php
 mysqli_connect("localhost", "user", "password", "database");
@@ -4886,6 +4987,8 @@ echo function_exists("mysqli_stmt_warning_count") ? "1" : "0";
 echo is_callable("mysqli_stmt_warning_count") ? "1" : "0";
 echo function_exists("mysqli_stmt_insert_id") ? "1" : "0";
 echo is_callable("mysqli_stmt_insert_id") ? "1" : "0";
+echo function_exists("mysqli_execute_query") ? "1" : "0";
+echo is_callable("mysqli_execute_query") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -5029,7 +5132,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 251, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 253, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -5061,6 +5164,18 @@ mysqli_connect("localhost");
     let error = emit_ir_source(
         r#"<?php
 mysqli_real_connect(mysqli_init(), "localhost");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_execute_query(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?", array(1));
 "#,
     )
     .unwrap_err();
