@@ -1,0 +1,2 @@
+<?php
+echo is_writable("tests/fixtures/milestone1212/is_writable.php");

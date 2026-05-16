@@ -249,8 +249,8 @@ type declaration enforcement, cast behavior outside the current `(string)`,
 actual PHP warning/notice suppression for `@expr`,
 full interface inheritance/signature enforcement, broad built-in/internal
 interface method enforcement/catalogs beyond the current `Countable`,
-`Iterator`, and `IteratorAggregate` shape checks, trait members and trait
-composition, enum case objects/backed values/methods/interfaces,
+`Iterator`, and `IteratorAggregate` shape checks, trait methods, other trait
+members and trait composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
@@ -342,6 +342,7 @@ direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
+direct `is_link(...)` filesystem symlink metadata calls,
 PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
@@ -375,10 +376,10 @@ also include their marker text as `phpc-only-reason=<reason>`, and the text
 manifest reports deterministic source and recognized sidecar byte counts,
 including `.cli` snapshot exercise files, for fixtures, summaries, orphan
 sidecars, and compatibility targets. Text fixture rows also include SHA-256
-digests for present recognized fixture sidecars in deterministic
-`stdout`, `stderr`, `exit`, `cli`, `phpc-only` order, using `-` for absent
-sidecars; this is a text-only contract refinement, so the JSON
-`contract_version` remains unchanged. The text manifest reports CLI exercise
+digests for fixture sources and present recognized fixture sidecars in
+deterministic `source`, `stdout`, `stderr`, `exit`, `cli`, `phpc-only` order,
+using `-` for absent sidecars; this is a text-only contract refinement, so the
+JSON `contract_version` remains unchanged. The text manifest reports CLI exercise
 gap counts for fixtures without `.cli` snapshot sidecars and `.phpc-only`
 reason gap counts for markers whose text is empty or whitespace-only. It also
 reports aggregate, per-target, and per-fixture missing recognized expectation

@@ -354,7 +354,7 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
     let missing_expectation_sidecars = text_list(&entry.missing_expectation_sidecars);
 
     format!(
-        "{} expectations={} cli-exercise={} missing-expectation-sidecars={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} sha256 stdout={} stderr={} exit={} cli={} phpc-only={}",
+        "{} expectations={} cli-exercise={} missing-expectation-sidecars={} php-comparison={}{} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} sha256 source={} stdout={} stderr={} exit={} cli={} phpc-only={}",
         entry.path,
         expectations,
         if entry.has_cli { "yes" } else { "no" },
@@ -367,6 +367,7 @@ fn render_fixture_manifest_entry(entry: &FixtureManifestEntry) -> String {
         text_optional_u64(entry.exit_bytes),
         text_optional_u64(entry.cli_bytes),
         text_optional_u64(entry.phpc_only_bytes),
+        entry.source_sha256,
         text_optional_string(entry.stdout_sha256.as_deref()),
         text_optional_string(entry.stderr_sha256.as_deref()),
         text_optional_string(entry.exit_sha256.as_deref()),

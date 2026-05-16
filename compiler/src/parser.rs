@@ -467,6 +467,9 @@ impl Parser {
         let name = self.resolve_declared_class_name(&name);
         self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
         if !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            if self.check_trait_method_declaration() {
+                return Err(self.error_at(self.peek().span, unsupported_trait_method_message()));
+            }
             return Err(self.error_at(
                 self.peek().span,
                 unsupported_trait_member_declaration_message(),
@@ -6165,6 +6168,10 @@ fn unsupported_trait_member_declaration_message() -> &'static str {
     "unsupported trait member declaration: trait members and trait use execution are not implemented"
 }
 
+fn unsupported_trait_method_message() -> &'static str {
+    "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented"
+}
+
 fn unsupported_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: interface parsing and implementation execution are not implemented"
 }
@@ -6283,6 +6290,21 @@ fn unsupported_trait_use_message() -> &'static str {
 }
 
 impl Parser {
+    fn check_trait_method_declaration(&self) -> bool {
+        for token in self.tokens[self.current..]
+            .iter()
+            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
+        {
+            match &token.kind {
+                TokenKind::Function => return true,
+                TokenKind::Variable(_) => return false,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn check_asymmetric_property_visibility_modifier(&self) -> bool {
         matches!(
             self.peek().kind,

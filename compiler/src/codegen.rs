@@ -26,6 +26,8 @@ const LLVM_GETCWD_REJECTION: &str = "LLVM getcwd lowering rejects direct current
 const ASSEMBLY_GETCWD_REJECTION: &str = "assembly getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
 const ASSEMBLY_REALPATH_REJECTION: &str = "assembly realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
+const LLVM_IS_WRITABLE_REJECTION: &str = "LLVM is_writable lowering rejects direct filesystem writability checks until native writability checks, permission policy, warnings, include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths, references/COW, and exact native is_writable diagnostics exist; phpc run handles current bounded is_writable behavior";
+const ASSEMBLY_IS_WRITABLE_REJECTION: &str = "assembly is_writable lowering rejects direct filesystem writability checks until native writability checks, permission policy, warnings, include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths, references/COW, and exact native is_writable diagnostics exist; phpc run handles current bounded is_writable behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
@@ -742,6 +744,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
                 Err(self.unsupported(*span, LLVM_REALPATH_REJECTION))
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
+                Err(self.unsupported(*span, LLVM_IS_WRITABLE_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -3599,6 +3604,9 @@ impl CGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("realpath") => {
                 Err(self.unsupported(*span, ASSEMBLY_REALPATH_REJECTION))
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
+                Err(self.unsupported(*span, ASSEMBLY_IS_WRITABLE_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -6829,6 +6837,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "is_file"
             | "is_readable"
             | "is_writable"
+            | "is_link"
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"

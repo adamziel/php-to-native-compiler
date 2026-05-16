@@ -1520,6 +1520,18 @@ fn unsupported_trait_declaration_has_stable_parse_errors() {
             "<?php\ntrait Reusable {\n    public function render() {}\n}\n",
             3,
             5,
+            "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented",
+        ),
+        (
+            "<?php\ntrait Reusable {\n    protected static function render() {}\n}\n",
+            3,
+            5,
+            "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented",
+        ),
+        (
+            "<?php\ntrait Reusable {\n    public $value;\n}\n",
+            3,
+            5,
             "unsupported trait member declaration: trait members and trait use execution are not implemented",
         ),
         (
@@ -1544,6 +1556,20 @@ fn emit_ir_rejects_trait_declaration_at_codegen_boundary() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_TRAIT_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_trait_methods_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\ntrait Reusable {\n    public function render() {}\n}\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented"
+    );
 }
 
 #[test]

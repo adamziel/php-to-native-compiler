@@ -4,6 +4,119 @@
 
 Implemented:
 
+- Added Milestone 1220, a tests/docs queue refresh after the 1216-1219
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1216-1220
+  complete and opens Milestones 1221-1225 with all lanes aimed at the larger
+  WordPress blockers: trait composition, reference/copy-on-write semantics,
+  request/filesystem/SAPI behavior, and `wpdb`/bootstrap probe progress rather
+  than audit-only polish. `docs/LANE_WORKERS.md` records the WordPress-focused
+  next split. Public docs describe the trait-method parse boundary, bounded
+  `is_link()` runtime slice, dedicated native `is_writable(...)` rejection,
+  and text manifest source SHA-256 visibility without claiming full PHP or
+  WordPress support. Full gate passed at checkpoint: `1360` fixture tests,
+  `772` system PHP comparisons, and `588` skipped `phpc-only` fixtures.
+
+- Added Milestone 1219, a deterministic compiler-output fixture-manifest audit
+  refinement. `phpc test --list-fixtures [fixture-dir]` text fixture rows now
+  print the fixture source SHA-256 digest alongside present recognized fixture
+  sidecar digests in stable `source`, `stdout`, `stderr`, `exit`, `cli`,
+  `phpc-only` order, matching existing JSON source digest visibility while
+  keeping JSON at `contract_version: 13`. Missing sidecars still render as
+  `-`, ordering stays deterministic, and fixtures and sidecars are not parsed,
+  executed, validated, required, created, or compared by the manifest path.
+  This does not change fixture execution, system PHP comparison behavior,
+  parser/runtime behavior, native lowering, or PHP/WordPress support claims.
+  Unsupported/unchanged audit gaps: the manifests still do not execute or
+  validate `.cli` snapshots, orphan sidecars, unrecognized sidecars, or
+  compatibility probe expectations, parse expected inventory output, compare
+  external WordPress checkouts, enforce non-empty `.phpc-only` reasons, inspect
+  non-fixture compatibility metadata beyond `source-pin.md` and `.expected`
+  probe artifacts, report unrecognized files without matching `.php` fixtures,
+  or prove branch-specific compatibility. Focused compiler-output lane
+  verification passed:
+  `CARGO_TARGET_DIR=target/focused-1219-output CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test fixture_manifest -- --test-threads=1`
+  with `9` tests; direct `phpc test --list-fixtures tests/fixtures/milestone42`
+  showed the text row `sha256 source=0f5f7941dc95a8d05dd6e0037931f4d9466df61aa80c24fb7fd51fb23b7c0d1d`
+  plus matching recognized sidecar digests; direct
+  `phpc test --list-fixtures-json tests/fixtures/milestone42` showed
+  `contract_version: 13` and the matching `file_sha256.source`; `cargo fmt
+  --check` and `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1218, a dedicated native `is_writable(...)`
+  filesystem-writability rejection for the documented bounded interpreter
+  builtin. `phpc compile --emit-ir` and `--emit-asm` now reject direct
+  `is_writable(...)` calls before argument lowering or backend output with a
+  diagnostic naming missing native writability checks, permission policy,
+  warnings, include_path/open_basedir, stream wrappers,
+  symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths, references/COW, and
+  exact native diagnostics. Native `function_exists()` and `is_callable()`
+  metadata folds still recognize `is_writable`, and `phpc run` behavior is
+  unchanged. This does not implement native filesystem writability checks,
+  generated-code permission policy, warning/false recovery,
+  include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU
+  behavior, non-UTF-8 path handling, references/COW, or exact native
+  `is_writable` diagnostics. Focused IR lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1218-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test is_writable_builtin -- --test-threads=1`
+  with `7` tests; direct
+  `CARGO_TARGET_DIR=target/focused-1218-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- compile tests/fixtures/milestone1218/native_is_writable_boundary.phpc-source --emit-ir`
+  and
+  `CARGO_TARGET_DIR=target/focused-1218-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- compile tests/fixtures/milestone1218/native_is_writable_boundary.phpc-source --emit-asm`
+  both returned exit `1` with the dedicated `LLVM is_writable` diagnostic;
+  `CARGO_TARGET_DIR=target/focused-1218-ir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`
+  and scoped `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1217, a bounded runtime `is_link()` local filesystem
+  metadata slice. `phpc run` now supports exactly one string local path,
+  rejects stream-wrapper paths, returns `true` for host symbolic links, returns
+  `false` for ordinary files and missing local paths, and exposes the builtin
+  through dynamic string-valued calls plus `function_exists()`/`is_callable()`
+  metadata. Direct native `is_link(...)` calls remain rejected by the generic
+  function-call lowering boundary while native function-table introspection
+  recognizes the name. This does not implement full PHP filesystem link
+  semantics, include-path lookup, `open_basedir`, stream wrappers, exact
+  warnings, stat-cache behavior, TOCTOU semantics, broken-symlink policy
+  fidelity, non-UTF-8 path handling, broad scalar coercions, or native
+  filesystem/path lowering. Focused runtime lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1217-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test is_link_builtin -- --test-threads=1`
+  with `4` tests; direct
+  `CARGO_TARGET_DIR=target/focused-1217-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- run tests/fixtures/milestone1217/is_link.php`
+  returned stdout `link|not-link|missing|exists|callable|repeat` with exit
+  `0`; direct system PHP comparison
+  `php tests/fixtures/milestone1217/is_link.php` returned the same stdout
+  with exit `0`;
+  `CARGO_TARGET_DIR=target/focused-1217-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/milestone1217`
+  passed with `1` fixture test;
+  `CARGO_TARGET_DIR=target/focused-1217-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1217`
+  passed with `1` system PHP comparison and `0` skips; and
+  `CARGO_TARGET_DIR=target/focused-1217-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo fmt --check`
+  plus `git diff --check` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1216, a parser-lane diagnostic refinement for unsupported
+  trait method declarations. Method-bearing traits such as
+  `trait T { public function render() {} }` now fail at a dedicated parse
+  boundary naming missing trait method metadata, class trait-use composition,
+  conflict resolution, alias and visibility adaptations, `__TRAIT__`
+  context, references/copy-on-write, and native lowering instead of the
+  broader trait-member fallback. Empty trait metadata support, `trait_exists()`
+  and `get_declared_traits()` behavior, native trait rejection, and runtime
+  support claims are unchanged. This does not implement trait methods, trait
+  properties/constants, class `use` composition, adaptations, exact PHP
+  diagnostics, references/copy-on-write, or native trait lowering. Focused
+  parser lane verification passed:
+  `CARGO_TARGET_DIR=target/focused-1216-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`
+  with `106` tests;
+  `CARGO_TARGET_DIR=target/focused-1216-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`
+  passed; direct `phpc run` and `phpc compile --emit-ir` probes for
+  `tests/fixtures/unsupported_syntax_features/unsupported_trait.php` both
+  returned exit `1` with the dedicated trait-method parse diagnostic;
+  `CARGO_TARGET_DIR=target/focused-1216-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with `48` fixture tests; and `--compare-php` reported `48`
+  `phpc-only` skips. `cargo fmt --check` and `git diff --check` passed.
+  Full gate/checkpoint deferred until integration.
+
 - Added Milestone 1215, a tests/docs queue refresh after the 1211-1214
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1211-1215
   complete and opens Milestones 1216-1220; `docs/LANE_WORKERS.md` records the

@@ -11947,40 +11947,113 @@ handled.
   fixture tests, `771` system PHP comparisons, and `588` skipped `phpc-only`
   fixtures.
 
-## Milestone 1216: Next Parser Boundary
+## Milestone 1216: Trait Method Parse Boundary
 
-- [ ] Parser lane: choose the next small unsupported syntax or
+- [x] Parser lane: choose the next small unsupported syntax or
   parse-diagnostic boundary from the refreshed full-compatibility gap map.
   Prefer a PHP/WordPress surface that still falls through to a broad or
-  misleading diagnostic. Add stable focused coverage, CLI fixture evidence
-  where applicable, and keep runtime/native support claims unchanged.
+  misleading diagnostic. Milestone 1216 refines unsupported trait method
+  declarations such as `trait T { public function render() {} }` from the
+  broad trait-member parse error into a dedicated diagnostic naming missing
+  trait method metadata, class trait-use composition, conflict resolution,
+  alias and visibility adaptations, `__TRAIT__` context,
+  references/copy-on-write, and native lowering. Empty trait metadata support
+  remains unchanged; trait properties/constants, class `use` composition,
+  adaptations, exact PHP diagnostics, and native trait lowering remain
+  unsupported.
 
-## Milestone 1217: Next Runtime Value/Object Slice
+## Milestone 1217: Runtime Filesystem Path Slice
 
-- [ ] Runtime lane: choose one bounded runtime slice from the refreshed gap
-  map, preferably a remaining reference/COW, object-semantics, request-state,
-  filesystem, database, or WordPress-probe blocker already reached by fixtures
-  or external probes. Prove it with focused tests, CLI coverage, system PHP
-  comparison where applicable, and named unsupported edges.
+- [x] Runtime lane: add a bounded `is_link($path)` local filesystem metadata
+  slice. The interpreter accepts exactly one string local path, rejects stream
+  wrappers, returns `true` for host symbolic links, returns `false` for
+  ordinary files and missing local paths, exposes the builtin through dynamic
+  string-valued calls plus `function_exists()`/`is_callable()` metadata, and
+  keeps native lowering rejected through the generic function-call boundary.
+  Unsupported edges remain explicit: include-path lookup, `open_basedir`,
+  stream wrappers, exact warnings, stat-cache/TOCTOU behavior,
+  broken-symlink policy fidelity, non-UTF-8 paths, broad scalar coercions, and
+  native filesystem/path lowering.
 
 ## Milestone 1218: Next Native Boundary
 
-- [ ] IR/lowering lane: choose one precise native rejection or tiny lowering
+- [x] IR/lowering lane: choose one precise native rejection or tiny lowering
   refinement from interpreter behavior that is already documented. `phpc
   compile --emit-ir` and `--emit-asm` must either lower the exact supported
-  slice or reject it before misleading backend output.
+  slice or reject it before misleading backend output. Milestone 1218 adds a
+  dedicated native `is_writable(...)` filesystem-writability rejection for the
+  documented bounded interpreter builtin: direct `--emit-ir` and `--emit-asm`
+  calls stop before argument lowering or backend output, while native
+  `function_exists()`/`is_callable()` metadata still recognizes
+  `is_writable`. Native writability checks, permission policy, warnings,
+  include_path/open_basedir, stream wrappers, symlink/stat-cache/TOCTOU
+  behavior, non-UTF-8 paths, references/COW, and exact native diagnostics
+  remain unsupported.
 
 ## Milestone 1219: Next Compiler-Output Contract
 
-- [ ] Compiler-output lane: choose one deterministic CLI, fixture-runner,
-  compatibility-manifest, or backend artifact contract that improves
-  auditability without broadening PHP support claims.
+- [x] Compiler-output lane: refine the deterministic text fixture manifest
+  only: each fixture row now prints SHA-256 digests for the fixture source plus
+  present recognized fixture sidecars in deterministic `source`, `stdout`,
+  `stderr`, `exit`, `cli`, `phpc-only` order, matching the existing JSON
+  source digest visibility without changing the JSON schema or
+  `contract_version` 13. This does not parse, execute, validate, require, or
+  create fixtures or sidecars, alter fixture execution, change system PHP
+  comparison behavior, or broaden parser/runtime/native PHP support claims.
 
 ## Milestone 1220: Next Tests/Docs Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1216-1219 land, refresh the lane
+- [x] Tests/docs lane: after Milestones 1216-1219 land, refresh the lane
   queue, progress log, support docs, and compatibility-gap notes, then run the
-  serialized full gate before checkpointing.
+  serialized full gate before checkpointing. Full gate passed with `1360`
+  fixture tests, `772` system PHP comparisons, and `588` skipped `phpc-only`
+  fixtures.
+
+## Milestone 1221: WordPress Trait Composition Slice
+
+- [ ] Parser/runtime lane: implement the next bounded trait-support slice
+  that moves toward WordPress execution instead of only improving diagnostics.
+  Preferred target: parse class `use TraitName;` for one already-declared
+  trait with simple public methods and no adaptations/conflicts, register the
+  composed methods on the consuming class, and prove instance calls through
+  `phpc run`. Keep trait properties/constants, conflict resolution, aliases,
+  visibility adaptations, `insteadof`, nested/conditional registration,
+  references/COW, exact PHP diagnostics, and native lowering unsupported
+  unless implemented and tested.
+
+## Milestone 1222: WordPress Reference/COW Runtime Slice
+
+- [ ] Runtime lane: choose one concrete reference/copy-on-write blocker from
+  the WordPress compatibility gap map and implement a small executable slice.
+  Prefer behavior reached by object-property arrays, globals, callback
+  arguments, or `wpdb`-style mutable arrays. Prove it with focused Rust tests,
+  a CLI fixture, and system PHP comparison when deterministic; name every
+  remaining reference/COW edge explicitly.
+
+## Milestone 1223: WordPress Request/Filesystem/SAPI Slice
+
+- [ ] Runtime or IR/lowering lane: choose one request-state, include-path,
+  filesystem, output-buffering, header, or SAPI behavior that blocks a real
+  WordPress bootstrap/request path. Implement the interpreter slice if it is
+  semantically useful for `phpc run`; otherwise add a precise native rejection
+  only when it prevents misleading generated output for already-supported
+  interpreter behavior.
+
+## Milestone 1224: WordPress Database/Bootstrap Probe Slice
+
+- [ ] Compatibility/compiler-output lane: advance the WordPress bootstrap
+  harness or `wpdb` compatibility by one real blocker. Prefer a deterministic
+  external-inventory or synthetic WordPress-shaped probe that reaches a later
+  bootstrap point, or a small `mysqli`/`wpdb` behavior needed by an existing
+  probe. This lane should improve executable WordPress evidence, not just
+  manifest readability.
+
+## Milestone 1225: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1221-1224 land, refresh the lane
+  queue around the largest remaining WordPress blockers, update support and
+  compatibility docs without overstating support, run the serialized full gate,
+  and checkpoint the batch.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

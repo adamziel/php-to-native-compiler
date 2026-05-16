@@ -817,7 +817,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -1812,7 +1812,19 @@
   portability, exact warnings, include_path lookup, `open_basedir`, stream
   wrappers, symlink policy, stat-cache behavior, TOCTOU semantics, non-UTF-8
   paths, broader scalar coercions, partial-output behavior, and native
-  lowering remain unsupported.
+  lowering remain unsupported. Native function-table introspection can see the
+  known builtin name, while direct native `is_writable(...)` calls stop at a
+  dedicated filesystem-writability codegen boundary before argument lowering
+  or backend selection.
+  `is_link($path)` accepts one string local path, rejects stream-wrapper
+  paths, returns `true` for host symbolic links detected through local
+  symlink metadata, and returns `false` for ordinary files and missing paths.
+  It shares the same current relative path policy as `file_exists`. This is a
+  small local metadata slice, not full PHP filesystem link semantics:
+  include-path lookup, `open_basedir`, stream wrappers, exact warning
+  behavior, stat-cache behavior, TOCTOU semantics, broken-symlink policy
+  fidelity, non-UTF-8 paths, broader scalar coercions, partial-output
+  behavior, and native lowering remain unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. It currently records no autoload stack and never invokes the
@@ -2101,7 +2113,10 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
-  static interface methods, trait members,
+  static interface methods, trait methods before trait method metadata,
+  class trait-use composition, conflict resolution, alias/visibility
+  adaptations, `__TRAIT__` context, references/copy-on-write, and native
+  lowering exist, other trait members,
   trait use inside classes, backed enum declarations and enum members beyond
   bare cases,
   unsupported class modifier combinations, readonly class declarations before
@@ -3423,7 +3438,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -3794,7 +3809,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -3970,7 +3985,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4456,6 +4471,13 @@
   under a dedicated filesystem-canonicalization boundary until native
   filesystem canonicalization, symlink/path policy, warning/false recovery,
   include_path/open_basedir/stat cache, non-UTF-8 path handling,
+  references/COW, and exact native diagnostics exist, while native
+  function-table introspection recognizes the name.
+  `is_writable` accepts the same current one-string local metadata subset as
+  the builtin section above; direct native `is_writable(...)` calls reject
+  under a dedicated filesystem-writability boundary until native writability
+  checks, permission policy, warnings, include_path/open_basedir, stream
+  wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths,
   references/COW, and exact native diagnostics exist, while native
   function-table introspection recognizes the name.
   `spl_autoload_register` accepts closure and string callbacks in `phpc run`
@@ -5042,7 +5064,7 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
-  trait members, trait use inside classes,
+  trait methods, other trait members, trait use inside classes,
   trait methods/properties/constants, trait conflict resolution, aliases,
   visibility changes, namespace-aware traits,
   backed enum declarations, enum case objects, backed enum values, enum
@@ -5215,9 +5237,10 @@
   omit the field. It also reports deterministic source and recognized sidecar
   byte counts, including `.cli` snapshot exercise files, for fixture entries,
   summaries, recognized orphan sidecars, and compatibility-target summaries,
-  plus SHA-256 digests for present recognized fixture sidecars in fixture rows
-  in deterministic `stdout`, `stderr`, `exit`, `cli`, `phpc-only` order. This
-  is a text-only contract refinement; the JSON `contract_version` remains 13.
+  plus SHA-256 digests for fixture sources and present recognized fixture
+  sidecars in fixture rows in deterministic `source`, `stdout`, `stderr`,
+  `exit`, `cli`, `phpc-only` order. This is a text-only contract refinement;
+  the JSON `contract_version` remains 13.
   The text manifest also reports aggregate CLI exercise gap counts for fixtures
   without `.cli` snapshot sidecars and aggregate `.phpc-only` reason gap counts
   for markers whose text is empty or whitespace-only. It also reports
@@ -5232,9 +5255,8 @@
   extension is not part of the fixture contract but whose corresponding `.php`
   fixture exists. It does not parse, execute, or compare fixtures, execute or
   validate `.cli` snapshots, validate compatibility probe expectations, parse
-  expected inventory output, print fixture source SHA-256 in text fixture rows
-  outside the JSON `file_sha256.source` field, validate that `.phpc-only`
-  reason text is non-empty, inspect non-fixture compatibility metadata beyond
+  expected inventory output, validate that `.phpc-only` reason text is
+  non-empty, inspect non-fixture compatibility metadata beyond
   `source-pin.md` and `.expected` probe artifacts, or report unrecognized files
   that do not have a matching `.php` fixture.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
@@ -6312,6 +6334,11 @@
   `open_basedir`, stream wrappers, symlink policy, stat-cache behavior, TOCTOU
   semantics, non-UTF-8 paths, broad scalar coercions, exact diagnostics, and
   native lowering beyond function-table introspection
+- `is_link()` behavior beyond the current one-string local symlink metadata
+  slice: include-path lookup, `open_basedir`, stream wrappers, exact warnings,
+  stat-cache behavior, TOCTOU semantics, broken-symlink policy fidelity,
+  non-UTF-8 paths, broad scalar coercions, exact diagnostics, and native
+  lowering beyond function-table introspection
 - `header()` behavior beyond accepting current string/bool/int arguments as a
   no-op returning `null`: response header storage, status-code parsing/state,
   replacement/removal behavior, output-sent warnings, SAPI/web-server

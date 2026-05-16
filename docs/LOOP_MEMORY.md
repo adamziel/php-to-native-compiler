@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T22:45:36Z
+
+- Checkpoint before this task:
+  `a6f78b55 runtime: add is_writable`, pushed to `origin/master`.
+- Task attempted: Milestones 1216-1220, four-lane implementation batch plus a
+  WordPress-focused queue refresh.
+- Files changed: parser/runtime/codegen/fixture-manifest output code, focused
+  tests and fixtures for unsupported trait-method diagnostics, bounded
+  `is_link()` runtime support, dedicated native `is_writable(...)` rejection,
+  text fixture-manifest source SHA-256 metadata, stale trait fixture snapshots,
+  plus `README.md`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, and this
+  memory file.
+- Tests run and result: focused lane checks passed; integration checks passed
+  for parser, runtime, IR, compiler-output, object-model, and fixture
+  regressions; the first checkpoint gate exposed stale trait diagnostic
+  snapshots, which were fixed; then `tools/checkpoint.sh "runtime: add
+  is_link"` passed with `1360` fixture tests, `772` system PHP comparisons,
+  and `588` skipped `phpc-only` fixtures before the scoped checkpoint commit
+  `4c832129 runtime: add is_link`.
+- Remaining semantic gaps: trait composition execution, trait
+  properties/constants/adaptations/conflict resolution, references and
+  copy-on-write containers, native filesystem and object/method lowering,
+  include-path/open_basedir/stat-cache/SAPI request behavior, output buffering,
+  real database services, complete `wpdb` behavior, and full WordPress
+  bootstrap/request/plugin/theme flows remain implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, close completed lane
+  agents, then start Milestones 1221-1224 in separate worktrees focused on the
+  largest WordPress blockers rather than audit-only manifest polish.
+
 ## Loop Event 2026-05-16T22:32:16Z
 
 - Checkpoint before this task:

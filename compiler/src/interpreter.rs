@@ -16304,6 +16304,38 @@ impl Interpreter {
                     )),
                 }
             }
+            "is_link" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "is_link()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        Ok(Value::Bool(
+                            fs::symlink_metadata(&metadata_path)
+                                .map(|metadata| metadata.file_type().is_symlink())
+                                .unwrap_or(false),
+                        ))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "is_link()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "register_shutdown_function" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -20469,6 +20501,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_file"
             | "is_readable"
             | "is_writable"
+            | "is_link"
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"

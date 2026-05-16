@@ -6899,7 +6899,7 @@ trait Logs {
 "#,
             3,
             5,
-            "unsupported trait member declaration: trait members and trait use execution are not implemented",
+            "unsupported trait method declaration: trait method metadata, class trait-use composition, conflict resolution, alias and visibility adaptations, __TRAIT__ context, references/copy-on-write, and native lowering are not implemented",
         ),
         (
             r#"<?php

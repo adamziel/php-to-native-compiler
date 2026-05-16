@@ -130,6 +130,12 @@ Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
 a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
 enforcement.
+Top-level empty trait declarations are parsed as metadata, but trait methods
+remain a parser boundary. Method-bearing traits stop with a dedicated
+diagnostic until trait method metadata, class trait-use composition, conflict
+resolution, alias and visibility adaptations, `__TRAIT__` context,
+references/copy-on-write, and native lowering exist. Other trait members stay
+under the broader trait-member boundary.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1448,6 +1454,16 @@ non-UTF-8 paths, and native filesystem lowering remain out of scope. Native
 function-table introspection recognizes the name, while direct native
 `is_writable(...)` calls still reject under the generic function-call
 boundary.
+`is_link()` is interpreter-only for one string local path. It uses the same
+process-path-then-repo-root relative path policy as the filesystem metadata
+builtins, rejects stream-wrapper paths, returns `true` for host symbolic links
+detected through local symlink metadata, and returns `false` for ordinary files
+and missing local paths. Include-path lookup, `open_basedir`, stream wrappers,
+exact warning behavior, stat-cache behavior, TOCTOU semantics,
+broken-symlink policy fidelity, non-UTF-8 paths, and native filesystem lowering
+remain out of scope. Native function-table introspection recognizes the name,
+while direct native `is_link(...)` calls still reject under the generic
+function-call boundary.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1484,6 +1500,12 @@ boundary until generated code has local writability checks, permission policy,
 warnings, include_path and `open_basedir` handling, stream-wrapper
 rejection/dispatch, symlink/stat-cache/TOCTOU behavior, non-UTF-8 path
 handling, references/copy-on-write, and exact native diagnostics.
+Native function-table introspection recognizes `is_link`, but direct native
+`is_link(...)` calls still reject under the generic function-call boundary
+until generated code has local symlink metadata lookup, include_path and
+`open_basedir` handling, stream-wrapper rejection/dispatch, stat-cache/TOCTOU
+behavior, broken-symlink policy fidelity, non-UTF-8 path handling,
+references/copy-on-write, and exact native diagnostics.
 Direct `defined($name)` calls fold only when `$name` is an already-lowerable
 string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.
