@@ -10195,8 +10195,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `6e79c8c3 runtime: add late static reference return cells`, covering
-  Milestone 1052.
+  `c8859074 runtime: add dynamic static reference return cells`, covering
+  Milestone 1053.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

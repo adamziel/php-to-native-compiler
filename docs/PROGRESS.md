@@ -21,6 +21,9 @@ Implemented:
   copy-on-write, and native lowering remain unsupported. Verification so far:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1053`.
+  The serialized checkpoint gate passed with 1267 fixture tests, 713 system
+  PHP comparisons, and 554 skipped comparisons, then committed
+  `c8859074 runtime: add dynamic static reference return cells`.
 
 - Added Milestone 1052, bounded direct-variable reference-return cells for
   statement-form reference assignment from `static::` late-static method calls

@@ -34,16 +34,20 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Task attempted: Milestone 1053, bounded direct-variable reference-return
   assignment cells for dynamic static receiver method calls where the receiver
   evaluates to an object or class string.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone1053/*`,
   `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
   `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt` was run after `cargo fmt --check` reported wrapping drift.
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   passed with 12 tests.
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1053`
-  passed with 1 fixture and 1 system PHP comparison.
+  passed with 1 fixture and 1 system PHP comparison. `cargo fmt --check` and
+  `git diff --check` passed after formatting. The serialized checkpoint gate
+  passed with 1267 fixture tests, 713 system PHP comparisons, and 554 skipped
+  comparisons, then committed
+  `c8859074 runtime: add dynamic static reference return cells`.
 - Current WordPress frontier: `$class::method()` and `$object::method()`
   reference-return sources now have one executable alias-cell path when the
   dynamic receiver resolves to a visible static method returning a direct
@@ -54,10 +58,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   return expressions, nested-control-flow returns, array/object offset
   references, by-reference `foreach`, full PHP reference containers,
   copy-on-write, and native lowering remain missing.
-- Next concrete task: run `cargo fmt --check`, `git diff --check`, and the
-  serialized checkpoint gate, then checkpoint with
-  `tools/checkpoint.sh "runtime: add dynamic static reference return cells"` if
-  the full gate passes.
+- Next concrete task: push the checkpoint, then either add an explicit magic
+  `__callStatic` reference-return boundary or pivot to array
+  slot/reference-container groundwork for array-offset references and exact
+  by-reference `foreach`.
 
 ## Loop Event 2026-05-16T00:00:00Z
 
