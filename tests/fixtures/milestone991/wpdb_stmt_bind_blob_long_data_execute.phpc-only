@@ -1,0 +1,6 @@
+This fixture records deterministic `b` marker long-data execution through a
+WordPress-shaped `wpdb` object. It covers only recorded long-data chunks
+overriding bound `b` parameters for exact known placeholder SQL shapes. It does
+not implement real blob binding, packet buffering, send timing, mutation SQL,
+broad SQL execution, host database state, PHP warning/error fidelity, or native
+database lowering.

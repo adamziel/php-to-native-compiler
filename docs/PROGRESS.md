@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 991, bounded `b` type-marker support for
+  `mysqli_stmt_bind_param()` plus deterministic long-data execution
+  integration. The runtime now accepts `b` alongside the current `s`, `i`, and
+  `d` markers; when a bound `b` parameter has recorded
+  `mysqli_stmt_send_long_data()` chunks, placeholder execution uses the joined
+  chunk string for exact known statement SQL shapes. The new fixtures include
+  direct MySQLi and WordPress-shaped `wpdb` smokes; the affected unit boundary
+  now rejects an unknown `x` marker instead of `b`. This is not real blob
+  binding, packet buffering, send timing, mutation SQL, broad SQL execution,
+  host database state, PHP warning/error fidelity, mysqlnd behavior, or native
+  database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone991`.
+
 - Added Milestone 990, deterministic `mysqli_stmt_send_long_data()`
   placeholder chunk state for active statements. The runtime now validates
   active `mysqli_stmt` handles, non-negative in-range parameter indexes, and

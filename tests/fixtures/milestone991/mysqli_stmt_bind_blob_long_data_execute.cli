@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone991/mysqli_stmt_bind_blob_long_data_execute.php
+exit: 0
+stdout:
+blob-bound|sent|executed|1:Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

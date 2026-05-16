@@ -246,17 +246,20 @@ array($statement))` use the same refresh path. The exact
 `SELECT option_value FROM wp_options WHERE option_name = ?` shape currently
 returns an empty deterministic placeholder result. Positional
 `mysqli_stmt_execute($statement, array(...))` params arrays are accepted for
-the exact known SQL shapes, including through `call_user_func()`. Named params
-arrays, mutations, unknown SELECT metadata, real mysqlnd result transfer, host
+the exact known SQL shapes, including through `call_user_func()`. Bound `b`
+parameters can consume recorded `mysqli_stmt_send_long_data()` chunks for the
+exact known SQL shapes. Named params arrays, mutations, unknown SELECT
+metadata, real mysqlnd result transfer, real blob packet behavior, host
 database state, PHP warning/error fidelity, named-argument callback dispatch,
 and native lowering remain unsupported.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
-scalar/null variable snapshots for active statements using `s`, `i`, or `d`
-type markers; direct and callback-dispatched `mysqli_stmt_execute()` re-read
-those variables before execution. This is not true by-reference aliasing,
-cross-scope reference cells, named-argument callback dispatch, array parameter
-execution, mutation SQL, broad SQL execution, host database state, PHP
+scalar/null variable snapshots for active statements using `s`, `i`, `d`, or
+`b` type markers; direct and callback-dispatched `mysqli_stmt_execute()`
+re-read those variables before execution, and recorded long-data chunks
+override bound `b` parameter values. This is not true by-reference aliasing,
+cross-scope reference cells, named-argument callback dispatch, mutation SQL,
+broad SQL execution, real mysqlnd blob behavior, host database state, PHP
 warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable names

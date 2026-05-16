@@ -642,13 +642,24 @@ $result4 = mysqli_stmt_get_result($stmt4);
 $row4 = mysqli_fetch_assoc($result4);
 echo "|";
 echo $row4["ID"], ":", $row4["post_title"];
+$stmt5 = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+$blob = "unused";
+echo "|";
+echo mysqli_stmt_bind_param($stmt5, "b", $blob) ? "blob-bound" : "not-bound";
+mysqli_stmt_send_long_data($stmt5, 0, "1");
+echo "|";
+echo mysqli_stmt_execute($stmt5) ? "blob-executed" : "not-executed";
+$result5 = mysqli_stmt_get_result($stmt5);
+$row5 = mysqli_fetch_assoc($result5);
+echo "|";
+echo $row5["ID"], ":", $row5["post_title"];
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder|array-executed|1:Hello world placeholder"
+        "yes|bind-callable|execute-exists|execute-callable|bound|executed|1:Hello world placeholder|call-user-func|1:Hello world placeholder|call-user-func-array|1:Hello world placeholder|array-executed|1:Hello world placeholder|blob-bound|blob-executed|1:Hello world placeholder"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -705,7 +716,7 @@ mysqli_stmt_execute($stmt);
         r#"<?php
 $stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
 $id = 1;
-mysqli_stmt_bind_param($stmt, "b", $id);
+mysqli_stmt_bind_param($stmt, "x", $id);
 "#,
     )
     .unwrap_err();
@@ -715,7 +726,7 @@ mysqli_stmt_bind_param($stmt, "b", $id);
     assert_eq!(type_error.column, 1);
     assert_eq!(
         type_error.message,
-        "unsupported call mysqli_stmt_bind_param(): only s, i, and d parameter type markers are implemented in the current subset, got b"
+        "unsupported call mysqli_stmt_bind_param(): only s, i, d, and b parameter type markers are implemented in the current subset, got x"
     );
 
     let variable_error = run_source(

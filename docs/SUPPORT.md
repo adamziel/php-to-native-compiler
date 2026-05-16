@@ -1002,15 +1002,16 @@
   result rows, and `mysqli_stmt_get_result($statement)` returns a placeholder
   `mysqli_result` containing those rows. `mysqli_stmt_bind_param($statement,
   $types, &...$vars)` records direct scalar/null variable snapshots for
-  active statements using `s`, `i`, or `d` type markers and direct
+  active statements using `s`, `i`, `d`, or `b` type markers and direct
   `mysqli_stmt_execute($statement)` plus
   `call_user_func("mysqli_stmt_execute", $statement)` and positional
   `call_user_func_array("mysqli_stmt_execute", array($statement))` re-read
-  those direct variables from the current caller scope before execution. This
-  is not true by-reference aliasing, cross-scope reference cells,
-  named-argument callback dispatch, array parameter execution, mutation SQL,
-  broad SQL execution, host database state, PHP warning/error fidelity, or
-  native statement lowering.
+  those direct variables from the current caller scope before execution.
+  Recorded `mysqli_stmt_send_long_data()` chunks override bound `b` parameter
+  values for exact known statement SQL shapes. This is not true by-reference
+  aliasing, cross-scope reference cells, named-argument callback dispatch,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, real mysqlnd blob behavior, or native statement lowering.
   `mysqli_stmt_execute($statement, array(...))` also accepts positional
   integer-keyed scalar/null parameter arrays for the exact known statement SQL
   shapes, including through `call_user_func("mysqli_stmt_execute", $statement,
@@ -3356,10 +3357,10 @@
   shapes without named params arrays, mutations, real mysqlnd transfer, host
   database state, broad SQL execution, or named-argument callback dispatch,
   `mysqli_stmt_bind_param(...)` exposes only direct scalar/null variable
-  snapshots and direct-execute-time re-reads for known placeholder statement
-  SQL shapes without true by-reference aliasing, cross-scope reference cells,
-  array parameter execution, mutation SQL, broad SQL execution, or host
-  database state,
+  snapshots, direct-execute-time re-reads, and recorded long-data overrides
+  for bound `b` parameters for known placeholder statement SQL shapes without
+  true by-reference aliasing, cross-scope reference cells, mutation SQL, broad
+  SQL execution, or host database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
   variable placeholder result binding and buffered row copying for current
   known statement result shapes without true by-reference aliasing, unbuffered

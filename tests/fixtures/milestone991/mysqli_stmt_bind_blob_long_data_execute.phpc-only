@@ -1,0 +1,8 @@
+This fixture exercises phpc's deterministic `b` type marker support for
+`mysqli_stmt_bind_param()` plus placeholder `mysqli_stmt_send_long_data()`
+execution integration. System PHP requires a real initialized MySQLi
+connection and mysqlnd blob packet streaming; phpc only lets recorded long-data
+chunks override bound `b` parameters for exact known placeholder SQL shapes.
+It does not implement real blob binding, packet buffering, send timing,
+mutation SQL, broad SQL execution, host database state, PHP warning/error
+fidelity, or native database lowering.

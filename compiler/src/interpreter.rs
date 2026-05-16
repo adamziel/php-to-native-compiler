@@ -4773,7 +4773,19 @@ impl Interpreter {
                     ),
                 ));
             }
-            (state.query.clone(), state.bound_parameter_values.clone())
+            let mut bound_parameters = state.bound_parameter_values.clone();
+            if let Some(types) = state.bound_parameter_types.as_deref() {
+                for (index, ty) in types.chars().enumerate() {
+                    if ty == 'b' {
+                        if let Some(data) = state.long_data.get(&index) {
+                            if index < bound_parameters.len() {
+                                bound_parameters[index] = Value::String(data.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            (state.query.clone(), bound_parameters)
         };
 
         let Some(query) = query else {
@@ -14578,7 +14590,9 @@ fn mysqli_statement_result_for_query_with_params(
     }
 
     if query == "SELECT ID, post_title FROM wp_posts WHERE ID = ?" {
-        if matches!(params, [Value::Int(1)]) {
+        if matches!(params, [Value::Int(1)])
+            || matches!(params, [Value::String(value)] if value == "1")
+        {
             return Ok(Some(MysqliPendingResultState {
                 fields: vec!["ID".to_string(), "post_title".to_string()],
                 rows: vec![vec![
@@ -14634,13 +14648,13 @@ fn validate_mysqli_stmt_bind_param_types(
         ));
     }
     for ty in types.chars() {
-        if !matches!(ty, 's' | 'i' | 'd') {
+        if !matches!(ty, 's' | 'i' | 'd' | 'b') {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "mysqli_stmt_bind_param()",
                     format!(
-                        "only s, i, and d parameter type markers are implemented in the current subset, got {ty}"
+                        "only s, i, d, and b parameter type markers are implemented in the current subset, got {ty}"
                     ),
                 ),
             ));

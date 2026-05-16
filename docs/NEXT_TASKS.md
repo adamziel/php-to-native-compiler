@@ -9375,6 +9375,20 @@ handled.
   `wpdb` smoke. This is not real blob binding, packet buffering, send timing,
   execution integration, host database state, PHP warning/error fidelity,
   mysqlnd behavior, or native database lowering.
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as `b` marker
+  long-data execution integration, real reference aliasing around bound
+  parameters/results, named params-array behavior, broader escaping charset
+  fidelity, local-infile option effects, connection multi-result pending
+  queues, or the next real database integration gap, and add the next bounded
+  behavior or explicit runtime boundary with tests, CLI fixtures, docs, and
+  native rejection coverage where lowering remains unsupported.
+  Milestone 991 adds bounded `b` type-marker support for
+  `mysqli_stmt_bind_param()` with deterministic long-data execution
+  integration, including a WordPress-shaped `wpdb` smoke. This is not real
+  blob binding, packet buffering, send timing, mutation SQL, broad SQL
+  execution, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, named params-array behavior,
@@ -9387,8 +9401,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1a5d3bc5 runtime: add mysqli stmt execute params arrays`, covering
-  Milestone 989 before the current Milestone 990 candidate.
+  `70f1097a runtime: add mysqli stmt long data state`, covering
+  Milestone 990 before the current Milestone 991 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

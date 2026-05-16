@@ -1796,7 +1796,12 @@ historical blockers and remaining full-support gaps include:
   statements, including a WordPress-shaped `wpdb` smoke, without claiming real
   blob binding, packet buffering, send timing, execution integration, host
   database state, PHP warning/error fidelity, mysqlnd behavior, or native
-  database lowering. Milestone 965 adds explicit
+  database lowering. Milestone 991 adds bounded `b` type-marker support for
+  `mysqli_stmt_bind_param()` with deterministic long-data execution
+  integration, including a WordPress-shaped `wpdb` smoke, without claiming
+  real blob binding, packet buffering, send timing, mutation SQL, broad SQL
+  execution, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering. Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/
   `mysqli_stmt_error_list()` statement prepare/parameter-count and

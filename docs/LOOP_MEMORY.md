@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `70f1097a runtime: add mysqli stmt long data state`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 991, bounded `b` type-marker support for
+  `mysqli_stmt_bind_param()` with deterministic long-data execution
+  integration, with direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone991/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_statement_bind_param_and_execute_have_placeholder_state -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone991`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: bound `b` parameters on active placeholder
+  statements can now consume recorded long-data chunks during deterministic
+  execution for exact known `?` SQL shapes.
+- Remaining semantic gaps: real blob binding, packet buffering, send timing,
+  mutation SQL, broad SQL execution, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, and native database lowering remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect true
+  reference aliasing, named params-array behavior, or the next real database
+  integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1a5d3bc5 runtime: add mysqli stmt execute params arrays`, pushed to
   `origin/master`.
 - Task attempted: Milestone 990, deterministic
