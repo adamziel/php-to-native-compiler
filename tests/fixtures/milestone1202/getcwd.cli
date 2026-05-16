@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+string|non-empty|dir|repeat
+stderr:

@@ -1,8 +1,13 @@
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+use php_compiler::emit_asm_source;
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::{run_source, run_source_with_source_file};
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, offsets/lengths, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior";
 
 fn fixture_source_file() -> String {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -127,5 +132,78 @@ echo is_callable("file_get_contents") ? "1" : "0";
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_FILE_GET_CONTENTS_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_file_get_contents_before_lowering_arguments() {
+    let error = emit_ir_source("<?php\nfile_get_contents(42);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FILE_GET_CONTENTS_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_file_get_contents_before_backend_execution() {
+    let error = emit_asm_source("<?php\nfile_get_contents('php://input');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FILE_GET_CONTENTS_REJECTION);
+}
+
+#[test]
+fn native_file_get_contents_emit_ir_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-ir",
+        "tests/fixtures/milestone1203/native_file_get_contents_boundary_emit_ir.cli",
+    );
+}
+
+#[test]
+fn native_file_get_contents_emit_asm_cli_snapshot_matches_committed_output() {
+    assert_cli_snapshot_matches(
+        "--emit-asm",
+        "tests/fixtures/milestone1203/native_file_get_contents_boundary_emit_asm.cli",
+    );
+}
+
+fn assert_cli_snapshot_matches(mode: &str, snapshot_path: &str) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1203/native_file_get_contents_boundary.phpc-source");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, mode])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(snapshot_path))
+        .expect("native file_get_contents CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
 }

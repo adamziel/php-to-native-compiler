@@ -20,6 +20,8 @@ const LLVM_STR_ENDS_WITH_REJECTION: &str = "LLVM str_ends_with lowering rejects 
 const ASSEMBLY_STR_ENDS_WITH_REJECTION: &str = "assembly str_ends_with lowering rejects direct string-suffix calls until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native str_ends_with diagnostics exist; phpc run handles current bounded str_ends_with behavior";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
+const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, offsets/lengths, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior";
+const ASSEMBLY_FILE_GET_CONTENTS_REJECTION: &str = "assembly file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, offsets/lengths, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
@@ -727,6 +729,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported(*span, LLVM_BASENAME_REJECTION))
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
+                Err(self.unsupported(*span, LLVM_FILE_GET_CONTENTS_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -3575,6 +3580,9 @@ impl CGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported(*span, ASSEMBLY_BASENAME_REJECTION))
+            }
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("file_get_contents") => {
+                Err(self.unsupported(*span, ASSEMBLY_FILE_GET_CONTENTS_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -6799,6 +6807,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "getcwd"
             | "is_dir"
             | "is_file"
             | "is_readable"

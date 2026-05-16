@@ -817,7 +817,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -1757,7 +1757,16 @@
   fidelity, missing-file warning/`false` recovery, other stream wrappers,
   stream contexts, offsets/lengths, include-path lookup, real request-body
   state, `open_basedir`, stat-cache behavior, partial-output behavior, and
-  native lowering remain unsupported.
+  native lowering remain unsupported. Direct native
+  `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
+  boundary before argument lowering or backend selection, while native
+  function-table introspection can still see the known builtin name.
+  `getcwd()` accepts no arguments and returns the process current working
+  directory as a UTF-8 string. This is a bounded CLI/request-state filesystem
+  slice: directory changes through `chdir()`, failure returning `false`,
+  non-UTF-8 working directory paths, virtualized SAPI working directories,
+  include-path interaction, `open_basedir`, exact warnings, and native
+  lowering remain unsupported.
   `is_dir($path)` accepts one string local path, rejects stream-wrapper paths,
   returns `true` for host directories, and returns `false` for missing paths or
   non-directory paths. It shares the same current relative path policy as
@@ -1960,6 +1969,7 @@
   invocation, reference returns, type declaration enforcement, named arguments
   such as `call(name: $value)`,
   first-class callable syntax such as `strlen(...)` and `$callback(...)`,
+  static arrow functions such as `static fn () => 1`,
   `declare(strict_types=1)`, `declare(ticks=1)`, and
   `declare(encoding="UTF-8")`. Declare behavior remains unsupported:
   `strict_types` type-enforcement semantics, tick handlers and execution hooks,
@@ -3387,7 +3397,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -3758,7 +3768,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_dir`, `is_file`, `is_readable`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -3869,8 +3879,8 @@
   optional return-type metadata, block bodies, and `use (...)` capture lists is
   parsed so containing functions can be registered, including by-reference
   capture syntax such as `use (&$name)`. Evaluating an anonymous closure
-  expression, a `static function (...) { ... }` expression, or an arrow
-  function expression creates an inert runtime closure value that can be
+  expression, a `static function (...) { ... }` expression, or a non-static
+  arrow function expression creates an inert runtime closure value that can be
   stored, read, and tested for truthiness. Explicit `use (...)` capture names
   are looked up at closure creation and the current values are stored on the
   inert closure value; by-reference captures record the requested capture mode
@@ -3878,13 +3888,17 @@
   implicit capture binding and execution, closure invocation, `$this` binding,
   true by-reference capture aliasing, copy-on-write, static closure binding
   semantics, callback integration beyond registration validation, exact PHP
-  `Closure` object behavior, and native lowering are unsupported. Arrow
-  function syntax `fn (...) => expr` is parsed as a closure-shaped expression
-  with a synthetic return body.
+  `Closure` object behavior, and native lowering are unsupported. Non-static
+  arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
+  expression with a synthetic return body, while `static fn (...) => expr`
+  stops at a dedicated parse boundary until no-`$this` binding, implicit
+  capture metadata, closure invocation, callback integration,
+  references/copy-on-write, and native lowering exist.
   Variadic parameters
   and argument unpacking, reference returns, reference expressions, named
   arguments, first-class callable syntax such as `strlen(...)` and
-  `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
+  `$callback(...)`, static arrow functions such as `static fn () => 1`,
+  empty call arguments, and `declare(strict_types=1)` are
   rejected with stable parse diagnostics. Function-local `static` declarations
   are supported for the current bounded direct-variable storage slice:
   `static $name;` and `static $name = value;` initialize per-function storage
@@ -3928,7 +3942,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4395,6 +4409,14 @@
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
+  `file_get_contents` accepts the same current deterministic `php://input`
+  placeholder and local UTF-8 text-file read subset as the builtin section
+  above; direct native `file_get_contents(...)` calls reject under a dedicated
+  filesystem-read boundary until native PHP stream-wrapper handling, local file
+  I/O, binary string byte fidelity, warning plus `false` recovery, stream
+  contexts, offsets/lengths, include-path lookup, `open_basedir` and stat-cache
+  behavior, references/copy-on-write, and exact native diagnostics exist, while
+  native function-table introspection recognizes the name.
   `spl_autoload_register` accepts closure and string callbacks in `phpc run`
   without storing or invoking them; direct native calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -5159,23 +5181,27 @@
   and SHA-256 when a target pin file is present, and deterministic
   `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
   count, and SHA-256. It also reports recognized orphan sidecars that do not
-  have a matching `.php` fixture. It does not parse, execute, or compare
-  fixtures, execute or validate `.cli` snapshots, validate compatibility probe
-  expectations, parse expected inventory output, hash fixture or sidecar
-  payloads outside the documented JSON digest fields and source-pin/probe
-  metadata, validate that `.phpc-only` reason text is non-empty, inspect
-  non-fixture compatibility metadata beyond `source-pin.md` and `.expected`
-  probe artifacts, or report unrecognized sidecars.
+  have a matching `.php` fixture, plus unrecognized sidecar-like siblings whose
+  extension is not part of the fixture contract but whose corresponding `.php`
+  fixture exists. It does not parse, execute, or compare fixtures, execute or
+  validate `.cli` snapshots, validate compatibility probe expectations, parse
+  expected inventory output, hash fixture or sidecar payloads outside the
+  documented JSON digest fields and source-pin/probe metadata, validate that
+  `.phpc-only` reason text is non-empty, inspect non-fixture compatibility
+  metadata beyond `source-pin.md` and `.expected` probe artifacts, or report
+  unrecognized files that do not have a matching `.php` fixture.
 - `phpc test --list-fixtures-json [fixture-dir]` prints the same audit-only
-  fixture manifest as deterministic JSON with `contract_version` 11, aggregate
+  fixture manifest as deterministic JSON with `contract_version` 12, aggregate
   counts, sorted fixture entries, recognized expectation metadata,
   source/recognized sidecar byte counts, SHA-256 digests for fixture sources,
-  recognized sidecars including `.cli` snapshot exercise files, and
-  recognized orphan sidecars, PHP-comparison eligibility, sibling
-  `.phpc-only` marker text as `phpc_only_reason`, and per-target
-  compatibility counts, aggregate and per-target CLI exercise gap counts,
-  aggregate and per-target `.phpc-only` reason gap counts, plus optional
-  `source-pin.md` path, byte count, SHA-256 metadata, and
+  recognized sidecars including `.cli` snapshot exercise files, recognized
+  orphan sidecars, and unrecognized sidecar-like siblings with matching `.php`
+  fixtures, PHP-comparison eligibility, sibling `.phpc-only` marker text as
+  `phpc_only_reason`, and per-target compatibility counts, aggregate and
+  per-target CLI exercise gap counts, aggregate and per-target `.phpc-only`
+  reason gap counts, aggregate and per-target unrecognized sidecar counts and
+  byte totals, plus optional `source-pin.md` path, byte count, SHA-256
+  metadata, and
   deterministic `.expected` probe expectation artifact metadata for
   `compat/<target>` directories under the fixture root, including targets with
   no executable `.php` fixtures yet. It does not parse, execute, compare
@@ -5183,7 +5209,8 @@
   `.cli` snapshots, validate compatibility probe expectations, parse expected
   inventory output, validate that `.phpc-only` reason text is non-empty,
   inspect non-fixture compatibility metadata beyond `source-pin.md` and
-  `.expected` probe artifacts, or report unrecognized sidecars.
+  `.expected` probe artifacts, or report unrecognized files that do not have a
+  matching `.php` fixture.
 - System PHP comparison is a Milestone 2 test aid for supported `phpc run`
   fixtures only. It does not normalize PHP-version-specific diagnostics, INI
   settings, loaded extensions, locale, line ending differences, or unsupported
@@ -6208,6 +6235,11 @@
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   permission/open_basedir behavior, non-string coercions, stat-cache behavior,
   exact diagnostics, and native lowering beyond function-table introspection
+- `getcwd()` behavior beyond the current no-argument UTF-8 process-current-dir
+  slice: `chdir()` state mutation, failure returning `false`, non-UTF-8 host
+  paths, SAPI-specific working directory policy, include-path interaction,
+  `open_basedir`, exact diagnostics, and native lowering beyond
+  function-table introspection
 - `is_file()` behavior beyond the current one-string local path metadata slice:
   include-path lookup, stream wrappers, symlink/canonicalization policy,
   portable file-type details, permission/open_basedir behavior, non-string

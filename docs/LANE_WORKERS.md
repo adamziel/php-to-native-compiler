@@ -194,30 +194,30 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1200 closes the 1196-1199 implementation-batch
-  queue refresh. Milestone 1205 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1205 closes the 1201-1204 implementation-batch
+  queue refresh. Milestone 1210 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 1201 is the next parser slot, selecting a small
+- Parser lane: Milestone 1206 is the next parser slot, selecting a small
   syntax or parse-diagnostic boundary from the refreshed PHP/WordPress gap map
   without widening runtime or native support claims.
-- Runtime lane: Milestone 1202 is the next runtime slot, selecting a bounded
+- Runtime lane: Milestone 1207 is the next runtime slot, selecting a bounded
   value-model, object-semantics, request-state, filesystem, database, or
   WordPress-probe blocker with focused tests, CLI coverage, and named
   unsupported edges.
-- IR/lowering lane: Milestone 1203 is the next native slot, selecting a narrow
+- IR/lowering lane: Milestone 1208 is the next native slot, selecting a narrow
   native IR/lowering refinement or precise rejection boundary from already
   documented interpreter behavior.
-- Compiler-output lane: Milestone 1204 is the next compiler-output slot,
+- Compiler-output lane: Milestone 1209 is the next compiler-output slot,
   choosing a deterministic CLI, fixture-runner, compatibility-manifest, or
   backend artifact contract that improves auditability without broadening PHP
   support claims.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
-592, 597, 602, 607, 612, and 617 closed recent parser slots, Milestones 565, 568,
-572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, and 615 closed recent
+592, 597, 602, 607, 612, 617, and 1201 closed recent parser slots, Milestones 565, 568,
+572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, 615, and 1204 closed recent
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
-593, 598, 603, 608, 613, and 618 closed recent runtime slots, and Milestones 569,
-573, 588, 591, 596, 601, 606, 611, and 616 closed recent IR/lowering slots.
+593, 598, 603, 608, 613, 618, and 1202 closed recent runtime slots, and Milestones 569,
+573, 588, 591, 596, 601, 606, 611, 616, and 1203 closed recent IR/lowering slots.
 Milestones 604, 609, 614, and 619 closed recent tests/docs queue refreshes.
 Milestones 1156 through 1159 closed the latest parser/runtime/IR/compiler-output
 implementation batch, and Milestone 1160 refreshed the next-lane queue.

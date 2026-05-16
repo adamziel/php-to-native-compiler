@@ -1412,7 +1412,16 @@ bounded local UTF-8 text file read using the same process-path-then-repo-root
 relative path policy as the filesystem metadata builtins. It does not model PHP
 binary strings, warning-plus-`false` recovery, stream contexts, offsets,
 lengths, include paths, `open_basedir`, stat caching, or native filesystem
-lowering.
+lowering. Direct native `file_get_contents(...)` calls stop at a dedicated
+filesystem-read codegen boundary before argument lowering or backend selection,
+while native function-table introspection can still see the known builtin name.
+`getcwd()` is an interpreter-only request-state/filesystem builtin for the
+current CLI process. It accepts no arguments and returns the process current
+working directory as a UTF-8 string, while function-table introspection
+recognizes the name. It does not model `chdir()` state mutation, failure
+returning `false`, non-UTF-8 working-directory paths, SAPI-specific working
+directory policy, include-path interaction, `open_basedir`, exact warnings, or
+native filesystem lowering.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1430,6 +1439,13 @@ function-table introspection still recognizes `str_starts_with`, but native
 call execution still lacks PHP string conversion, empty-needle handling,
 binary byte semantics, argument diagnostics, references/copy-on-write, and
 exact native diagnostics.
+Direct `file_get_contents(...)` calls reject through a dedicated native
+filesystem-read boundary before argument lowering or backend selection. Native
+function-table introspection still recognizes `file_get_contents`, but native
+call execution still lacks stream-wrapper handling, local file I/O, binary
+string byte fidelity, warning plus `false` recovery, stream contexts,
+offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
+references/copy-on-write, and exact native diagnostics.
 Direct `defined($name)` calls fold only when `$name` is an already-lowerable
 string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.
@@ -1565,11 +1581,14 @@ First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.
 No-capture anonymous closure expressions, static anonymous closure expressions,
-and arrow function expressions allocate inert runtime closure values in
-`phpc run`, which can be assigned, read, and truth-tested but not invoked.
+and non-static arrow function expressions allocate inert runtime closure values
+in `phpc run`, which can be assigned, read, and truth-tested but not invoked.
 Static closure binding semantics are not represented yet. Arrow values do not
 bind implicit captures or execute their synthetic return bodies; invocation and
-callable integration remain explicit runtime boundaries.
+callable integration remain explicit runtime boundaries. Static arrow
+functions stop at a dedicated parse boundary until no-`$this` binding,
+implicit capture metadata, closure invocation, callback integration,
+references/copy-on-write, and native lowering exist.
 `phpc run` supports an opt-in execution-step budget via
 `PHPC_MAX_EXECUTION_STEPS`; it is enforced at statement execution and loop
 iteration boundaries to diagnose runtime loops, but it intentionally does not

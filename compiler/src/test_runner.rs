@@ -25,6 +25,7 @@ pub struct FixtureManifest {
     pub entries: Vec<FixtureManifestEntry>,
     pub summary: FixtureManifestSummary,
     pub orphan_sidecars: Vec<FixtureManifestOrphanSidecar>,
+    pub unrecognized_sidecars: Vec<FixtureManifestUnrecognizedSidecar>,
     pub compatibility_targets: Vec<FixtureManifestCompatibilityTarget>,
 }
 
@@ -41,6 +42,7 @@ pub struct FixtureManifestSummary {
     pub phpc_only_markers: usize,
     pub phpc_only_reason_gaps: usize,
     pub orphan_sidecars: usize,
+    pub unrecognized_sidecars: usize,
     pub source_bytes: u64,
     pub stdout_bytes: u64,
     pub stderr_bytes: u64,
@@ -48,6 +50,7 @@ pub struct FixtureManifestSummary {
     pub cli_bytes: u64,
     pub phpc_only_bytes: u64,
     pub orphan_sidecar_bytes: u64,
+    pub unrecognized_sidecar_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +80,15 @@ pub struct FixtureManifestEntry {
 pub struct FixtureManifestOrphanSidecar {
     pub path: String,
     pub kind: String,
+    pub expected_fixture: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureManifestUnrecognizedSidecar {
+    pub path: String,
+    pub extension: String,
     pub expected_fixture: String,
     pub bytes: u64,
     pub sha256: String,
@@ -170,13 +182,17 @@ pub fn fixture_manifest(root: &Path) -> CompileResult<FixtureManifest> {
         });
     }
     let orphan_sidecars = collect_orphan_sidecars(root)?;
-    let summary = FixtureManifestSummary::from_entries(&entries, &orphan_sidecars);
-    let compatibility_targets = collect_compatibility_targets(root, &entries, &orphan_sidecars)?;
+    let unrecognized_sidecars = collect_unrecognized_sidecars(root)?;
+    let summary =
+        FixtureManifestSummary::from_entries(&entries, &orphan_sidecars, &unrecognized_sidecars);
+    let compatibility_targets =
+        collect_compatibility_targets(root, &entries, &orphan_sidecars, &unrecognized_sidecars)?;
 
     Ok(FixtureManifest {
         entries,
         summary,
         orphan_sidecars,
+        unrecognized_sidecars,
         compatibility_targets,
     })
 }
@@ -185,12 +201,18 @@ impl FixtureManifestSummary {
     fn from_entries(
         entries: &[FixtureManifestEntry],
         orphan_sidecars: &[FixtureManifestOrphanSidecar],
+        unrecognized_sidecars: &[FixtureManifestUnrecognizedSidecar],
     ) -> Self {
         let mut summary = Self {
             total: entries.len(),
             cli_exercise_gaps: entries.iter().filter(|entry| !entry.has_cli).count(),
             orphan_sidecars: orphan_sidecars.len(),
+            unrecognized_sidecars: unrecognized_sidecars.len(),
             orphan_sidecar_bytes: orphan_sidecars.iter().map(|sidecar| sidecar.bytes).sum(),
+            unrecognized_sidecar_bytes: unrecognized_sidecars
+                .iter()
+                .map(|sidecar| sidecar.bytes)
+                .sum(),
             ..Self::default()
         };
 
@@ -649,6 +671,7 @@ fn collect_compatibility_targets(
     root: &Path,
     entries: &[FixtureManifestEntry],
     orphan_sidecars: &[FixtureManifestOrphanSidecar],
+    unrecognized_sidecars: &[FixtureManifestUnrecognizedSidecar],
 ) -> CompileResult<Vec<FixtureManifestCompatibilityTarget>> {
     let mut targets = BTreeSet::new();
     let compat_dir = root.join("compat");
@@ -690,6 +713,11 @@ fn collect_compatibility_targets(
             targets.insert(target.to_string());
         }
     }
+    for sidecar in unrecognized_sidecars {
+        if let Some(target) = compatibility_target_from_manifest_path(&sidecar.path) {
+            targets.insert(target.to_string());
+        }
+    }
 
     targets
         .into_iter()
@@ -707,7 +735,16 @@ fn collect_compatibility_targets(
                 .filter(|orphan| orphan.path.starts_with(&prefix))
                 .cloned()
                 .collect::<Vec<_>>();
-            let summary = FixtureManifestSummary::from_entries(&target_entries, &target_orphans);
+            let target_unrecognized = unrecognized_sidecars
+                .iter()
+                .filter(|sidecar| sidecar.path.starts_with(&prefix))
+                .cloned()
+                .collect::<Vec<_>>();
+            let summary = FixtureManifestSummary::from_entries(
+                &target_entries,
+                &target_orphans,
+                &target_unrecognized,
+            );
 
             Ok(FixtureManifestCompatibilityTarget {
                 path: format!("compat/{target}"),
@@ -820,6 +857,80 @@ fn collect_sidecar_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<(
         if path.is_dir() {
             collect_sidecar_files(&path, out)?;
         } else if recognized_sidecar_kind(&path).is_some() {
+            out.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_unrecognized_sidecars(
+    root: &Path,
+) -> CompileResult<Vec<FixtureManifestUnrecognizedSidecar>> {
+    let mut files = Vec::new();
+    collect_unrecognized_sidecar_files(root, &mut files)?;
+
+    let mut sidecars = Vec::new();
+    for path in files {
+        let expected_fixture = path.with_extension("php");
+        if !expected_fixture.exists() {
+            continue;
+        }
+
+        let extension = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("")
+            .to_string();
+        sidecars.push(FixtureManifestUnrecognizedSidecar {
+            path: fixture_manifest_path(root, &path),
+            extension,
+            expected_fixture: fixture_manifest_path(root, &expected_fixture),
+            bytes: file_size(&path)?,
+            sha256: file_sha256(&path)?,
+        });
+    }
+    sidecars.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.extension.cmp(&right.extension))
+            .then_with(|| left.expected_fixture.cmp(&right.expected_fixture))
+    });
+
+    Ok(sidecars)
+}
+
+fn collect_unrecognized_sidecar_files(root: &Path, out: &mut Vec<PathBuf>) -> CompileResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        Diagnostic::new(
+            Phase::Test,
+            0,
+            0,
+            format!("failed to read test directory {}: {error}", root.display()),
+        )
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            Diagnostic::new(
+                Phase::Test,
+                0,
+                0,
+                format!("failed to read test entry: {error}"),
+            )
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_unrecognized_sidecar_files(&path, out)?;
+            continue;
+        }
+
+        let extension = path.extension().and_then(|extension| extension.to_str());
+        if extension.is_some()
+            && extension != Some("php")
+            && extension != Some("expected")
+            && recognized_sidecar_kind(&path).is_none()
+        {
             out.push(path);
         }
     }

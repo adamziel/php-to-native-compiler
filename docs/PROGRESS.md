@@ -4,6 +4,82 @@
 
 Implemented:
 
+- Added Milestone 1205, a tests/docs queue refresh after the 1201-1204
+  implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1201-1205
+  complete and opens Milestones 1206-1210; `docs/LANE_WORKERS.md` records the
+  next parser/runtime/IR/compiler-output/tests-docs lane split. Public docs now
+  describe the static-arrow parse boundary, bounded `getcwd()` runtime slice,
+  dedicated native `file_get_contents(...)` rejection, and fixture-manifest
+  unrecognized-sidecar metadata without broadening PHP/WordPress compatibility
+  claims. Full gate passed at checkpoint: `1355` fixture tests, `769` system
+  PHP comparisons, and `586` skipped `phpc-only` fixtures.
+
+- Added Milestone 1204, a deterministic compiler-output fixture-manifest audit
+  refinement. `phpc test --list-fixtures-json [fixture-dir]` now emits
+  `contract_version: 12`, and both JSON and text fixture manifests report
+  aggregate and compatibility-target unrecognized sidecar counts and byte
+  totals for sidecar-like files whose extension is not part of the fixture
+  contract but whose corresponding `.php` fixture exists. Text manifests emit
+  deterministic unrecognized sidecar rows with path, extension, expected
+  fixture, byte count, and SHA-256; JSON emits the same rows as structured
+  data. This does not execute or validate unrecognized sidecars, change
+  fixture execution, change system PHP comparison behavior, alter
+  parser/runtime behavior, alter native lowering, or broaden PHP/WordPress
+  support claims. Focused compiler-output lane verification passed:
+  `cargo test -p phpc --test fixture_manifest -- --test-threads=1`, direct
+  JSON/text manifest probes showing `contract_version: 12`,
+  `unrecognized_sidecars: 1`, `unrecognized-sidecars=12`, and deterministic
+  SHA-256 rows, plus `cargo fmt --check` and scoped `git diff --check`. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1203, a dedicated native `file_get_contents(...)`
+  filesystem/stream-read rejection for the documented bounded interpreter
+  builtin. `phpc compile --emit-ir` and `--emit-asm` now reject direct
+  `file_get_contents(...)` calls before argument lowering or backend selection
+  with a diagnostic naming missing native PHP stream-wrapper handling, local
+  file I/O, binary string byte fidelity, warning plus `false` recovery, stream
+  contexts, offsets/lengths, include-path lookup, `open_basedir` and stat-cache
+  behavior, references/copy-on-write, and exact native
+  `file_get_contents` diagnostics. Native `function_exists()` and
+  `is_callable()` metadata folds still recognize the builtin name, and
+  `phpc run` behavior is unchanged. Focused IR lane verification passed:
+  `cargo test -p phpc --test file_get_contents_builtin -- --test-threads=1`,
+  direct `--emit-ir` and `--emit-asm` rejection probes, `cargo fmt --check`,
+  and scoped `git diff --check`. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1202, a bounded runtime `getcwd()` CLI
+  request-state/filesystem slice. `phpc run` now supports no-argument
+  `getcwd()` by returning the process current working directory as a UTF-8
+  string, exposes it through dynamic string-valued calls plus
+  `function_exists()`/`is_callable()` metadata, and leaves direct native calls
+  at the existing function-call lowering boundary. This does not implement
+  `chdir()` state mutation, failure returning `false`, non-UTF-8 working
+  directory paths, SAPI-specific working directory policy, include-path
+  interaction, `open_basedir`, exact warning behavior, or native lowering
+  beyond function-table introspection. Focused runtime lane verification
+  passed: `cargo test -p phpc --test getcwd_builtin -- --test-threads=1`,
+  direct fixture run and system PHP comparison for
+  `tests/fixtures/milestone1202/getcwd.php`, fixture test/compare for
+  `tests/fixtures/milestone1202`, `cargo fmt --check`, and scoped
+  `git diff --check`. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1201, a parser-lane diagnostic refinement for unsupported
+  PHP static arrow functions. `static fn ($value) => $value` now fails at a
+  dedicated parse boundary naming missing no-`$this` binding, implicit capture
+  metadata, closure invocation, callback integration, references/copy-on-write,
+  and native lowering instead of the broad `expected expression, found static`
+  fallback. Existing `static function (...) { ... }` inert closure values,
+  non-static arrow closure values, and `static::` member syntax paths are
+  unchanged. This does not implement static arrow closures, no-`$this`
+  binding, implicit capture metadata, closure invocation, callback
+  integration, references/copy-on-write, exact PHP diagnostics, or native
+  lowering. Focused parser lane verification passed: dedicated
+  `syntax_boundaries` tests, unsupported-syntax CLI tests, direct run and
+  `--emit-ir` rejection probes, unsupported-syntax fixture run/compare, full
+  `syntax_boundaries` with `101` tests, `cargo fmt --check`, and scoped
+  `git diff --check`. Full gate/checkpoint deferred until integration.
+
 - Added Milestone 1200, a tests/docs queue refresh after the 1196-1199
   implementation batch. `docs/NEXT_TASKS.md` now marks Milestones 1196-1200
   complete and opens Milestones 1201-1205, public docs describe the narrowed

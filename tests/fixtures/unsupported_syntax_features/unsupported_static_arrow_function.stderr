@@ -1,0 +1,2 @@
+parse error at 2:12: unsupported static arrow function: static arrow closures require no-$this binding, implicit capture metadata, closure invocation, callback integration, references/copy-on-write, and native lowering
+

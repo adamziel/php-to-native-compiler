@@ -16110,6 +16110,28 @@ impl Interpreter {
                     )),
                 }
             }
+            "getcwd" => {
+                expect_arity(name, &args, 0, span)?;
+                let path = std::env::current_dir().map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "getcwd()",
+                            format!("current working directory lookup failed: {error}"),
+                        ),
+                    )
+                })?;
+                let path = path.into_os_string().into_string().map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "getcwd()",
+                            "current working directory path must be valid UTF-8 in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(path))
+            }
             "is_dir" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -20369,6 +20391,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "getcwd"
             | "is_dir"
             | "is_file"
             | "is_readable"

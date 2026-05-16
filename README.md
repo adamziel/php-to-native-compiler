@@ -112,7 +112,8 @@ incorrect native code.
   bounded direct string-keyed `$GLOBALS['name']` root-symbol reads/writes,
   bounded namespace-scoped function declarations and unqualified same-namespace
   calls with global fallback lookup,
-  inert no-capture anonymous and arrow closure values,
+  inert no-capture anonymous, static anonymous, and non-static arrow closure
+  values,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement, while parenthesized DNF-shaped type declarations remain a
@@ -227,9 +228,9 @@ incorrect native code.
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
   implementors that pass the current method-shape check
-- a documented builtin subset for strings, arrays, constants, type checks,
-  callability checks, bounded truthy assertions, object/class metadata, and
-  debug-style output
+- a documented builtin subset for strings, arrays, constants, filesystem and
+  request-state probes, type checks, callability checks, bounded truthy
+  assertions, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell
@@ -335,6 +336,7 @@ interpolation, dynamic calls, `assert()`, runtime constant tables,
 direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
+direct `file_get_contents(...)` filesystem/stream reads,
 PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code. Statement-form reference assignment has its own native
@@ -370,24 +372,28 @@ including `.cli` snapshot exercise files, for fixtures, summaries, orphan
 sidecars, and compatibility targets, plus CLI exercise gap counts for fixtures
 without `.cli` snapshot sidecars and `.phpc-only` reason gap counts for
 markers whose text is empty or whitespace-only. Text orphan sidecar rows
-include SHA-256 digests. Compatibility target entries also report
-`source-pin.md` path, byte count, and SHA-256 when a target pin file is
-present, plus deterministic
+include SHA-256 digests. Text manifests also report unrecognized sidecar-like
+siblings whose extension is not part of the fixture contract but whose
+corresponding `.php` fixture exists. Compatibility target entries also report
+`source-pin.md` path, byte count, and SHA-256 when a target pin file is present,
+plus deterministic
 `compat/<target>/**/*.expected` probe expectation artifacts with path, byte
 count, and SHA-256.
 Use `phpc test --list-fixtures-json [fixture-dir]` for the same audit-only
-manifest as deterministic JSON with `contract_version` 11. The JSON records
+manifest as deterministic JSON with `contract_version` 12. The JSON records
 sibling `.phpc-only` marker text as `phpc_only_reason`, source/recognized
 sidecar byte counts, recognized orphan sidecar byte counts, CLI exercise gap
-counts, `.phpc-only` reason gap counts, and SHA-256 digests for fixture
-sources, recognized sidecars, and recognized orphan sidecars so comparison
-opt-outs and committed expectation and `.cli` exercise payloads are visible
-without executing fixtures or CLI snapshots. When the fixture root contains
-`compat/<target>` directories, the JSON also includes per-target compatibility
-counts, per-target CLI exercise gap counts, per-target `.phpc-only` reason gap
-counts, optional `source-pin.md` audit metadata, and `.expected` probe
-expectation artifact metadata, including targets with no executable `.php`
-fixtures yet.
+counts, `.phpc-only` reason gap counts, unrecognized sidecar counts and byte
+totals for files with matching `.php` fixtures, and SHA-256 digests for fixture
+sources, recognized sidecars, recognized orphan sidecars, and those
+unrecognized sidecar-like siblings so comparison opt-outs and committed
+expectation and `.cli` exercise payloads are visible without executing fixtures
+or CLI snapshots. When the fixture root contains `compat/<target>` directories,
+the JSON also includes per-target compatibility counts, per-target CLI exercise
+gap counts, per-target `.phpc-only` reason gap counts, per-target unrecognized
+sidecar counts and byte totals, optional `source-pin.md` audit metadata, and
+`.expected` probe expectation artifact metadata, including targets with no
+executable `.php` fixtures yet.
 
 Use these commands while developing:
 

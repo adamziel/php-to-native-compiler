@@ -209,6 +209,9 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         for orphan in &manifest.orphan_sidecars {
             println!("{}", render_fixture_manifest_orphan_sidecar(orphan));
         }
+        for sidecar in &manifest.unrecognized_sidecars {
+            println!("{}", render_fixture_manifest_unrecognized_sidecar(sidecar));
+        }
         for target in &manifest.compatibility_targets {
             println!("{}", render_fixture_manifest_compatibility_target(target));
             for probe_expectation in &target.probe_expectations {
@@ -296,7 +299,7 @@ fn render_php_comparison_summary_json(summary: &TestSummary) -> String {
 
 fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
     format!(
-        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={}",
+        "summary: php-comparison eligible={}, phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={}",
         summary.php_comparison_eligible,
         summary.phpc_only,
         summary.stdout_expectations,
@@ -307,13 +310,15 @@ fn render_fixture_manifest_summary(summary: &FixtureManifestSummary) -> String {
         summary.cli_exercises,
         summary.cli_exercise_gaps,
         summary.orphan_sidecars,
+        summary.unrecognized_sidecars,
         summary.source_bytes,
         summary.stdout_bytes,
         summary.stderr_bytes,
         summary.exit_bytes,
         summary.cli_bytes,
         summary.phpc_only_bytes,
-        summary.orphan_sidecar_bytes
+        summary.orphan_sidecar_bytes,
+        summary.unrecognized_sidecar_bytes
     )
 }
 
@@ -369,6 +374,15 @@ fn render_fixture_manifest_orphan_sidecar(orphan: &FixtureManifestOrphanSidecar)
     )
 }
 
+fn render_fixture_manifest_unrecognized_sidecar(
+    sidecar: &php_compiler::test_runner::FixtureManifestUnrecognizedSidecar,
+) -> String {
+    format!(
+        "unrecognized sidecar: {} extension={} expected-fixture={} bytes={} sha256={}",
+        sidecar.path, sidecar.extension, sidecar.expected_fixture, sidecar.bytes, sidecar.sha256
+    )
+}
+
 fn render_fixture_manifest_compatibility_target(
     target: &FixtureManifestCompatibilityTarget,
 ) -> String {
@@ -389,7 +403,7 @@ fn render_fixture_manifest_compatibility_target(
         .sum::<u64>();
 
     format!(
-        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} probe expectations={} bytes={}{}",
+        "compatibility target: {} path={} fixtures={} php-comparison eligible={} phpc-only={} expectations stdout={}, stderr={}, exit={}, phpc-only={} phpc-only-reason-gaps={} cli-exercises={} cli-exercise-gaps={} orphan sidecars={} unrecognized sidecars={} bytes source={} stdout={} stderr={} exit={} cli={} phpc-only={} orphan-sidecars={} unrecognized-sidecars={} probe expectations={} bytes={}{}",
         target.target,
         target.path,
         target.summary.total,
@@ -403,6 +417,7 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.cli_exercises,
         target.summary.cli_exercise_gaps,
         target.summary.orphan_sidecars,
+        target.summary.unrecognized_sidecars,
         target.summary.source_bytes,
         target.summary.stdout_bytes,
         target.summary.stderr_bytes,
@@ -410,6 +425,7 @@ fn render_fixture_manifest_compatibility_target(
         target.summary.cli_bytes,
         target.summary.phpc_only_bytes,
         target.summary.orphan_sidecar_bytes,
+        target.summary.unrecognized_sidecar_bytes,
         target.probe_expectations.len(),
         probe_expectation_bytes,
         source_pin
@@ -428,7 +444,7 @@ fn render_fixture_manifest_compatibility_probe_expectation(
 fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureManifest) -> String {
     let mut output = String::new();
     output.push_str("{\n");
-    output.push_str("  \"contract_version\": 11,\n");
+    output.push_str("  \"contract_version\": 12,\n");
     output.push_str(&format!(
         "  \"fixture_count\": {},\n",
         manifest.summary.total
@@ -477,6 +493,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         "    \"orphan_sidecars\": {},\n",
         manifest.summary.orphan_sidecars
     ));
+    output.push_str(&format!(
+        "    \"unrecognized_sidecars\": {},\n",
+        manifest.summary.unrecognized_sidecars
+    ));
     output.push_str("    \"file_bytes\": {\n");
     output.push_str(&format!(
         "      \"source\": {},\n",
@@ -501,8 +521,12 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
     ));
     output.push_str("    },\n");
     output.push_str(&format!(
-        "    \"orphan_sidecar_bytes\": {}\n",
+        "    \"orphan_sidecar_bytes\": {},\n",
         manifest.summary.orphan_sidecar_bytes
+    ));
+    output.push_str(&format!(
+        "    \"unrecognized_sidecar_bytes\": {}\n",
+        manifest.summary.unrecognized_sidecar_bytes
     ));
     output.push_str("  },\n");
     output.push_str("  \"fixtures\": [\n");
@@ -647,6 +671,10 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
             "        \"orphan_sidecars\": {},\n",
             target.summary.orphan_sidecars
         ));
+        output.push_str(&format!(
+            "        \"unrecognized_sidecars\": {},\n",
+            target.summary.unrecognized_sidecars
+        ));
         output.push_str("        \"file_bytes\": {\n");
         output.push_str(&format!(
             "          \"source\": {},\n",
@@ -674,8 +702,12 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         ));
         output.push_str("        },\n");
         output.push_str(&format!(
-            "        \"orphan_sidecar_bytes\": {}\n",
+            "        \"orphan_sidecar_bytes\": {},\n",
             target.summary.orphan_sidecar_bytes
+        ));
+        output.push_str(&format!(
+            "        \"unrecognized_sidecar_bytes\": {}\n",
+            target.summary.unrecognized_sidecar_bytes
         ));
         output.push_str("      },\n");
         output.push_str("      \"source_pin\": ");
@@ -746,6 +778,33 @@ fn render_fixture_manifest_json(manifest: &php_compiler::test_runner::FixtureMan
         ));
         output.push_str("    }");
         if index + 1 < manifest.orphan_sidecars.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  ],\n");
+    output.push_str("  \"unrecognized_sidecars\": [\n");
+    for (index, sidecar) in manifest.unrecognized_sidecars.iter().enumerate() {
+        output.push_str("    {\n");
+        output.push_str(&format!(
+            "      \"path\": {},\n",
+            json_string_literal(&sidecar.path)
+        ));
+        output.push_str(&format!(
+            "      \"extension\": {},\n",
+            json_string_literal(&sidecar.extension)
+        ));
+        output.push_str(&format!(
+            "      \"expected_fixture\": {},\n",
+            json_string_literal(&sidecar.expected_fixture)
+        ));
+        output.push_str(&format!("      \"bytes\": {},\n", sidecar.bytes));
+        output.push_str(&format!(
+            "      \"sha256\": {}\n",
+            json_string_literal(&sidecar.sha256)
+        ));
+        output.push_str("    }");
+        if index + 1 < manifest.unrecognized_sidecars.len() {
             output.push(',');
         }
         output.push('\n');

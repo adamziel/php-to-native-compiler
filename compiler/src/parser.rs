@@ -4163,6 +4163,9 @@ impl Parser {
                 self.advance();
                 self.parse_closure_expression(token.span)
             }
+            TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Fn)) => {
+                Err(self.error_at(token.span, unsupported_static_arrow_function_message()))
+            }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
                 self.reject_unsupported_static_member_access(Some("static"))
             }
@@ -6082,6 +6085,10 @@ fn unsupported_reference_assignment_source_message() -> &'static str {
 
 fn unsupported_first_class_callable_message() -> &'static str {
     "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+}
+
+fn unsupported_static_arrow_function_message() -> &'static str {
+    "unsupported static arrow function: static arrow closures require no-$this binding, implicit capture metadata, closure invocation, callback integration, references/copy-on-write, and native lowering"
 }
 
 fn unsupported_named_argument_message() -> &'static str {
