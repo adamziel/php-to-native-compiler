@@ -93,7 +93,8 @@ metadata for direct arrays and declared public object-property arrays copied
 into direct variables, and bounded direct public object-property reference
 sources such as `$alias =& $object->property`, bounded dynamic public
 object-property reference sources such as `$alias =& $object->$property` for
-direct object variables, and bounded direct
+direct object variables, bounded named non-public object-property reference
+sources inside valid method visibility contexts, and bounded direct
 object-property array-offset
 reference sources such as `$alias =& $object->items[$key]`, plus bounded
 nested direct-array and object-property array-offset reference sources, plus

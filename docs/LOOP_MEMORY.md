@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T16:13:06Z
+
+- Checkpoint before this task:
+  `7e93da4c runtime: add dynamic property reference sources`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 1091, bounded named non-public object-property
+  reference-source aliases in active method visibility contexts.
+  `$alias =& $this->privateProperty;`,
+  `$alias =& $this->protectedProperty;`, and protected peer-object sources
+  such as `$alias =& $other->protectedProperty;` now bind a direct variable
+  alias target to a direct object variable's visible non-public property root
+  when the current class/method context can read and write that property.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone1091/non_public_object_property_reference_sources.*`,
+  `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: local PHP 8.2.29 probes for private/protected
+  object-property reference sources in method context, `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public -- --test-threads=1`, `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_private_property --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_inherited_protected_property -- --test-threads=1`,
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1091 --compare-php`,
+  `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_public_object_property -- --test-threads=1`, `cargo
+  test -p phpc --test functions_and_scopes reference_assignment_dynamic --
+  --test-threads=1`, `cargo test -p phpc --test object_model
+  same_class_non_public_instance_properties -- --test-threads=1`, and `cargo
+  check -p php_runtime -p phpc` passed.
+- Remaining semantic gaps: dynamic non-public property source aliases,
+  non-public property array-offset source aliases, non-direct object
+  expressions, inaccessible private/protected property magic `__get` fallback
+  from outside context, magic `__get` by-reference behavior, non-variable
+  reference targets, ArrayAccess reference sources, full PHP reference
+  containers, copy-on-write containers, exact alias destruction ordering, and
+  native lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate, commit, push, then
+  choose one of the parallel-worker follow-ups: magic `__get` reference
+  sources, ArrayAccess reference-source boundary, or clone/reference-slot
+  mirroring.
+
 ## Loop Event 2026-05-16T16:06:12Z
 
 - Checkpoint before this task:

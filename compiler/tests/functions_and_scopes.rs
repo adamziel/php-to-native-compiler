@@ -2216,6 +2216,114 @@ $alias =& $box->$property;
 }
 
 #[test]
+fn reference_assignment_non_public_object_property_source_aliases_inside_method_context() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    private $secret = "initial";
+    protected $label = "start";
+
+    public function run() {
+        $secret =& $this->secret;
+        $secret = "secret-alias";
+        echo $this->secret;
+        echo "|";
+        $this->secret = "secret-property";
+        echo $secret;
+        echo "|";
+
+        $label =& $this->label;
+        $label = "label-alias";
+        echo $this->label;
+        echo "|";
+        $this->label = "label-property";
+        echo $label;
+    }
+}
+
+$box = new Box();
+$box->run();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "secret-alias|secret-property|label-alias|label-property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_private_property_source_outside_context_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret = "initial";
+}
+
+$box = new Box();
+$alias =& $box->secret;
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+    );
+}
+
+#[test]
+fn reference_assignment_inherited_protected_property_source_aliases_inside_child_context() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected $shared = "base";
+
+    public function readShared() {
+        return $this->shared;
+    }
+}
+
+class Child extends Base {
+    public function aliasOwn() {
+        $alias =& $this->shared;
+        $alias = "own-alias";
+        echo $this->shared;
+        echo "|";
+        $this->shared = "own-property";
+        echo $alias;
+    }
+
+    public function aliasPeer($other) {
+        $alias =& $other->shared;
+        $alias = "peer-alias";
+        echo $other->readShared();
+        echo "|";
+        $other->shared = "peer-property";
+        echo $alias;
+    }
+}
+
+$child = new Child();
+$child->aliasOwn();
+echo "|";
+$peer = new Child();
+$child->aliasPeer($peer);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "own-alias|own-property|peer-alias|peer-property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_array_offset_source_aliases_direct_slot() {
     let execution = run_source(
         r#"<?php

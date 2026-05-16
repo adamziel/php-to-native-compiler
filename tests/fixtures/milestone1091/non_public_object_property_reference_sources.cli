@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+secret-alias|secret-property|label-alias|label-property|own-alias|own-property|peer-alias|peer-property
+--- stdout end ---
+stderr:
+--- stderr end ---

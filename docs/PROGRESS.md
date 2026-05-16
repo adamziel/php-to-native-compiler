@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added Milestone 1091, a bounded non-public object-property
+  reference-source slice for active method visibility contexts. Statement-form
+  `$alias =& $this->privateProperty;`,
+  `$alias =& $this->protectedProperty;`, and peer direct-object protected
+  property sources such as `$alias =& $other->protectedProperty;` now alias a
+  direct variable target to a direct object variable's visible non-public
+  property root when the current class/method context can read and write that
+  property. Writes through the alias or through the normal property path
+  observe the same value, and outside-context access still reports the
+  existing stable non-public property boundary. This uses context-carrying
+  object-property alias metadata for the current root-property slice. It does
+  not implement non-public dynamic
+  property source aliases, non-public property array-offset source aliases,
+  non-direct object expressions, inaccessible private/protected property magic
+  `__get` fallback from outside context, magic `__get` by-reference behavior,
+  non-variable reference targets, ArrayAccess reference sources, full PHP
+  reference containers, copy-on-write containers, exact alias destruction
+  ordering, or native lowering. Verification so far: local PHP 8.2.29 probes
+  for private/protected object-property reference sources in method context,
+  `cargo fmt --check`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_non_public -- --test-threads=1`, `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_inherited_protected_property
+  -- --test-threads=1`, `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_private_property --
+  --test-threads=1`, `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1091 --compare-php`, `cargo test -p phpc --test
+  functions_and_scopes reference_assignment_public_object_property --
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_dynamic -- --test-threads=1`, `cargo test -p phpc
+  --test object_model same_class_non_public_instance_properties --
+  --test-threads=1`, and `cargo check -p php_runtime -p phpc` passed.
+
 - Added Milestone 1090, a bounded dynamic public object-property
   reference-source slice. Statement-form `$alias =& $object->$property;` now
   aliases a direct variable target to the evaluated public property name on a

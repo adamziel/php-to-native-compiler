@@ -10655,6 +10655,25 @@ handled.
   containers, copy-on-write containers, exact alias destruction ordering, or
   native lowering.
 
+## Milestone 1091: Non-Public Property Reference Sources
+
+- [x] Runtime/value-model lane: add a bounded named non-public
+  object-property reference-source slice for active method visibility
+  contexts. `$alias =& $this->privateProperty;`,
+  `$alias =& $this->protectedProperty;`, and protected peer-object sources
+  such as `$alias =& $other->protectedProperty;` parse and execute when the
+  alias target is a direct variable, the source object is a direct variable,
+  and the selected property is visible under the current
+  public/private/protected method context. The alias uses context-aware
+  object-property root metadata, so writes through either the alias or visible
+  property path observe the same value. This is not dynamic non-public
+  property source support, non-public property array-offset source support,
+  non-direct object expressions, inaccessible private/protected property
+  magic `__get` fallback from outside context, magic `__get` by-reference
+  behavior, non-variable reference targets, ArrayAccess reference sources,
+  full PHP reference containers, copy-on-write containers, exact alias
+  destruction ordering, or native lowering.
+
 ## Tests/Docs Lane: Parallel Worker Operations
 
 - [x] Document the lane/subagent worktree protocol, focused-test command shape,

@@ -312,9 +312,42 @@ struct ArrayOffsetAlias {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ArrayOffsetAliasRoot {
-    StaticArray { name: String },
-    GlobalArray { name: String },
-    PublicObjectProperty { object: String, property: String },
+    StaticArray {
+        name: String,
+    },
+    GlobalArray {
+        name: String,
+    },
+    PublicObjectProperty {
+        object: String,
+        property: String,
+    },
+    ContextObjectProperty {
+        object: String,
+        property: String,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: Vec<ClassId>,
+    },
+}
+
+impl ArrayOffsetAliasRoot {
+    fn matches_object_property(&self, object_name: &str, property_name: &str) -> bool {
+        match self {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                object, property, ..
+            } => object == object_name && property == property_name,
+            _ => false,
+        }
+    }
+
+    fn matches_object(&self, object_name: &str) -> bool {
+        match self {
+            ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
+            | ArrayOffsetAliasRoot::ContextObjectProperty { object, .. } => object == object_name,
+            _ => false,
+        }
+    }
 }
 
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -703,17 +736,21 @@ impl SymbolTable {
         Ok(())
     }
 
-    fn bind_static_to_existing_object_property(
+    fn bind_static_to_existing_context_object_property(
         &mut self,
         target: &str,
         object_name: &str,
         property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: Vec<ClassId>,
         span: Span,
     ) -> CompileResult<()> {
         let alias = ArrayOffsetAlias {
-            root: ArrayOffsetAliasRoot::PublicObjectProperty {
+            root: ArrayOffsetAliasRoot::ContextObjectProperty {
                 object: object_name.to_string(),
                 property: property.to_string(),
+                current_class_id,
+                protected_class_ids,
             },
             keys: Vec::new(),
         };
@@ -851,13 +888,9 @@ impl SymbolTable {
         self.array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
-                let root_alias = aliases.iter().find(|alias| {
-                    matches!(
-                        &alias.root,
-                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
-                            if object == object_name && alias_property == property
-                    )
-                })?;
+                let root_alias = aliases
+                    .iter()
+                    .find(|alias| alias.root.matches_object_property(object_name, property))?;
                 self.read_array_offset_alias(root_alias)
                     .map(|value| (alias_name.clone(), value))
             })
@@ -868,13 +901,9 @@ impl SymbolTable {
         self.array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
-                let root_alias = aliases.iter().find(|alias| {
-                    matches!(
-                        &alias.root,
-                        ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
-                            if object == object_name
-                    )
-                })?;
+                let root_alias = aliases
+                    .iter()
+                    .find(|alias| alias.root.matches_object(object_name))?;
                 self.read_array_offset_alias(root_alias)
                     .map(|value| (alias_name.clone(), value))
             })
@@ -896,13 +925,8 @@ impl SymbolTable {
             let aliases: Vec<_> = existing_aliases
                 .into_iter()
                 .filter(|alias| {
-                    !matches!(
-                        &alias.root,
-                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
-                            if object == object_name
-                                && alias_property == property
-                                && !alias.keys.is_empty()
-                    )
+                    !(alias.root.matches_object_property(object_name, property)
+                        && !alias.keys.is_empty())
                 })
                 .collect();
 
@@ -930,13 +954,7 @@ impl SymbolTable {
             };
             let aliases: Vec<_> = existing_aliases
                 .into_iter()
-                .filter(|alias| {
-                    !matches!(
-                        &alias.root,
-                        ArrayOffsetAliasRoot::PublicObjectProperty { object, .. }
-                            if object == object_name
-                    )
-                })
+                .filter(|alias| !alias.root.matches_object(object_name))
                 .collect();
 
             if aliases.is_empty() {
@@ -997,10 +1015,7 @@ impl SymbolTable {
             .iter()
             .flat_map(|(alias_name, aliases)| {
                 aliases.iter().filter_map(move |alias| match &alias.root {
-                    ArrayOffsetAliasRoot::PublicObjectProperty {
-                        object,
-                        property: alias_property,
-                    } if object == object_name && alias_property == property => Some((
+                    root if root.matches_object_property(object_name, property) => Some((
                         alias_name.clone(),
                         ArrayOffsetAlias {
                             root: ArrayOffsetAliasRoot::StaticArray {
@@ -1056,13 +1071,9 @@ impl SymbolTable {
             .array_offset_aliases
             .iter()
             .filter_map(|(alias_name, aliases)| {
-                let touched_alias = aliases.iter().find(|alias| {
-                    matches!(
-                        &alias.root,
-                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property: alias_property }
-                            if object == object_name && alias_property == property
-                    )
-                })?;
+                let touched_alias = aliases
+                    .iter()
+                    .find(|alias| alias.root.matches_object_property(object_name, property))?;
                 self.read_array_offset_alias(touched_alias)
                     .map(|value| (alias_name.clone(), value))
             })
@@ -1517,6 +1528,28 @@ impl SymbolTable {
                     )),
                 }
             }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            } => match self.read_storage_named(object) {
+                Some(Value::Object(object)) => object
+                    .read_property_from_context(property, *current_class_id, protected_class_ids)
+                    .map(Some)
+                    .map_err(|error| runtime_error(span, error)),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object),
+                )),
+            },
         }
     }
 
@@ -1553,6 +1586,32 @@ impl SymbolTable {
                     )),
                 }
             }
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+            } => match self.read_storage_named(object) {
+                Some(Value::Object(object)) => object
+                    .write_property_from_context(
+                        property,
+                        value,
+                        *current_class_id,
+                        protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error)),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot write property ${property} on {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object),
+                )),
+            },
         }
     }
 
@@ -4260,8 +4319,15 @@ impl Interpreter {
                 } = source
                 {
                     if let Expr::Variable(object, _) = target.as_ref() {
-                        scope.bind_static_to_existing_object_property(
-                            name, object, property, span,
+                        let (current_class_id, protected_class_ids) =
+                            self.current_property_access_context();
+                        scope.bind_static_to_existing_context_object_property(
+                            name,
+                            object,
+                            property,
+                            current_class_id,
+                            protected_class_ids,
+                            span,
                         )?;
                     } else {
                         let value = self

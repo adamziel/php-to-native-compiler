@@ -294,10 +294,15 @@ direct-array slot, materializing missing containers and selected slots as
 needed. `$alias =& $array[];` and `$alias =& $array[$outer][];` append a
 `null` slot through the runtime append cursor and bind the target name to that
 selected slot. Direct public object-property sources such as
-`$alias =& $object->property;` bind the target name to the named declared
-public property root. Whole-property writes preserve those root aliases, while
-property array-offset aliases detach to the previous property array when the
-whole property is replaced. Dynamic public object-property sources such as
+`$alias =& $object->property;` bind the target name to the selected property
+root when that property is visible through the current public/private/protected
+method context. Public property roots, private `$this->property` roots in the
+declaring class, protected `$this->property` roots in visible class contexts,
+and protected peer-object roots such as `$alias =& $other->property;` from a
+valid child method context all reuse context-carrying object-property alias
+metadata. Whole-property writes preserve those root aliases, while property
+array-offset aliases detach to the previous property array when the whole
+property is replaced. Dynamic public object-property sources such as
 `$alias =& $object->$property;` reuse that same root route when the target
 object is a direct variable, the property expression evaluates to a string or
 integer name, and the selected property is public; allowed dynamic-property
@@ -314,10 +319,10 @@ reference sources such as `$alias =& $GLOBALS["bag"][];` and
 `$alias =& $GLOBALS["bag"]["outer"][];` bind a direct alias variable to the
 selected slot under the real global symbol table. `$GLOBALS[]` append
 sources, non-string root keys, recursive `$GLOBALS` materialization,
-dynamic-property sources on non-direct object expressions, magic or
-non-public property sources, non-variable reference targets, `ArrayAccess`
-sources, full reference containers, copy-on-write, exact alias destruction
-ordering, and native lowering remain future work.
+dynamic-property sources on non-direct object expressions, dynamic
+non-public property sources, magic property sources, non-variable reference
+targets, `ArrayAccess` sources, full reference containers, copy-on-write,
+exact alias destruction ordering, and native lowering remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or

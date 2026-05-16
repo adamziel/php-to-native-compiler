@@ -155,9 +155,14 @@
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct public
   object-property reference sources such as `$alias =& $object->property;`
-  alias a direct variable target to the named declared public property on a
-  direct object variable. Writes through the alias or direct property path
-  observe the same scalar or array value. Dynamic public object-property
+  alias a direct variable target to the selected property on a direct object
+  variable when that property is visible through the current
+  public/private/protected method context. Covered forms include public
+  properties, private `$this->property` roots in the declaring class,
+  protected `$this->property` roots in visible class contexts, and protected
+  peer-object roots such as `$alias =& $other->property;` from a valid child
+  method context. Writes through the alias or direct property path observe the
+  same scalar or array value. Dynamic public object-property
   reference sources such as `$alias =& $object->$property;` execute for direct
   variable targets and direct object variables when the property expression
   evaluates to a string or integer public property name. Existing declared or
@@ -165,8 +170,8 @@
   allowed dynamic-property objects such as `stdClass` materialize a missing
   selected property as `null` before binding. Dynamic-property sources on
   non-direct object expressions, missing dynamic properties on classes that do
-  not allow dynamic public slots, magic `__get` by-reference behavior,
-  non-public property source aliases, non-variable reference targets,
+  not allow dynamic public slots, dynamic non-public property source aliases,
+  magic `__get` by-reference behavior, non-variable reference targets,
   ArrayAccess sources, full reference containers, copy-on-write, exact alias
   destruction ordering, and native lowering remain unsupported. Direct
   array-offset reference targets
