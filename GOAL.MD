@@ -334,7 +334,10 @@ plus an explicit `mysqli_stmt_bind_result()` result-output binding boundary
 that exposes callable metadata and stable unsupported diagnostics without
 statement object allocation, by-reference result binding, result buffer
 mutation, fetch integration, host database execution, warning/error fidelity,
-or native lowering,
+or native lowering, now wired through a synthetic WordPress-shaped `wpdb`
+result-binding smoke without claiming statement objects, by-reference result
+binding, result buffer mutation, fetch integration, host database state,
+warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

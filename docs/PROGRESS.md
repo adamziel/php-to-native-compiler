@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 954, a synthetic WordPress-shaped `wpdb`
+  prepared-statement result-binding smoke that reaches the explicit
+  `mysqli_stmt_bind_result()` boundary through a `wpdb`-style method. This is
+  a harness smoke only; it does not add statement object allocation,
+  by-reference result binding, result buffer mutation, fetch integration, host
+  database execution, PHP warning/error fidelity, or native database lowering.
+  Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone954`.
+
 - Added Milestone 953, explicit MySQLi statement result-binding boundary for
   `mysqli_stmt_bind_result()`. The runtime exposes the name through
   function/callability metadata, validates the at-least-two-argument arity,

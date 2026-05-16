@@ -1610,6 +1610,10 @@ historical blockers and remaining full-support gaps include:
   result-output binding boundary with callable metadata and stable unsupported
   diagnostics, without statement object allocation, by-reference result
   binding, result buffer mutation, fetch integration, host database execution,
+  warning/error fidelity, or native database lowering. Milestone 954 wires
+  that boundary through a synthetic WordPress-shaped `wpdb` result-binding
+  method without claiming statement objects, by-reference result binding,
+  result buffer mutation, fetch integration, host database state,
   warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;

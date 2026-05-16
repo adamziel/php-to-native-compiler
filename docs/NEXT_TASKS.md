@@ -8906,18 +8906,28 @@ handled.
   diagnostics. This is not statement object allocation, by-reference result
   binding, result buffer mutation, fetch integration, host database execution,
   warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add a synthetic `wpdb` prepared-statement
   result-binding smoke that reaches the explicit
   `mysqli_stmt_bind_result()` boundary through a WordPress-shaped method
   without claiming statement objects, by-reference result binding, result
   buffer mutation, fetch integration, host database state, warning/error
   fidelity, or native lowering.
+  Milestone 954 adds a `phpc-only` synthetic `wpdb` fixture that reaches the
+  explicit `mysqli_stmt_bind_result()` unsupported diagnostic through a
+  WordPress-shaped method. This is not statement object allocation,
+  by-reference result binding, result buffer mutation, fetch integration, host
+  database state, warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement result
+  metadata/cleanup boundary after result-binding visibility, such as
+  `mysqli_stmt_result_metadata()`/`mysqli_stmt_field_count()`/
+  `mysqli_stmt_free_result()` callable metadata and explicit unsupported
+  diagnostics, before claiming broader prepared statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8d6abee tests: add wordpress wpdb stmt result cursor smokes`, covering
-  Milestone 952 before the current Milestone 953 candidate.
+  `c15462e runtime: add mysqli stmt bind result boundary`, covering
+  Milestone 953 before the current Milestone 954 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

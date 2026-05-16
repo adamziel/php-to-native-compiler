@@ -1,0 +1,2 @@
+runtime error at 13:16: unsupported call mysqli_stmt_bind_result(): mysqli statement objects, by-reference result binding, result buffer mutation, and fetch integration are not implemented in the current subset
+

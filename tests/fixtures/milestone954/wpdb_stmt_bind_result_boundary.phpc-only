@@ -1,0 +1,6 @@
+This fixture exercises phpc's explicit MySQLi statement result-binding
+boundary through a WordPress-shaped `wpdb` method. System PHP would require a
+real mysqli statement object, by-reference result binding, result buffer
+mutation, and fetch integration; phpc only records the reached
+`mysqli_stmt_bind_result()` boundary with a stable unsupported diagnostic and
+does not implement statement objects or host database state.
