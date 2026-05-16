@@ -127,12 +127,16 @@
   `$holder->bag[] = $value`, call `offsetSet(null, $value)`. Direct
   `$holder->bag[$key] op= expr` compound assignment is supported by reading
   through `offsetGet($key)`, applying the current compound-assignment helper,
-  and writing the result back through `offsetSet($key, $value)`. Nested
-  `ArrayAccess` chains, append compound assignment and increment/decrement
-  through object-property `ArrayAccess`, ArrayAccess iteration, built-in
-  interface enforcement/signature validation, typed method invocation,
-  references/copy-on-write, exact warning/visibility diagnostics, and native
-  lowering remain unsupported. Direct `$object[$key] op= expr`
+  and writing the result back through `offsetSet($key, $value)`. Direct
+  `++$holder->bag[$key]`, `$holder->bag[$key]++`,
+  `--$holder->bag[$key]`, and `$holder->bag[$key]--` are supported for
+  current integer and float values by reading through `offsetGet($key)` and
+  applying the update to PHP's current by-value temporary result without
+  dispatching `offsetSet($key, $value)`. Nested `ArrayAccess` chains, append
+  compound assignment through object-property `ArrayAccess`, ArrayAccess
+  iteration, built-in interface enforcement/signature validation, typed method
+  invocation, references/copy-on-write, exact warning/visibility diagnostics,
+  and native lowering remain unsupported. Direct `$object[$key] op= expr`
   compound assignment is supported by reading through `offsetGet($key)`,
   applying the current compound-assignment helper, and writing the result back
   through `offsetSet($key, $value)`. Direct `++$object[$key]`,

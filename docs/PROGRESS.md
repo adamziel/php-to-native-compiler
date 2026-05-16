@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added Milestone 1023, bounded direct object-property `ArrayAccess`
+  increment/decrement when the visible property value is an object whose
+  metadata records `implements ArrayAccess`. Direct
+  `++$holder->bag[$key]`, `$holder->bag[$key]++`,
+  `--$holder->bag[$key]`, and `$holder->bag[$key]--` now read through
+  `offsetGet($key)` and apply the existing integer/float
+  increment/decrement helper to PHP's current by-value temporary result
+  without dispatching `offsetSet($key, $value)`. This is not nested
+  `ArrayAccess` chains, append compound assignment, magic-property-provided
+  containers, ArrayAccess iteration, by-reference `offsetGet()` mutation,
+  indirect-modification notice fidelity, protocol/signature enforcement, exact
+  diagnostics, references/copy-on-write, or native lowering. Verification so
+  far:
+  `cargo test -p phpc --test object_model object_property_array_access_offsets_support_increment_decrement -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1023`.
+
 - Added Milestone 1022, bounded keyed compound assignment for direct
   object-property `ArrayAccess` offsets when the visible property value is an
   object whose metadata records `implements ArrayAccess`. Direct

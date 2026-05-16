@@ -940,25 +940,25 @@ fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
             "<?php\n$values = [[1]];\n++$values[0][0];\n",
             3,
             1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\n$values[0][0]--;\n",
             3,
             1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\necho ++$values[0][0];\n",
             3,
             6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\necho $values[0][0]--;\n",
             3,
             6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
         ),
         (
             "<?php\n$value = 1;\necho ++$value++;\n",
@@ -997,7 +997,7 @@ fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors()
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
+            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented"
         );
     }
 }

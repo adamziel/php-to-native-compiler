@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `b1bccda1 runtime: add object property array access compound assignment`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 1023, bounded direct object-property
+  `ArrayAccess` increment/decrement when a visible property value is itself an
+  `ArrayAccess` object.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone1023/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/OBJECT_MODEL.md`, `docs/NEXT_TASKS.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test object_model object_property_array_access_offsets_support_increment_decrement -- --test-threads=1`,
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1023`
+  passed.
+- Current WordPress frontier: direct visible property-held `ArrayAccess`
+  objects now support pre/post increment and decrement through
+  `offsetGet($key)` and PHP's current by-value temporary result behavior
+  without dispatching `offsetSet($key, $value)`.
+- Remaining semantic gaps: nested `ArrayAccess` chains, append compound
+  assignment, magic-property-provided containers, ArrayAccess iteration,
+  by-reference `offsetGet()` mutation, indirect-modification notice fidelity,
+  protocol/signature enforcement, exact diagnostics, references/copy-on-write,
+  and native lowering remain missing.
+- Next concrete task: run diff checks and the serialized checkpoint gate under
+  `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `47e3478b runtime: add object property array access append`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1022, bounded keyed compound assignment for direct

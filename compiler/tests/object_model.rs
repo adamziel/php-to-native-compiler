@@ -1508,6 +1508,59 @@ echo $holder->bag["n"], ":", $holder->bag["s"];
 }
 
 #[test]
+fn object_property_array_access_offsets_support_increment_decrement() {
+    let source = r#"<?php
+error_reporting(0);
+
+class Bag implements ArrayAccess {
+    public $items = ["n" => 2, "f" => 1.5];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetGet($offset) {
+        echo "get:$offset\n";
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        echo "set:$offset:$value\n";
+        $this->items[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->items[$offset]);
+    }
+}
+
+class Holder {
+    public $bag;
+}
+
+$holder = new Holder();
+$holder->bag = new Bag();
+echo $holder->bag["n"]++, "\n";
+echo ++$holder->bag["n"], "\n";
+echo $holder->bag["f"]--, "\n";
+echo --$holder->bag["f"], "\n";
+$holder->bag["n"]++;
+echo $holder->bag["n"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "get:n\n2\nget:n\n3\nget:f\n1.5\nget:f\n0.5\nget:n\nget:n\n2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn empty_non_public_property_access_remains_explicitly_unsupported() {
     let error = runtime_error(
         r#"<?php

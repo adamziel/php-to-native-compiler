@@ -3915,7 +3915,6 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -3923,6 +3922,64 @@ impl Interpreter {
                     "nested array targets are not implemented",
                 ),
             )),
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                if keys.len() != 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "increment/decrement",
+                            "nested array targets are not implemented",
+                        ),
+                    ));
+                }
+                match scope.read_static(object, span)? {
+                    Value::Object(object_value) => {
+                        let (current_class_id, protected_class_ids) =
+                            self.current_property_access_context();
+                        let property_value = object_value
+                            .read_property_from_context(
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))?;
+                        match property_value {
+                            Value::Object(array_access_object) => {
+                                let value = self.call_array_access_method(
+                                    array_access_object,
+                                    "offsetGet",
+                                    vec![Self::array_key_value(Some(keys[0].clone()))],
+                                    span,
+                                )?;
+                                Ok((CompoundAssignmentPlace::ArrayAccessTemporary, value))
+                            }
+                            _ => Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "increment/decrement",
+                                    "nested array targets are not implemented",
+                                ),
+                            )),
+                        }
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot read property ${property} from {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(

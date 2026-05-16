@@ -9802,13 +9802,24 @@ handled.
   iteration, by-reference `offsetGet()` mutation, protocol/signature
   enforcement, exact diagnostics, references/copy-on-write, or native
   lowering.
+- [x] Object semantics lane: add bounded increment/decrement for direct
+  object-property `ArrayAccess` offsets.
+  Milestone 1023 covers `++$holder->bag[$key]`, `$holder->bag[$key]++`,
+  `--$holder->bag[$key]`, and `$holder->bag[$key]--` by dispatching
+  `offsetGet($key)` and applying the existing integer/float update helper to
+  PHP's current by-value temporary result without dispatching
+  `offsetSet($key, $value)`. This is not nested `ArrayAccess` chains, append
+  compound assignment, magic-property-provided containers, ArrayAccess
+  iteration, by-reference `offsetGet()` mutation, indirect-modification notice
+  fidelity, protocol/signature enforcement, exact diagnostics,
+  references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess chains,
-  object-property ArrayAccess increment/decrement, append compound assignment,
-  ArrayAccess iteration, method enforcement for internal interfaces, `__clone`
-  dispatch, destructors, or inaccessible-member magic fidelity, and add the
-  next bounded behavior or explicit runtime boundary with tests, CLI fixtures,
-  docs, and native rejection coverage where lowering remains unsupported.
+  append compound assignment, ArrayAccess iteration, method enforcement for
+  internal interfaces, `__clone` dispatch, destructors, or
+  inaccessible-member magic fidelity, and add the next bounded behavior or
+  explicit runtime boundary with tests, CLI fixtures, docs, and native
+  rejection coverage where lowering remains unsupported.
 - [ ] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as real reference
   aliasing around bound parameters/results, broader escaping charset fidelity,
@@ -9820,8 +9831,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `47e3478b runtime: add object property array access append`, covering
-  Milestone 1021 before the current Milestone 1022 candidate.
+  `b1bccda1 runtime: add object property array access compound assignment`,
+  covering Milestone 1022 before the current Milestone 1023 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

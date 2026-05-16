@@ -2347,6 +2347,7 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::Property { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -2354,7 +2355,6 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
@@ -2374,14 +2374,38 @@ impl Parser {
                 target,
                 index,
                 span,
-            } => match *target {
-                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                    name,
-                    index: Some(*index),
+            } => {
+                let expr = Expr::Index {
+                    target,
+                    index,
                     span,
-                }),
-                _ => Err(unsupported_increment_decrement_target_message()),
-            },
+                };
+                if let Some((object, property, indices, span)) =
+                    Self::object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                match expr {
+                    Expr::Index {
+                        target,
+                        index,
+                        span,
+                    } => match *target {
+                        Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                            name,
+                            index: Some(*index),
+                            span,
+                        }),
+                        _ => Err(unsupported_increment_decrement_target_message()),
+                    },
+                    _ => unreachable!("outer match already selected index expression"),
+                }
+            }
             Expr::Property {
                 target,
                 property,
@@ -5612,7 +5636,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented"
 }
 
 fn unsupported_bracketed_namespace_message() -> &'static str {
