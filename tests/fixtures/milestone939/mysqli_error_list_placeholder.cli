@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone939/mysqli_error_list_placeholder.php
+yes
+callable
+0
+0
+0
+

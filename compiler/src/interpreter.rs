@@ -4434,6 +4434,12 @@ impl Interpreter {
         Ok(Value::Null)
     }
 
+    fn call_mysqli_error_list(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_error_list", args, 1, span)?;
+        expect_mysqli_handle("mysqli_error_list()", &args[0], span)?;
+        Ok(Value::Array(PhpArray::new()))
+    }
+
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
@@ -9673,6 +9679,7 @@ impl Interpreter {
             "mysqli_options" => self.call_mysqli_options(&args, span),
             "mysqli_connect_errno" => self.call_mysqli_connect_errno(&args, span),
             "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
+            "mysqli_error_list" => self.call_mysqli_error_list(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_get_links_stats" => self.call_mysqli_get_links_stats(&args, span),
             "mysqli_get_client_stats" => self.call_mysqli_get_client_stats(&args, span),
@@ -12641,6 +12648,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_options"
             | "mysqli_connect_errno"
             | "mysqli_connect_error"
+            | "mysqli_error_list"
             | "mysqli_get_connection_stats"
             | "mysqli_get_links_stats"
             | "mysqli_get_client_stats"

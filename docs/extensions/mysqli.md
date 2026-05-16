@@ -15,7 +15,7 @@ Status: boundary only.
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
-`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
+`mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
 `mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
@@ -128,6 +128,11 @@ later placeholder result rows.
 clean connect-error state, `0` and `null`. They do not track failed connection
 attempts, host extension state, report-mode behavior, or exact PHP warning and
 exception behavior.
+
+`mysqli_error_list($handle)` accepts the placeholder object and returns an
+empty array for deterministic clean error-list state. It does not track real
+warning/error entries, SQLSTATE history, host client-library state, sockets, or
+database state.
 
 `mysqli_get_connection_stats($handle)` accepts the placeholder object and
 returns an eight-key deterministic statistics array:

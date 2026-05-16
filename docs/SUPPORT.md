@@ -525,7 +525,7 @@
   `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`, `mysqli_multi_query`,
-  `mysqli_errno`, `mysqli_error`,
+  `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
@@ -888,6 +888,10 @@
   clean connect-error state, `0` and `null`, without tracking failed connection
   attempts, host extension state, report-mode behavior, or exact PHP warning
   and exception behavior.
+  `mysqli_error_list($handle)` accepts the placeholder object and returns an
+  empty array for deterministic clean error-list state, without tracking real
+  warning/error entries, SQLSTATE history, host client-library state, sockets,
+  or host database state.
   `mysqli_info($handle)` accepts the placeholder object and returns
   deterministic clean-state statement information `null` without tracking real
   statement metadata, mutation summaries, warning/error behavior, or SQL
@@ -2503,7 +2507,7 @@
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
   `mysqli_real_query`, `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
-  `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
+  `mysqli_error_list`, `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
@@ -2986,7 +2990,7 @@
   `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_real_query`,
-  `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_store_result`,
@@ -3064,7 +3068,7 @@
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
   `mysqli_real_query`, `mysqli_multi_query`,
-  `mysqli_errno`, `mysqli_error`,
+  `mysqli_errno`, `mysqli_error`, `mysqli_error_list`,
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
@@ -3126,8 +3130,9 @@
   or pending async result queues;
   `mysqli_poll(...)` is an explicit unsupported boundary for async socket
   readiness and by-reference array mutation;
-  `mysqli_errno(...)`, `mysqli_error(...)`, `mysqli_sqlstate(...)`, and
-  `mysqli_warning_count(...)` expose only clean placeholder diagnostics;
+  `mysqli_errno(...)`, `mysqli_error(...)`, `mysqli_error_list(...)`,
+  `mysqli_sqlstate(...)`, and `mysqli_warning_count(...)` expose only clean
+  placeholder diagnostics;
   `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
   only deterministic zero clean-state metadata; `mysqli_ping(...)` returns only
   deterministic placeholder liveness success; `mysqli_select_db(...)`
@@ -3152,7 +3157,7 @@
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_real_query(...)`/`mysqli_multi_query(...)`/
-  `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_sqlstate(...)`/
+  `mysqli_errno(...)`/`mysqli_error(...)`/`mysqli_error_list(...)`/`mysqli_sqlstate(...)`/
   `mysqli_warning_count(...)`/`mysqli_info(...)`/`mysqli_get_warnings(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
@@ -4812,7 +4817,7 @@
   `mysqli_field_count()`/
   `mysqli_get_connection_stats()`/`mysqli_get_links_stats()`/`mysqli_get_client_stats()`/`mysqli_dump_debug_info()`/`mysqli_debug()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_real_query()`/`mysqli_multi_query()`/`mysqli_set_charset()`/
-  `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_error_list()`/`mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_info()`/`mysqli_get_warnings()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_store_result()`/`mysqli_use_result()`/`mysqli_reap_async_query()`/`mysqli_poll()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/

@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `296f68e tests: add wordpress wpdb client stats smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 939, bounded deterministic `mysqli_error_list()`
+  clean error-list metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone939/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_error -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone939`
+  passed; the fixture is `phpc-only` and skipped for system PHP comparison.
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` also
+  passed with 74 tests.
+- Current WordPress frontier: placeholder MySQLi clean error-state metadata now
+  includes empty `mysqli_error_list()` results.
+- Remaining semantic gaps: real warning/error list tracking, SQLSTATE history,
+  host client-library state, socket state, host database state,
+  warnings/errors, and native database lowering remain missing.
+- Next concrete task: run focused checks, then the full MySQLi extension test
+  and serialized checkpoint gate under `umask 0022`; after checkpoint, add a
+  synthetic WordPress-shaped `wpdb` diagnostics smoke for
+  `mysqli_error_list()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `0000452 runtime: add mysqli client stats placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 938, a synthetic WordPress-shaped `wpdb`

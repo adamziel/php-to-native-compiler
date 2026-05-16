@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 939, bounded `mysqli_error_list()` support for deterministic
+  clean MySQLi error-list metadata. The runtime accepts current placeholder
+  `mysqli` handles, returns an empty array for clean local error-list state,
+  rejects non-`mysqli` handles with a stable diagnostic, and exposes the name
+  through runtime and native metadata lookup. This is not real warning/error
+  list tracking, SQLSTATE history, host client-library state, socket state,
+  host database state, PHP warning/error fidelity, or native database
+  lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_error -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone939`.
+
 - Added Milestone 938, a synthetic WordPress-shaped `wpdb` connection
   diagnostics smoke that records bounded `mysqli_get_client_stats()` metadata
   through a `wpdb`-style method, verifies the zeroed traffic counters, records

@@ -271,6 +271,10 @@ or native lowering, now wired through a synthetic WordPress-shaped `wpdb`
 diagnostics smoke without claiming PHP's full mysqlnd table, real
 client-library accounting, memory accounting, connection reuse state, sockets,
 host database state, warning/error fidelity, or native lowering,
+plus bounded deterministic `mysqli_error_list()` clean error-list metadata
+without real warning/error list tracking, SQLSTATE history, host
+client-library state, socket state, host database state, warning/error
+fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

@@ -8741,16 +8741,28 @@ handled.
   diagnostics method. It is not PHP's full mysqlnd client statistics table,
   real client-library accounting, memory accounting, connection reuse state,
   sockets, host database state, warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi error-list or statement
+- [x] Runtime/mysqli lane: inspect the next MySQLi error-list or statement
   boundary after client stats, such as `mysqli_error_list()` or a sharper
   unsupported diagnostic for real warning/error list state, before claiming
   broader database error fidelity.
+  Milestone 939 implements bounded deterministic `mysqli_error_list()` support
+  for current placeholder handles. It returns an empty array for clean local
+  error-list state, rejects non-`mysqli` handles with a stable diagnostic, and
+  is visible through runtime and native metadata lookup. This is not real
+  warning/error list tracking, SQLSTATE history, host client-library state,
+  socket state, host database state, warning/error fidelity, or native
+  lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+  records bounded `mysqli_error_list()` clean metadata through a
+  WordPress-shaped connection diagnostics method without claiming real
+  warning/error list tracking, SQLSTATE history, host client-library state,
+  sockets, host database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0000452 runtime: add mysqli client stats placeholder`, covering
-  Milestone 937 before the current Milestone 938 candidate.
+  `296f68e tests: add wordpress wpdb client stats smoke`, covering
+  Milestone 938 before the current Milestone 939 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
