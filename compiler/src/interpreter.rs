@@ -4458,6 +4458,20 @@ impl Interpreter {
         Ok(Value::Array(stats))
     }
 
+    fn call_mysqli_get_client_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_client_stats", args, 0, span)?;
+        let mut stats = PhpArray::new();
+        stats.insert("bytes_sent", Value::Int(0));
+        stats.insert("bytes_received", Value::Int(0));
+        stats.insert("packets_sent", Value::Int(0));
+        stats.insert("packets_received", Value::Int(0));
+        stats.insert("protocol_overhead_in", Value::Int(0));
+        stats.insert("protocol_overhead_out", Value::Int(0));
+        stats.insert("connect_success", Value::Int(0));
+        stats.insert("active_connections", Value::Int(0));
+        Ok(Value::Array(stats))
+    }
+
     fn call_mysqli_dump_debug_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_dump_debug_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_dump_debug_info()", &args[0], span)?;
@@ -9661,6 +9675,7 @@ impl Interpreter {
             "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_get_links_stats" => self.call_mysqli_get_links_stats(&args, span),
+            "mysqli_get_client_stats" => self.call_mysqli_get_client_stats(&args, span),
             "mysqli_dump_debug_info" => self.call_mysqli_dump_debug_info(&args, span),
             "mysqli_debug" => self.call_mysqli_debug(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
@@ -12628,6 +12643,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect_error"
             | "mysqli_get_connection_stats"
             | "mysqli_get_links_stats"
+            | "mysqli_get_client_stats"
             | "mysqli_dump_debug_info"
             | "mysqli_debug"
             | "mysqli_stat"

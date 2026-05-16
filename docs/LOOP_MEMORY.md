@@ -29,6 +29,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `e00be10 tests: add wordpress wpdb mysqli debug smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 937, bounded deterministic
+  `mysqli_get_client_stats()` placeholder mysqlnd client-statistics metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone937/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_stats -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone937`
+  passed; the fixture is `phpc-only` and skipped for system PHP comparison.
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` also
+  passed with 74 tests.
+- Current WordPress frontier: placeholder MySQLi host-state metadata now
+  includes a small zeroed `mysqli_get_client_stats()` client-statistics subset.
+- Remaining semantic gaps: PHP's full mysqlnd client statistics table, real
+  client-library traffic accounting, memory accounting, connection reuse
+  state, sockets, warnings/errors, host database state, and native database
+  lowering remain missing.
+- Next concrete task: run focused checks, then the full MySQLi extension test
+  and serialized checkpoint gate under `umask 0022`; after checkpoint, add a
+  synthetic WordPress-shaped `wpdb` diagnostics smoke for
+  `mysqli_get_client_stats()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `75f6e44 runtime: add mysqli debug placeholder`, pushed to `origin/master`.
 - Task attempted: Milestone 936, a synthetic WordPress-shaped `wpdb`
   diagnostics smoke over deterministic `mysqli_debug()` placeholder

@@ -8720,16 +8720,28 @@ handled.
   diagnostics method. It is not MySQL DBUG option parsing, trace-file
   creation, host client-library debug state mutation, socket inspection, host
   database state, warning/error fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi host-state boundary after
+- [x] Runtime/mysqli lane: inspect the next MySQLi host-state boundary after
   debug metadata, such as `mysqli_get_client_stats()` or a sharper unsupported
   diagnostic for real mysqlnd client statistics, before claiming broader
   client-library state fidelity.
+  Milestone 937 implements bounded deterministic `mysqli_get_client_stats()`
+  support for the no-argument call. It returns a small zeroed local subset of
+  mysqlnd-style client statistics, rejects argument-bearing calls with a stable
+  arity diagnostic, and is visible through runtime and native metadata lookup.
+  This is not PHP's full mysqlnd client statistics table, real client-library
+  traffic accounting, memory accounting, connection reuse state, sockets, host
+  database state, warning/error fidelity, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` diagnostics smoke that
+  records bounded `mysqli_get_client_stats()` metadata through a
+  WordPress-shaped connection diagnostics method without claiming PHP's full
+  mysqlnd client statistics table, real client-library accounting, sockets,
+  host database state, warning/error fidelity, or native lowering.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `75f6e44 runtime: add mysqli debug placeholder`, covering
-  Milestone 935 before the current Milestone 936 candidate.
+  `e00be10 tests: add wordpress wpdb mysqli debug smoke`, covering
+  Milestone 936 before the current Milestone 937 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

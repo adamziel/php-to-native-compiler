@@ -1533,7 +1533,11 @@ historical blockers and remaining full-support gaps include:
   through a synthetic WordPress-shaped `wpdb` connection diagnostics smoke
   without claiming MySQL DBUG option parsing, trace-file creation, host
   client-library debug state mutation, socket inspection, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 937 adds a
+  small deterministic zeroed `mysqli_get_client_stats()` mysqlnd client
+  statistics subset without PHP's full mysqlnd table, real client-library
+  traffic accounting, memory accounting, connection reuse state, sockets, host
+  database state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

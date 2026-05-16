@@ -359,6 +359,34 @@ echo $dynamic["total"];
 }
 
 #[test]
+fn mysqli_client_stats_return_current_placeholder_metadata() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_get_client_stats";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$stats = mysqli_get_client_stats();
+echo "|", $stats["bytes_sent"];
+echo "|", $stats["bytes_received"];
+echo "|", $stats["packets_sent"];
+echo "|", $stats["packets_received"];
+echo "|", $stats["protocol_overhead_in"];
+echo "|", $stats["protocol_overhead_out"];
+echo "|", $stats["connect_success"];
+echo "|", $stats["active_connections"];
+echo "|";
+$dynamic = $call();
+echo $dynamic["bytes_sent"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|0|0|0|0|0|0|0|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_dump_debug_info_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
@@ -2263,6 +2291,24 @@ mysqli_debug([]);
 }
 
 #[test]
+fn mysqli_client_stats_rejects_forms_outside_current_boundary() {
+    let bad_arity = run_source(
+        r#"<?php
+mysqli_get_client_stats("unused");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_arity.phase, Phase::Runtime);
+    assert_eq!(bad_arity.line, 2);
+    assert_eq!(bad_arity.column, 1);
+    assert_eq!(
+        bad_arity.message,
+        "arity mismatch for mysqli_get_client_stats(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
 fn mysqli_select_db_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -2531,6 +2577,8 @@ echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_get_links_stats") ? "1" : "0";
 echo is_callable("mysqli_get_links_stats") ? "1" : "0";
+echo function_exists("mysqli_get_client_stats") ? "1" : "0";
+echo is_callable("mysqli_get_client_stats") ? "1" : "0";
 echo function_exists("mysqli_dump_debug_info") ? "1" : "0";
 echo is_callable("mysqli_dump_debug_info") ? "1" : "0";
 echo function_exists("mysqli_debug") ? "1" : "0";
@@ -2629,7 +2677,7 @@ echo defined("MYSQLI_REFRESH_BACKUP_LOG") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 136, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 138, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2865,6 +2913,18 @@ mysqli_get_links_stats();
     let error = emit_ir_source(
         r#"<?php
 mysqli_dump_debug_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_client_stats();
 "#,
     )
     .unwrap_err();

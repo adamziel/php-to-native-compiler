@@ -10,7 +10,8 @@ Status: boundary only.
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_get_links_stats`,
-`mysqli_dump_debug_info`, `mysqli_debug`, `mysqli_autocommit`,
+`mysqli_get_client_stats`, `mysqli_dump_debug_info`, `mysqli_debug`,
+`mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_real_query`,
 `mysqli_multi_query`, `mysqli_errno`, `mysqli_error`,
@@ -140,6 +141,13 @@ database state.
 `mysqli_get_links_stats()` returns a deterministic zeroed array with `total`,
 `active_plinks`, and `cached_plinks`. It does not inspect real persistent
 links, sockets, host client-library state, or connection reuse state.
+
+`mysqli_get_client_stats()` returns a small deterministic zeroed array with
+`bytes_sent`, `bytes_received`, `packets_sent`, `packets_received`,
+`protocol_overhead_in`, `protocol_overhead_out`, `connect_success`, and
+`active_connections`. It does not expose PHP's full mysqlnd statistics table,
+track real client-library traffic, account for memory, inspect sockets, or
+read host database state.
 
 `mysqli_dump_debug_info($handle)` accepts the placeholder object and returns
 deterministic `true`. It does not emit MySQL DBUG trace output, inspect host

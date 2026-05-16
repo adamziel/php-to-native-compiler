@@ -263,7 +263,11 @@ database state, warning/error fidelity, or native lowering, now wired through
 a synthetic WordPress-shaped `wpdb` connection diagnostics smoke without
 claiming MySQL DBUG option parsing, trace-file creation, host client-library
 debug state mutation, socket inspection, host database state,
-warning/error fidelity, or native lowering,
+warning/error fidelity, or native lowering, plus bounded deterministic
+`mysqli_get_client_stats()` mysqlnd client-statistics metadata without PHP's
+full mysqlnd table, real client-library traffic accounting, memory accounting,
+connection reuse state, sockets, host database state, warning/error fidelity,
+or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

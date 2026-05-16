@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 937, bounded `mysqli_get_client_stats()` support for
+  deterministic placeholder mysqlnd client-statistics metadata. The runtime
+  accepts the no-argument call, returns a small zeroed local subset
+  (`bytes_sent`, `bytes_received`, `packets_sent`, `packets_received`,
+  `protocol_overhead_in`, `protocol_overhead_out`, `connect_success`, and
+  `active_connections`), rejects argument-bearing calls with a stable arity
+  diagnostic, and exposes the name through runtime and native metadata lookup.
+  This is not PHP's full mysqlnd client statistics table, real client-library
+  traffic accounting, memory accounting, connection reuse state, sockets, host
+  database state, PHP warning/error fidelity, or native database lowering.
+  Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_stats -- --test-threads=1`
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone937`.
+
 - Added Milestone 936, a synthetic WordPress-shaped `wpdb` connection
   diagnostics smoke that records bounded `mysqli_debug()` metadata through a
   `wpdb`-style method, verifies callable metadata, records deterministic
