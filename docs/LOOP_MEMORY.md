@@ -31,22 +31,26 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint before this task:
   `0453f42d docs: record foreach temporary reference gate`, pushed to
   `origin/master`.
+- Checkpoint after this task:
+  `09601a33 runtime: add ignore user abort placeholder`.
 - Task attempted: Milestone 1079, bounded `ignore_user_abort()` placeholder for
   the reached WordPress `wp-cron.php` entry-flow blocker.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/src/codegen.rs`, `compiler/tests/connection_builtins.rs`,
   `tests/fixtures/milestone1079/ignore_user_abort_state.*`,
   `docs/PROGRESS.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
   `docs/WORDPRESS_COMPATIBILITY.md`, `GOAL.MD`, `docs/NEXT_TASKS.md`, and
   `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo test -p phpc --test connection_builtins -- --test-threads=1`
   passed with 4 tests. `cargo run -q -p phpc -- test
   tests/fixtures/milestone1079 --compare-php` passed with 1 fixture and 1
   system PHP comparison. `cargo run -q -p phpc -- run
   /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-cron.php`
   exited 0 with no stdout/stderr under current deterministic placeholder
-  assumptions.
+  assumptions. The serialized checkpoint gate passed with 1284 fixture tests,
+  729 system PHP comparisons, and 555 skipped PHP comparisons before commit
+  `09601a33 runtime: add ignore user abort placeholder`.
 - Current WordPress frontier: the local real WordPress 6.9.4 `wp-cron.php`
   entrypoint now gets past the reached `ignore_user_abort(true)` blocker and
   exits 0 under the current placeholder database/request/SAPI assumptions.
@@ -55,9 +59,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   locking/spawning, real scheduled-event execution, host database state,
   request body/cookie/session state, exact PHP warnings/`TypeError`s, and
   native lowering remain missing.
-- Next concrete task: run formatting/checks and checkpoint Milestone 1079;
-  after that choose between the WP-Cron next-entry blocker if one appears under
-  a stricter probe, admin/AJAX `ini_set()`, XML-RPC dynamic class
+- Next concrete task: choose between the WP-Cron next-entry blocker if one
+  appears under a stricter probe, admin/AJAX `ini_set()`, XML-RPC dynamic class
   instantiation, or the array-copy-preserves-reference-element COW slice.
 
 ## Loop Event 2026-05-16T21:10:00Z

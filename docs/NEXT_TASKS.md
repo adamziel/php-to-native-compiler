@@ -10543,8 +10543,9 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c987abea runtime: add foreach temporary reference arrays`, covering
-  Milestone 1078. Milestone 1079 is in progress and not checkpointed yet.
+  `09601a33 runtime: add ignore user abort placeholder`, covering Milestone
+  1079. The serialized checkpoint gate passed with 1284 fixture tests, 729
+  system PHP comparisons, and 555 skipped PHP comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -14,12 +14,14 @@ Implemented:
   function-call boundary. This does not model real client disconnect state,
   SAPI/web-server connection-abort behavior, FastCGI/LiteSpeed request
   finishing, cron locking/spawning, exact `TypeError` behavior, or native
-  lowering. Verification so far:
+  lowering. Verification:
   `cargo test -p phpc --test connection_builtins -- --test-threads=1`,
   `cargo run -q -p phpc -- test tests/fixtures/milestone1079 --compare-php`,
   and `cargo run -q -p phpc -- run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-cron.php`,
   which exited 0 with no stdout/stderr under the current deterministic
-  placeholder assumptions.
+  placeholder assumptions. The serialized checkpoint gate passed with 1284
+  fixture tests, 729 system PHP comparisons, and 555 skipped PHP comparisons
+  before commit `09601a33 runtime: add ignore user abort placeholder`.
 
 - Added Milestone 1078, a bounded by-reference `foreach` temporary-array
   expression slice. In addition to direct array variables, by-reference value
