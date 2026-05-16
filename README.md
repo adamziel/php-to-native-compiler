@@ -229,7 +229,9 @@ incorrect native code.
   `use TraitA, TraitB;` composition for already-declared traits, plus simple
   public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
-  `use TraitA, TraitB { TraitA::method as public alias; }`,
+  `use TraitA, TraitB { TraitA::method as public alias; }`, and bounded
+  public instance conflict resolution such as
+  `use TraitA, TraitB { TraitA::method insteadof TraitB; }`,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -256,9 +258,10 @@ full interface inheritance/signature enforcement, broad built-in/internal
 interface method enforcement/catalogs beyond the current `Countable`,
 `Iterator`, and `IteratorAggregate` shape checks, trait properties/constants,
 static/abstract/final or non-public trait methods, conflicting trait
-composition, aliases beyond the current simple public and qualified
-public-alias slices, protected/private visibility changes, visibility-only
-adaptations, `insteadof`, `__TRAIT__`,
+composition outside the bounded single-loser `insteadof` shape, aliases
+beyond the current simple public and qualified public-alias slices,
+protected/private visibility changes, visibility-only adaptations, unqualified
+or multi-loser `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
@@ -316,10 +319,11 @@ unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded copy-in/copy-back
 path for output-parameter style calls. `call_user_func_array()` also has a
-bounded string user-callback slice for unkeyed literal argument arrays containing
-direct-variable reference elements such as `array(&$value)`. Stored reference
-arrays, keyed reference argument arrays, array-callable reference parameters,
-broader aliasing, and full copy-on-write remain unsupported.
+bounded string user-callback and public object-method callback slice for
+unkeyed literal argument arrays containing direct-variable reference elements
+such as `array(&$value)`. Stored reference arrays, keyed reference argument
+arrays, static method array-callable reference parameters, broader aliasing,
+and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation
@@ -357,6 +361,8 @@ direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
+direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()` response
+header-state calls,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

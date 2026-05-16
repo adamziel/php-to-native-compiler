@@ -68,7 +68,8 @@
   dispatch paths: the callee local parameter shares the caller's variable cell
   during execution, so writes through the parameter are visible to other reads
   of the caller variable before the call returns. The same direct-variable cell
-  binding is supported for string user-function callbacks invoked through
+  binding is supported for string user-function callbacks and public
+  `[object, method]` instance callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` when the argument array
   is an unkeyed literal and each reached by-reference callback parameter
   receives a by-reference direct variable element. `unset($param)` detaches
@@ -917,7 +918,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`, `header`,
-  `header_remove`, `headers_sent`, `abs`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -1218,17 +1219,17 @@
   to current user functions or documented callable builtins, public
   `[object, method]` instance callbacks, public `[class, method]` static
   callbacks, and integer-keyed ordered arrays expanded as positional argument
-  lists. For string user-function callbacks, a literal argument array may pass
-  direct variables to reached by-reference parameters with unkeyed elements
-  such as `array(&$value)`, and writes through the callback parameter update
-  that caller variable. Stored argument arrays containing reference elements,
+  lists. For string user-function callbacks and public `[object, method]`
+  instance callbacks, a literal argument array may pass direct variables to
+  reached by-reference parameters with unkeyed elements such as
+  `array(&$value)`, and writes through the callback parameter update that
+  caller variable. Stored argument arrays containing reference elements,
   keyed literal argument arrays for reached by-reference parameters,
   non-literal argument arrays for reached by-reference parameters, reference
   elements that are not direct variables, variables already routed through
-  array-offset alias metadata, array-callable by-reference parameters,
-  string-keyed named arguments, closure and `__invoke` callbacks, non-public
-  methods, other callable array shapes, exact PHP warning behavior, and native
-  lowering remain unsupported.
+  array-offset alias metadata, static method by-reference array callbacks,
+  closure and `__invoke` callbacks, non-public methods, other callable array
+  shapes, exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -1905,20 +1906,27 @@
   warning behavior, exact diagnostics, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
-  code, returns `null`, and records no header state. This is a WordPress
-  bootstrap compatibility boundary only; response header storage, status-code
-  state, replacement/removal behavior, output-sent warnings, web-server/SAPI
-  integration, exact diagnostics, partial-output behavior, and native lowering
-  remain unsupported.
+  code, appends the raw header line to deterministic in-process CLI request
+  state, and returns `null`. This is a WordPress bootstrap/request
+  compatibility boundary only; duplicate replacement policy, status-code
+  parsing/state, output-sent warnings, web-server/SAPI integration, network
+  response emission, exact diagnostics, partial-output behavior, and native
+  lowering remain unsupported.
+  `headers_list()` accepts no arguments and returns the current deterministic
+  CLI header log as an ordered array of strings in accepted `header()` call
+  order. It exposes only this project-local request-state scaffold; PHP CLI
+  parity, SAPI response state, duplicate replacement policy, status-code
+  headers, cookie formatting, header normalization, output buffers, exact
+  warnings, and native lowering remain unsupported.
   `header_remove($name = null)` accepts no argument or one string header name,
-  returns `null`, and records no header state. Actual all-header removal,
-  named-header storage/removal, output-sent warnings, SAPI/web-server behavior,
-  exact diagnostics, partial-output behavior, and native lowering remain
-  unsupported.
+  returns `null`, and does not mutate the current deterministic CLI header
+  log. Actual all-header removal, named-header storage/removal, output-sent
+  warnings, SAPI/web-server behavior, exact diagnostics, partial-output
+  behavior, and native lowering remain unsupported.
   `headers_sent()` accepts no arguments and returns `false` in the current
-  no-header-state runtime shim. Filename/line output arguments, output-started
-  tracking, header storage, output buffers, SAPI differences, exact warnings,
-  and native lowering remain unsupported.
+  CLI runtime shim. Filename/line output arguments, output-started tracking,
+  output buffers, SAPI differences, exact warnings, and native lowering remain
+  unsupported.
   `abs($value)` accepts current integer and finite-float runtime values,
   returning an integer for integer input and a float for finite-float input.
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
@@ -2165,7 +2173,8 @@
   single-parent `extends`, interface inheritance/constants/non-public or
   static interface methods, trait properties/constants, static/abstract/final
   or non-public trait methods, adaptation blocks beyond the current simple
-  method alias shape, conflict resolution, visibility adaptations, `insteadof`,
+  method alias and single-loser `insteadof` shapes, broad conflict
+  resolution, visibility adaptations,
   `__TRAIT__` context,
   references/copy-on-write, and native trait lowering, backed enum declarations
   and enum members beyond
@@ -3908,7 +3917,7 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `header`,
-  `header_remove`, `headers_sent`,
+  `header_remove`, `headers_list`, `headers_sent`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -4086,7 +4095,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `header`,
-  `header_remove`, `headers_sent`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
@@ -4376,16 +4385,21 @@
   `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/`mysqli_poll(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
-  `header` accepts the same current no-op header subset as the builtin section
-  above; direct native `header(...)` calls still reject under the function-call
-  boundary, while native function-table introspection recognizes the name.
-  `header_remove` accepts the same current no-op removal subset as the builtin
-  section above; direct native `header_remove(...)` calls still reject under the
-  function-call boundary, while native function-table introspection recognizes
+  `header` accepts the same current deterministic CLI header-log subset as the
+  builtin section above; direct native `header(...)` calls reject under the
+  header-state boundary, while native function-table introspection recognizes
   the name.
+  `header_remove` accepts the same current no-op removal subset as the builtin
+  section above; direct native `header_remove(...)` calls reject under the
+  header-state boundary, while native function-table introspection recognizes
+  the name.
+  `headers_list` accepts the same current deterministic CLI header-log subset
+  as the builtin section above; direct native `headers_list(...)` calls reject
+  under the header-state boundary, while native function-table introspection
+  recognizes the name.
   `headers_sent` accepts the same current no-argument `false` subset as the
-  builtin section above; direct native `headers_sent(...)` calls still reject
-  under the function-call boundary, while native function-table introspection
+  builtin section above; direct native `headers_sent(...)` calls reject under
+  the header-state boundary, while native function-table introspection
   recognizes the name.
   `php_sapi_name` accepts the same current no-argument deterministic `cli`
   subset as the builtin section above; direct native `php_sapi_name(...)`
@@ -4492,7 +4506,8 @@
   recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, and unkeyed literal direct-variable
-  by-reference user-callback argument subset as the builtin section above;
+  by-reference string/function or public object-method callback argument subset
+  as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
@@ -4609,8 +4624,13 @@
   `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
   for public instance trait methods; the original method remains available,
   and the alias is registered as an ordinary public instance method that can
-  satisfy the current interface method-presence checks. Built-in/internal
-  trait entries are not represented.
+  satisfy the current interface method-presence checks. A bounded conflict
+  resolution shape such as
+  `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
+  public instance methods from traits in the same class-body `use`
+  declaration; the winning method is registered as the ordinary public method
+  and the named loser trait's method is skipped. Built-in/internal trait
+  entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -5132,10 +5152,12 @@
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
   trait properties/constants, static/abstract/final and non-public trait
-  methods, conflicting trait composition, trait conflict resolution,
+  methods, conflicting trait composition outside the bounded single-loser
+  `insteadof` shape,
   trait aliases beyond the current simple public and qualified public-alias
   slices, visibility changes other than explicit `public` on an alias,
-  visibility-only adaptations, `insteadof`, `__TRAIT__`,
+  visibility-only adaptations, unqualified `insteadof`, multi-loser
+  `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -6408,20 +6430,27 @@
   stat-cache behavior, TOCTOU semantics, broken-symlink policy fidelity,
   non-UTF-8 paths, broad scalar coercions, exact diagnostics, and native
   lowering beyond function-table introspection
-- `header()` behavior beyond accepting current string/bool/int arguments as a
-  no-op returning `null`: response header storage, status-code parsing/state,
-  replacement/removal behavior, output-sent warnings, SAPI/web-server
-  integration, exact `ValueError`/`TypeError` diagnostics, partial-output
+- `header()` behavior beyond accepting current string/bool/int arguments,
+  appending the raw header line to deterministic CLI request state, and
+  returning `null`: duplicate replacement policy, status-code parsing/state,
+  output-sent warnings, SAPI/web-server integration, network response
+  emission, exact `ValueError`/`TypeError` diagnostics, partial-output
   behavior, and native lowering beyond function-table introspection
+- `headers_list()` behavior beyond returning the current deterministic
+  append-only CLI header log: PHP CLI parity, SAPI response state, duplicate
+  replacement policy, status-code headers, cookie formatting, header
+  normalization, output buffers, exact warnings, and native lowering beyond
+  function-table introspection
 - `header_remove()` behavior beyond accepting no argument or one string header
-  name as a no-op returning `null`: actual all-header removal, named-header
-  storage/removal, output-sent warnings, SAPI/web-server behavior, exact
-  diagnostics, partial-output behavior, and native lowering beyond
+  name as a no-op returning `null`: mutation of the current CLI header log,
+  actual all-header removal, named-header storage/removal, output-sent
+  warnings, SAPI/web-server behavior, exact diagnostics, partial-output
+  behavior, and native lowering beyond
   function-table introspection
 - `headers_sent()` behavior beyond the current no-argument always-`false`
-  shim: filename/line output arguments, output-started tracking, header
-  storage, output buffers, SAPI differences, exact warnings, and native
-  lowering beyond function-table introspection
+  shim: filename/line output arguments, output-started tracking, output
+  buffers, SAPI differences, exact warnings, and native lowering beyond
+  function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering

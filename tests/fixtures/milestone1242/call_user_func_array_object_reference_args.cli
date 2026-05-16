@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1242/call_user_func_array_object_reference_args.php

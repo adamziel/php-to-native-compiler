@@ -157,9 +157,13 @@ the composed public instance method under the alias name while leaving the
 original method available. The same alias path accepts an explicit `public`
 marker with a same-use qualified trait target, such as
 `use TraitA, TraitB { TraitA::method as public alias; }`, while still treating
-the alias as an ordinary public method. Trait properties/constants,
-static/abstract/final or non-public trait methods, conflict resolution,
-protected/private visibility changes, visibility-only adaptations, `insteadof`,
+the alias as an ordinary public method. A bounded trait conflict adaptation
+such as `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted
+for public instance methods from traits in the same class-body `use`
+declaration; composition registers the winner and skips the named loser method.
+Trait properties/constants, static/abstract/final or non-public trait methods,
+broad conflict resolution, protected/private visibility changes,
+visibility-only adaptations, unqualified or multi-loser `insteadof`,
 qualified or multi-trait alias edge cases beyond the current slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
@@ -451,12 +455,13 @@ to the caller's variable cell for the duration of current user-function,
 instance-method, and constructor calls. Writes through the parameter are
 visible before the call returns, and `unset($param)` detaches only the callee's
 local name from the shared cell. `call_user_func_array()` reuses that same
-direct cell binding for the narrow string user-callback shape where the
-argument array is an unkeyed literal containing `&$directVariable` elements
-for reached by-reference parameters. This deliberately does not model full PHP
-reference containers, stored reference arrays, keyed reference argument arrays,
-by-reference array/object offsets, array callable reference parameters,
-broader reference returns, exact by-reference `foreach`, or copy-on-write.
+direct cell binding for narrow string user-callbacks and public object-method
+array callbacks where the argument array is an unkeyed literal containing
+`&$directVariable` elements for reached by-reference parameters. This
+deliberately does not model full PHP reference containers, stored reference
+arrays, keyed reference argument arrays, by-reference array/object offsets,
+static method array-callable reference parameters, broader reference returns,
+exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1348,12 +1353,13 @@ callables, closure invocation, `__invoke`, `call_user_func_array`, references,
 variadic unpacking, or native lowering.
 `call_user_func_array()` is a separate interpreter-only callable dispatcher for
 string callbacks, current public array-callable shapes, and integer-keyed
-positional argument arrays. String user-function callbacks can bind reached
-by-reference parameters only from unkeyed literal argument-array elements such
-as `array(&$value)`, using the same direct caller cell as ordinary
-by-reference user-function calls. Stored reference arrays, keyed reference
-argument arrays, array-callable reference parameters, closure invocation,
-`__invoke`, named arguments, exact warning behavior, and native lowering remain
+positional argument arrays. String user-function callbacks and public
+`[object, method]` instance callbacks can bind reached by-reference parameters
+only from unkeyed literal argument-array elements such as `array(&$value)`,
+using the same direct caller cell as ordinary by-reference user-function and
+method calls. Stored reference arrays, keyed reference argument arrays, static
+method array-callable reference parameters, closure invocation, `__invoke`,
+named arguments, exact warning behavior, and native lowering remain
 unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
@@ -1361,20 +1367,22 @@ insertion order with either an empty default separator or a string separator.
 Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
-`header()` is an interpreter-only no-op web/SAPI boundary for the current
-WordPress bootstrap path. It validates the current string/bool/int argument
-shape, returns `null`, and deliberately records no response state yet. Native
-function-table introspection recognizes the name, while direct native calls
-reject until response state, diagnostics, and SAPI integration have a lowered
-runtime model.
+`header()` is an interpreter-only web/SAPI boundary for the current WordPress
+bootstrap/request path. It validates the current string/bool/int argument
+shape, appends the raw header line to deterministic in-process CLI request
+state, and returns `null`. `headers_list()` returns that append-only header log
+as an ordered array of strings. Native function-table introspection recognizes
+the names, while direct native calls reject through a header-state boundary
+until response storage, diagnostics, output-started tracking, status handling,
+and SAPI integration have a lowered runtime model.
 `header_remove()` is the matching interpreter-only no-op removal boundary. It
 accepts no argument or one string header name and returns `null`, but it does
-not maintain a header bag, remove stored headers, detect output-sent state, or
-model SAPI behavior.
-`headers_sent()` is an interpreter-only no-header-state web/SAPI boundary. The
-current no-argument slice returns `false` so reached WordPress guard branches
-can continue, but filename/line output arguments, output-started tracking,
-output buffers, SAPI differences, and native lowering are not modeled.
+not mutate the current CLI header log, detect output-sent state, or model SAPI
+removal behavior.
+`headers_sent()` is an interpreter-only web/SAPI boundary. The current
+no-argument slice returns `false` so reached WordPress guard branches can
+continue, but filename/line output arguments, output-started tracking, output
+buffers, SAPI differences, and native lowering are not modeled.
 `php_sapi_name()` is an interpreter-only request/SAPI identity boundary that
 returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native

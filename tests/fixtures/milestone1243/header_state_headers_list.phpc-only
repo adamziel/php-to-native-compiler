@@ -1,0 +1,1 @@
+System PHP CLI does not expose the same deterministic in-process header log through headers_list(); this fixture documents phpc's bounded CLI request-state scaffold.

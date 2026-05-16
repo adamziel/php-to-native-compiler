@@ -167,6 +167,23 @@ does not claim persistent object-cache behavior, real database connectivity,
 arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1244, the synthetic harness also includes a
+`delete_option()`-shaped option-cache bootstrap smoke after the update path.
+The generated bootstrap shim and `wp-blog-header.php` front-controller path
+seed a non-autoloaded `blogdescription` row, read it through the bounded
+cache-backed `get_option()` path, update it through the exact supported direct
+`UPDATE wp_options SET option_value = ... WHERE option_name = ...` query,
+delete it through the exact supported direct
+`DELETE FROM wp_options WHERE option_name = ...` query, clear the bounded
+in-memory cache slot with `wp_cache_delete()`, and prove a later
+`get_option(..., 'missing')` lookup returns the default by emitting
+`cache-db|updated|fresh-db|deleted|missing` (`stdout_bytes: 41` in normalized
+output). This is executable evidence for a later bounded option-cache/delete
+point only; it does not claim persistent object-cache behavior, real database
+connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
+plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
+support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -190,6 +207,15 @@ populate upload error metadata, implement `is_uploaded_file()` or
 `move_uploaded_file()`, import host SAPI request state, implement
 `variables_order`, or claim upload/request fidelity.
 
+After Milestone 1243, `phpc run` keeps a deterministic in-process CLI header
+log: accepted `header(...)` calls append raw header lines, and
+`headers_list()` returns the current log as an ordered array. This supports
+WordPress-shaped bootstrap/request code that records and introspects response
+header intent in the current CLI scaffold only. It does not implement
+duplicate/replacement policy, `header_remove()` mutation, status-code state,
+cookie formatting, output-started tracking, web-server/SAPI network emission,
+exact warnings, or native header-state lowering.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
@@ -206,8 +232,11 @@ exercising the exact single-option `wp_options` row query through a minimal
 `wpdb::get_row()` wrapper and bounded in-memory cache functions. The Milestone
 1239 update-option smoke records a later option-cache update byte count
 separately after exercising the exact direct `wp_options` UPDATE shape through
-a minimal wrapper and refreshing the bounded in-memory cache. Known historical
-blockers and remaining full-support gaps include:
+a minimal wrapper and refreshing the bounded in-memory cache. The Milestone
+1244 delete-option smoke records a later option-cache delete byte count
+separately after exercising the exact direct `wp_options` DELETE shape through
+a minimal wrapper and clearing the bounded in-memory cache slot. Known
+historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice. The

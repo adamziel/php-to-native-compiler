@@ -1,6 +1,6 @@
 <?php
 class Box {
-    use Labels {
-        Labels::label insteadof OtherLabels;
+    use Labels, OtherLabels, ThirdLabels {
+        Labels::label insteadof OtherLabels, ThirdLabels;
     }
 }

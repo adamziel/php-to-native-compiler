@@ -1,8 +1,8 @@
-use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
+use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), and headers_sent() until native response-header storage, output-started tracking, status-code handling, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -25,6 +25,34 @@ echo "|after";
     .unwrap();
 
     assert_eq!(execution.stdout, "before|null|after");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn headers_list_returns_current_cli_header_log() {
+    let execution = run_source(
+        r#"<?php
+echo count(headers_list());
+header("X-First: one");
+header("Content-Type: text/plain", true, 200);
+header("X-First: two", false);
+$headers = headers_list();
+echo "|";
+echo count($headers);
+echo "|";
+echo $headers[0];
+echo "|";
+echo $headers[1];
+echo "|";
+echo $headers[2];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|3|X-First: one|Content-Type: text/plain|X-First: two"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -100,6 +128,21 @@ echo $call() ? "sent" : "open";
 
     assert_eq!(execution.stdout, "open|yes|callable|open");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn headers_list_rejects_forms_outside_current_subset() {
+    let too_many = runtime_error(
+        r#"<?php
+echo headers_list("extra");
+"#,
+    );
+    assert_eq!(too_many.line, 2);
+    assert_eq!(too_many.column, 6);
+    assert_eq!(
+        too_many.message,
+        "arity mismatch for headers_list(): expected 0 argument(s), got 1"
+    );
 }
 
 #[test]
@@ -220,7 +263,7 @@ header("Content-Type: text/html");
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
 }
 
 #[test]
@@ -230,17 +273,37 @@ fn emit_ir_rejects_header_remove_until_native_runtime_call_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
 }
 
 #[test]
-fn emit_ir_rejects_headers_sent_until_native_runtime_call_lowering_exists() {
+fn emit_ir_rejects_headers_list_until_native_header_state_exists() {
+    let error = emit_ir_source("<?php\necho headers_list();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_headers_list_during_native_header_state_lowering() {
+    let error = emit_asm_source("<?php\necho headers_list();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_headers_sent_until_native_header_state_exists() {
     let error = emit_ir_source("<?php\necho headers_sent();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
 }
 
 #[test]
@@ -251,13 +314,15 @@ echo function_exists("header") ? "1" : "0";
 echo is_callable("header") ? "1" : "0";
 echo function_exists("header_remove") ? "1" : "0";
 echo is_callable("header_remove") ? "1" : "0";
+echo function_exists("headers_list") ? "1" : "0";
+echo is_callable("headers_list") ? "1" : "0";
 echo function_exists("headers_sent") ? "1" : "0";
 echo is_callable("headers_sent") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 8, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

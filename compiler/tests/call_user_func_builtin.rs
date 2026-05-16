@@ -70,6 +70,32 @@ echo $option;
 }
 
 #[test]
+fn call_user_func_array_binds_literal_reference_arguments_for_object_array_callbacks() {
+    let execution = run_source(
+        r#"<?php
+class OptionFilter {
+    public function update(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+$filter = new OptionFilter();
+$option = "autoload";
+echo call_user_func_array(array($filter, "update"), array(&$option, "object-cache")), "\n";
+echo $option;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:object-cache\nautoload:object-cache"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php

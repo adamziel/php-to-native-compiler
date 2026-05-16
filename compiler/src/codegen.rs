@@ -122,6 +122,8 @@ const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects 
 const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), and headers_sent() until native response-header storage, output-started tracking, status-code handling, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
+const ASSEMBLY_HEADER_STATE_REJECTION: &str = "assembly header-state lowering rejects header(), header_remove(), headers_list(), and headers_sent() until native response-header storage, output-started tracking, status-code handling, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -172,6 +174,13 @@ fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
         }
         _ => None,
     }
+}
+
+fn is_header_state_builtin(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "header" | "header_remove" | "headers_list" | "headers_sent"
+    )
 }
 
 fn is_static_member_assign_target(target: &AssignTarget) -> bool {
@@ -780,6 +789,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
                 Err(self.unsupported(*span, LLVM_IS_WRITABLE_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
+                Err(self.unsupported(*span, LLVM_HEADER_STATE_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -3669,6 +3681,9 @@ impl CGenerator {
             }
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("is_writable") => {
                 Err(self.unsupported(*span, ASSEMBLY_IS_WRITABLE_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_HEADER_STATE_REJECTION))
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -6921,6 +6936,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "restore_error_handler"
             | "header"
             | "header_remove"
+            | "headers_list"
             | "headers_sent"
             | "assert"
             | "get_class"

@@ -74,7 +74,11 @@ methods from already-declared traits may be composed into a class with
 `use TraitA, TraitB;` and called through ordinary object method dispatch.
 Simple public aliases, including same-use qualified forms such as
 `TraitA::method as public alias`, are registered as ordinary public methods
-and may satisfy the current interface method-presence checks.
+and may satisfy the current interface method-presence checks. Single-loser
+public instance conflict adaptations such as
+`TraitA::method insteadof TraitB` select the winner from traits listed in the
+same class-body `use` declaration and skip the loser method during
+composition.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -387,9 +391,10 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
-conflicting trait use inside classes, trait aliases beyond the current simple
-public and qualified public-alias slices, protected/private visibility changes,
-visibility-only adaptations, `insteadof`, `__TRAIT__`, nested/conditional trait
+conflicting trait use beyond the bounded single-loser `insteadof` shape,
+trait aliases beyond the current simple public and qualified public-alias
+slices, protected/private visibility changes, visibility-only adaptations,
+unqualified or multi-loser `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,

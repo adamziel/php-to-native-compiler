@@ -127,6 +127,7 @@ struct Interpreter {
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
+    response_headers: Vec<String>,
     stdout: String,
     exit_signal: Option<i32>,
 }
@@ -2060,6 +2061,7 @@ impl Interpreter {
             function_context: Vec::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
+            response_headers: Vec::new(),
             stdout: String::new(),
             exit_signal: None,
         };
@@ -12590,9 +12592,7 @@ impl Interpreter {
                 self.call_callable_with_values(callable, positional_args, span)
             }
             Value::Array(callback) => {
-                let positional_args =
-                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
-                self.call_array_callable_with_values(callback, positional_args, span)
+                self.call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
             }
             Value::Closure(_) => Err(runtime_error(
                 span,
@@ -12666,6 +12666,32 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
+        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+        )?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+        )
+    }
+
+    fn evaluate_call_user_func_array_checked_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
         let Expr::Array { items, .. } = argument_expr else {
             let positional_args =
                 self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
@@ -12685,16 +12711,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            self.ensure_user_function_call_depth(function, span)?;
-            return self.call_user_function_with_checked_values(
-                function,
-                positional_args,
-                None,
-                None,
-                None,
-                Vec::new(),
-                Some(caller_scope),
-            );
+            return Ok((positional_args, Vec::new()));
         };
 
         ensure_user_function_arity(function, items.len(), span)?;
@@ -12707,16 +12724,7 @@ impl Interpreter {
         {
             let positional_args =
                 self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
-            self.ensure_user_function_call_depth(function, span)?;
-            return self.call_user_function_with_checked_values(
-                function,
-                positional_args,
-                None,
-                None,
-                None,
-                Vec::new(),
-                Some(caller_scope),
-            );
+            return Ok((positional_args, Vec::new()));
         }
         if function
             .params
@@ -12732,7 +12740,6 @@ impl Interpreter {
                 ),
             ));
         }
-        self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(items.len());
         let mut reference_bindings = Vec::new();
@@ -12796,15 +12803,7 @@ impl Interpreter {
             }
         }
 
-        self.call_user_function_with_checked_values(
-            function,
-            values,
-            None,
-            None,
-            None,
-            reference_bindings,
-            Some(caller_scope),
-        )
+        Ok((values, reference_bindings))
     }
 
     fn call_spl_autoload_register(
@@ -14820,6 +14819,75 @@ impl Interpreter {
         Some(self.classes.get(parent_id)?.name().to_string())
     }
 
+    fn call_header(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "header()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let header = match &args[0] {
+            Value::String(header) => header.clone(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "header()",
+                        format!(
+                            "header argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        if let Some(other) = args.get(1).filter(|value| !matches!(value, Value::Bool(_))) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "header()",
+                    format!(
+                        "replace argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+
+        if let Some(other) = args.get(2).filter(|value| !matches!(value, Value::Int(_))) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "header()",
+                    format!(
+                        "response_code argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+
+        self.response_headers.push(header);
+        Ok(Value::Null)
+    }
+
+    fn call_headers_list(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("headers_list", args, 0, span)?;
+        let mut headers = PhpArray::new();
+        for header in &self.response_headers {
+            headers
+                .append(Value::String(header.clone()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(headers))
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -16679,8 +16747,9 @@ impl Interpreter {
             }
             "set_error_handler" => self.call_set_error_handler(args, span),
             "restore_error_handler" => self.call_restore_error_handler(args, span),
-            "header" => call_header(&args, span),
+            "header" => self.call_header(&args, span),
             "header_remove" => call_header_remove(&args, span),
+            "headers_list" => self.call_headers_list(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
@@ -17542,6 +17611,92 @@ impl Interpreter {
                     ),
                 ),
             )),
+        }
+    }
+
+    fn call_user_func_array_array_callable(
+        &mut self,
+        callback: &PhpArray,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_checked_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    values,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    reference_bindings,
+                    Some(caller_scope),
+                )
+            }
+            Value::String(_) => {
+                let positional_args = self.evaluate_call_user_func_array_arguments(
+                    argument_expr,
+                    span,
+                    caller_scope,
+                )?;
+                self.call_array_callable_with_values(callback, positional_args, span)
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
         }
     }
 
@@ -19621,6 +19776,7 @@ fn composed_trait_methods(
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassMethodDecl>> {
     let mut methods = Vec::new();
+    let precedence_exclusions = trait_precedence_exclusions(class, trait_lookup)?;
     for trait_use in &class.trait_uses {
         let key = trait_use.name.to_ascii_lowercase();
         let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
@@ -19629,7 +19785,13 @@ fn composed_trait_methods(
                 RuntimeError::undefined_class(&trait_use.name),
             )
         })?;
-        methods.extend(trait_decl.methods.iter().cloned());
+        for method in &trait_decl.methods {
+            let method_key = method.function.name.to_ascii_lowercase();
+            if precedence_exclusions.contains(&(key.clone(), method_key)) {
+                continue;
+            }
+            methods.push(method.clone());
+        }
         for alias in &trait_use.aliases {
             let Some(method) = trait_decl.methods.iter().find(|method| {
                 method
@@ -19652,6 +19814,65 @@ fn composed_trait_methods(
         }
     }
     Ok(methods)
+}
+
+fn trait_precedence_exclusions(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<HashSet<(String, String)>> {
+    let mut exclusions = HashSet::new();
+    for trait_use in &class.trait_uses {
+        let winner_key = trait_use.name.to_ascii_lowercase();
+        let winner_trait = trait_lookup.get(&winner_key).ok_or_else(|| {
+            runtime_error(
+                trait_use.span,
+                RuntimeError::undefined_class(&trait_use.name),
+            )
+        })?;
+        for precedence in &trait_use.precedences {
+            let Some(winner_method) = winner_trait.methods.iter().find(|method| {
+                method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&precedence.method_name)
+            }) else {
+                return Err(runtime_error(
+                    precedence.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait precedence {}::{} targets a missing winning method",
+                        winner_trait.name, precedence.method_name
+                    )),
+                ));
+            };
+
+            let loser_key = precedence.loser_trait_name.to_ascii_lowercase();
+            let loser_trait = trait_lookup.get(&loser_key).ok_or_else(|| {
+                runtime_error(
+                    precedence.span,
+                    RuntimeError::undefined_class(&precedence.loser_trait_name),
+                )
+            })?;
+            if !loser_trait.methods.iter().any(|method| {
+                method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&winner_method.function.name)
+            }) {
+                return Err(runtime_error(
+                    precedence.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait precedence {}::{} excludes missing loser method {}::{}",
+                        winner_trait.name,
+                        precedence.method_name,
+                        loser_trait.name,
+                        winner_method.function.name
+                    )),
+                ));
+            }
+            exclusions.insert((loser_key, winner_method.function.name.to_ascii_lowercase()));
+        }
+    }
+    Ok(exclusions)
 }
 
 fn validate_interface_method_implementation(
@@ -20902,6 +21123,7 @@ fn is_builtin(name: &str) -> bool {
             | "restore_error_handler"
             | "header"
             | "header_remove"
+            | "headers_list"
             | "headers_sent"
             | "assert"
             | "get_class"
@@ -24089,63 +24311,6 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::String(parts.join(separator)))
-}
-
-fn call_header(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=3).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "header()",
-                ArityExpectation::Between { min: 1, max: 3 },
-                args.len(),
-            ),
-        ));
-    }
-
-    match &args[0] {
-        Value::String(_) => {}
-        other => {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "header()",
-                    format!(
-                        "header argument must be string in the current subset, got {}",
-                        other.type_name()
-                    ),
-                ),
-            ));
-        }
-    }
-
-    if let Some(other) = args.get(1).filter(|value| !matches!(value, Value::Bool(_))) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "header()",
-                format!(
-                    "replace argument must be bool in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        ));
-    }
-
-    if let Some(other) = args.get(2).filter(|value| !matches!(value, Value::Int(_))) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "header()",
-                format!(
-                    "response_code argument must be int in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        ));
-    }
-
-    Ok(Value::Null)
 }
 
 fn call_header_remove(args: &[Value], span: Span) -> CompileResult<Value> {

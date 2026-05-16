@@ -4,8 +4,8 @@ use crate::ast::{
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
-    UseImport,
+    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitUseDecl, TypeDecl,
+    UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -525,6 +525,7 @@ impl Parser {
             trait_uses.push(TraitUseDecl {
                 name,
                 aliases: Vec::new(),
+                precedences: Vec::new(),
                 span,
             });
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
@@ -568,7 +569,52 @@ impl Parser {
 
             if matches!(&self.peek().kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("insteadof"))
             {
-                return Err(self.error_at(self.peek().span, unsupported_trait_adaptation_message()));
+                self.consume_trait_adaptation_insteadof()?;
+                let Some(winner_trait_name) = trait_name.clone() else {
+                    return Err(self.error_at(
+                        span,
+                        "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
+                    ));
+                };
+                let loser_trait_name =
+                    self.consume_class_like_name("expected trait name after 'insteadof'")?;
+                if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "unsupported trait use adaptation: multiple insteadof loser traits are not implemented",
+                    ));
+                }
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after trait method insteadof adaptation",
+                )?;
+                let target_index = trait_uses
+                    .iter()
+                    .position(|trait_use| trait_use.name.eq_ignore_ascii_case(&winner_trait_name))
+                    .ok_or_else(|| {
+                        self.error_at(
+                            span,
+                            "unsupported trait use adaptation: trait-qualified insteadof adaptations must target a trait in the same use declaration",
+                        )
+                    })?;
+                if !trait_uses
+                    .iter()
+                    .any(|trait_use| trait_use.name.eq_ignore_ascii_case(&loser_trait_name))
+                {
+                    return Err(self.error_at(
+                        span,
+                        "unsupported trait use adaptation: insteadof loser traits must be in the same use declaration",
+                    ));
+                }
+                trait_uses[target_index]
+                    .precedences
+                    .push(TraitMethodPrecedenceDecl {
+                        trait_name: winner_trait_name,
+                        method_name,
+                        loser_trait_name,
+                        span,
+                    });
+                continue;
             }
             self.consume_trait_adaptation_as()?;
             if self.match_trait_public_visibility_adaptation() {
@@ -5587,6 +5633,17 @@ impl Parser {
         }
     }
 
+    fn consume_trait_adaptation_insteadof(&mut self) -> CompileResult<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("insteadof") => Ok(()),
+            _ => Err(self.error_at(
+                token.span,
+                "expected 'insteadof' in trait method precedence adaptation",
+            )),
+        }
+    }
+
     fn consume_while_keyword(&mut self, message: &str) -> CompileResult<()> {
         let token = self.advance().clone();
         match token.kind {
@@ -6439,10 +6496,6 @@ fn unsupported_asymmetric_property_visibility_message() -> &'static str {
 
 fn unsupported_trait_use_message() -> &'static str {
     "unsupported trait use: class-body trait use is implemented only for already-declared traits with public instance methods and simple method aliases"
-}
-
-fn unsupported_trait_adaptation_message() -> &'static str {
-    "unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented"
 }
 
 fn unsupported_trait_visibility_adaptation_message() -> &'static str {

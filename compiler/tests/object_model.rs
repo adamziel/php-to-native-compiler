@@ -2614,6 +2614,59 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_insteadof_selects_public_instance_method_conflict_winner() {
+    let source = r#"<?php
+interface NamedPlugin {
+    public function label();
+}
+
+trait PrimaryLabel {
+    public function label() {
+        return "primary:" . get_class($this);
+    }
+}
+
+trait FallbackLabel {
+    public function label() {
+        return "fallback:" . get_class($this);
+    }
+}
+
+trait HasHooks {
+    public function hooks() {
+        return "hooks:" . get_class($this);
+    }
+}
+
+class Plugin implements NamedPlugin {
+    use PrimaryLabel, FallbackLabel, HasHooks {
+        PrimaryLabel::label insteadof FallbackLabel;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->label(), "\n";
+echo $plugin->hooks(), "\n";
+echo method_exists($plugin, "label") ? "label-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "primary:Plugin\nhooks:Plugin\nlabel-method\nArray\n(\n    [0] => label\n    [1] => hooks\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("label").is_some());
+    assert!(class.method("hooks").is_some());
+}
+
+#[test]
 fn class_trait_use_alias_requires_existing_trait_method() {
     let error = runtime_error(
         r#"<?php
@@ -7246,14 +7299,14 @@ class Box {
         (
             r#"<?php
 class Box {
-    use Labels {
-        Labels::label insteadof OtherLabels;
+    use Labels, OtherLabels, ThirdLabels {
+        Labels::label insteadof OtherLabels, ThirdLabels;
     }
 }
 "#,
             4,
-            23,
-            "unsupported trait use adaptation: trait conflict resolution and insteadof adaptation are not implemented",
+            44,
+            "unsupported trait use adaptation: multiple insteadof loser traits are not implemented",
         ),
         (
             r#"<?php

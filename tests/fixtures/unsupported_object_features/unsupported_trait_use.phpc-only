@@ -1,1 +1,1 @@
-phpc intentionally rejects adapted trait use before conflict-resolution and adaptation semantics exist.
+phpc intentionally rejects multi-loser trait insteadof adaptation before broad trait conflict-resolution semantics exist.

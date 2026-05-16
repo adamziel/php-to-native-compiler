@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T23:57:45Z
+
+- Checkpoint before this task:
+  `73029cc9 runtime: add WordPress callback and upload slices`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1241-1245, four WordPress-focused implementation
+  lanes plus queue refresh.
+- Files changed: parser/AST/interpreter support for bounded single-loser
+  public trait `insteadof` conflict resolution, runtime
+  `call_user_func_array()` reference binding for public object-method array
+  callbacks with literal direct-variable reference arguments, deterministic
+  CLI header-state logging through `header()`/`headers_list()` with explicit
+  native header-state rejection, synthetic WordPress `delete_option()`
+  option-cache bootstrap evidence, focused tests and fixtures, updated
+  unsupported trait-use snapshots, plus `README.md`, `docs/NEXT_TASKS.md`,
+  `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and this memory file.
+- Tests run and result: focused lane checks passed for trait/object-model,
+  object-method callback reference arguments, header-state request/SAPI
+  behavior, WordPress inventory, milestone fixtures/PHP comparisons,
+  unsupported object-feature snapshots, formatting, and diff hygiene.
+  `tools/checkpoint.sh "runtime: add WordPress trait header and cache slices"`
+  passed with `1375` fixture tests, `786` system PHP comparisons, and `589`
+  skipped `phpc-only` fixtures before the scoped checkpoint commit
+  `a3d36701 runtime: add WordPress trait header and cache slices`.
+- Remaining semantic gaps: unqualified or multi-loser `insteadof`, trait
+  precedence plus broader alias/visibility combinations, protected/private
+  trait visibility changes, visibility-only adaptations, trait
+  properties/constants, static/abstract/final or non-public trait methods,
+  full reference/COW containers, stored reference arrays, keyed/non-literal
+  callback reference arrays, static/closure by-reference callback dispatch,
+  recursive `$GLOBALS`, included-file scope fidelity, real request imports,
+  query/body parsing, header replacement/removal/status/cookie/output-started
+  fidelity, multipart uploads, include-path/open_basedir/stat-cache/stream
+  fidelity, persistent object cache, real database connections, broad
+  SQL/`wpdb`, plugins/themes, real WordPress request state, and native
+  object/request/filesystem/database lowering remain implementation work.
+- Next concrete task: amend the checkpoint with these queue/memory updates,
+  push `master`, clean dedicated target directories, then start Milestones
+  1246-1249 in separate worktrees focused on the same largest WordPress
+  blockers.
+
 ## Loop Event 2026-05-16T23:44:13Z
 
 - Checkpoint before this task:
@@ -50,7 +93,7 @@ injects this file into every prompt. Each Codex pass should update it with:
   hygiene. `tools/checkpoint.sh "runtime: add WordPress callback and upload
   slices"` passed with `1372` fixture tests, `784` system PHP comparisons, and
   `588` skipped `phpc-only` fixtures before the scoped checkpoint commit
-  `5ac2d209 runtime: add WordPress callback and upload slices`.
+  `73029cc9 runtime: add WordPress callback and upload slices`.
 - Remaining semantic gaps: protected/private trait visibility changes,
   visibility-only adaptations, `insteadof`, trait conflict resolution, trait
   properties/constants, static/abstract/final or non-public trait methods,
