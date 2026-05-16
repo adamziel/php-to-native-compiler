@@ -1,0 +1,2 @@
+runtime error at 12:16: unsupported call mysqli_stmt_fetch_fields(): mysqli statement objects, result metadata objects, field metadata arrays, and statement field cursor state are not implemented in the current subset
+

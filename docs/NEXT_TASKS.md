@@ -9039,18 +9039,29 @@ handled.
   This is not statement object allocation, result metadata objects, field
   metadata arrays/objects, statement field cursor state, host database
   execution, warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement field
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement field
   metadata fetch smokes that reach the explicit
   `mysqli_stmt_fetch_fields()` or `mysqli_stmt_fetch_field()` boundary through
   WordPress-shaped methods without claiming statement objects, result metadata
   objects, field metadata arrays/objects, statement field cursor state, host
   database state, warning/error fidelity, or native lowering.
+  Milestone 964 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()`
+  unsupported diagnostics through WordPress-shaped methods. These are not
+  statement object allocation, result metadata objects, field metadata
+  arrays/objects, statement field cursor state, host database state,
+  warning/error fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+  lifecycle/diagnostic metadata boundary, such as `mysqli_stmt_prepare()`,
+  `mysqli_stmt_param_count()`, `mysqli_stmt_get_warnings()`, or
+  `mysqli_stmt_error_list()` callable metadata and explicit unsupported
+  diagnostics, before claiming broader prepared statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `ade7e0b2 tests: add wordpress wpdb stmt diagnostic metadata smokes`,
-  covering Milestone 962 before the current Milestone 963 candidate.
+  `c3a8fb51 runtime: add mysqli stmt field metadata boundaries`, covering
+  Milestone 963 before the current Milestone 964 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

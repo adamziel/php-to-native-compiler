@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 964, synthetic WordPress-shaped `wpdb`
+  prepared-statement field metadata fetch smokes that reach the explicit
+  `mysqli_stmt_fetch_fields()` and `mysqli_stmt_fetch_field()` boundaries
+  through `wpdb`-style methods. These are harness smokes only; they do not add
+  statement object allocation, result metadata objects, field metadata
+  arrays/objects, statement field cursor state, host database execution, PHP
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone964`.
+
 - Added Milestone 963, explicit MySQLi statement result field-fetch
   boundaries for `mysqli_stmt_fetch_fields()` and
   `mysqli_stmt_fetch_field()`. The runtime exposes the names through
