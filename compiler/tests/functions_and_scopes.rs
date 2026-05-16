@@ -1382,6 +1382,32 @@ echo $alias;
 }
 
 #[test]
+fn reference_assignment_undefined_and_null_array_offset_sources_materialize_array_roots() {
+    let execution = run_source(
+        r#"<?php
+$undefined_alias =& $undefined["slot"];
+$undefined_alias = "created";
+echo $undefined["slot"];
+echo "|";
+$undefined["slot"] = "updated";
+echo $undefined_alias;
+echo "|";
+$nullable = null;
+$null_alias =& $nullable["slot"];
+$null_alias = "from-null";
+echo $nullable["slot"];
+echo "|";
+$nullable["slot"] = "changed";
+echo $null_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "created|updated|from-null|changed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_non_array_offset_source_remains_boundary() {
     let error = runtime_error(
         r#"<?php

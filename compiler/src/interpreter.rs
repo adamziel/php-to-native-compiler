@@ -495,16 +495,18 @@ impl SymbolTable {
                 }
                 Ok(())
             }
+            Some(Value::Null) | None => {
+                let mut array = PhpArray::new();
+                array.insert(alias.key.clone(), Value::Null);
+                self.write_storage_named(&alias.array_name, Value::Array(array));
+                Ok(())
+            }
             Some(other) => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
                     "cannot read offset on {}",
                     other.type_name()
                 )),
-            )),
-            None => Err(runtime_error(
-                span,
-                RuntimeError::undefined_variable(&alias.array_name),
             )),
         }
     }
