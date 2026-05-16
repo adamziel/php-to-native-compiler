@@ -45,7 +45,10 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1032`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1031`,
   `cargo run -p phpc -- test tests/fixtures/milestone873`, and
-  `cargo run -p phpc -- test tests/fixtures/milestone874` passed.
+  `cargo run -p phpc -- test tests/fixtures/milestone874` passed. The full
+  checkpoint gate passed with 1248 fixture tests, 701 system PHP comparisons,
+  and 547 skipped comparisons, then committed
+  `7d7ef644 runtime: add wp options prepared replace state`.
 - Current WordPress frontier: exact prepared option replaces can replace
   existing recorded options with affected rows `2`, insert missing options
   with affected rows `1`, advance deterministic insert IDs, and expose later
