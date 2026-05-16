@@ -33,20 +33,25 @@ injects this file into every prompt. Each Codex pass should update it with:
   `origin/master`.
 - Task attempted: Milestone 1048, bounded direct-variable reference-return
   assignment cells for direct object method calls.
-- Files changed so far: `compiler/src/interpreter.rs`,
+- Files changed: `compiler/src/interpreter.rs`,
   `compiler/tests/functions_and_scopes.rs`,
   `tests/fixtures/milestone752/reference_assignment_method_call_reached.*`,
   `tests/fixtures/milestone1048/*`, `docs/PROGRESS.md`,
   `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/NEXT_TASKS.md`,
   `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
-- Tests run so far:
+- Tests run:
   `cargo fmt --check` passed.
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`
   passed.
   `cargo test -p phpc --test functions_and_scopes reference_assignment_method_call_source_executes_as_stable_runtime_boundary -- --test-threads=1`
   passed.
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`
+  passed after updating the Milestone 752 boundary fixture.
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1048`
-  passed with 1 fixture and 1 system PHP comparison.
+  passed with 1 fixture and 1 system PHP comparison. `git diff --check`
+  passed. The serialized checkpoint gate passed with 1262 fixture tests, 708
+  system PHP comparisons, and 554 skipped comparisons, then committed
+  `0c1b8131 runtime: add method reference return cells`.
 - Current WordPress frontier: direct object method reference-return sources now
   have one executable alias-cell path when the visible non-static method
   returns a direct variable.
@@ -55,10 +60,11 @@ injects this file into every prompt. Each Codex pass should update it with:
   expressions, nested-control-flow returns, array/object offset references,
   by-reference `foreach`, full PHP reference containers, copy-on-write, and
   native lowering remain missing.
-- Next concrete task: run `git diff --check` and the serialized checkpoint
-  gate, then checkpoint with
-  `tools/checkpoint.sh "runtime: add method reference return cells"` if the
-  full gate passes.
+- Next concrete task: push the checkpoint, then continue with the next
+  reference/COW lane candidate such as array-offset reference cells,
+  magic/static/parent/self reference-return method sources, by-reference
+  `foreach`, object-property references, source/target rebinding, or array
+  copy-on-write.
 
 ## Loop Event 2026-05-16T00:00:00Z
 

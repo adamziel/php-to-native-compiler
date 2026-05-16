@@ -22,6 +22,9 @@ Implemented:
   `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`,
   `cargo test -p phpc --test functions_and_scopes reference_assignment_method_call_source_executes_as_stable_runtime_boundary -- --test-threads=1`,
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1048`.
+  The serialized checkpoint gate passed with 1262 fixture tests, 708 system
+  PHP comparisons, and 554 skipped comparisons, then committed
+  `0c1b8131 runtime: add method reference return cells`.
 
 - Added Milestone 1047, bounded direct-variable reference-return cells for
   statement-form reference assignment from direct free-function calls. In the
