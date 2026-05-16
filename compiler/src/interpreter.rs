@@ -269,7 +269,15 @@ struct SymbolTable {
 type SymbolStorage = Rc<RefCell<HashMap<String, VariableCell>>>;
 type VariableCell = Rc<RefCell<Value>>;
 
-const CORE_INTERFACE_NAMES: &[&str] = &["Stringable"];
+const CORE_INTERFACE_NAMES: &[&str] = &[
+    "Traversable",
+    "IteratorAggregate",
+    "Iterator",
+    "Serializable",
+    "ArrayAccess",
+    "Countable",
+    "Stringable",
+];
 
 fn is_core_interface_name(name: &str) -> bool {
     CORE_INTERFACE_NAMES

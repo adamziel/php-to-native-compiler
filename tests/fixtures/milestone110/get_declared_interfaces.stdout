@@ -1,6 +1,12 @@
 Array
 (
-    [0] => Stringable
+    [0] => Traversable
+    [1] => IteratorAggregate
+    [2] => Iterator
+    [3] => Serializable
+    [4] => ArrayAccess
+    [5] => Countable
+    [6] => Stringable
 )
-1
-1
+7
+7

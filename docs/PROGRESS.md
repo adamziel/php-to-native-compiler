@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 1019, a bounded core interface catalog for the internal
+  interface names already reached by WordPress-shaped object metadata:
+  `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`,
+  `ArrayAccess`, `Countable`, and `Stringable`. `interface_exists()` now
+  reports those names as present, `get_declared_interfaces()` lists them before
+  user-declared interfaces, and duplicate user class-like declarations cannot
+  reuse those names. Relationship checks still rely on explicit `implements`
+  metadata, except for the existing bounded `Stringable` `__toString()` rule.
+  This is not interface method enforcement, iterator execution,
+  array-access/countable protocol validation, broad internal interface
+  coverage, reflection metadata, exact diagnostics, references/copy-on-write,
+  or native lowering. Verification so far:
+  `cargo test -p phpc --test object_model core_interface -- --test-threads=1`,
+  `cargo test -p phpc --test object_model classes_record_interface_implementation_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_interfaces_reports_declared_interface_table -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1019`,
+  `cargo run -p phpc -- test tests/fixtures/milestone110`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone706`.
+
 - Added Milestone 1018, bounded `Stringable` core-interface metadata. The
   interpreter now reports `interface_exists("Stringable")`, includes
   `Stringable` in `get_declared_interfaces()`, permits explicit

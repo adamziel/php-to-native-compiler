@@ -1400,7 +1400,7 @@
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `interface_exists`
-  accepts string names and checks the bounded `Stringable` core interface plus
+  accepts string names and checks the bounded core interface catalog plus
   current declared interface metadata without autoloading, `trait_exists`
   accepts string names and checks current declared
   trait metadata without autoloading,
@@ -1846,13 +1846,14 @@
   Class `implements` clauses accept comma-separated class-like names and record
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes, without enforcing interface methods,
-  requiring the interface to be declared, or seeding built-in/internal
-  interfaces such as `Iterator` for `interface_exists()`. `Stringable` is a
-  bounded core-interface exception: `interface_exists("Stringable")` is true,
-  `get_declared_interfaces()` includes it, explicit `implements Stringable`
-  metadata is accepted, and classes with a resolved public non-static
+  requiring the interface to be declared. The bounded core interface catalog
+  currently includes `Traversable`, `IteratorAggregate`, `Iterator`,
+  `Serializable`, `ArrayAccess`, `Countable`, and `Stringable` for
+  `interface_exists()` and `get_declared_interfaces()`. `Stringable` has one
+  extra bounded relationship rule: classes with a resolved public non-static
   `__toString()` are treated as `Stringable` for `instanceof`, `is_a()`, and
-  `is_subclass_of()` relationship checks.
+  `is_subclass_of()` checks. Other core interface names still require explicit
+  `implements` metadata and do not enforce methods or protocol behavior.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity, a single-parent ancestor relationship, or a
   recorded `implements` relationship against the current declared class
@@ -3741,9 +3742,9 @@
   unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names and perform case-insensitive lookup against the
-  bounded `Stringable` core interface plus interfaces declared in the current
-  parsed program; the autoload flag accepts current bool-like scalar values and
-  does not trigger autoloading.
+  bounded core interface catalog plus interfaces declared in the current parsed
+  program; the autoload flag accepts current bool-like scalar values and does
+  not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against empty top-level
   traits declared in the current parsed program; the autoload flag accepts
@@ -3783,7 +3784,7 @@
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
   `get_declared_interfaces()` returns a zero-indexed array containing the
-  bounded `Stringable` core interface followed by the current parsed program's
+  bounded core interface catalog followed by the current parsed program's
   declared interface names in declaration order. Other built-in/internal
   interface entries are not represented.
   `get_declared_traits()` returns a zero-indexed array containing only the

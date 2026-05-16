@@ -1,0 +1,8 @@
+Traversable:yes
+IteratorAggregate:yes
+Iterator:yes
+Serializable:yes
+ArrayAccess:yes
+Countable:yes
+Stringable:yes
+missing:no

@@ -2,9 +2,15 @@ exit: 0
 stdout:
 Array
 (
-    [0] => Stringable
+    [0] => Traversable
+    [1] => IteratorAggregate
+    [2] => Iterator
+    [3] => Serializable
+    [4] => ArrayAccess
+    [5] => Countable
+    [6] => Stringable
 )
-1
-1--- stdout end ---
+7
+7--- stdout end ---
 stderr:
 --- stderr end ---

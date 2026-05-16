@@ -1236,8 +1236,14 @@ Milestone 1018 adds bounded `Stringable` core-interface metadata:
 public non-static `__toString()` now follow the current metadata slice while
 broader built-in interface catalogs, interface method enforcement, exact
 `Stringable` fatal/type diagnostics, reflection metadata, references/
-copy-on-write, and native lowering remain explicit gaps. Milestone 1014 adds
-bounded direct object-offset `ArrayAccess` dispatch
+copy-on-write, and native lowering remain explicit gaps. Milestone 1019 widens
+that to a bounded core interface catalog for `Traversable`,
+`IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`, `Countable`,
+and `Stringable` in `interface_exists()` and `get_declared_interfaces()`,
+while leaving method enforcement, iterator execution, protocol validation,
+broader internal catalogs, exact diagnostics, references/copy-on-write, and
+native lowering explicit gaps. Milestone 1014 adds bounded direct
+object-offset `ArrayAccess` dispatch
 for classes that declare `implements ArrayAccess`, covering direct
 read/write/append, `isset`, `empty`, `??`, and `unset` offset contexts while
 leaving nested/mixed object-property/ArrayAccess paths, compound assignment,

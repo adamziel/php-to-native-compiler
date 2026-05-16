@@ -1671,8 +1671,8 @@ $hook = new WP_Hook();
 if (is_a($hook, "Iterator")) {
     echo "unresolved-builtin:iterator\n";
 }
-if (!interface_exists("Iterator")) {
-    echo "unresolved-builtin:not-declared\n";
+if (interface_exists("Iterator")) {
+    echo "core-builtin:declared\n";
 }
 "#,
     )
@@ -1680,7 +1680,27 @@ if (!interface_exists("Iterator")) {
 
     assert_eq!(
         execution.stdout,
-        "service:logger\nservice:hookable\nchild:inherits-interface\nstring:inherits-interface\nunresolved-builtin:iterator\nunresolved-builtin:not-declared\n"
+        "service:logger\nservice:hookable\nchild:inherits-interface\nstring:inherits-interface\nunresolved-builtin:iterator\ncore-builtin:declared\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn core_interface_catalog_reports_bounded_internal_interfaces() {
+    let execution = run_source(
+        r#"<?php
+foreach (array("Traversable", "IteratorAggregate", "Iterator", "Serializable", "ArrayAccess", "Countable", "Stringable") as $name) {
+    echo interface_exists($name) ? $name . ":yes\n" : $name . ":no\n";
+}
+
+echo interface_exists("DefinitelyMissingInterface") ? "missing:yes" : "missing:no";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Traversable:yes\nIteratorAggregate:yes\nIterator:yes\nSerializable:yes\nArrayAccess:yes\nCountable:yes\nStringable:yes\nmissing:no"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -2454,7 +2474,7 @@ echo count($dynamic);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Stringable\n    [1] => App\\Logger\n    [2] => App\\Hookable\n)\n3\n3"
+        "Array\n(\n    [0] => Traversable\n    [1] => IteratorAggregate\n    [2] => Iterator\n    [3] => Serializable\n    [4] => ArrayAccess\n    [5] => Countable\n    [6] => Stringable\n    [7] => App\\Logger\n    [8] => App\\Hookable\n)\n9\n9"
     );
     assert_eq!(execution.exit_code, 0);
 }

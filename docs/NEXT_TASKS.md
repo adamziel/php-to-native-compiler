@@ -9761,9 +9761,19 @@ handled.
   validation for invalid `__toString()` declarations, exact `Stringable` type
   diagnostics, reflection metadata, references/copy-on-write, or native
   lowering.
+- [x] Object semantics lane: add a bounded core interface catalog for internal
+  interface names already reached by WordPress-shaped object metadata.
+  Milestone 1019 covers `Traversable`, `IteratorAggregate`, `Iterator`,
+  `Serializable`, `ArrayAccess`, `Countable`, and `Stringable` in
+  `interface_exists()` and `get_declared_interfaces()`, while relationship
+  checks still use explicit `implements` metadata except for the existing
+  bounded `Stringable` `__toString()` rule. This is not interface method
+  enforcement, iterator execution, array-access/countable protocol validation,
+  broad internal interface coverage, reflection metadata, exact diagnostics,
+  references/copy-on-write, or native lowering.
 - [ ] Object semantics lane: inspect the next object protocol gap from the
   audited PHP/WordPress surface, such as nested ArrayAccess paths,
-  ArrayAccess iteration, broader built-in interface catalogs, `__clone`
+  ArrayAccess iteration, method enforcement for internal interfaces, `__clone`
   dispatch, destructors, or inaccessible-member magic fidelity, and add the
   next bounded behavior or explicit runtime boundary with tests, CLI fixtures,
   docs, and native rejection coverage where lowering remains unsupported.
@@ -9778,8 +9788,8 @@ handled.
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d019067e runtime: add magic string interpolation`, covering Milestone 1017
-  before the current Milestone 1018 candidate.
+  `226001af runtime: add stringable metadata`, covering Milestone 1018 before
+  the current Milestone 1019 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

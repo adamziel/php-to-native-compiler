@@ -1037,7 +1037,12 @@ gaps. Milestone 1018 adds bounded `Stringable` core-interface metadata for
 public non-static `__toString()`, while leaving broader built-in interface
 catalogs, interface method enforcement, exact `Stringable` fatal/type
 diagnostics, reflection metadata, references/copy-on-write, and native
-lowering explicit gaps. Milestone 833
+lowering explicit gaps. Milestone 1019 widens that to a bounded core interface
+catalog for `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`,
+`ArrayAccess`, `Countable`, and `Stringable` in `interface_exists()` and
+`get_declared_interfaces()`, while leaving method enforcement, iterator
+execution, protocol validation, broader internal catalogs, exact diagnostics,
+references/copy-on-write, and native lowering explicit gaps. Milestone 833
 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
@@ -1632,13 +1637,13 @@ unchecked work. Current state:
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
-- Milestone 1018 is the active checkpoint candidate: bounded `Stringable`
-  core-interface metadata now covers `interface_exists("Stringable")`,
-  `get_declared_interfaces()`, explicit `implements Stringable`, and
-  relationship checks for classes with a resolved public non-static
-  `__toString()`, while broader built-in interface catalogs, interface method
-  enforcement, exact `Stringable` fatal/type diagnostics, reflection metadata,
-  references/copy-on-write, and native lowering remain open.
+- Milestone 1019 is the active checkpoint candidate: a bounded core interface
+  catalog now covers `Traversable`, `IteratorAggregate`, `Iterator`,
+  `Serializable`, `ArrayAccess`, `Countable`, and `Stringable` for
+  `interface_exists()` and `get_declared_interfaces()`, while method
+  enforcement, iterator execution, protocol validation, broader internal
+  catalogs, exact diagnostics, references/copy-on-write, and native lowering
+  remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

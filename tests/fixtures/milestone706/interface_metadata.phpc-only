@@ -1,1 +1,1 @@
-phpc reports only the bounded Stringable core interface plus user-declared interfaces in get_declared_interfaces(); system PHP includes many built-in/internal interfaces.
+phpc reports only a bounded core interface catalog plus user-declared interfaces in get_declared_interfaces(); system PHP includes many built-in/internal interfaces.

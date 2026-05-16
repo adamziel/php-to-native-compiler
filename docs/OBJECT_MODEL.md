@@ -179,11 +179,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   `(string) $object`, binary concatenation, `.=` over the current supported
   compound-assignment targets, and the current double-quoted string/heredoc
   interpolation evaluator. The method must return a string in the current
-  subset. Bounded `Stringable` core-interface metadata is also available for
-  `interface_exists("Stringable")`, `get_declared_interfaces()`, explicit
-  `implements Stringable`, and relationship checks for classes with a resolved
-  public non-static `__toString()`; non-string returns, broader built-in
-  interface catalogs and enforcement, `${...}`/dynamic/static
+  subset. A bounded core interface catalog is also available for current
+  internal interface names, and `Stringable` relationship checks additionally
+  recognize classes with a resolved public non-static `__toString()`;
+  non-string returns, broader built-in interface catalogs and enforcement,
+  `${...}`/dynamic/static
   property/arbitrary expression interpolation, exact PHP `TypeError` objects,
   and native lowering remain unsupported;
 - explicit `parent::method(...)` and `parent::__construct(...)` calls require

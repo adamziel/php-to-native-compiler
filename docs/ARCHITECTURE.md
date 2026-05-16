@@ -200,7 +200,7 @@ copy-on-write.
   semantics, magic methods beyond the current direct missing-property
   `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
   direct object-to-string `__toString` including current interpolation,
-  bounded `Stringable` metadata, and direct `ArrayAccess` offset and
+  bounded core interface metadata, and direct `ArrayAccess` offset and
   compound-assignment/increment-decrement slices,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
@@ -1335,9 +1335,11 @@ exact-class and missing-class cases false.
 single-parent chain, and recorded `implements` metadata for object values.
 Non-object values return false. `implements` names are recorded as metadata
 without enforcing interface methods or requiring the interface to be declared,
-so internal names such as `Iterator` can participate in relationships while
-`interface_exists("Iterator")` remains false until a built-in interface catalog
-exists.
+so internal names can participate in relationships. A bounded core interface
+catalog seeds `interface_exists()` and `get_declared_interfaces()` for
+`Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`, `ArrayAccess`,
+`Countable`, and `Stringable`, while method enforcement and protocol execution
+remain separate runtime work.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.

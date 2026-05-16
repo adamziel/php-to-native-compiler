@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+Traversable:yes
+IteratorAggregate:yes
+Iterator:yes
+Serializable:yes
+ArrayAccess:yes
+Countable:yes
+Stringable:yes
+missing:no
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `226001af runtime: add stringable metadata`, pushed to `origin/master`.
+- Task attempted: Milestone 1019, bounded core interface catalog for internal
+  interface names already reached by WordPress-shaped object metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone1019/*`,
+  `tests/fixtures/milestone110/get_declared_interfaces.*`,
+  `tests/fixtures/milestone706/interface_metadata.*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`,
+  `docs/ARCHITECTURE.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test object_model core_interface -- --test-threads=1`,
+  `cargo test -p phpc --test object_model classes_record_interface_implementation_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_interfaces_reports_declared_interface_table -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone1019`,
+  `cargo run -p phpc -- test tests/fixtures/milestone110`, and
+  `cargo run -p phpc -- test tests/fixtures/milestone706` passed.
+- Current WordPress frontier: `interface_exists()` and
+  `get_declared_interfaces()` can now see the bounded internal interface names
+  `Traversable`, `IteratorAggregate`, `Iterator`, `Serializable`,
+  `ArrayAccess`, `Countable`, and `Stringable`.
+- Remaining semantic gaps: interface method enforcement, iterator execution,
+  array-access/countable protocol validation, broad internal interface
+  coverage, reflection metadata, exact diagnostics, references/copy-on-write,
+  and native lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d019067e runtime: add magic string interpolation`, pushed to
   `origin/master`.
 - Task attempted: Milestone 1018, bounded `Stringable` core-interface metadata
