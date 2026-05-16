@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 958, synthetic WordPress-shaped `wpdb`
+  prepared-statement positioning/attribute smokes that reach the explicit
+  `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and
+  `mysqli_stmt_attr_set()` boundaries through `wpdb`-style methods. These are
+  harness smokes only; they do not add statement object allocation, buffered
+  result cursor state, offset seeking, statement attribute catalogs, option
+  registry state, option mutation, host database execution, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone958`.
+
 - Added Milestone 957, explicit MySQLi statement positioning/attribute
   boundaries for `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and
   `mysqli_stmt_attr_set()`. The runtime exposes the names through

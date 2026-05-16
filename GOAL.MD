@@ -353,7 +353,11 @@ plus explicit `mysqli_stmt_data_seek()`/`mysqli_stmt_attr_get()`/
 callable metadata and stable unsupported diagnostics without statement object
 allocation, buffered result cursor state, offset seeking, statement attribute
 catalogs, option registry state, option mutation, host database execution,
-warning/error fidelity, or native lowering,
+warning/error fidelity, or native lowering, now wired through synthetic
+WordPress-shaped `wpdb` statement positioning/attribute smokes without claiming
+statement objects, buffered result cursor state, offset seeking, statement
+attribute catalogs, option registry state, option mutation, host database
+state, warning/error fidelity, or native lowering,
 plus
 deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired

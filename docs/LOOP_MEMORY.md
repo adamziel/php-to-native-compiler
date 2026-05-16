@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `2ef10fab runtime: add mysqli stmt positioning attr boundaries`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 958, synthetic WordPress-shaped `wpdb`
+  prepared-statement positioning/attribute smokes that reach the explicit
+  `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and
+  `mysqli_stmt_attr_set()` boundaries.
+- Files changed so far: `tests/fixtures/milestone958/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone958`.
+  Passed; the fixtures are `phpc-only` and skipped for system PHP
+  comparison.
+- Current WordPress frontier: WordPress-shaped statement cursor seeking and
+  statement attribute methods now record explicit data-seek, attribute-read,
+  and attribute-write diagnostics.
+- Remaining semantic gaps: statement object allocation, buffered result cursor
+  state, offset seeking, statement attribute catalogs, option registry state,
+  option mutation, host database state, warnings/errors, and native database
+  lowering remain missing.
+- Next concrete task: run formatting and the serialized checkpoint gate under
+  `umask 0022`; after checkpoint, inspect the next prepared-statement
+  parameter streaming/reset/multi-result boundary such as
+  `mysqli_stmt_send_long_data()`, `mysqli_stmt_reset()`,
+  `mysqli_stmt_more_results()`, or `mysqli_stmt_next_result()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `10a0fd3 tests: add wordpress wpdb stmt metadata cleanup smokes`, pushed to
   `origin/master`.
 - Task attempted: Milestone 957, explicit MySQLi statement
@@ -52,8 +81,9 @@ injects this file into every prompt. Each Codex pass should update it with:
   state, offset seeking, statement attribute catalogs, option registry state,
   option mutation, host database state, warnings/errors, and native database
   lowering remain missing.
-- Next concrete task: run formatting and the serialized checkpoint gate under
-  `umask 0022`; after checkpoint, add synthetic WordPress-shaped `wpdb`
+- Checkpoint result: committed and pushed
+  `2ef10fab runtime: add mysqli stmt positioning attr boundaries`.
+- Next concrete task: add synthetic WordPress-shaped `wpdb`
   positioning/attribute smokes.
 
 ## Loop Event 2026-05-16T00:00:00Z

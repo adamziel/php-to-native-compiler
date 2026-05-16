@@ -8955,19 +8955,32 @@ handled.
   buffered result cursor state, offset seeking, statement attribute catalogs,
   option registry state, option mutation, host database execution,
   warning/error fidelity, or native lowering.
-- [ ] WordPress harness lane: add synthetic `wpdb` prepared-statement
+- [x] WordPress harness lane: add synthetic `wpdb` prepared-statement
   positioning/attribute smokes that reach the explicit
   `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, or
   `mysqli_stmt_attr_set()` boundary through WordPress-shaped methods without
   claiming statement objects, buffered result cursor state, offset seeking,
   statement attribute catalogs, option registry state, option mutation, host
   database state, warning/error fidelity, or native lowering.
+  Milestone 958 adds `phpc-only` synthetic `wpdb` fixtures that reach the
+  explicit `mysqli_stmt_data_seek()`, `mysqli_stmt_attr_get()`, and
+  `mysqli_stmt_attr_set()` unsupported diagnostics through WordPress-shaped
+  methods. These are not statement object allocation, buffered result cursor
+  state, offset seeking, statement attribute catalogs, option registry state,
+  option mutation, host database state, warning/error fidelity, or native
+  lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi prepared-statement
+  parameter streaming/reset/multi-result boundary, such as
+  `mysqli_stmt_send_long_data()`/`mysqli_stmt_reset()`/
+  `mysqli_stmt_more_results()`/`mysqli_stmt_next_result()` callable metadata
+  and explicit unsupported diagnostics, before claiming broader prepared
+  statement fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `10a0fd3 tests: add wordpress wpdb stmt metadata cleanup smokes`, covering
-  Milestone 956 before the current Milestone 957 candidate.
+  `2ef10fab runtime: add mysqli stmt positioning attr boundaries`, covering
+  Milestone 957 before the current Milestone 958 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
