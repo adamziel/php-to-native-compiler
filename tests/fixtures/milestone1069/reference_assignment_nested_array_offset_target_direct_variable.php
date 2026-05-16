@@ -1,0 +1,27 @@
+<?php
+$items = [];
+$value = "Grace";
+$items["outer"]["name"] =& $value;
+echo $items["outer"]["name"], "|";
+$value = "Hedy";
+echo $items["outer"]["name"], "|";
+$items["outer"]["name"] = "Katherine";
+echo $value, "|";
+unset($value);
+$value = "detached";
+echo $items["outer"]["name"], "|", $value;
+echo "|";
+$root_value = "root";
+$undefined_root["outer"]["slot"] =& $root_value;
+$root_value = "changed";
+echo $undefined_root["outer"]["slot"], "|";
+$nullable = null;
+$null_value = "from-null";
+$nullable["outer"]["slot"] =& $null_value;
+$nullable["outer"]["slot"] = "from-slot";
+echo $null_value, "|";
+unset($undefined_source);
+$targets = [];
+$targets["outer"]["slot"] =& $undefined_source;
+$undefined_source = "later";
+echo $targets["outer"]["slot"];

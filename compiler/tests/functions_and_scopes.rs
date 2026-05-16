@@ -1417,6 +1417,78 @@ $items[] =& $value;
 }
 
 #[test]
+fn reference_assignment_nested_array_offset_target_aliases_direct_variable_source() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+$value = "Grace";
+$items["outer"]["name"] =& $value;
+echo $items["outer"]["name"];
+echo "|";
+$value = "Hedy";
+echo $items["outer"]["name"];
+echo "|";
+$items["outer"]["name"] = "Katherine";
+echo $value;
+unset($value);
+$value = "detached";
+echo "|";
+echo $items["outer"]["name"], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Grace|Hedy|Katherine|Katherine|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_offset_target_materializes_roots_and_source() {
+    let execution = run_source(
+        r#"<?php
+$root_value = "root";
+$undefined_root["outer"]["slot"] =& $root_value;
+$root_value = "changed";
+echo $undefined_root["outer"]["slot"];
+echo "|";
+$nullable = null;
+$null_value = "from-null";
+$nullable["outer"]["slot"] =& $null_value;
+$nullable["outer"]["slot"] = "from-slot";
+echo $null_value;
+echo "|";
+unset($undefined_source);
+$targets = [];
+$targets["outer"]["slot"] =& $undefined_source;
+$undefined_source = "later";
+echo $targets["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "changed|from-slot|later");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_nested_array_offset_target_aliased_source_remains_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$value = "source";
+$other =& $value;
+$items["outer"]["slot"] =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: array-offset reference targets cannot rebind an existing direct variable alias group"
+    );
+}
+
+#[test]
 fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
     let execution = run_source(
         r#"<?php

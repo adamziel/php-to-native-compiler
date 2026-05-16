@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1069/reference_assignment_nested_array_offset_target_direct_variable.php
+exit: 0
+stdout:
+Grace|Hedy|Katherine|Katherine|detached|changed|from-slot|later
+--- stdout end ---
+stderr:
+--- stderr end ---

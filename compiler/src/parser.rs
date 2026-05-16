@@ -2333,7 +2333,33 @@ impl Parser {
                 self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
                 Some(index)
             };
-            return Ok(AssignTarget::ArrayIndex { name, index, span });
+            let Some(index) = index else {
+                return Ok(AssignTarget::ArrayIndex { name, index, span });
+            };
+            let mut indices = vec![index];
+            while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                    return Ok(AssignTarget::NestedArrayAppend {
+                        name,
+                        indices,
+                        span,
+                    });
+                }
+                indices.push(self.parse_expression()?);
+                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+            }
+            if indices.len() == 1 {
+                return Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: indices.pop(),
+                    span,
+                });
+            }
+            return Ok(AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            });
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {

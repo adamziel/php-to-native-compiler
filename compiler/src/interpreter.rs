@@ -296,7 +296,7 @@ type VariableCell = Rc<RefCell<Value>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
     array_name: String,
-    key: ArrayKey,
+    keys: Vec<ArrayKey>,
 }
 
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -475,7 +475,7 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         let alias = ArrayOffsetAlias {
             array_name: array_name.to_string(),
-            key,
+            keys: vec![key],
         };
         self.materialize_array_offset_alias(&alias, span)?;
         self.bind_static_to_array_offset_alias(target, alias);
@@ -499,7 +499,32 @@ impl SymbolTable {
         let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
         let alias = ArrayOffsetAlias {
             array_name: array_name.to_string(),
-            key,
+            keys: vec![key],
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        if !self.write_array_offset_alias(&alias, source_value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access("cannot bind missing array offset".to_string()),
+            ));
+        }
+        self.bind_static_to_array_offset_alias(source_name, alias);
+        Ok(())
+    }
+
+    fn bind_nested_array_offset_to_static_source(
+        &mut self,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        source_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.ensure_array_offset_reference_target_source(array_name, source_name, span)?;
+
+        let source_value = self.read_storage_named(source_name).unwrap_or(Value::Null);
+        let alias = ArrayOffsetAlias {
+            array_name: array_name.to_string(),
+            keys,
         };
         self.materialize_array_offset_alias(&alias, span)?;
         if !self.write_array_offset_alias(&alias, source_value) {
@@ -542,7 +567,7 @@ impl SymbolTable {
             source_name,
             ArrayOffsetAlias {
                 array_name: array_name.to_string(),
-                key,
+                keys: vec![key],
             },
         );
         Ok(())
@@ -604,15 +629,13 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         match self.read_storage_named(&alias.array_name) {
             Some(Value::Array(mut array)) => {
-                if array.get_slot(alias.key.clone()).is_none() {
-                    array.insert(alias.key.clone(), Value::Null);
-                    self.write_storage_named(&alias.array_name, Value::Array(array));
-                }
+                Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
+                self.write_storage_named(&alias.array_name, Value::Array(array));
                 Ok(())
             }
             Some(Value::Null) | None => {
                 let mut array = PhpArray::new();
-                array.insert(alias.key.clone(), Value::Null);
+                Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
                 self.write_storage_named(&alias.array_name, Value::Array(array));
                 Ok(())
             }
@@ -628,7 +651,7 @@ impl SymbolTable {
 
     fn read_array_offset_alias(&self, alias: &ArrayOffsetAlias) -> Option<Value> {
         match self.read_storage_named(&alias.array_name) {
-            Some(Value::Array(array)) => array.get(alias.key.clone()).cloned(),
+            Some(Value::Array(array)) => Self::read_nested_array_offset_alias(&array, &alias.keys),
             _ => None,
         }
     }
@@ -638,12 +661,91 @@ impl SymbolTable {
             return false;
         };
 
-        if array.get_slot(alias.key.clone()).is_none() {
+        if !Self::write_nested_array_offset_alias(&mut array, &alias.keys, value) {
             return false;
         }
-
-        array.insert(alias.key.clone(), value);
         self.write_storage_named(&alias.array_name, Value::Array(array));
+        true
+    }
+
+    fn materialize_nested_array_offset_alias(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "array-offset reference aliases require at least one key",
+                ),
+            ));
+        };
+
+        if rest.is_empty() {
+            if array.get_slot(key.clone()).is_none() {
+                array.insert(key.clone(), Value::Null);
+            }
+            return Ok(());
+        }
+
+        let mut child = match array.get(key.clone()).cloned() {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot read offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        Self::materialize_nested_array_offset_alias(&mut child, rest, span)?;
+        array.insert(key.clone(), Value::Array(child));
+        Ok(())
+    }
+
+    fn read_nested_array_offset_alias(array: &PhpArray, keys: &[ArrayKey]) -> Option<Value> {
+        let (key, rest) = keys.split_first()?;
+        let value = array.get(key.clone())?.clone();
+        if rest.is_empty() {
+            return Some(value);
+        }
+
+        match value {
+            Value::Array(child) => Self::read_nested_array_offset_alias(&child, rest),
+            _ => None,
+        }
+    }
+
+    fn write_nested_array_offset_alias(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+    ) -> bool {
+        let Some((key, rest)) = keys.split_first() else {
+            return false;
+        };
+
+        if rest.is_empty() {
+            if array.get_slot(key.clone()).is_none() {
+                return false;
+            }
+            array.insert(key.clone(), value);
+            return true;
+        }
+
+        let Some(Value::Array(mut child)) = array.get(key.clone()).cloned() else {
+            return false;
+        };
+        if !Self::write_nested_array_offset_alias(&mut child, rest, value) {
+            return false;
+        }
+        array.insert(key.clone(), Value::Array(child));
         true
     }
 
@@ -3154,6 +3256,35 @@ impl Interpreter {
                         ));
                     }
                     scope.append_array_offset_to_static_source(name, source_name, span)?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::NestedArrayIndex { name, indices, .. } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    if name == "GLOBALS" {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "nested reference binding through $GLOBALS is not implemented",
+                            ),
+                        ));
+                    }
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    scope.bind_nested_array_offset_to_static_source(
+                        name,
+                        keys,
+                        source_name,
+                        span,
+                    )?;
                     return Ok(());
                 }
 
