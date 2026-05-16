@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone996/wpdb_local_infile_option_enabled_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone996/wpdb_local_infile_option_enabled_boundary.php:11:16: unsupported call mysqli_query(): LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts
+--- stderr end ---

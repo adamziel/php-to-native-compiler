@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `32fe0eef runtime: add mysqli sql mode no result queues`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 996, placeholder MySQLi option storage with a
+  bounded `MYSQLI_OPT_LOCAL_INFILE` effect on `LOAD DATA LOCAL INFILE`
+  boundaries, with direct MySQLi and WordPress-shaped `wpdb` smokes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone996/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options_local_infile_state_changes_load_data_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_options_rejects_forms_outside_current_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone996`.
+  The new fixtures are `phpc-only` and skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi options are now recorded per
+  connection, and `MYSQLI_OPT_LOCAL_INFILE` changes the reached local-file SQL
+  boundary from disabled to enabled-but-unimplemented.
+- Remaining semantic gaps: real client option negotiation, local file loading,
+  `LOAD DATA` execution, mutation state, path validation, host database state,
+  PHP warning/error fidelity, mysqlnd behavior, and native database lowering
+  remain missing.
+- Next concrete task: run formatting, diff checks, and the serialized
+  checkpoint gate under `umask 0022`; after checkpoint, inspect init-command
+  option effects, true reference aliasing, named params-array behavior,
+  mutation SQL, or the next real database integration gap.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `41aae8c7 runtime: add mysqli mixed multi query queues`, pushed to
   `origin/master`.
 - Task attempted: Milestone 995, deterministic SQL-mode no-result slots for

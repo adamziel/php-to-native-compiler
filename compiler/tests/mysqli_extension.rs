@@ -1875,6 +1875,76 @@ echo mysqli_options($handle, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, false) ? "ssl-ve
 }
 
 #[test]
+fn mysqli_options_local_infile_state_changes_load_data_boundary() {
+    let disabled = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_query($handle, "LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(disabled.phase, Phase::Runtime);
+    assert_eq!(disabled.line, 3);
+    assert_eq!(disabled.column, 1);
+    assert_eq!(
+        disabled.message,
+        "unsupported call mysqli_query(): LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts"
+    );
+
+    let enabled = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_options($handle, MYSQLI_OPT_LOCAL_INFILE, true);
+mysqli_query($handle, "LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(enabled.phase, Phase::Runtime);
+    assert_eq!(enabled.line, 4);
+    assert_eq!(enabled.column, 1);
+    assert_eq!(
+        enabled.message,
+        "unsupported call mysqli_query(): LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts"
+    );
+
+    let real_query_enabled = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_options($handle, MYSQLI_OPT_LOCAL_INFILE, 1);
+mysqli_real_query($handle, "LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(real_query_enabled.phase, Phase::Runtime);
+    assert_eq!(real_query_enabled.line, 4);
+    assert_eq!(real_query_enabled.column, 1);
+    assert_eq!(
+        real_query_enabled.message,
+        "unsupported call mysqli_real_query(): LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts"
+    );
+
+    let multi_query_disabled = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_set_opt($handle, MYSQLI_OPT_LOCAL_INFILE, 0);
+mysqli_multi_query($handle, "LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(multi_query_disabled.phase, Phase::Runtime);
+    assert_eq!(multi_query_disabled.line, 4);
+    assert_eq!(multi_query_disabled.column, 1);
+    assert_eq!(
+        multi_query_disabled.message,
+        "unsupported call mysqli_multi_query(): LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts"
+    );
+}
+
+#[test]
 fn mysqli_ssl_set_accepts_current_placeholder_shape() {
     let execution = run_source(
         r#"<?php

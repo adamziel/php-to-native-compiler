@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone996/mysqli_local_infile_option_disabled_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone996/mysqli_local_infile_option_disabled_boundary.php:3:1: unsupported call mysqli_query(): LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts
+--- stderr end ---

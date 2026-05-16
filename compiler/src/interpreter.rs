@@ -104,6 +104,7 @@ struct Interpreter {
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
     mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
+    mysqli_options: HashMap<i64, HashMap<i64, Value>>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -543,6 +544,7 @@ impl Interpreter {
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
             mysqli_pending_result_queues: HashMap::new(),
+            mysqli_options: HashMap::new(),
             mysqli_statements: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -4499,11 +4501,11 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
-    fn call_mysqli_options(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_options(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.call_mysqli_option_setter("mysqli_options", args, span)
     }
 
-    fn call_mysqli_set_opt(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_set_opt(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.call_mysqli_option_setter("mysqli_set_opt", args, span)
     }
 
@@ -4529,14 +4531,14 @@ impl Interpreter {
     }
 
     fn call_mysqli_option_setter(
-        &self,
+        &mut self,
         function: &str,
         args: &[Value],
         span: Span,
     ) -> CompileResult<Value> {
         let call_name = callable_name(function);
         expect_arity(function, args, 3, span)?;
-        expect_mysqli_handle(&call_name, &args[0], span)?;
+        let handle_id = expect_mysqli_handle_id(&call_name, &args[0], span)?;
         match &args[1] {
             Value::Int(
                 PHP_MYSQLI_OPT_INT_AND_FLOAT_NATIVE
@@ -4556,6 +4558,7 @@ impl Interpreter {
                         ),
                     ));
                 }
+                self.record_mysqli_option(handle_id, args[1].clone(), args[2].clone());
                 return Ok(Value::Bool(true));
             }
             Value::Int(
@@ -4576,6 +4579,7 @@ impl Interpreter {
                         ),
                     ));
                 }
+                self.record_mysqli_option(handle_id, args[1].clone(), args[2].clone());
                 return Ok(Value::Bool(true));
             }
             Value::Int(PHP_MYSQLI_INIT_COMMAND | PHP_MYSQLI_OPT_LOAD_DATA_LOCAL_DIR) => {
@@ -4591,6 +4595,7 @@ impl Interpreter {
                         ),
                     ));
                 }
+                self.record_mysqli_option(handle_id, args[1].clone(), args[2].clone());
                 return Ok(Value::Bool(true));
             }
             Value::Int(option) => {
@@ -4746,6 +4751,27 @@ impl Interpreter {
                 "mysqli statement objects, by-reference parameter binding, type strings, and prepared statement execution are not implemented in the current subset",
             ),
         ))
+    }
+
+    fn record_mysqli_option(&mut self, handle_id: i64, option: Value, value: Value) {
+        let Value::Int(option_id) = option else {
+            return;
+        };
+        self.mysqli_options
+            .entry(handle_id)
+            .or_default()
+            .insert(option_id, value);
+    }
+
+    fn mysqli_local_infile_enabled(&self, handle_id: i64) -> bool {
+        self.mysqli_options
+            .get(&handle_id)
+            .and_then(|options| options.get(&PHP_MYSQLI_OPT_LOCAL_INFILE))
+            .is_some_and(|value| match value {
+                Value::Bool(enabled) => *enabled,
+                Value::Int(enabled) => *enabled != 0,
+                _ => false,
+            })
     }
 
     fn call_mysqli_stmt_bind_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -5403,30 +5429,7 @@ impl Interpreter {
             ));
         }
 
-        let Value::Object(handle) = &args[0] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_query()",
-                    format!(
-                        "first argument must be mysqli object in the current subset, got {}",
-                        args[0].type_name()
-                    ),
-                ),
-            ));
-        };
-        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_query()",
-                    format!(
-                        "first argument must be mysqli object in the current subset, got {} object",
-                        handle.class_name()
-                    ),
-                ),
-            ));
-        }
+        let handle_id = expect_mysqli_handle_id("mysqli_query()", &args[0], span)?;
 
         let Value::String(query) = &args[1] else {
             return Err(runtime_error(
@@ -5465,6 +5468,30 @@ impl Interpreter {
 
         if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
             return Ok(Value::Bool(false));
+        }
+
+        if is_mysqli_load_data_local_infile_query(query) {
+            if self.mysqli_local_infile_enabled(handle_id) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_query()",
+                        format!(
+                            "LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got {query}"
+                        ),
+                    ),
+                ));
+            }
+
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got {query}"
+                    ),
+                ),
+            ));
         }
 
         if is_mysqli_select_query(query) {
@@ -5555,6 +5582,30 @@ impl Interpreter {
             ));
         }
 
+        if is_mysqli_load_data_local_infile_query(query) {
+            if self.mysqli_local_infile_enabled(handle_id) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_query()",
+                        format!(
+                            "LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got {query}"
+                        ),
+                    ),
+                ));
+            }
+
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_query()",
+                    format!(
+                        "LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got {query}"
+                    ),
+                ),
+            ));
+        }
+
         Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -5631,6 +5682,30 @@ impl Interpreter {
                     "mysqli_multi_query()",
                     format!(
                         "mutation SQL is not implemented in the current subset; affected-row and insert-id state are deterministic clean placeholders only; got {query}"
+                    ),
+                ),
+            ));
+        }
+
+        if is_mysqli_load_data_local_infile_query(query) {
+            if self.mysqli_local_infile_enabled(handle_id) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_multi_query()",
+                        format!(
+                            "LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got {query}"
+                        ),
+                    ),
+                ));
+            }
+
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_multi_query()",
+                    format!(
+                        "LOAD DATA LOCAL INFILE is disabled by MYSQLI_OPT_LOCAL_INFILE in the current placeholder connection; real local infile loading is not implemented; got {query}"
                     ),
                 ),
             ));
@@ -14904,6 +14979,11 @@ fn is_mysqli_mutation_query(query: &str) -> bool {
                 "INSERT" | "UPDATE" | "DELETE" | "REPLACE"
             )
         })
+}
+
+fn is_mysqli_load_data_local_infile_query(query: &str) -> bool {
+    let upper = query.trim_start().to_ascii_uppercase();
+    upper.starts_with("LOAD DATA LOCAL INFILE")
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {

@@ -1826,7 +1826,12 @@ historical blockers and remaining full-support gaps include:
   WordPress-shaped `wpdb` smoke, without claiming arbitrary no-result SQL,
   true SQL execution, broad multi-statement parsing, mutation SQL, host
   database state, PHP warning/error fidelity, mysqlnd behavior, or native
-  database lowering.
+  database lowering. Milestone 996 adds placeholder MySQLi option storage with
+  a bounded `MYSQLI_OPT_LOCAL_INFILE` effect on `LOAD DATA LOCAL INFILE`
+  boundaries, including a WordPress-shaped `wpdb` smoke, without claiming real
+  client option negotiation, local file loading, `LOAD DATA` execution,
+  mutation state, path validation, host database state, PHP warning/error
+  fidelity, mysqlnd behavior, or native database lowering.
   Milestone 965 adds explicit
   `mysqli_stmt_prepare()`/
   `mysqli_stmt_param_count()`/`mysqli_stmt_get_warnings()`/

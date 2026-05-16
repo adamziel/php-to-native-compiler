@@ -1,0 +1,1 @@
+system PHP requires a real MySQL server, local-infile configuration, and host file access for LOAD DATA LOCAL INFILE comparison.

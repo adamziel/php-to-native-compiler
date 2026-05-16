@@ -9446,7 +9446,7 @@ handled.
   smoke. This is not arbitrary no-result SQL, true SQL execution, broad
   multi-statement parsing, mutation SQL, host database state, PHP
   warning/error fidelity, mysqlnd behavior, or native database lowering.
-- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+- [x] Runtime/database lane: inspect the next real MySQLi statement or
   connection/helper gap from the audited PHP surface, such as additional
   exact no-result statements, real reference aliasing around bound
   parameters/results, named params-array behavior, broader escaping charset
@@ -9454,12 +9454,26 @@ handled.
   database integration gap, and add the next bounded behavior or explicit
   runtime boundary with tests, CLI fixtures, docs, and native rejection
   coverage where lowering remains unsupported.
+  Milestone 996 adds placeholder MySQLi option storage with a bounded
+  `MYSQLI_OPT_LOCAL_INFILE` effect on `LOAD DATA LOCAL INFILE` boundaries,
+  including a WordPress-shaped `wpdb` smoke. This is not real client option
+  negotiation, local file loading, `LOAD DATA` execution, mutation state, path
+  validation, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering.
+- [ ] Runtime/database lane: inspect the next real MySQLi statement or
+  connection/helper gap from the audited PHP surface, such as additional exact
+  no-result statements, real reference aliasing around bound
+  parameters/results, named params-array behavior, broader escaping charset
+  fidelity, init-command option effects, mutation SQL, or the next real
+  database integration gap, and add the next bounded behavior or explicit
+  runtime boundary with tests, CLI fixtures, docs, and native rejection
+  coverage where lowering remains unsupported.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `41aae8c7 runtime: add mysqli mixed multi query queues`, covering
-  Milestone 994 before the current Milestone 995 candidate.
+  `32fe0eef runtime: add mysqli sql mode no result queues`, covering
+  Milestone 995 before the current Milestone 996 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

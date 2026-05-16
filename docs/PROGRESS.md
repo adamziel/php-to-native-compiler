@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 996, placeholder MySQLi option storage for accepted
+  `mysqli_options()`/`mysqli_set_opt()` values plus a bounded
+  `MYSQLI_OPT_LOCAL_INFILE` effect on `LOAD DATA LOCAL INFILE` boundaries.
+  The runtime now records accepted options per placeholder connection and uses
+  the current local-infile option value to distinguish the disabled local-file
+  loading boundary from the enabled-but-unimplemented host file loading and
+  mutation-SQL boundary. The new fixtures include direct MySQLi and
+  WordPress-shaped `wpdb` smokes. This is not real client option negotiation,
+  local file loading, `LOAD DATA` SQL execution, mutation state, path
+  validation, host database state, PHP warning/error fidelity, mysqlnd
+  behavior, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_options_local_infile_state_changes_load_data_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_options_rejects_forms_outside_current_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test mysqli_extension mysqli_query_rejects_forms_outside_current_boundary -- --test-threads=1`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone996`.
+
 - Added Milestone 995, deterministic SQL-mode no-result slots for
   `mysqli_real_query()` and `mysqli_multi_query()`. The exact WordPress
   `SELECT @@SESSION.sql_mode` probe can now clear pending state as a no-result

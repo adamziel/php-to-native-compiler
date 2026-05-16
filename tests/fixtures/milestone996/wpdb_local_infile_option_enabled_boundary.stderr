@@ -1,0 +1,2 @@
+runtime error at 11:16: unsupported call mysqli_query(): LOAD DATA LOCAL INFILE execution is not implemented in the current subset; MYSQLI_OPT_LOCAL_INFILE placeholder state is recorded but host file loading and mutation SQL remain unsupported; got LOAD DATA LOCAL INFILE '/tmp/posts.csv' INTO TABLE wp_posts
+

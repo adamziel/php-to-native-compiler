@@ -921,9 +921,14 @@
   with string values; and `MYSQLI_OPT_LOCAL_INFILE`,
   `MYSQLI_OPT_SSL_VERIFY_SERVER_CERT`, and
   `MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS` with bool or int values. These
-  return deterministic `true` without storing options, affecting
-  connect/query/result behavior, validating paths, running init commands,
-  toggling local infile handling, or changing timeout/network behavior.
+  return deterministic `true` and record placeholder option values per
+  connection. `MYSQLI_OPT_LOCAL_INFILE` currently affects only the stable
+  `LOAD DATA LOCAL INFILE` boundary: disabled or unset connections report a
+  disabled local-infile boundary, while enabled connections report that host
+  file loading and mutation SQL are still unimplemented. Other accepted
+  options are recorded without affecting connect/query/result behavior,
+  validating paths, running init commands, changing timeout/network behavior,
+  or negotiating real client-library options.
   `mysqli_ssl_set($handle, $key, $certificate, $ca_certificate, $ca_path,
   $cipher_algos)` accepts the placeholder object and string or null SSL option
   arguments, returning deterministic `true` without validating files,

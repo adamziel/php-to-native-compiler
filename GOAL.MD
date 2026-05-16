@@ -240,7 +240,11 @@ host database state, mysqlnd fidelity, or native lowering, plus deterministic
 SQL-mode no-result slots for `mysqli_real_query()` and
 `mysqli_multi_query()` queues around the exact WordPress
 `SELECT @@SESSION.sql_mode` probe without arbitrary no-result SQL, true SQL
-execution, host database state, mysqlnd fidelity, or native lowering, now
+execution, host database state, mysqlnd fidelity, or native lowering, plus
+placeholder MySQLi option storage with a bounded `MYSQLI_OPT_LOCAL_INFILE`
+effect on `LOAD DATA LOCAL INFILE` boundaries without real client option
+negotiation, local file loading, `LOAD DATA` execution, mutation state, path
+validation, host database state, mysqlnd fidelity, or native lowering, now
 wired through synthetic WordPress-shaped `wpdb` connection query bookkeeping
 smokes without claiming real SQL execution, broad multi-statement behavior,
 mutation state, connection charset mutation, host database state,
