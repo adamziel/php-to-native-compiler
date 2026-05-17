@@ -11,8 +11,9 @@ direct-variable string dynamic class names in `new` expressions invoke the
 current string user-function autoload callbacks before the class table is
 rechecked. Class declarations loaded by executed include/require paths invoke
 the same string user-function callback stack for missing `extends` parent
-classes, direct `implements` interfaces, and parent interfaces reached from
-autoloaded interface declarations before final registration validation.
+classes, direct `implements` interfaces, direct class-body trait `use` names,
+and parent interfaces reached from autoloaded interface declarations before
+final registration validation.
 Successfully allocated
 objects whose class declares or inherits a public non-static no-argument
 `__destruct` method are queued for shutdown destructor execution, including
@@ -86,10 +87,12 @@ metadata and, when their autoload flag is truthy, invoke currently registered
 string user-function autoload callbacks on misses before rechecking metadata.
 Those callbacks can use the current include/require path to load local files
 that declare additional class/interface metadata; missing `new` class lookup
-uses the same bounded string-callback path. `trait_exists()` and
-`enum_exists()` check declared top-level trait and unit-enum metadata without
-triggering autoloading. `class_exists()` reports true for declared enums in
-the current class-like metadata slice.
+uses the same bounded string-callback path. `trait_exists()` checks declared
+top-level trait metadata and, when its autoload flag is truthy, invokes the
+same currently registered string user-function callbacks on misses before
+rechecking metadata. `enum_exists()` checks declared unit-enum metadata without
+triggering autoloading. `class_exists()` reports true for declared enums in the
+current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
 interfaces and top-level traits in declaration order. A declared interface may
 extend one or more user interfaces declared before or after the child
@@ -467,8 +470,8 @@ or multi-declarator class constants, typed static properties, late static
 binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading beyond string user-function callbacks for `class_exists()`,
-`interface_exists()`, missing `new` class instantiation, and included
-class/interface declaration dependencies, anonymous
+`interface_exists()`, `trait_exists()`, missing `new` class instantiation, and
+included class/interface/trait declaration dependencies, anonymous
 classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
 cloning beyond the current shallow clone plus bounded visible non-static

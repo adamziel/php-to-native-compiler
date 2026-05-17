@@ -1,2 +1,2 @@
-runtime error at 5:13: unsupported call mutate(): reference parameter invocation is only implemented for direct variable and direct public object-property array-offset arguments in the current subset
+runtime error at 5:13: unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset arguments in the current subset
 

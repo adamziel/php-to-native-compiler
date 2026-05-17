@@ -64,9 +64,11 @@ unsupported. `fopen()` can create bounded interpreter-owned `php://memory`,
 `php://temp`, and local UTF-8 file stream resources for simple read/write flows
 through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
-`fclose()`; unsupported wrappers, contexts/filters, broader wrapper metadata,
-binary byte fidelity, permissions/locking, stat-cache behavior,
-warning recovery, temp-file spillover, and native stream
+`fclose()`. `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` cover
+bounded local UTF-8 directory handles. Unsupported wrappers, contexts/filters,
+broader wrapper metadata, binary byte fidelity, directory entry ordering
+fidelity, permissions/locking, stat-cache behavior, warning recovery,
+temp-file spillover, and native stream
 resources remain unsupported. Native lowering still rejects request/session/
 stream state until a native runtime ABI exists.
 
@@ -157,6 +159,8 @@ incorrect native code.
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
   `call_user_func_array()` reference-return iterable roots when the returned
   direct variable is backed by a caller variable cell, plus bounded
+  direct array-offset by-reference parameter writeback with `unset($param)`
+  detachment for ordinary arrays and request bags, plus bounded
   preservation of covered reference elements when copying literal-key nested
   direct array paths such as `$_REQUEST["payload"]`,
   and
@@ -187,7 +191,7 @@ incorrect native code.
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
-  shapes and selected prepared option-name-only, option-name-list,
+  shapes and selected prepared option-value-only, option-name-only, option-name-list,
   name/autoload-list, and autoload-list result sets;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
@@ -264,8 +268,9 @@ incorrect native code.
   autoload callbacks before the class table is rechecked; class declarations
   loaded by executed include/require paths also invoke those callbacks for
   missing `extends` parent classes, direct `implements` interfaces, and
-  parent interfaces reached from autoloaded interface declarations before
-  final registration validation,
+  direct class-body trait `use` names, while interface declarations loaded
+  through that path invoke them for parent interfaces reached from autoloaded
+  interface declarations before final registration validation,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -357,8 +362,8 @@ values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery beyond string user-function callbacks
 registered through `spl_autoload_register()` for `class_exists()`,
-`interface_exists()`, missing `new` class instantiation, and included
-class/interface declaration dependencies,
+`interface_exists()`, `trait_exists()`, missing `new` class instantiation, and
+included class/interface/trait declaration dependencies,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -412,11 +417,13 @@ boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
-for output-parameter style calls. Direct public object-property array offset
-arguments now have bounded output-parameter writeback for user functions,
+for output-parameter style calls. Direct array-offset arguments, including
+request-bag paths, and direct public object-property array offset arguments now
+have bounded output-parameter writeback for user functions,
 instance methods, named static method calls, `self::` static method calls, and
 `parent::` instance/static method calls, and late-bound `static::` static
-method calls.
+method calls. Mutations before `unset($param)` are written back; later writes
+to the detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
 for unkeyed or integer-keyed literal argument arrays containing direct-variable
@@ -473,8 +480,9 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `fopen()`/`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/
-`feof()`/`ftell()`/`fseek()`/`fstat()`/`stream_get_meta_data()`/`fclose()`
-stream-resource calls,
+`feof()`/`ftell()`/`fseek()`/`fstat()`/`stream_get_meta_data()`/`fclose()`/
+`opendir()`/`readdir()`/`rewinddir()`/`closedir()` stream-resource and
+directory-handle calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,

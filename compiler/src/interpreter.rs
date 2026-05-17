@@ -136,6 +136,7 @@ struct Interpreter {
     next_closure_id: i64,
     next_resource_id: i64,
     streams: HashMap<i64, StreamResource>,
+    directories: HashMap<i64, DirectoryResource>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -258,6 +259,12 @@ enum StreamResource {
     File(FileStream),
 }
 
+#[derive(Debug)]
+struct DirectoryResource {
+    entries: Vec<String>,
+    position: usize,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct StreamMode {
     readable: bool,
@@ -324,6 +331,7 @@ enum AutoloadCallback {
 enum AutoloadKind {
     Class,
     Interface,
+    Trait,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2600,6 +2608,7 @@ impl Interpreter {
             next_closure_id: 1,
             next_resource_id: 1,
             streams: HashMap::new(),
+            directories: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -3142,6 +3151,12 @@ impl Interpreter {
         for interface_name in &class.interfaces {
             if !self.class_like_exists(interface_name, AutoloadKind::Interface) {
                 self.run_autoload_callbacks(interface_name, AutoloadKind::Interface, class.span)?;
+            }
+        }
+
+        for trait_use in &class.trait_uses {
+            if !self.class_like_exists(&trait_use.name, AutoloadKind::Trait) {
+                self.run_autoload_callbacks(&trait_use.name, AutoloadKind::Trait, trait_use.span)?;
             }
         }
 
@@ -9623,6 +9638,53 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_value_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_value_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_value_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_value_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_autoload_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9855,6 +9917,23 @@ impl Interpreter {
                 if !rows.is_empty() {
                     return Ok(Some(MysqliPendingResultState {
                         fields: vec!["option_name".to_string()],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
+
+            if let Some(filter) = parse_wordpress_options_value_row_select_query(query) {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| wordpress_option_value_rows_for_filter(options, &filter))
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec!["option_value".to_string()],
                         rows,
                     }));
                 }
@@ -11039,6 +11118,21 @@ impl Interpreter {
                     return self.create_mysqli_result_placeholder(
                         span,
                         vec!["option_name".to_string()],
+                        rows,
+                    );
+                }
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_value_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows = wordpress_option_value_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec!["option_value".to_string()],
                         rows,
                     );
                 }
@@ -15744,6 +15838,7 @@ impl Interpreter {
                         .interface_lookup
                         .contains_key(&name.to_ascii_lowercase())
             }
+            AutoloadKind::Trait => self.trait_lookup.contains_key(&name.to_ascii_lowercase()),
         }
     }
 
@@ -17695,6 +17790,23 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::CallerCell(caller_cell),
                     });
+                } else if let Some((alias, value)) =
+                    self.evaluate_direct_array_reference_argument(arg, caller_scope)?
+                {
+                    if function.returns_by_reference {
+                        return Err(runtime_error(
+                            arg.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "direct array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
                 } else if let Some((alias, value)) = self
                     .evaluate_public_object_property_array_reference_argument(arg, caller_scope)?
                 {
@@ -17717,7 +17829,7 @@ impl Interpreter {
                         arg.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "reference parameter invocation is only implemented for direct variable and direct public object-property array-offset arguments in the current subset",
+                            "reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset arguments in the current subset",
                         ),
                     ));
                 }
@@ -17742,6 +17854,61 @@ impl Interpreter {
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn evaluate_direct_array_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Expr::Index { target, index, .. } = arg else {
+            return Ok(None);
+        };
+        let Some((name, indices)) = Self::collect_direct_variable_array_index_path(target, index)
+        else {
+            return Ok(None);
+        };
+
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, caller_scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+
+        if keys.len() == 1
+            && matches!(
+                caller_scope.read_named(name),
+                Some(Value::Object(object)) if self.classes.implements_interface(object.class_id(), "ArrayAccess")
+            )
+        {
+            return Ok(None);
+        }
+
+        let alias = if name == "GLOBALS" {
+            let (global_name, keys) = SymbolTable::split_globals_reference_path(keys, arg.span())?;
+            ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                keys,
+            }
+        } else {
+            ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray {
+                    name: name.to_string(),
+                },
+                keys,
+            }
+        };
+        caller_scope.materialize_array_offset_alias(&alias, arg.span())?;
+        let value = caller_scope
+            .read_array_offset_alias(&alias)
+            .ok_or_else(|| {
+                runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_array_access(
+                        "cannot bind missing array offset reference argument".to_string(),
+                    ),
+                )
+            })?;
+        Ok(Some((alias, value)))
     }
 
     fn evaluate_public_object_property_array_reference_argument(
@@ -17804,19 +17971,17 @@ impl Interpreter {
 
     fn write_back_reference_bindings(
         &mut self,
-        reference_bindings: &[ReferenceBinding],
+        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell)],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        for binding in reference_bindings {
-            let aliases = match &binding.target {
-                ReferenceBindingTarget::ArrayOffset(alias) => std::slice::from_ref(alias),
-                ReferenceBindingTarget::ArrayOffsets(aliases) => aliases.as_slice(),
-                ReferenceBindingTarget::CallerCell(_) => continue,
-            };
-            let Some(value) = local_scope.read_named(&binding.param_name) else {
-                continue;
+        for (param_name, aliases, original_cell) in array_offset_binding_cells {
+            let value = match local_scope.read_cell(param_name) {
+                Some(local_cell) if Rc::ptr_eq(&local_cell, original_cell) => {
+                    local_scope.read_named(param_name).unwrap_or(Value::Null)
+                }
+                _ => original_cell.borrow().clone(),
             };
             if !caller_scope.write_array_offset_aliases(aliases, value) {
                 return Err(runtime_error(
@@ -17868,6 +18033,7 @@ impl Interpreter {
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
+        let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
@@ -17890,11 +18056,33 @@ impl Interpreter {
                     ReferenceBindingTarget::ArrayOffset(_) => {
                         if let Some(arg) = args.get(index) {
                             local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                let ReferenceBindingTarget::ArrayOffset(alias) = &binding.target
+                                else {
+                                    unreachable!("matched array offset binding");
+                                };
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    vec![alias.clone()],
+                                    cell,
+                                ));
+                            }
                         }
                     }
                     ReferenceBindingTarget::ArrayOffsets(_) => {
                         if let Some(arg) = args.get(index) {
                             local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                let ReferenceBindingTarget::ArrayOffsets(aliases) = &binding.target
+                                else {
+                                    unreachable!("matched array offset binding list");
+                                };
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    aliases.clone(),
+                                    cell,
+                                ));
+                            }
                         }
                     }
                 }
@@ -17935,7 +18123,7 @@ impl Interpreter {
         ) {
             if let Some(reference_scope) = reference_scope {
                 self.write_back_reference_bindings(
-                    &reference_bindings,
+                    &array_offset_binding_cells,
                     &local_scope,
                     reference_scope,
                     function.span,
@@ -18758,6 +18946,176 @@ impl Interpreter {
             ));
         };
         Ok(Value::Bool(self.streams.remove(&id).is_some()))
+    }
+
+    fn call_opendir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "opendir()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "opendir()",
+                    "context arguments are not supported in the current directory-handle subset",
+                ),
+            ));
+        }
+        let path = match &args[0] {
+            Value::String(path) => path.as_str(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "opendir()",
+                        format!(
+                            "path argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "opendir()",
+                    "stream wrappers are not supported in the current directory-handle subset",
+                ),
+            ));
+        }
+
+        let directory_path = local_filesystem_metadata_path(path);
+        let Ok(metadata) = fs::metadata(&directory_path) else {
+            return Ok(Value::Bool(false));
+        };
+        if !metadata.is_dir() {
+            return Ok(Value::Bool(false));
+        }
+
+        let mut entries = vec![".".to_string(), "..".to_string()];
+        let mut host_entries = Vec::new();
+        for entry in fs::read_dir(&directory_path).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "opendir()",
+                    format!("local directory read failed: {error}"),
+                ),
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "opendir()",
+                        format!("local directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "opendir()",
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            host_entries.push(name);
+        }
+        host_entries.sort();
+        entries.extend(host_entries);
+
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.directories.insert(
+            id,
+            DirectoryResource {
+                entries,
+                position: 0,
+            },
+        );
+        Ok(Value::Resource(id))
+    }
+
+    fn directory_mut(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<&mut DirectoryResource> {
+        let Value::Resource(id) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "directory argument must be resource in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        self.directories.get_mut(id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "closed or unknown directory resource in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn call_readdir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("readdir", args, 1, span)?;
+        let directory = self.directory_mut("readdir", &args[0], span)?;
+        let Some(entry) = directory.entries.get(directory.position).cloned() else {
+            return Ok(Value::Bool(false));
+        };
+        directory.position += 1;
+        Ok(Value::String(entry))
+    }
+
+    fn call_rewinddir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("rewinddir", args, 1, span)?;
+        self.directory_mut("rewinddir", &args[0], span)?.position = 0;
+        Ok(Value::Null)
+    }
+
+    fn call_closedir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("closedir", args, 1, span)?;
+        let Value::Resource(id) = args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "closedir()",
+                    format!(
+                        "directory argument must be resource in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        self.directories.remove(&id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "closedir()",
+                    "closed or unknown directory resource in the current subset",
+                ),
+            )
+        })?;
+        Ok(Value::Null)
     }
 
     fn call_ob_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -20788,6 +21146,10 @@ impl Interpreter {
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "fclose" => self.call_fclose(&args, span),
+            "opendir" => self.call_opendir(&args, span),
+            "readdir" => self.call_readdir(&args, span),
+            "rewinddir" => self.call_rewinddir(&args, span),
+            "closedir" => self.call_closedir(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -21351,16 +21713,22 @@ impl Interpreter {
             },
             "trait_exists" => match args.as_slice() {
                 [Value::String(trait_name)] => Ok(Value::Bool(
-                    self.trait_lookup
-                        .contains_key(&trait_name.to_ascii_lowercase()),
+                    self.class_like_exists_with_autoload(
+                        trait_name,
+                        AutoloadKind::Trait,
+                        true,
+                        span,
+                    )?,
                 )),
                 [Value::String(trait_name), autoload] => {
-                    let _autoload =
+                    let autoload =
                         metadata_exists_autoload_flag("trait_exists()", autoload, span)?;
-                    Ok(Value::Bool(
-                        self.trait_lookup
-                            .contains_key(&trait_name.to_ascii_lowercase()),
-                    ))
+                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                        trait_name,
+                        AutoloadKind::Trait,
+                        autoload,
+                        span,
+                    )?))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -26524,6 +26892,10 @@ fn is_builtin(name: &str) -> bool {
             | "fstat"
             | "stream_get_meta_data"
             | "fclose"
+            | "opendir"
+            | "readdir"
+            | "rewinddir"
+            | "closedir"
             | "filesize"
             | "filemtime"
             | "realpath"
@@ -27356,6 +27728,24 @@ fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool
     .is_some()
 }
 
+fn is_wordpress_option_prepared_value_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_value FROM wp_options WHERE option_name IN (",
+        "SELECT `option_value` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_value_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_value FROM wp_options WHERE autoload IN (",
+        "SELECT `option_value` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
 fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -27545,6 +27935,30 @@ fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPres
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
+fn parse_wordpress_options_value_row_select_query(
+    query: &str,
+) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_value FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT `option_value` FROM `wp_options`"))?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
 fn parse_wordpress_options_name_value_autoload_row_select_query(
     query: &str,
 ) -> Option<WordPressOptionsRowFilter> {
@@ -27687,6 +28101,52 @@ fn wordpress_option_name_rows_for_filter(
             options
                 .contains_key(&name)
                 .then(|| vec![("option_name".to_string(), Value::String(name))])
+        })
+        .collect()
+}
+
+fn wordpress_option_value_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![(
+                    "option_value".to_string(),
+                    Value::String(option.value.clone()),
+                )]
+            })
         })
         .collect()
 }

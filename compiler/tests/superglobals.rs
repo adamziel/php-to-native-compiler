@@ -445,6 +445,27 @@ echo $slot, "|", $items["outer"]["slot"];
 }
 
 #[test]
+fn request_bag_reference_parameter_unset_detaches_before_later_local_writes() {
+    let execution = run_source(
+        r#"<?php
+function normalize(&$slot) {
+    $slot = "mutated";
+    unset($slot);
+    $slot = "local-only";
+}
+
+$_REQUEST["payload"] = ["slot" => "seed"];
+normalize($_REQUEST["payload"]["slot"]);
+echo $_REQUEST["payload"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "mutated");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir

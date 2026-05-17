@@ -576,11 +576,15 @@ instance-method, constructor, named static method, `self::` static method, and
 `parent::` instance/static method calls, and late-bound `static::` static
 method calls. Writes through the parameter are visible before the call returns,
 and `unset($param)` detaches only the callee's local name from the shared cell.
-Direct public object-property array-offset arguments use a narrower
-copy-in/writeback bridge on the user-function, instance-method, named static
-method, `self::` static method, `parent::` instance/static method, and
-late-bound `static::` static method dispatch paths, without exposing in-call
-PHP reference-container identity.
+Direct array-offset arguments, including request-bag paths such as
+`$_REQUEST["payload"]["slot"]`, and direct public object-property array-offset
+arguments use a narrower copy-in/writeback bridge on the user-function,
+instance-method, named static method, `self::` static method, `parent::`
+instance/static method, and late-bound `static::` static method dispatch paths.
+The bridge keeps the local parameter's original cell so mutations before
+`unset($param)` are written back at return, while later writes to a detached
+local name are not. It still does not expose in-call PHP reference-container
+identity.
 `call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks, public object-method
 array callbacks, and public class-string static-method array callbacks where
@@ -1631,14 +1635,16 @@ layer, or native database runtime.
 registration path: it accepts closure expressions or string callback names with
 optional boolean flags and returns true. String user-function callbacks are
 stored in registration order, the current boolean `prepend` flag can place a
-callback at the front, and truthy-autoload `class_exists()`/`interface_exists()`
-misses invoke those string callbacks with the requested class/interface name
-before rechecking metadata. That lets local include/require paths register
-autoloaded class/interface declarations through the existing included-file
-declaration loader. Closure callbacks remain accepted registration metadata
-only and report a stable unsupported autoload boundary if lookup needs to
-invoke them. Native function-table introspection recognizes the name, while
-direct native calls reject under the function-call boundary.
+callback at the front, and truthy-autoload
+`class_exists()`/`interface_exists()`/`trait_exists()` misses invoke those
+string callbacks with the requested class/interface/trait name before
+rechecking metadata. That lets local include/require paths register autoloaded
+class/interface/trait declarations through the existing included-file
+declaration loader, including missing direct trait `use` names reached while
+registering an included class declaration. Closure callbacks remain accepted
+registration metadata only and report a stable unsupported autoload boundary if
+lookup needs to invoke them. Native function-table introspection recognizes
+the name, while direct native calls reject under the function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and
@@ -1788,15 +1794,20 @@ file handle for the same simple mode grammar. `fwrite()`, `fread()`,
 `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`, `fseek()`,
 `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume, or
 inspect the resource cursor or bounded metadata; append-mode writes are routed
-to EOF. `fseek()` supports the built-in `SEEK_SET`, `SEEK_CUR`, and `SEEK_END`
-constants for the current memory/temp/local-file resource set, and `feof()`
-tracks the bounded EOF flag produced by exhaustive reads. `fstat()` exposes
-buffer size for memory/temp handles and host metadata for local files;
+to EOF. A separate request-local directory resource table backs
+`opendir()`, `readdir()`, `rewinddir()`, and `closedir()` for local UTF-8
+directories, returning `.`, `..`, and sorted host entry names through the same
+generic resource value shape. `fseek()` supports the built-in `SEEK_SET`,
+`SEEK_CUR`, and `SEEK_END` constants for the current memory/temp/local-file
+resource set, and `feof()` tracks the bounded EOF flag produced by exhaustive
+reads. `fstat()` exposes buffer size for memory/temp handles and host metadata
+for local files;
 `stream_get_meta_data()` exposes deterministic wrapper/type/mode/URI,
 seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
-reads. This gives WordPress-style temporary request and cache-file streams an
-executable path without claiming full PHP resources: sockets, HTTP/FTP/phar
-wrappers, contexts, filters, broader wrapper/status metadata APIs,
+reads. This gives WordPress-style temporary request, cache-file stream, and
+directory-scanning paths an executable path without claiming full PHP
+resources: sockets, HTTP/FTP/phar wrappers, contexts, filters, broader
+wrapper/status metadata APIs, exact host directory iteration order,
 binary/non-UTF-8 byte strings, `php://temp` spill-to-disk thresholds,
 permissions policy, locking, stat-cache behavior, warning plus `false`
 recovery, references/copy-on-write, and exact resource id/type behavior remain
@@ -2106,9 +2117,10 @@ deprecation/`TypeError` behavior remain unsupported for that flag.
 `interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
 and `enum_exists($name[, $autoload])` accept the same string-name and
 bool-like scalar autoload boundary. `interface_exists()` shares the bounded
-string-callback autoload path with `class_exists()`, while trait and enum
-lookups still check only already-declared metadata. `class_exists()` also
-reports true for declared enums in the current class-like metadata slice.
+string-callback autoload path with `class_exists()`, and `trait_exists()`
+uses that same path for declared top-level trait metadata. Enum lookups still
+check only already-declared metadata. `class_exists()` also reports true for
+declared enums in the current class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
 with case-sensitive property names and no autoload side effects.

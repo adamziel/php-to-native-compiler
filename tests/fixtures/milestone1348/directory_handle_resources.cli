@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+resource|dot:dotdot:alpha:beta:nested:5|rewound:5
+--- stdout end ---
+stderr:
+--- stderr end ---

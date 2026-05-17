@@ -1,0 +1,10 @@
+run autoload_trait_dependencies.php
+--- stdout begin ---
+false-skip
+probe-loaded
+hook:Plugin
+hook-loaded
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

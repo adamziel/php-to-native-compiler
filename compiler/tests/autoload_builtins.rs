@@ -248,6 +248,85 @@ echo is_a($plugin, "LoadedContract") ? "loaded-contract" : "missing-loaded";
 }
 
 #[test]
+fn trait_exists_and_included_class_declarations_autoload_missing_trait_dependencies() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-autoload-trait-dependencies-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let probe_include_path = fixture_dir.join("AutoloadedProbe.inc");
+    fs::write(
+        &probe_include_path,
+        r#"<?php
+trait AutoloadedProbe {
+    public function probe() {
+        return "probe";
+    }
+}
+"#,
+    )
+    .unwrap();
+    let plugin_include_path = fixture_dir.join("Plugin.inc");
+    fs::write(
+        &plugin_include_path,
+        r#"<?php
+class Plugin {
+    use LoadedHook;
+
+    public function boot() {
+        return $this->hook();
+    }
+}
+"#,
+    )
+    .unwrap();
+    let trait_include_path = fixture_dir.join("LoadedHook.inc");
+    fs::write(
+        &trait_include_path,
+        r#"<?php
+trait LoadedHook {
+    public function hook() {
+        return "hook:" . get_class($this);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+function LoadObjectDependency($name) {
+    echo "load:", $name, "\n";
+    require_once __DIR__ . "/" . $name . ".inc";
+}
+
+spl_autoload_register("LoadObjectDependency");
+
+echo trait_exists("AutoloadedProbe", false) ? "false-loaded\n" : "false-skip\n";
+echo trait_exists("AutoloadedProbe") ? "probe-loaded\n" : "probe-missing\n";
+
+require_once __DIR__ . "/Plugin.inc";
+
+$plugin = new Plugin();
+echo $plugin->boot(), "\n";
+echo trait_exists("LoadedHook", false) ? "hook-loaded" : "hook-missing";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "false-skip\nload:AutoloadedProbe\nprobe-loaded\nload:LoadedHook\nhook:Plugin\nhook-loaded"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(probe_include_path);
+    let _ = fs::remove_file(plugin_include_path);
+    let _ = fs::remove_file(trait_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 

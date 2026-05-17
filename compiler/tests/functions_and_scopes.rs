@@ -582,7 +582,7 @@ mutate(1);
     assert_eq!(error.column, 8);
     assert_eq!(
         error.message,
-        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable and direct public object-property array-offset arguments in the current subset"
+        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset arguments in the current subset"
     );
 }
 

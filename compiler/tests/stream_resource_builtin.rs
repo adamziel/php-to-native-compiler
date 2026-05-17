@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), and fclose() until native PHP resource handles, stream wrapper state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, and local file stream resources";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, local file stream resources, and local directory handles";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -225,6 +225,57 @@ fclose($file);
 }
 
 #[test]
+fn local_directory_handle_builtins_iterate_rewind_and_close_entries() {
+    let root = temp_stream_path("phpc-directory-handle-root");
+    let nested = root.join("nested");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&nested).expect("temporary directory fixture can be created");
+    fs::write(root.join("alpha.txt"), "alpha").expect("alpha fixture file can be written");
+    fs::write(root.join("beta.inc"), "<?php").expect("beta fixture file can be written");
+
+    let source = format!(
+        r#"<?php
+$dir = opendir("{}");
+echo gettype($dir);
+echo "|";
+echo readdir($dir);
+echo ":";
+echo readdir($dir);
+$entries = array();
+while (($entry = readdir($dir)) !== false) {{
+    if ($entry !== "." && $entry !== "..") {{
+        $entries[] = $entry;
+    }}
+}}
+echo "|";
+echo in_array("alpha.txt", $entries, true) ? "alpha" : "missing-alpha";
+echo ":";
+echo in_array("beta.inc", $entries, true) ? "beta" : "missing-beta";
+echo ":";
+echo in_array("nested", $entries, true) ? "nested" : "missing-nested";
+echo ":";
+echo count($entries);
+rewinddir($dir);
+echo "|";
+echo readdir($dir);
+closedir($dir);
+echo "|";
+echo opendir("{}") === false ? "missing-false" : "missing-open";
+"#,
+        root.display(),
+        root.join("missing").display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "resource|.:..|alpha:beta:nested:3|.|missing-false"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn stream_resource_builtins_reject_forms_outside_current_subset() {
     let wrapper = run_source("<?php\nfopen('http://example.test', 'r');\n").unwrap_err();
     assert_eq!(wrapper.phase, Phase::Runtime);
@@ -281,6 +332,24 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
         bad_stat.message,
         "unsupported call fstat(): stream argument must be resource in the current subset, got string"
     );
+
+    let bad_directory_wrapper = run_source("<?php\nopendir('php://memory');\n").unwrap_err();
+    assert_eq!(bad_directory_wrapper.phase, Phase::Runtime);
+    assert_eq!(bad_directory_wrapper.line, 2);
+    assert_eq!(bad_directory_wrapper.column, 1);
+    assert_eq!(
+        bad_directory_wrapper.message,
+        "unsupported call opendir(): stream wrappers are not supported in the current directory-handle subset"
+    );
+
+    let bad_readdir = run_source("<?php\nreaddir('not-resource');\n").unwrap_err();
+    assert_eq!(bad_readdir.phase, Phase::Runtime);
+    assert_eq!(bad_readdir.line, 2);
+    assert_eq!(bad_readdir.column, 1);
+    assert_eq!(
+        bad_readdir.message,
+        "unsupported call readdir(): directory argument must be resource in the current subset, got string"
+    );
 }
 
 #[test]
@@ -292,13 +361,15 @@ echo is_callable("stream_get_contents") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
+echo function_exists("opendir") ? "1" : "0";
+echo is_callable("readdir") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
 
-    let error = emit_ir_source("<?php\nstream_get_meta_data($stream);\n").unwrap_err();
+    let error = emit_ir_source("<?php\nreaddir($dir);\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

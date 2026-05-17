@@ -69,7 +69,15 @@
   calls in active child class context, and late-bound `static::` static method
   dispatch paths: the callee local parameter shares the caller's
   variable cell during execution, so writes through the parameter are visible
-  to other reads of the caller variable before the call returns.
+  to other reads of the caller variable before the call returns. Direct
+  array-offset arguments such as `handler($items[$key])`,
+  `handler($items[$outer][$key])`, and
+  `handler($_REQUEST["payload"]["slot"])` are supported on those same dispatch
+  paths as a bounded output-parameter bridge: the selected slot is
+  materialized when needed, copied into the callee parameter, and written back
+  to the same slot when the callee returns normally or with `return`. If the
+  callee executes `unset($param)`, mutations made before the unset are written
+  back, while later writes to the detached local name are not.
   Direct public
   object-property array-offset arguments such as
   `handler($object->items[$group][$key])` are supported for user functions,
@@ -79,8 +87,9 @@
   path: the selected public property array slot is materialized when needed,
   copied into the callee parameter, and written back to the same slot when the
   callee returns normally or with `return`. This
-  object-property argument path does not expose a general in-call PHP
-  reference container. String user-function callbacks, public
+  direct array-offset and object-property argument path does not expose a
+  general in-call PHP reference container. String user-function callbacks,
+  public
   `[object, method]` instance callbacks, and public
   `["ClassName", "method"]` static callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` also support
@@ -120,7 +129,8 @@
   alias, stored argument slot, covered request/global bag slot, and covered
   public object-property slot observe the same value. `unset($param)` detaches
   only the callee's local parameter name; later local writes do not mutate the
-  caller variable or write back through the object-property argument path.
+  caller variable or write back through the direct array-offset or
+  object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions, dynamic static
@@ -785,10 +795,11 @@
   reports a stable runtime boundary;
 - class declarations loaded by executed `include`/`require` paths trigger the
   current string user-function `spl_autoload_register()` callbacks for missing
-  `extends` parent classes and direct `implements` interface names before
-  final class registration validation. Interface declarations loaded through
-  that path also trigger the same string-callback autoload path for missing
-  parent interfaces before interface inheritance validation.
+  `extends` parent classes, direct `implements` interface names, and direct
+  class-body trait `use TraitName;` names before final class registration
+  validation. Interface declarations loaded through that path also trigger the
+  same string-callback autoload path for missing parent interfaces before
+  interface inheritance validation.
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
@@ -1045,7 +1056,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -1878,6 +1889,8 @@
   `WHERE option_name IN (...)` shapes return recorded name/value rows through
   the same placeholder result path. The same all-row, autoload-filtered, and
   explicit-name-list shapes are also supported for the exact
+  `SELECT option_value FROM wp_options ...` projection, returning recorded
+  option values only, for the exact
   `SELECT option_name FROM wp_options ...` projection, returning recorded
   option names only, for the exact
   `SELECT option_name, autoload FROM wp_options ...` projection, returning
@@ -1899,7 +1912,7 @@
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond the exact insert and
   update shapes listed above,
-  arbitrary projection beyond exact option id/name/value/autoload/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
@@ -1920,6 +1933,8 @@
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
   `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
+  `SELECT option_value FROM wp_options WHERE option_name IN (?, ...)`,
+  `SELECT option_value FROM wp_options WHERE autoload IN (?, ...)`,
   `SELECT option_name FROM wp_options WHERE option_name IN (?, ...)`,
   `SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
   `SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
@@ -1962,6 +1977,7 @@
   an empty zero-field placeholder result. Prepared no-placeholder row-set reads
   also support the exact
   `SELECT option_name, option_value FROM wp_options ...`,
+  `SELECT option_value FROM wp_options ...`,
   `SELECT option_name FROM wp_options ...`,
   `SELECT option_name, option_value, autoload FROM wp_options ...`, and
   `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
@@ -2166,13 +2182,22 @@
   host-file metadata; `stream_get_meta_data($stream)` returns bounded
   metadata fields for `timed_out`, `blocked`, `eof`, `wrapper_type`,
   `stream_type`, `mode`, `unread_bytes`, `seekable`, and `uri`; and
-  `fclose($stream)` closes the resource. Local
-  file streams use host files and UTF-8 text only. This is a deterministic WordPress request/runtime
+  `fclose($stream)` closes the resource. Local file streams use host files and
+  UTF-8 text only. Bounded local directory handles are also supported:
+  `opendir($path)` accepts one local UTF-8 directory path, rejects stream
+  wrappers and context arguments, returns a directory resource for existing
+  directories, and returns `false` for missing or non-directory local paths
+  without modeling PHP warnings. `readdir($dir)` returns the next entry name
+  or `false` at the end, `rewinddir($dir)` resets the cursor and returns
+  `null`, and `closedir($dir)` closes the directory resource and returns
+  `null`. Directory entries are exposed as `.`, `..`, then sorted UTF-8 host
+  names for deterministic fixtures; exact host iteration order remains
+  unsupported. This is a deterministic WordPress request/runtime
   compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
-  wrappers, filters, contexts, binary/non-UTF-8 byte
-  fidelity, large `php://temp` spill-to-disk behavior, permissions policy,
-  locking, broader wrapper/status metadata APIs, stat-cache behavior,
-  warning plus `false` recovery, exact resource ids/types,
+  wrappers, filters, contexts, binary/non-UTF-8 byte fidelity, large
+  `php://temp` spill-to-disk behavior, permissions policy, locking, broader
+  wrapper/status metadata APIs, stat-cache behavior, exact warning recovery,
+  exact resource ids/types, directory-entry ordering fidelity,
   references/copy-on-write, and native stream resources remain unsupported.
   Direct native stream-resource calls stop at a dedicated
   resource/stream codegen boundary, while function-table introspection
@@ -2265,13 +2290,15 @@
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. String user-function callbacks are recorded, honor the
   current boolean `prepend` flag, and are invoked by truthy-autoload
-  `class_exists()`/`interface_exists()` misses and missing `new ClassName(...)`
-  / direct-variable `new $class(...)` instantiation so they can include local
-  files that declare class/interface metadata. Closure callbacks remain a
+  `class_exists()`/`interface_exists()`/`trait_exists()` misses and missing
+  `new ClassName(...)` / direct-variable `new $class(...)` instantiation so
+  they can include local files that declare class/interface/trait metadata.
+  The same string-callback path is used for missing traits reached while
+  registering included class declarations. Closure callbacks remain a
   registration-only shape and report a stable unsupported autoload boundary if
   a lookup needs to invoke them. Autoload unregistering, autoload functions,
-  array callables, throwing/exact warning behavior, trait/enum autoload
-  lookup, namespace/import canonicalization beyond current string lookup,
+  array callables, throwing/exact warning behavior, enum autoload lookup,
+  namespace/import canonicalization beyond current string lookup,
   recursive loader edge cases beyond a same-name guard, references/COW, and
   native lowering remain unsupported.
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
@@ -2871,7 +2898,8 @@
   declared in the current parsed program, including traits with currently
   supported public constants and public instance methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
-  bool-like scalar values and does not trigger autoloading.
+  bool-like scalar values and invokes currently registered string
+  user-function autoload callbacks on misses.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names, perform case-insensitive lookup against top-level unit enums declared
   in the current parsed program, and are available through string-valued
@@ -3976,7 +4004,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -4350,7 +4378,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4529,7 +4557,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -5040,13 +5068,14 @@
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`,
-  `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, and `fclose`
-  accept the same current bounded `php://memory`, `php://temp`, and local
-  UTF-8 file stream resource subset as the builtin section above; direct
+  `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`,
+  `readdir`, `rewinddir`, and `closedir` accept the same current bounded
+  `php://memory`, `php://temp`, local UTF-8 file stream, and local UTF-8
+  directory handle subset as the builtin section above; direct
   native calls reject under a dedicated stream-resource boundary until native
-  PHP resource handles, stream wrapper state, binary byte strings, warning
-  plus `false` recovery, references/copy-on-write, and exact native
-  diagnostics exist.
+  PHP resource handles, stream wrapper state, directory handle state, binary
+  byte strings, warning plus `false` recovery, references/copy-on-write, and
+  exact native diagnostics exist.
   `filesize` accepts the same current one-string local regular-file metadata
   subset as the builtin section above; direct native `filesize(...)` calls
   still reject under the function-call boundary until native filesystem
@@ -5115,7 +5144,10 @@
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
   supported public constants and public instance methods; the autoload flag
-  accepts current bool-like scalar values and does not trigger autoloading.
+  accepts current bool-like scalar values and invokes currently registered
+  string user-function autoload callbacks on misses. Included class
+  declarations use the same string-callback path for missing direct trait
+  `use` names before trait method/constant composition.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names and perform case-insensitive lookup against top-level unit enums
   declared in the current parsed program; the autoload flag accepts current
@@ -7112,9 +7144,11 @@
   PHP's exact exit-status normalization, shutdown functions, destructors,
   finally ordering, output buffering, SAPI interaction, and native lowering
 - `spl_autoload_register()` behavior beyond storing string user-function
-  callbacks for truthy-autoload `class_exists()`/`interface_exists()` misses:
+  callbacks for truthy-autoload `class_exists()`/`interface_exists()`/
+  `trait_exists()` misses, missing `new` class instantiation, and included
+  class declaration class/interface/trait dependencies:
   unregistering, `spl_autoload_functions()`, array-callable and closure
-  invocation, trait/enum autoload lookup, namespace-aware class resolution,
+  invocation, enum autoload lookup, namespace-aware class/trait resolution,
   exact callable validation, exact `TypeError`/exception behavior, and native
   lowering beyond function-table introspection
 - `extension_loaded()` behavior outside the deterministic bounded compatibility
