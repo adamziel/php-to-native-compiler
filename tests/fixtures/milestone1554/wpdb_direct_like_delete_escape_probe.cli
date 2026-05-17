@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1554/wpdb_direct_like_delete_escape_probe.php

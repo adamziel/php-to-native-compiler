@@ -3,7 +3,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
+const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_cache_limiter(), session_cache_expire(), session_id(), and session_write_close() until native request/session storage, session id persistence, cache limiter state, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
 #[test]
 fn session_start_materializes_session_superglobal_and_status() {
     let execution = run_source(
@@ -100,6 +100,89 @@ echo implode("|", $out);
         "started|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: no-store, no-cache, must-revalidate|Pragma: no-cache|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: no-store, no-cache, must-revalidate|Pragma: no-cache"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_cache_apis_configure_bounded_cache_headers() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+$out[] = session_cache_limiter();
+$out[] = session_cache_expire();
+$out[] = session_cache_expire(42);
+$out[] = session_cache_expire();
+$out[] = session_cache_limiter("");
+$out[] = session_cache_limiter();
+session_id("phpcnocacheoff");
+session_start(["use_cookies" => false]);
+$out[] = count(headers_list());
+session_write_close();
+header_remove();
+$out[] = session_cache_limiter("nocache");
+$out[] = session_cache_limiter();
+session_id("phpcnocacheon");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "nocache|180|180|42|nocache||0||nocache|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_cache_apis_warn_when_changed_too_late() {
+    let execution = run_source(
+        r#"<?php
+function cache_warning($errno, $errstr, $errfile, $errline) {
+    echo "warn:" . $errno;
+    echo ":" . (str_contains($errstr, "cache") ? "cache" : "other");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}
+set_error_handler("cache_warning", E_WARNING);
+session_start(["use_cookies" => false]);
+$limiter = session_cache_limiter("");
+$expire = session_cache_expire(5);
+echo "|active:" . ($limiter === false ? "limiter-false" : "limiter-value");
+echo ":" . $expire;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warn:2:cache:Command line code:10warn:2:other:Command line code:11|active:limiter-false:"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_start_rejects_unsupported_cache_limiter_before_state_changes() {
+    let error = run_source(
+        r#"<?php
+session_cache_limiter("private");
+session_id("phpcprivatecache");
+session_start();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call session_start(): session cache limiter 'private' is not supported in the current subset"
+    );
 }
 
 #[test]
@@ -497,6 +580,24 @@ fn session_builtins_reject_forms_outside_current_subset() {
         bad_id.message,
         "unsupported call session_id(): id argument must be string in the current subset, got int"
     );
+
+    let bad_limiter = run_source("<?php\nsession_cache_limiter(42);\n").unwrap_err();
+    assert_eq!(bad_limiter.phase, Phase::Runtime);
+    assert_eq!(bad_limiter.line, 2);
+    assert_eq!(bad_limiter.column, 1);
+    assert_eq!(
+        bad_limiter.message,
+        "unsupported call session_cache_limiter(): cache_limiter argument must be string in the current subset, got int"
+    );
+
+    let bad_expire = run_source("<?php\nsession_cache_expire('42');\n").unwrap_err();
+    assert_eq!(bad_expire.phase, Phase::Runtime);
+    assert_eq!(bad_expire.line, 2);
+    assert_eq!(bad_expire.column, 1);
+    assert_eq!(
+        bad_expire.message,
+        "unsupported call session_cache_expire(): new_cache_expire argument must be int in the current subset, got string"
+    );
 }
 
 #[test]
@@ -505,14 +606,16 @@ fn emit_ir_folds_session_metadata_but_rejects_stateful_calls_and_superglobal() {
         r#"<?php
 echo function_exists("session_start") ? "1" : "0";
 echo is_callable("session_write_close") ? "1" : "0";
+echo function_exists("session_cache_limiter") ? "1" : "0";
+echo is_callable("session_cache_expire") ? "1" : "0";
 echo defined("PHP_SESSION_ACTIVE") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
 
-    let call_error = emit_ir_source("<?php\nsession_start();\n").unwrap_err();
+    let call_error = emit_ir_source("<?php\nsession_cache_limiter();\n").unwrap_err();
     assert_eq!(call_error.phase, Phase::Codegen);
     assert_eq!(call_error.line, 2);
     assert_eq!(call_error.column, 1);

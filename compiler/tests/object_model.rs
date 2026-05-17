@@ -5338,6 +5338,51 @@ echo $child->invokeArgs(new ChildHook(), array("shutdown", 50));
 }
 
 #[test]
+fn reflection_method_invokes_non_public_user_class_methods() {
+    let execution = run_source(
+        r#"<?php
+class BaseHook {
+    private function privateTag($hook) {
+        $this->log[] = "private:" . $hook . ":" . static::class;
+        return count($this->log);
+    }
+
+    protected function protectedTag($hook, $priority = 10) {
+        $this->log[] = "protected:" . $hook . ":" . $priority . ":" . static::class;
+        return count($this->log);
+    }
+
+    protected static function staticTag($hook) {
+        return "static:" . $hook . ":" . static::class;
+    }
+}
+
+class ChildHook extends BaseHook {
+    public $log = array();
+}
+
+$child = new ChildHook();
+
+$private = new ReflectionMethod(BaseHook::class, "privateTag");
+echo $private->invoke($child, "init"), "|", implode(",", $child->log), "\n";
+
+$protected = new ReflectionMethod(BaseHook::class, "protectedTag");
+echo $protected->invokeArgs($child, array("save_post", 20)), "|", implode(",", $child->log), "\n";
+
+$static = new ReflectionMethod(ChildHook::class, "staticTag");
+echo $static->invoke(null, "shutdown");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|private:init:ChildHook\n2|private:init:ChildHook,protected:save_post:20:ChildHook\nstatic:shutdown:ChildHook"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_function_reports_bounded_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php

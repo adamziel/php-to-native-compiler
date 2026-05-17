@@ -164,6 +164,15 @@ aliases, detaches aliases below that removed root by storing their last
 observed values into the remaining direct alias variables. This is still the
 same symbol-table alias metadata, not a reference container with destructor or
 copy-on-write ordering semantics.
+By-reference user-function parameters can also bind direct missing named or
+dynamic object-property arguments through the existing magic `__get()`
+reference-return cell path when visible public `__get($name)` returns a direct
+variable by reference. The argument binding shares that returned cell with the
+callee parameter for the duration of the call. This is intentionally limited to
+the existing direct-variable reference-return body shape; array offsets below
+magic properties, inaccessible declared-property magic fallback, magic
+container identity, arbitrary expressions, and copy-on-write semantics still
+belong to the future reference-container model.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -1876,6 +1885,14 @@ expiration-date formatting, replacement policy, or host SAPI emission. A fresh
 successful start also appends the bounded default no-cache session headers to
 the same CLI header log: `Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
 `Cache-Control: no-store, no-cache, must-revalidate`, and `Pragma: no-cache`.
+The request-local session cache configuration defaults to limiter `nocache`
+and expiration `180`. `session_cache_limiter()` and `session_cache_expire()`
+read or update those values before output or active session state. The empty
+limiter string suppresses the session cache headers on the next fresh start,
+and restoring `nocache` re-enables the deterministic no-cache trio. Other
+stored limiter strings remain an explicit `session_start()` unsupported-call
+boundary until the private/public cache-header variants and Date/request-time
+parity exist.
 `session_write_close()` stores the active `$_SESSION` array
 back into that request-local snapshot map and, when the bounded save-path/id
 file slice is active, writes string-keyed scalar and array values back to
@@ -1887,8 +1904,9 @@ and immediately closes the bounded status back to `PHP_SESSION_NONE` while
 keeping the in-memory session array visible. After unbuffered output it
 returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
-applying options. Session cache-limiter configuration and cache-header variants
-beyond that default no-cache trio, cookie encoding, expiration-date formatting,
+applying options. Session cache-header variants outside the documented
+`session_cache_limiter()`/`session_cache_expire()` storage slice and the
+empty/nocache header behavior, cookie encoding, expiration-date formatting,
 replacement policy, trans-sid behavior, locking, save handlers, garbage
 collection, broader PHP session-id policy, integer top-level session
 keys, object/resource session serialization, exact malformed-session recovery
@@ -2750,14 +2768,17 @@ reference returns until those metadata and aliasing sources exist, and
 doc-comment association does not yet model attributes or every PHP trivia edge
 case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
-method metadata and re-enter the existing instance-method call path for public
-non-static declared user-class methods, preserving `$this` object identity for
-mutations. Static methods, non-public methods, interface and trait method
-reflection targets, internal methods, by-reference invocation, reference
-returns, typed parameter/return declarations during invocation, and native
-lowering remain outside this bounded reflection invocation path. Method
-`invokeArgs()` has the same positional-only array treatment as function
-`invokeArgs()`.
+method metadata and re-enter the existing method call path for declared
+user-class methods, including public, protected, and private reflected
+methods. Non-static invocation preserves `$this` object identity for mutations,
+uses the reflected declaring class as the method context, and keeps the target
+object's class as the called class for `static::` lookup; static invocation
+uses the reflected class for inherited `static::` lookup and accepts `null` or
+object targets. Interface and trait method reflection targets, internal
+methods, by-reference invocation, reference returns, typed parameter/return
+declarations during invocation, and native lowering remain outside this
+bounded reflection invocation path. Method `invokeArgs()` has the same
+positional-only array treatment as function `invokeArgs()`.
 `ReflectionParameter` follows the same request-local state pattern for
 parameters reached from `ReflectionMethod::getParameters()`,
 `ReflectionFunction::getParameters()`,

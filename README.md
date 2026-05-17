@@ -79,6 +79,11 @@ deterministic header. Successful fresh starts also append the bounded default
 no-cache session headers (`Expires`, `Cache-Control`, and `Pragma`) to the
 CLI header log, including starts that suppress the cookie with
 `use_cookies=false`.
+`session_cache_limiter()` and `session_cache_expire()` expose bounded
+request-local cache-header configuration before output or session start: the
+default limiter is `nocache`, the default expiration is `180`, setting the
+limiter to an empty string suppresses session cache headers, and restoring
+`nocache` re-enables the deterministic no-cache trio.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
@@ -95,8 +100,8 @@ Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
 parity, session-cookie encoding/expiration/replacement beyond the documented
-`session_start()` attribute scaffold, session cache-limiter configuration,
-and cache-header variants beyond the default no-cache trio remain
+`session_start()` attribute scaffold, cache-header variants beyond empty
+suppression and the default no-cache trio remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
@@ -305,9 +310,9 @@ incorrect native code.
   `mysqli_stmt_fetch()` can consume the deterministic executed placeholder row
   without `mysqli_stmt_store_result()` while `mysqli_stmt_num_rows()` remains
   buffered-only,
-  plus bounded direct option-name `LIKE` result scans with `%`, `_`,
+  plus bounded direct option-name `LIKE` result scans/deletes with `%`, `_`,
   backslash escapes, and single-character `ESCAPE` clauses, bounded prepared
-  transient-shaped option-name prefix result scans, and prefix deletes,
+  transient-shaped option-name prefix result scans, and prepared LIKE deletes,
   including exact `ORDER BY option_name` suffixes on those scans and a bounded
   expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
@@ -654,6 +659,13 @@ object-property array-offset arguments such as
 `handler($holders["bag"]->items["outer"]["slot"])`, including dynamic selected
 visible properties, by evaluating the holder once and writing callee mutations
 back through the selected property array slot.
+Direct user-function calls also accept direct missing named and dynamic
+object-property arguments such as `handler($object->missing)` and
+`handler($object->{$name})` when public `__get($name)` returns a direct
+variable by reference; the parameter binds to that returned cell. Array offsets
+below magic properties, inaccessible declared-property magic fallback, general
+magic-property reference containers, and arbitrary reference expressions remain
+unsupported.
 Mutations before `unset($param)` are written back; later writes to the
 detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public

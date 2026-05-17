@@ -26,6 +26,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T20:25:00+02:00
+
+- Checkpoint before this task:
+  `e9592fba runtime: advance WordPress static reflection refs sessions and deletes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1551-1555, four WordPress-focused implementation
+  lanes plus queue refresh, focused only on full-PHP/WordPress blockers.
+- Files changed so far: non-public `ReflectionMethod::invoke()` and
+  `invokeArgs()` for declared user-class methods; by-reference user-function
+  parameters over direct missing magic `__get()` properties that return a
+  direct variable by reference; bounded `session_cache_limiter()` and
+  `session_cache_expire()` request-local configuration; direct literal
+  deterministic `wp_options` `DELETE ... option_name LIKE '<pattern>'`
+  wildcard matching with exact single-character `ESCAPE` support; milestone
+  fixtures 1551-1554; MySQLi extension docs; support, architecture, README,
+  queue, progress, loop-memory, goal, and lane-worker docs.
+- Tests run and result: focused integrated checks passed for the named
+  object/reflection, magic-property reference-parameter, session-cache
+  configuration, unsupported session limiter, and MySQLi direct LIKE delete
+  tests; milestone fixtures 1551-1554 all passed, with system PHP comparisons
+  for 1551 and 1552 and documented `phpc-only` skips for 1553 and 1554. Manual
+  full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1551-1555 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1617` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1617` fixture tests
+  passed with `0` failures, `944` system PHP comparisons, and `673` skipped
+  `phpc-only` fixtures.
+- Cleanup performed: removed 333 stale old lane worktrees and removed
+  `/tmp/phpc-target-*` lane target directories; kept only the main repo and the
+  current 1551-1554 worktrees until checkpoint cleanup.
+- Remaining semantic gaps: interface/trait/closure/internal reflection
+  invocation, exact reflection exceptions, constructor/destructor and
+  magic-hook fidelity, class alias/autoload lifecycle, real reference
+  containers, by-reference returns and assignment, broad copy-on-write, array
+  offsets below magic properties, mixed nested `ArrayAccess` chains,
+  superglobal reference lifetime, private/public session cache-header variants,
+  exact Date/request-time parity, session cookie replacement parity,
+  realpath-cache behavior, wider stat-cache coverage, exact SAPI/upload/stream
+  behavior, expired-transient predicates with wildcard parity, SQL-mode-aware
+  deletes, arbitrary SQL/database/schema execution, dbDelta, persistent
+  cache/transients, WordPress plugin/theme/admin/REST/front-controller flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the current four lane worktrees and target directories, then
+  start the next blocker-focused lanes from Milestones 1556-1559. Consider
+  increasing parallelism up to 6-10 lanes only where file ownership is
+  genuinely disjoint; keep one integration owner and one serialized full gate
+  per checkpoint batch.
+
 ## Loop Event 2026-05-17T19:44:54+02:00
 
 - Checkpoint before this task:

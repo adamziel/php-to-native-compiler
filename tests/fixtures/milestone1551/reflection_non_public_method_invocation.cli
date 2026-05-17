@@ -1,0 +1,9 @@
+run tests/fixtures/milestone1551/reflection_non_public_method_invocation.php
+exit: 0
+stdout:
+1|private:init:ChildHook
+2|private:init:ChildHook,protected:save_post:20:ChildHook
+static:shutdown:ChildHook
+--- stdout end ---
+stderr:
+--- stderr end ---

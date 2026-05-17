@@ -128,8 +128,8 @@ const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lower
 const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, $_FILES, and $_SESSION until native request-state storage, SAPI population, variables_order policy, upload metadata, session storage, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), http_response_code(), setcookie(), and setrawcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 const ASSEMBLY_HEADER_STATE_REJECTION: &str = "assembly header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), http_response_code(), setcookie(), and setrawcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
-const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
-const ASSEMBLY_SESSION_STATE_REJECTION: &str = "assembly session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
+const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_cache_limiter(), session_cache_expire(), session_id(), and session_write_close() until native request/session storage, session id persistence, cache limiter state, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
+const ASSEMBLY_SESSION_STATE_REJECTION: &str = "assembly session-state lowering rejects $_SESSION and session_start(), session_status(), session_cache_limiter(), session_cache_expire(), session_id(), and session_write_close() until native request/session storage, session id persistence, cache limiter state, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
 const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
@@ -200,7 +200,12 @@ fn is_header_state_builtin(name: &str) -> bool {
 fn is_session_state_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "session_start" | "session_status" | "session_id" | "session_write_close"
+        "session_start"
+            | "session_status"
+            | "session_cache_limiter"
+            | "session_cache_expire"
+            | "session_id"
+            | "session_write_close"
     )
 }
 
@@ -7088,6 +7093,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "setrawcookie"
             | "session_start"
             | "session_status"
+            | "session_cache_limiter"
+            | "session_cache_expire"
             | "session_id"
             | "session_write_close"
             | "assert"

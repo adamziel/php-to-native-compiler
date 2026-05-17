@@ -4,6 +4,162 @@
 
 Implemented:
 
+- Added Milestone 1555, the WordPress-focused queue refresh for the
+  1551-1554 implementation batch. The batch closed non-public
+  `ReflectionMethod::invoke()`/`invokeArgs()` for declared user-class methods,
+  bounded direct magic `__get()` reference-parameter arguments, bounded
+  `session_cache_limiter()`/`session_cache_expire()` request-local
+  configuration, and direct literal `wp_options` option-name `LIKE` deletes
+  with custom `ESCAPE` wildcard matching. Focused integrated checks passed for
+  non-public reflection method invocation, magic-property reference
+  parameters, session cache limiter configuration and unsupported-limiter
+  rejection, and direct option-name LIKE deletes; milestone fixtures
+  1551-1554 passed, with system PHP comparisons for 1551 and 1552 and
+  documented `phpc-only` skips for 1553 and 1554. Manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1551-1555 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1617` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1617` fixture tests
+  passed with `0` failures, `944` system PHP comparisons, and `673`
+  `phpc-only` skipped fixtures.
+
+- Added Milestone 1554, a bounded WordPress DB/bootstrap slice for direct
+  literal `wp_options` option-name `LIKE` deletes with explicit
+  `ESCAPE '<char>'` clauses over the deterministic MySQLi option-state
+  island. Direct `DELETE FROM wp_options WHERE option_name LIKE '<pattern>'`
+  now reuses the same bounded MySQL-like wildcard matcher as option-row scans
+  and prepared LIKE deletes, including `%`, `_`, backslash-escaped wildcard
+  literals, and exact single-character custom escape suffixes for the current
+  plain/backticked table and column spellings. The new `milestone1554`
+  fixture proves a WordPress-shaped `wpdb` direct-delete probe through the
+  `phpc run` CLI path and is marked `phpc-only` because system PHP needs a
+  real database connection. Expired-transient predicates with full wildcard
+  parity, SQL-mode-aware option deletes, arbitrary prepared SQL, broad
+  SQL-mode/string-literal parity, host database execution, collation fidelity,
+  persistent object cache/transients, broader WordPress bootstrap probes, and
+  native DB lowering remain unsupported. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1554 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_direct_like_deletes_apply_wordpress_option_escape_wildcards --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  mysqli_extension -- --test-threads=1` passed with `183` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1554/wpdb_direct_like_delete_escape_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1554`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1554` passed with
+  `0` comparisons and `1` documented `phpc-only` skip; `cargo run -q -p phpc
+  -- test --compare-php-json tests/fixtures/milestone1554`; `cargo run -q -p
+  phpc -- test --list-fixtures tests/fixtures/milestone1554`; `cargo run -q
+  -p phpc -- compile
+  tests/fixtures/milestone1554/wpdb_direct_like_delete_escape_probe.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt --check`; `cargo check -p phpc`;
+  and scoped `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1553, a bounded request/SAPI/session-cache configuration
+  slice. `phpc run` now exposes `session_cache_limiter()` and
+  `session_cache_expire()` as request-local APIs: the cache limiter defaults
+  to `nocache`, cache expiration defaults to `180`, callers can read or set
+  those values before unbuffered output or active session state, an empty
+  limiter suppresses session cache headers, and restoring `nocache` re-enables
+  the deterministic `Expires`/`Cache-Control`/`Pragma` trio on fresh
+  `session_start()` calls. The new `milestone1553` fixture proves the CLI path
+  and is marked `phpc-only` because system PHP CLI does not expose phpc's
+  deterministic in-process header log. Private/public cache-header variants,
+  exact Date/request-time parity, exact PHP warning text and objects, broader
+  INI integration, session cookie replacement parity, locking/save handlers,
+  garbage collection, real SAPI emission, and native session lowering remain
+  unsupported. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1553 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test session_builtin
+  session_cache_apis_configure_bounded_cache_headers -- --test-threads=1`;
+  `cargo test -p phpc --test session_builtin
+  session_start_rejects_unsupported_cache_limiter_before_state_changes --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  session_builtin -- --test-threads=1` passed with `21` tests; direct `cargo
+  run -q -p phpc -- run
+  tests/fixtures/milestone1553/session_cache_limiter_configuration.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1553`; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1553` passed with `0`
+  comparisons and `1` documented `phpc-only` skip; `cargo run -q -p phpc --
+  test --compare-php-json tests/fixtures/milestone1553`; `cargo run -q -p
+  phpc -- test --list-fixtures tests/fixtures/milestone1553`; `cargo run -q
+  -p phpc -- compile
+  tests/fixtures/milestone1553/session_cache_limiter_configuration.php
+  --emit-ir` and `--emit-asm` both rejected at the explicit native
+  session-state lowering boundary; `cargo fmt`; `cargo fmt --check`; and
+  `cargo check -p phpc` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1552, a bounded reference/COW slice for by-reference
+  user-function parameters supplied from direct missing magic-property
+  arguments. Calls such as `handler($object->missing)` and
+  `handler($object->{$name})` now bind the callee parameter to the variable
+  cell returned by a visible public `__get($name)` method when that method
+  returns by reference and its reference-return body is the current bounded
+  direct-variable shape. The new `milestone1552` fixture proves the `phpc run`
+  CLI path and matches system PHP. This does not add array offsets below magic
+  properties, inaccessible declared-property magic fallback, general
+  magic-property reference containers, arbitrary reference expressions, mixed
+  nested `ArrayAccess` chains, broader array/object copy-on-write, exact alias
+  destruction ordering, object/Traversable by-reference iteration, superglobal
+  reference lifetime, or native reference/COW lowering. Focused verification
+  used `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1552 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test functions_and_scopes
+  reference_parameter_accepts_magic_get_direct_variable_source --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  functions_and_scopes -- --test-threads=1` passed with `162` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1552/magic_get_reference_parameter.php`; direct
+  `php tests/fixtures/milestone1552/magic_get_reference_parameter.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1552`; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1552` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1552`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1552`; `cargo run -q -p phpc
+  -- compile tests/fixtures/milestone1552/magic_get_reference_parameter.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt`; `cargo fmt --check`; `cargo
+  check -p phpc`; and scoped `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1551, a bounded object/reflection slice for non-public
+  `ReflectionMethod` invocation. `ReflectionMethod::invoke()` and
+  `invokeArgs()` now execute declared user-class private and protected methods
+  over the current by-value argument subset instead of rejecting solely because
+  the method is non-public. Non-static invocation preserves `$this` object
+  identity, runs with the reflected declaring-class context, and keeps the
+  target object's called class for `static::`; protected static invocation
+  keeps the existing reflected-class late-static lookup behavior. The new
+  `milestone1551` fixture proves the `phpc run` CLI path and matches system
+  PHP. Interface and trait method reflection invocation, closure and internal
+  reflection targets, by-reference parameters, typed parameter/return
+  enforcement during invocation, `invokeArgs()` named-argument semantics,
+  reference returns, exact `ReflectionException`/`TypeError` objects and text,
+  broader argument/reference/COW behavior, and native reflection/object
+  lowering remain unsupported. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1551 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  reflection_method_invokes_non_public_user_class_methods -- --test-threads=1`;
+  full affected `cargo test -p phpc --test object_model -- --test-threads=1`
+  passed with `273` tests; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1551/reflection_non_public_method_invocation.php`;
+  direct `php
+  tests/fixtures/milestone1551/reflection_non_public_method_invocation.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1551`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1551` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1551`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1551`; `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/milestone1551/reflection_non_public_method_invocation.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt --check`; `cargo check -p phpc`;
+  and scoped `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
 - Added Milestone 1550, the WordPress-focused queue refresh for the
   1546-1549 implementation batch. The batch closed public static
   `ReflectionMethod::invoke()`/`invokeArgs()` for declared user-class methods,

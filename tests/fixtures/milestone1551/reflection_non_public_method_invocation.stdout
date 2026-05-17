@@ -1,0 +1,3 @@
+1|private:init:ChildHook
+2|private:init:ChildHook,protected:save_post:20:ChildHook
+static:shutdown:ChildHook

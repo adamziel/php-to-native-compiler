@@ -5073,6 +5073,41 @@ echo implode(",", $left);
 }
 
 #[test]
+fn mysqli_direct_like_deletes_apply_wordpress_option_escape_wildcards() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-update-plugins', 'wildcard-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_core', 'site-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name LIKE '_transient_%'") ? "wild" : "failed";
+echo ":", mysqli_affected_rows($handle);
+echo "|";
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-update-plugins', 'wildcard-payload', 'no')");
+echo mysqli_query($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE '!_transient!_%' ESCAPE '!'") ? "escape" : "failed";
+echo ":", mysqli_affected_rows($handle);
+echo "|";
+$rows = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+$left = array();
+while ($row = mysqli_fetch_assoc($rows)) {
+    $left[] = $row["option_name"] . "=" . $row["option_value"];
+}
+echo implode(",", $left);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "wild:2|escape:1|_site_transient_update_core=site-payload,siteurl=https://example.test,xtransient-update-plugins=wildcard-payload"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_deletes_current_wordpress_expired_transient_timeout_options_from_state() {
     let execution = run_source(
         r#"<?php

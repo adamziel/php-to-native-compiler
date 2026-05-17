@@ -333,8 +333,11 @@ including the current backticked table/column spelling, are accepted through
 `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query, array(...))`
 when every placeholder value is a string option name; duplicate names are
 de-duplicated for affected-row accounting. Exact
-`DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` removes
-deterministic trailing-percent option-name prefix matches. Prepared
+`DELETE FROM wp_options WHERE option_name LIKE '<pattern>'` removes option
+names through the same bounded MySQL-like `LIKE` matcher used by option-row
+scans, including `%`, `_`, backslash-escaped wildcard literals, and an exact
+trailing single-character `ESCAPE '<char>'` clause for the current plain and
+backticked table/column spellings. Prepared
 `DELETE FROM wp_options WHERE option_name LIKE ?` shapes, including
 backticked table/column spellings and an exact trailing single-character
 `ESCAPE '<char>'` clause, remove option names through the same bounded
@@ -347,9 +350,9 @@ LIKE deletes. An exact WordPress-shaped
 also deletes payload rows and matching timeout rows when the supported
 payload prefix, timeout prefix, `CONCAT`/`SUBSTRING` timeout expression, and
 threshold match. This is not broad `DELETE` SQL, arbitrary multi-table
-deletes, subquery support, arbitrary predicates, direct literal-delete
-`ESCAPE` clauses, SQL-mode-aware prepared deletes, non-string option-name
-params, real index/lock behavior, or host database execution. A later exact
+deletes, subquery support, arbitrary predicates, SQL-mode-aware deletes,
+non-string option-name params, real index/lock behavior, or host database
+execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact

@@ -208,40 +208,42 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1551 targets non-public reflection
-  invocation, interface/trait method reflection invocation, closure/internal
-  reflection targets, exact reflection exceptions, inherited interface
-  compatibility, constructor/destructor fidelity, magic hooks reached by
-  WordPress, class alias/autoload lifecycle, readonly/property hooks, broader
-  recursive trait adaptations, or broader class/object semantics.
-- Reference/COW lane: Milestone 1552 targets general reference containers,
-  by-reference parameters and returns, reference assignment, magic-property
-  reference containers, arbitrary reference expressions, invisible selected
-  dynamic properties, mixed nested `ArrayAccess` chains, broader array/object
-  copy-on-write, exact alias destruction ordering, object/Traversable
-  by-reference iteration, superglobal reference lifetime, or native lowering
-  diagnostics.
-- Request/SAPI/filesystem/stream lane: Milestone 1553 targets session
-  cache-limiter configuration, `session_cache_*()` APIs, exact
-  Date/request-time parity, session cookie replacement parity, realpath-cache
-  entries, stat-cache coverage beyond `filesize()`/`filemtime()`,
-  include_path/open_basedir policy, stream-wrapper cache interaction,
-  cookie-name encoding, exact `ValueError` parity, output buffering,
-  shutdown/fatal/destructor ordering, request-body lifetime, uploads, host
-  filesystem edge cases, real SAPI emission, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1554 targets expired-transient
-  predicates with wildcard parity, direct literal-delete `ESCAPE` clauses,
-  SQL-mode-aware prepared deletes, real mysqlnd unbuffered transfer behavior,
-  arbitrary prepared SQL, broader SQL-mode and MySQL wildcard parity,
-  dbDelta-relevant schema diffing, host database inspection,
-  arbitrary query/result behavior,
+- Object/interface lane: Milestone 1556 targets interface/trait method
+  reflection invocation, closure/internal reflection targets, exact reflection
+  exceptions, inherited interface compatibility, constructor/destructor
+  fidelity, magic hooks reached by WordPress, class alias/autoload lifecycle,
+  readonly/property hooks, broader recursive trait adaptations, or broader
+  class/object semantics.
+- Reference/COW lane: Milestone 1557 targets general reference containers,
+  by-reference parameters and returns, reference assignment, array offsets
+  below magic properties, inaccessible declared-property magic fallback,
+  magic-property reference containers, arbitrary reference expressions,
+  invisible selected dynamic properties, mixed nested `ArrayAccess` chains,
+  broader array/object copy-on-write, exact alias destruction ordering,
+  object/Traversable by-reference iteration, superglobal reference lifetime,
+  or native lowering diagnostics.
+- Request/SAPI/filesystem/stream lane: Milestone 1558 targets session
+  private/public cache-header variants, exact Date/request-time parity,
+  session cookie replacement parity, realpath-cache entries, stat-cache
+  coverage beyond `filesize()`/`filemtime()`, include_path/open_basedir policy,
+  stream-wrapper cache interaction, cookie-name encoding, exact `ValueError`
+  parity, output buffering, shutdown/fatal/destructor ordering,
+  request-body lifetime, uploads, host filesystem edge cases, real SAPI
+  emission, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1559 targets expired-transient
+  predicates with wildcard parity, SQL-mode-aware prepared deletes, real
+  mysqlnd unbuffered transfer behavior, arbitrary prepared SQL, broader
+  SQL-mode and MySQL wildcard parity, dbDelta-relevant schema diffing, host
+  database inspection, arbitrary query/result behavior,
   charset/collation/error fidelity, persistent object-cache/transients, hook
   callback shapes, plugin/theme probes, or REST/admin/front-controller
   bootstrap progress.
-- Tests/docs lane: Milestone 1555 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1560 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1546 through 1549 closed the latest four WordPress-focused
+Milestones 1551 through 1554 closed the latest four WordPress-focused
+implementation lanes; Milestone 1555 is the current integration/full-gate slot.
+Milestones 1546 through 1549 closed the previous four WordPress-focused
 implementation lanes, and Milestone 1550 refreshed the queue and recorded the
 full-gate result.
 Milestones 1541 through 1544 closed the latest four WordPress-focused

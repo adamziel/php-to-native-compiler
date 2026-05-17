@@ -582,7 +582,7 @@ mutate(1);
     assert_eq!(error.column, 8);
     assert_eq!(
         error.message,
-        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset arguments in the current subset"
+        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset"
     );
 }
 
@@ -2832,6 +2832,47 @@ echo $dynamic->dynamicItems["outer"]["slot"];
     .unwrap();
 
     assert_eq!(execution.stdout, "seed:named\ndynamic:selected");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_parameter_accepts_magic_get_direct_variable_source() {
+    let execution = run_source(
+        r#"<?php
+$storage = "initial";
+$dynamicStorage = "dynamic";
+
+class MagicBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+class DynamicMagicBox {
+    public function &__get($name) {
+        global $dynamicStorage;
+        return $dynamicStorage;
+    }
+}
+
+function touch_magic(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+$box = new MagicBox();
+touch_magic($box->missing, "plain");
+echo $storage, "\n";
+
+$dynamicBox = new DynamicMagicBox();
+$property = "dynamic";
+touch_magic($dynamicBox->{$property}, "selected");
+echo $dynamicStorage;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "initial:plain\ndynamic:selected");
     assert_eq!(execution.exit_code, 0);
 }
 

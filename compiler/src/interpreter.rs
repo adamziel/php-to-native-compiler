@@ -175,6 +175,8 @@ struct Interpreter {
     output_start: Option<OutputStart>,
     session_status: i64,
     session_id: String,
+    session_cache_limiter: String,
+    session_cache_expire: i64,
     session_store: HashMap<String, PhpArray>,
     stdout: String,
     stderr: String,
@@ -3347,6 +3349,8 @@ impl Interpreter {
             output_start: None,
             session_status: PHP_SESSION_NONE,
             session_id: String::new(),
+            session_cache_limiter: "nocache".to_string(),
+            session_cache_expire: 180,
             session_store: HashMap::new(),
             stdout: String::new(),
             stderr: String::new(),
@@ -14354,9 +14358,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(prefix) = parse_wordpress_option_delete_prefix_query(&query) {
+        if let Some(filter) = parse_wordpress_option_delete_like_query(&query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
-                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -15191,9 +15195,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(prefix) = parse_wordpress_option_delete_prefix_query(query) {
+        if let Some(filter) = parse_wordpress_option_delete_like_query(query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
-                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -17984,16 +17988,6 @@ impl Interpreter {
                 ),
             ));
         };
-        if state.visibility != Visibility::Public {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    "non-public method reflection invocation is not implemented",
-                ),
-            ));
-        }
-
         if state.is_static {
             match target {
                 Value::Null | Value::Object(_) => {}
@@ -25726,12 +25720,23 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
+                } else if let Some((caller_cell, value)) =
+                    self.evaluate_magic_get_reference_argument(arg, caller_scope)?
+                {
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::CallerCell {
+                            name: "<magic __get>".to_string(),
+                            cell: caller_cell,
+                        },
+                    });
                 } else {
                     return Err(runtime_error(
                         arg.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset arguments in the current subset",
+                            "reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset",
                         ),
                     ));
                 }
@@ -25756,6 +25761,75 @@ impl Interpreter {
         }
 
         Ok((values, reference_bindings))
+    }
+
+    fn evaluate_magic_get_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(VariableCell, Value)>> {
+        let Some((object_name, property)) =
+            self.direct_object_property_reference_argument_parts(arg, caller_scope)?
+        else {
+            return Ok(None);
+        };
+
+        let object = match caller_scope.read_static(&object_name, arg.span())? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_undefined_property_error(&error) => {
+                if let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, &property, arg.span())?
+                {
+                    let value = cell.borrow().clone();
+                    Ok(Some((cell, value)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(error) => Err(runtime_error(arg.span(), error)),
+        }
+    }
+
+    fn direct_object_property_reference_argument_parts(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(String, String)>> {
+        match arg {
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Ok(None);
+                };
+                Ok(Some((object_name.clone(), property.clone())))
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Ok(None);
+                };
+                let property =
+                    self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+                Ok(Some((object_name.clone(), property)))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn evaluate_direct_array_reference_argument(
@@ -28196,6 +28270,19 @@ impl Interpreter {
         let cookie_samesite =
             Self::session_string_option(args, "cookie_samesite", "session_start()", span)?;
 
+        if !matches!(self.session_cache_limiter.as_str(), "nocache" | "") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "session_start()",
+                    format!(
+                        "session cache limiter '{}' is not supported in the current subset",
+                        self.session_cache_limiter
+                    ),
+                ),
+            ));
+        }
+
         self.session_status = PHP_SESSION_ACTIVE;
         if self.session_id.is_empty() {
             self.session_id = "phpc-session".to_string();
@@ -28211,7 +28298,11 @@ impl Interpreter {
                 cookie_samesite.as_deref(),
             ));
         }
-        self.append_session_cache_headers();
+        match self.session_cache_limiter.as_str() {
+            "nocache" => self.append_session_cache_headers(),
+            "" => {}
+            _ => unreachable!("session cache limiter was validated before session state mutation"),
+        }
         let session_data = self
             .load_session_file(span)?
             .or_else(|| self.session_store.get(&self.session_id).cloned())
@@ -28363,6 +28454,100 @@ impl Interpreter {
     fn call_session_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("session_status", args, 0, span)?;
         Ok(Value::Int(self.session_status))
+    }
+
+    fn call_session_cache_limiter(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "session_cache_limiter()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.session_cache_limiter.clone();
+        let Some(limiter) = args.first() else {
+            return Ok(Value::String(previous));
+        };
+        let Value::String(limiter) = limiter else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "session_cache_limiter()",
+                    format!(
+                        "cache_limiter argument must be string in the current subset, got {}",
+                        limiter.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if let Some(message) = self.session_output_started_warning() {
+            self.emit_warning("session_cache_limiter()", message, span)?;
+            return Ok(Value::Bool(false));
+        }
+
+        if self.session_status == PHP_SESSION_ACTIVE {
+            self.emit_warning(
+                "session_cache_limiter()",
+                "Session cache limiter cannot be changed when a session is active",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+
+        self.session_cache_limiter = limiter.clone();
+        Ok(Value::String(previous))
+    }
+
+    fn call_session_cache_expire(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "session_cache_expire()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.session_cache_expire;
+        let Some(expire) = args.first() else {
+            return Ok(Value::Int(previous));
+        };
+        let Value::Int(expire) = expire else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "session_cache_expire()",
+                    format!(
+                        "new_cache_expire argument must be int in the current subset, got {}",
+                        expire.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if let Some(message) = self.session_output_started_warning() {
+            self.emit_warning("session_cache_expire()", message, span)?;
+            return Ok(Value::Bool(false));
+        }
+
+        if self.session_status == PHP_SESSION_ACTIVE {
+            self.emit_warning(
+                "session_cache_expire()",
+                "Session cache expiration cannot be changed when a session is active",
+                span,
+            )?;
+            return Ok(Value::Int(previous));
+        }
+
+        self.session_cache_expire = *expire;
+        Ok(Value::Int(previous))
     }
 
     fn call_session_id(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -30756,6 +30941,8 @@ impl Interpreter {
             "setrawcookie" => self.call_setrawcookie(&args, span),
             "session_start" => self.call_session_start(&args, span),
             "session_status" => self.call_session_status(&args, span),
+            "session_cache_limiter" => self.call_session_cache_limiter(&args, span),
+            "session_cache_expire" => self.call_session_cache_expire(&args, span),
             "session_id" => self.call_session_id(&args, span),
             "session_write_close" => self.call_session_write_close(&args, span),
             "assert" => {
@@ -37227,6 +37414,8 @@ fn is_builtin(name: &str) -> bool {
             | "setrawcookie"
             | "session_start"
             | "session_status"
+            | "session_cache_limiter"
+            | "session_cache_expire"
             | "session_id"
             | "session_write_close"
             | "assert"
@@ -37685,7 +37874,6 @@ enum WordPressOptionsRowFilter {
     All,
     Autoload,
     AutoloadValues(Vec<String>),
-    OptionNamePrefix(String),
     OptionNameLike(WordPressSchemaNameFilter),
     OptionNamePrefixValueLessThan(String, i64),
     Names(Vec<String>),
@@ -40598,17 +40786,14 @@ fn parse_wordpress_option_delete_names_query(query: &str) -> Option<Vec<String>>
     parse_sql_single_quoted_list(values)
 }
 
-fn parse_wordpress_option_delete_prefix_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_delete_like_query(query: &str) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let pattern_sql = query
         .strip_prefix("DELETE FROM wp_options WHERE option_name LIKE ")
         .or_else(|| query.strip_prefix("DELETE FROM wp_options WHERE `option_name` LIKE "))
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` LIKE "))?;
-    let values = parse_sql_single_quoted_list(pattern_sql)?;
-    if values.len() != 1 {
-        return None;
-    }
-    parse_wordpress_option_name_prefix_like_pattern(&values[0])
+    parse_sql_single_quoted_schema_like_filter(pattern_sql, false)
+        .map(WordPressOptionsRowFilter::OptionNameLike)
 }
 
 fn parse_wordpress_option_delete_expired_transient_pair_query(
@@ -41077,17 +41262,6 @@ fn delete_wordpress_options_by_names(
     affected_rows
 }
 
-fn delete_wordpress_options_by_prefix(
-    options: &mut HashMap<String, WordPressOptionState>,
-    prefix: &str,
-) -> i64 {
-    let names = wordpress_option_names_for_filter(
-        options,
-        &WordPressOptionsRowFilter::OptionNamePrefix(prefix.to_string()),
-    );
-    delete_wordpress_options_by_names(options, &names)
-}
-
 fn delete_wordpress_options_by_filter(
     options: &mut HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
@@ -41203,15 +41377,6 @@ fn wordpress_option_names_for_filter(
                 .filter_map(|(name, option)| {
                     values.contains(&option.autoload).then(|| name.clone())
                 })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::OptionNamePrefix(prefix) => {
-            let mut names: Vec<_> = options
-                .keys()
-                .filter(|name| name.starts_with(prefix))
-                .cloned()
                 .collect();
             names.sort();
             names

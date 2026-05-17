@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone1552/magic_get_reference_parameter.php
+initial:plain
+dynamic:selected
+0

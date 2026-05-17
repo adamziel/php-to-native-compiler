@@ -134,9 +134,16 @@
   the selected visible property holds an `ArrayAccess` object and public
   by-reference `offsetGet($offset)` has the exact bounded body
   `return $this->property[$offset];`; writes route through the backing
-  property array slot. This does not add mixed nested `ArrayAccess` chains,
-  magic-property reference containers, arbitrary reference expressions, or a
-  general in-call PHP reference container. String
+  property array slot. Direct user-function by-reference calls also accept
+  direct missing named and dynamic object-property arguments such as
+  `handler($object->missing)` and `handler($object->{$name})` when a visible
+  public `__get($name)` method returns by reference and that method's bounded
+  reference-return body returns a direct variable; the callee parameter binds
+  to the returned variable cell. This does not add array offsets below magic
+  properties, inaccessible declared-property magic fallback, mixed nested
+  `ArrayAccess` chains, general magic-property reference containers,
+  arbitrary reference expressions, or a general in-call PHP reference
+  container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -1426,7 +1433,8 @@
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `setrawcookie`,
-  `session_start`, `session_status`, `session_id`, `session_write_close`,
+  `session_start`, `session_status`, `session_cache_limiter`,
+  `session_cache_expire`, `session_id`, `session_write_close`,
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -1995,8 +2003,11 @@
   state island remove option names through the bounded MySQL-like wildcard
   matcher, including `%`, `_`, backslash-escaped wildcard literals, and an
   exact trailing single-character `ESCAPE '<char>'` clause for the backticked
-  or plain table/column spellings. This does not add direct literal-delete
-  `ESCAPE` clauses, SQL-mode-aware prepared deletes, arbitrary predicates, or
+  or plain table/column spellings. Direct literal
+  `DELETE FROM wp_options WHERE option_name LIKE '<pattern>'` queries use that
+  same bounded matcher, including an exact trailing single-character
+  `ESCAPE '<char>'` clause for the current plain and backticked table/column
+  spellings. This does not add SQL-mode-aware deletes, arbitrary predicates, or
   host database execution. The same state island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
@@ -2453,9 +2464,9 @@
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
-  exact option-name equality, option-name-list, trailing-percent
-  option-name-prefix, and expired transient-timeout prefix/threshold shapes,
-  transient payload joins or pair deletion, real
+  exact option-name equality, option-name-list, bounded option-name LIKE
+  matcher, expired transient-timeout prefix/threshold shapes, and the exact
+  transient payload pair delete shape, real
   transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
@@ -2508,8 +2519,8 @@
   option-row projections and does not support prepared `ESCAPE` clauses,
   SQL-mode-aware `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists,
   `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
-  host database execution. Prepared LIKE deletes and expired-timeout
-  predicates remain prefix-only. The exact prepared
+  host database execution. Expired-timeout predicates remain prefix-only. The
+  exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
   trailing option-name `ORDER BY` suffix, returns deterministic expired
@@ -3184,6 +3195,20 @@
   `session_id($id = null)` returns the current id; before a session is active,
   one string argument sets a deterministic id and returns the previous id.
   While active, `session_id($id)` returns `false` without changing the id.
+  `session_cache_limiter($value = null)` returns the current request-local
+  cache limiter string, defaults to `nocache`, and before output or active
+  session state accepts one string argument and returns the previous limiter.
+  The empty string suppresses session cache headers on the next fresh start;
+  `nocache` emits the deterministic `Expires`, `Cache-Control`, and `Pragma`
+  trio. Changes after output or while a session is active route a bounded
+  warning and return `false`. Other limiter strings can be stored before
+  start but remain unsupported for header emission and make `session_start()`
+  fail with a stable unsupported-call diagnostic in the current subset.
+  `session_cache_expire($value = null)` returns the current request-local
+  expiration integer, defaults to `180`, and before output or active session
+  state accepts one int argument and returns the previous expiration. The
+  value is retained for future cache-header variants; the current `nocache`
+  and empty-limiter header slice does not use it.
   `session_write_close()` accepts no arguments, closes the active bounded
   session status back to `PHP_SESSION_NONE`, keeps the in-memory `$_SESSION`
   data visible for the rest of the request, stores a request-local snapshot
@@ -3199,10 +3224,12 @@
   locking, save handlers,
   `session_name()`, `session_destroy()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
-  `session_cache_*()`, broader PHP session-id policy, option effects beyond
+  `session_regenerate_id()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
   expiration-date formatting, cookie replacement, cache-limiter configuration
-  and cache-header variants beyond the default no-cache trio, garbage
+  beyond the documented `session_cache_limiter()`/`session_cache_expire()`
+  storage slice and cache-header variants beyond empty suppression plus the
+  default no-cache trio, garbage
   collection, integer top-level session keys, object/resource session
   serialization, exact malformed session-file recovery parity, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
@@ -4869,7 +4896,8 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `session_start`, `session_status`, `session_id`, `session_write_close`,
+  `session_start`, `session_status`, `session_cache_limiter`,
+  `session_cache_expire`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -5808,7 +5836,8 @@
   preserving raw string values; direct native calls reject under the
   header-state boundary, while native function-table introspection recognizes
   both names.
-  `session_start`, `session_status`, `session_id`, and `session_write_close`
+  `session_start`, `session_status`, `session_cache_limiter`,
+  `session_cache_expire`, `session_id`, and `session_write_close`
   accept the same current bounded in-memory CLI session subset as the builtin
   section above; direct native calls reject under the session-state boundary,
   while native function-table introspection recognizes the names. Native reads
@@ -6140,12 +6169,15 @@
   reflection keeps parsed line/doc-comment metadata in the current request but
   does not yet persist declaration source-file paths.
   `ReflectionMethod::invoke($object, ...$args)` and
-  `ReflectionMethod::invokeArgs($object, $args)` execute public declared
-  user-class methods over the current by-value argument subset. Non-static
-  method invocation preserves object identity for `$this` mutations. Static
-  method invocation accepts `null` or an object target, ignores the target
-  object like PHP, and preserves the reflected class for inherited
-  `static::` lookup. Non-public methods, interface and trait method targets,
+  `ReflectionMethod::invokeArgs($object, $args)` execute declared user-class
+  methods over the current by-value argument subset, including public,
+  protected, and private reflected methods. Non-static method invocation
+  preserves object identity for `$this` mutations, accepts instances of the
+  declaring class or subclasses, and runs the reflected method with the
+  declaring class context while preserving the target object's called class
+  for `static::` lookup. Static method invocation accepts `null` or an object
+  target, ignores the target object like PHP, and preserves the reflected
+  class for inherited `static::` lookup. Interface and trait method targets,
   internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader

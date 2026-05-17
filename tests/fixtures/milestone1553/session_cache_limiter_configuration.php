@@ -1,0 +1,20 @@
+<?php
+$out = session_cache_limiter();
+$out = $out . "|" . session_cache_expire();
+$out = $out . "|" . session_cache_expire(42);
+$out = $out . "|" . session_cache_expire();
+$out = $out . "|" . session_cache_limiter("");
+$out = $out . "|" . session_cache_limiter();
+session_id("phpcmilestone1553off");
+session_start(array("use_cookies" => false));
+$out = $out . "|" . count(headers_list());
+session_write_close();
+header_remove();
+$out = $out . "|" . session_cache_limiter("nocache");
+$out = $out . "|" . session_cache_limiter();
+session_id("phpcmilestone1553on");
+session_start(array("use_cookies" => false));
+$headers = headers_list();
+$out = $out . "|" . count($headers);
+$out = $out . "|" . $headers[0];
+echo $out;

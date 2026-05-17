@@ -175,11 +175,11 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded public static
-`ReflectionMethod::invoke()`/`invokeArgs()`, by-reference user-function
-parameters over non-direct holder plain object-property array roots, bounded
-default session no-cache header emission, and prepared `wp_options`
-`DELETE ... option_name LIKE ?` wildcard matching.
+The latest WordPress-focused batch closed bounded non-public
+`ReflectionMethod::invoke()`/`invokeArgs()`, direct magic `__get()` reference
+parameters for missing properties, bounded `session_cache_limiter()` and
+`session_cache_expire()` state, and direct literal `wp_options`
+`DELETE ... option_name LIKE '<pattern>' ESCAPE '<char>'` wildcard matching.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream
