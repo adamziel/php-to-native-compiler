@@ -7068,6 +7068,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "spl_object_id"
             | "spl_object_hash"
             | "spl_autoload_register"
+            | "spl_autoload_functions"
+            | "spl_autoload_unregister"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"

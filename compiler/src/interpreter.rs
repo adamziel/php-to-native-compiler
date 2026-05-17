@@ -342,7 +342,7 @@ enum AutoloadCallback {
     InvokableObject {
         object: PhpObject,
     },
-    Closure,
+    Closure(PhpClosure),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -6181,9 +6181,9 @@ impl Interpreter {
                 method,
                 args,
                 span: call_span,
-            } => self
-                .call_reference_return_instance_method(target, method, args, *call_span, scope)
-                .map(ReferenceReturnBinding::Cell),
+            } => self.call_reference_return_instance_method(
+                target, method, args, *call_span, scope,
+            ),
             Expr::StaticMethodCall {
                 class_name,
                 method,
@@ -6193,29 +6193,22 @@ impl Interpreter {
                 self.call_reference_return_named_static_method(
                     class_name, method, args, *call_span, scope,
                 )
-                .map(ReferenceReturnBinding::Cell)
             }
             Expr::SelfMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self
-                .call_reference_return_self_method(method, args, *call_span, scope)
-                .map(ReferenceReturnBinding::Cell),
+            } => self.call_reference_return_self_method(method, args, *call_span, scope),
             Expr::ParentMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self
-                .call_reference_return_parent_method(method, args, *call_span, scope)
-                .map(ReferenceReturnBinding::Cell),
+            } => self.call_reference_return_parent_method(method, args, *call_span, scope),
             Expr::LateStaticMethodCall {
                 method,
                 args,
                 span: call_span,
-            } => self
-                .call_reference_return_late_static_method(method, args, *call_span, scope)
-                .map(ReferenceReturnBinding::Cell),
+            } => self.call_reference_return_late_static_method(method, args, *call_span, scope),
             Expr::ObjectStaticMethodCall {
                 target,
                 method,
@@ -6223,8 +6216,7 @@ impl Interpreter {
                 span: call_span,
             } => self.call_reference_return_dynamic_static_method(
                 target, method, args, *call_span, scope,
-            )
-            .map(ReferenceReturnBinding::Cell),
+            ),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -9376,6 +9368,30 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_delete_prefix_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let prefix = wordpress_option_name_delete_prefix_from_prepared_params(
+                        function,
+                        &bound_parameters,
+                        span,
+                    )?;
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -10605,6 +10621,27 @@ impl Interpreter {
             }
         }
 
+        if let Some(prefix) = parse_wordpress_option_delete_prefix_query(&query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if is_wordpress_option_prepared_delete_prefix_query(&query) {
+            let prefix = wordpress_option_name_delete_prefix_from_prepared_params(
+                "mysqli_execute_query()",
+                &params,
+                span,
+            )?;
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -11131,6 +11168,14 @@ impl Interpreter {
         if let Some(option_names) = parse_wordpress_option_delete_names_query(query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if let Some(prefix) = parse_wordpress_option_delete_prefix_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -16053,59 +16098,9 @@ impl Interpreter {
             ));
         }
 
-        let callback = match &args[0] {
-            Expr::Closure { .. } => AutoloadCallback::Closure,
-            callback => match self.evaluate(callback, caller_scope)? {
-                Value::String(name) => {
-                    if let Some((class_name, method_name)) = static_method_callable_string(&name) {
-                        AutoloadCallback::StaticMethod {
-                            class_name: class_name.to_string(),
-                            method_name: method_name.to_string(),
-                        }
-                    } else {
-                        AutoloadCallback::Function(name)
-                    }
-                }
-                Value::Array(array) => {
-                    let Some((target, method_name)) = array_callable_parts(&array) else {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "spl_autoload_register()",
-                                "array callback must be [object-or-class, method] in the current subset",
-                            ),
-                        ));
-                    };
-                    match target {
-                        Value::String(class_name) => AutoloadCallback::StaticMethod {
-                            class_name: class_name.clone(),
-                            method_name: method_name.to_string(),
-                        },
-                        Value::Object(object) => AutoloadCallback::ObjectMethod {
-                            object: object.clone(),
-                            method_name: method_name.to_string(),
-                        },
-                        _ => unreachable!("array_callable_parts restricts callback targets"),
-                    }
-                }
-                Value::Object(object) => {
-                    self.validate_autoload_invokable_object_callback(&object, span)?;
-                    AutoloadCallback::InvokableObject { object }
-                }
-                other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "spl_autoload_register()",
-                            format!(
-                                "callback argument must be closure, string, array callable, or invokable object in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
-                }
-            },
-        };
+        let callback_value = self.evaluate(&args[0], caller_scope)?;
+        let callback =
+            self.autoload_callback_from_value(callback_value, span, "spl_autoload_register()")?;
 
         let mut prepend = false;
         for (index, arg) in args.iter().enumerate().skip(1) {
@@ -16138,6 +16133,120 @@ impl Interpreter {
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn call_spl_autoload_functions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("spl_autoload_functions", args, 0, span)?;
+
+        let mut callbacks = PhpArray::new();
+        for (index, callback) in self.autoload_callbacks.iter().enumerate() {
+            callbacks.insert(
+                ArrayKey::Int(index as i64),
+                self.autoload_callback_to_value(callback),
+            );
+        }
+        Ok(Value::Array(callbacks))
+    }
+
+    fn call_spl_autoload_unregister(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("spl_autoload_unregister", args, 1, span)?;
+
+        let callback =
+            self.autoload_callback_from_value(args[0].clone(), span, "spl_autoload_unregister()")?;
+
+        let Some(index) = self
+            .autoload_callbacks
+            .iter()
+            .position(|registered| autoload_callbacks_match(registered, &callback))
+        else {
+            return Ok(Value::Bool(false));
+        };
+
+        self.autoload_callbacks.remove(index);
+        Ok(Value::Bool(true))
+    }
+
+    fn autoload_callback_from_value(
+        &self,
+        value: Value,
+        span: Span,
+        function_name: &'static str,
+    ) -> CompileResult<AutoloadCallback> {
+        match value {
+            Value::Closure(closure) => Ok(AutoloadCallback::Closure(closure)),
+            Value::String(name) => {
+                if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+                    Ok(AutoloadCallback::StaticMethod {
+                        class_name: class_name.to_string(),
+                        method_name: method_name.to_string(),
+                    })
+                } else {
+                    Ok(AutoloadCallback::Function(name))
+                }
+            }
+            Value::Array(array) => {
+                let Some((target, method_name)) = array_callable_parts(&array) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            function_name,
+                            "array callback must be [object-or-class, method] in the current subset",
+                        ),
+                    ));
+                };
+                match target {
+                    Value::String(class_name) => Ok(AutoloadCallback::StaticMethod {
+                        class_name: class_name.clone(),
+                        method_name: method_name.to_string(),
+                    }),
+                    Value::Object(object) => Ok(AutoloadCallback::ObjectMethod {
+                        object: object.clone(),
+                        method_name: method_name.to_string(),
+                    }),
+                    _ => unreachable!("array_callable_parts restricts callback targets"),
+                }
+            }
+            Value::Object(object) => {
+                self.validate_autoload_invokable_object_callback(&object, span)?;
+                Ok(AutoloadCallback::InvokableObject { object })
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    format!(
+                        "callback argument must be closure, string, array callable, or invokable object in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn autoload_callback_to_value(&self, callback: &AutoloadCallback) -> Value {
+        match callback {
+            AutoloadCallback::Function(name) => Value::String(name.clone()),
+            AutoloadCallback::StaticMethod {
+                class_name,
+                method_name,
+            } => {
+                let mut callable = PhpArray::new();
+                callable.insert(ArrayKey::Int(0), Value::String(class_name.clone()));
+                callable.insert(ArrayKey::Int(1), Value::String(method_name.clone()));
+                Value::Array(callable)
+            }
+            AutoloadCallback::ObjectMethod {
+                object,
+                method_name,
+            } => {
+                let mut callable = PhpArray::new();
+                callable.insert(ArrayKey::Int(0), Value::Object(object.clone()));
+                callable.insert(ArrayKey::Int(1), Value::String(method_name.clone()));
+                Value::Array(callable)
+            }
+            AutoloadCallback::InvokableObject { object } => Value::Object(object.clone()),
+            AutoloadCallback::Closure(closure) => Value::Closure(closure.clone()),
+        }
     }
 
     fn class_like_exists_with_autoload(
@@ -16253,7 +16362,7 @@ impl Interpreter {
                             break;
                         }
                     }
-                    AutoloadCallback::Closure => {
+                    AutoloadCallback::Closure(_) => {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
@@ -17475,7 +17584,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let target_value = self.evaluate(target, caller_scope)?;
         let object = match target_value {
             Value::Object(object) => object,
@@ -17535,17 +17644,24 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
         let called_class_id = object.class_id();
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             Some(object),
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -17556,7 +17672,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let class_id = self
             .classes
             .lookup_class_id(class_name)
@@ -17619,16 +17735,23 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             Some(declaring_class_id),
             Some(class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -17638,7 +17761,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let Some(current_class_id) = self.class_context.last().copied() else {
             return Err(runtime_error(
                 span,
@@ -17695,21 +17818,28 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
         let called_class_id = self
             .called_class_context
             .last()
             .copied()
             .unwrap_or(current_class_id);
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -17719,7 +17849,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let Some(current_class_id) = self.class_context.last().copied() else {
             return Err(runtime_error(
                 span,
@@ -17785,21 +17915,28 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
         let called_class_id = self
             .called_class_context
             .last()
             .copied()
             .unwrap_or(current_class_id);
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -17809,7 +17946,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let Some(called_class_id) = self.called_class_context.last().copied() else {
             return Err(runtime_error(
                 span,
@@ -17866,16 +18003,23 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             Some(class_id),
             Some(called_class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -17886,7 +18030,7 @@ impl Interpreter {
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let target_value = self.evaluate(target, caller_scope)?;
         let receiver_class_id = match target_value {
             Value::Object(object) => object.class_id(),
@@ -17970,16 +18114,23 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             Some(declaring_class_id),
             Some(receiver_class_id),
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -20175,7 +20326,21 @@ impl Interpreter {
             ));
         }
 
+        let replace = match args.get(1) {
+            Some(Value::Bool(replace)) => *replace,
+            _ => true,
+        };
+
         if self.output_start.is_none() {
+            if replace {
+                if let Some(name) = header_name(&header) {
+                    self.response_headers.retain(|existing| {
+                        header_name(existing)
+                            .map(|existing_name| !header_names_equal(existing_name, name))
+                            .unwrap_or(true)
+                    });
+                }
+            }
             self.response_headers.push(header);
         }
         Ok(Value::Null)
@@ -23060,6 +23225,8 @@ impl Interpreter {
                     ),
                 )),
             },
+            "spl_autoload_functions" => self.call_spl_autoload_functions(&args, span),
+            "spl_autoload_unregister" => self.call_spl_autoload_unregister(&args, span),
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
                     Ok(Value::Bool(self.value_is_a(object_or_class, class_name, false)))
@@ -27615,6 +27782,49 @@ fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
     }
 }
 
+fn autoload_callbacks_match(left: &AutoloadCallback, right: &AutoloadCallback) -> bool {
+    match (left, right) {
+        (AutoloadCallback::Function(left), AutoloadCallback::Function(right)) => {
+            left.eq_ignore_ascii_case(right)
+        }
+        (
+            AutoloadCallback::StaticMethod {
+                class_name: left_class,
+                method_name: left_method,
+            },
+            AutoloadCallback::StaticMethod {
+                class_name: right_class,
+                method_name: right_method,
+            },
+        ) => {
+            left_class.eq_ignore_ascii_case(right_class)
+                && left_method.eq_ignore_ascii_case(right_method)
+        }
+        (
+            AutoloadCallback::ObjectMethod {
+                object: left_object,
+                method_name: left_method,
+            },
+            AutoloadCallback::ObjectMethod {
+                object: right_object,
+                method_name: right_method,
+            },
+        ) => left_object == right_object && left_method.eq_ignore_ascii_case(right_method),
+        (
+            AutoloadCallback::InvokableObject {
+                object: left_object,
+            },
+            AutoloadCallback::InvokableObject {
+                object: right_object,
+            },
+        ) => left_object == right_object,
+        (AutoloadCallback::Closure(left), AutoloadCallback::Closure(right)) => {
+            left.id() == right.id()
+        }
+        _ => false,
+    }
+}
+
 fn static_method_callable_string(name: &str) -> Option<(&str, &str)> {
     let (class_name, method_name) = name.split_once("::")?;
     if class_name.is_empty() || method_name.is_empty() || method_name.contains("::") {
@@ -27901,6 +28111,8 @@ fn is_builtin(name: &str) -> bool {
             | "spl_object_id"
             | "spl_object_hash"
             | "spl_autoload_register"
+            | "spl_autoload_functions"
+            | "spl_autoload_unregister"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"
@@ -28649,6 +28861,15 @@ fn is_wordpress_option_prepared_delete_names_query(query: &str) -> bool {
     .is_some()
 }
 
+fn is_wordpress_option_prepared_delete_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "DELETE FROM wp_options WHERE option_name LIKE ?"
+            | "DELETE FROM wp_options WHERE `option_name` LIKE ?"
+            | "DELETE FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
+}
+
 fn is_wordpress_option_prepared_name_value_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -28926,6 +29147,32 @@ fn wordpress_option_name_prefix_from_prepared_params(
     })
 }
 
+fn wordpress_option_name_delete_prefix_from_prepared_params(
+    function: &str,
+    params: &[Value],
+    span: Span,
+) -> CompileResult<String> {
+    let [Value::String(pattern)] = params else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options option-name LIKE prefix delete requires one string pattern parameter in the current subset",
+            ),
+        ));
+    };
+    let pattern = pattern.replace("\\_", "_");
+    parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options option-name LIKE prefix delete supports only a trailing-percent prefix pattern in the current subset",
+            ),
+        )
+    })
+}
+
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
     let query = query.trim();
     let rest = query
@@ -28945,6 +29192,19 @@ fn parse_wordpress_option_delete_names_query(query: &str) -> Option<Vec<String>>
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
     parse_sql_single_quoted_list(values)
+}
+
+fn parse_wordpress_option_delete_prefix_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let pattern_sql = query
+        .strip_prefix("DELETE FROM wp_options WHERE option_name LIKE ")
+        .or_else(|| query.strip_prefix("DELETE FROM wp_options WHERE `option_name` LIKE "))
+        .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` LIKE "))?;
+    let values = parse_sql_single_quoted_list(pattern_sql)?;
+    if values.len() != 1 {
+        return None;
+    }
+    parse_wordpress_option_name_prefix_like_pattern(&values[0])
 }
 
 fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
@@ -29264,6 +29524,17 @@ fn delete_wordpress_options_by_names(
         }
     }
     affected_rows
+}
+
+fn delete_wordpress_options_by_prefix(
+    options: &mut HashMap<String, WordPressOptionState>,
+    prefix: &str,
+) -> i64 {
+    let names = wordpress_option_names_for_filter(
+        options,
+        &WordPressOptionsRowFilter::OptionNamePrefix(prefix.to_string()),
+    );
+    delete_wordpress_options_by_names(options, &names)
 }
 
 fn wordpress_option_name_value_autoload_rows_for_filter(
@@ -31910,6 +32181,10 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
 fn header_name(header: &str) -> Option<&str> {
     let (name, _) = header.split_once(':')?;
     Some(name)
+}
+
+fn header_names_equal(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
 }
 
 fn apply_stream_context_options(

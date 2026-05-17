@@ -138,15 +138,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed invokable-object autoload callbacks,
-direct free-function reference-return assignment for covered array-slot
-by-reference arguments, default stream-context option persistence, and prepared
-transient-shaped `wp_options` prefix scans over the placeholder MySQLi state
-island. Those are useful compatibility steps, but they do not change the larger
-project shape: the next lanes should keep attacking broad object/interface
-semantics, real reference/COW behavior, request/SAPI/filesystem/stream breadth,
-and executable WordPress database/bootstrap evidence until those areas become
-coherent subsystems instead of reached slices.
+The latest WordPress-focused batch closed bounded autoload lifecycle
+introspection/unregistering, method/static reference-return assignment for
+covered array-slot by-reference arguments, deterministic CLI header replacement
+state, and direct/prepared transient-shaped `wp_options` prefix deletes over the
+placeholder MySQLi state island. Those are useful compatibility steps, but they
+do not change the larger project shape: the next lanes should keep attacking
+broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress
+database/bootstrap evidence until those areas become coherent subsystems
+instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

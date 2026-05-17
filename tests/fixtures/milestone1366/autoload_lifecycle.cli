@@ -1,0 +1,19 @@
+$ phpc run tests/fixtures/milestone1366/autoload_lifecycle.php
+0
+4
+ObjectLoader
+FirstLoader
+StaticLoader::load
+ObjectLoader::load
+invoke:MissingOne
+first:MissingOne
+static:MissingOne
+object:MissingOne
+missing
+removed-invoke
+removed-static
+missing-callback
+2
+first:MissingTwo
+object:MissingTwo
+missing

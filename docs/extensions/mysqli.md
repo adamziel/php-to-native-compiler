@@ -327,11 +327,16 @@ prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements,
 including the current backticked table/column spelling, are accepted through
 `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query, array(...))`
 when every placeholder value is a string option name; duplicate names are
-de-duplicated for affected-row accounting. This gives the current
-transient-shaped cleanup probe a deterministic option-state path for literal
-and prepared name lists; it is not broad `DELETE` SQL, subquery support,
-arbitrary predicates, non-string option-name params, real index/lock behavior,
-or host database execution. A later exact
+de-duplicated for affected-row accounting. Exact
+`DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` and prepared
+`DELETE FROM wp_options WHERE option_name LIKE ?` shapes remove deterministic
+trailing-percent option-name prefix matches, including backticked table/column
+spellings and escaped transient prefixes such as `\_transient\_%`. This gives
+the current transient-shaped cleanup probe a deterministic option-state path
+for literal/prepared name lists and prefix deletes; it is not broad `DELETE`
+SQL, subquery support, arbitrary predicates, general SQL `LIKE` wildcard
+semantics, non-string option-name params, real index/lock behavior, or host
+database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
@@ -395,7 +400,8 @@ projection beyond exact option id/name/value/autoload/value-only/name-only/name-
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond exact
-option-name equality and option-name-list shapes, real
+option-name equality, option-name-list, and trailing-percent option-name-prefix
+shapes, real
 transaction isolation/locking/savepoint behavior, host database execution,
 PDO, broad prepared-statement mutation state, warning/error fidelity, or
 native lowering. The current transaction and savepoint helpers can snapshot
@@ -535,14 +541,18 @@ The exact
 `DELETE FROM wp_options WHERE option_name = ?` prepared statement removes an
 existing recorded option for a string option-name parameter on the same
 handle, updates statement and connection affected-row metadata, and treats
-missing option names as successful zero-row deletes. Prepared mutation SQL
-without a prior state island remains unsupported. This does not add broad
+missing option names as successful zero-row deletes. The exact
+`DELETE FROM wp_options WHERE option_name LIKE ?` prepared statement removes
+recorded options whose names match one string trailing-percent prefix pattern
+and updates statement and connection affected-row metadata. Prepared mutation
+SQL without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
 affected-row fidelity, prepared mutation shapes beyond the exact option value,
-value/autoload, autoload-only, insert, replace, upsert, and delete forms listed
-above, arbitrary projections, non-string parameter coercion, result binding
-fidelity beyond exact metadata, real auto-increment fidelity, host database
-execution, PDO, or native lowering.
+value/autoload, autoload-only, insert, replace, upsert, equality delete,
+name-list delete, and prefix delete forms listed above, arbitrary projections,
+non-string parameter coercion, result binding fidelity beyond exact metadata,
+real auto-increment fidelity, host database execution, PDO, or native
+lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

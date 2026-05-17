@@ -58,17 +58,20 @@
   class/method context, and non-object/non-string dynamic receivers remain
   unsupported. Magic `__callStatic` reference-return method sources are an
   explicit runtime boundary with a stable unsupported-call diagnostic.
-  Direct free-function reference-return assignment also accepts the current
-  bounded direct array-offset and direct public object-property array-offset
-  by-reference argument bridge when the function returns that reached
-  parameter directly, for example
+  Direct free-function, direct visible object-method, direct named static
+  method, `self::` static method, `parent::` static method,
+  `static::` late-static method, and dynamic static receiver reference-return
+  assignment also accept the current bounded direct array-offset and direct
+  public object-property array-offset by-reference argument bridge when the
+  function or method returns that reached parameter directly, for example
   `$alias =& identity($_REQUEST["payload"]["slot"]);` and
-  `$alias =& identity($object->items["slot"]);`. The assigned alias binds
-  back to the same covered slot group after the call. Method/static
-  reference-return sources with array-offset arguments, non-direct return
+  `$alias =& $object->method($items["slot"]);`,
+  `$alias =& ClassName::method($object->items["slot"]);`. The assigned alias
+  binds back to the same covered slot group after the call. Non-direct return
   expressions such as `return $items["slot"];`, nested-control-flow returns,
-  full PHP reference containers, copy-on-write, and native lowering remain
-  unsupported.
+  non-public/dynamic object-property argument roots, `ArrayAccess` argument
+  roots, real PHP reference containers, broader copy-on-write, and native
+  lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -1148,7 +1151,8 @@
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
-  `spl_object_id`, `spl_object_hash`, `spl_autoload_register`, `var_dump`,
+  `spl_object_id`, `spl_object_hash`, `spl_autoload_register`,
+  `spl_autoload_functions`, `spl_autoload_unregister`, `var_dump`,
   and `print_r`;
   `gettype` returns PHP legacy type names for the current value model
   (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and `object`);
@@ -1880,8 +1884,12 @@
   `mysqli_execute_query($handle, $query)` with no params, and accepts exact
   prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements
   through `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query,
-  array(...))` when all placeholders are string option names, and lets a later
-  exact
+  array(...))` when all placeholders are string option names. Exact
+  `DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` and prepared
+  `DELETE FROM wp_options WHERE option_name LIKE ?` shapes also remove
+  transient-shaped prefix matches with deterministic affected-row metadata,
+  including backticked table/column spellings and escaped prefixes such as
+  `\_transient\_%`. They also let a later exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
   path, and a later exact
@@ -1946,7 +1954,8 @@
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
-  exact option-name equality and option-name-list shapes, real
+  exact option-name equality, option-name-list, and trailing-percent
+  option-name-prefix shapes, real
   transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
@@ -2365,13 +2374,20 @@
   `new ClassName(...)` / direct-variable `new $class(...)` instantiation so
   they can include local files that declare class/interface/trait metadata.
   The same bounded callback path is used for missing traits reached while
-  registering included class declarations. Closure callbacks remain a
-  registration-only shape and report a stable unsupported autoload boundary if
-  a lookup needs to invoke them. Autoload unregistering, autoload functions,
-  non-public `__invoke`, static `__invoke`, invokable-object dispatch outside
-  autoloading, non-public methods, class-string non-static methods, object
-  static methods, `self::`/`parent::`/`static::` callback strings, arbitrary
-  callable arrays, throwing/exact warning behavior, enum autoload
+  registering included class declarations.
+  `spl_autoload_functions()` returns the current callback list in registration
+  order as PHP-shaped callable values for the same bounded shapes: function
+  strings, `["ClassName", "method"]`, `[$object, "method"]`, invokable
+  objects, and inert closures. `spl_autoload_unregister($callback)` removes
+  the first matching callback for those same bounded shapes and returns
+  `true`, or returns `false` for valid but unregistered bounded callbacks.
+  Closure callbacks remain a registration-only shape and report a stable
+  unsupported autoload boundary if a lookup needs to invoke them. Nonexistent
+  string callback validation for register/unregister, non-public `__invoke`,
+  static `__invoke`, invokable-object dispatch outside autoloading, non-public
+  methods, class-string non-static methods, object static methods,
+  `self::`/`parent::`/`static::` callback strings, arbitrary callable arrays,
+  throwing/exact warning behavior, enum autoload
   lookup, namespace/import canonicalization beyond current string lookup,
   recursive loader edge cases beyond a same-name guard, references/COW, and
   native lowering remain unsupported.
@@ -2422,19 +2438,25 @@
   warning behavior, exact diagnostics, and native lowering remain unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
-  code, appends the raw header line to deterministic in-process CLI request
-  state while output is still open, and returns `null`. Once bytes have reached
-  unbuffered stdout, later `header()` calls are ignored without modeling PHP's
-  warning text. This is a WordPress bootstrap/request compatibility boundary
-  only; duplicate replacement policy, status-code parsing/state, web-server/SAPI
-  integration, network response emission, exact diagnostics, warning recovery,
+  code, records the raw header line in deterministic in-process CLI request
+  state while output is still open, and returns `null`. For ordinary
+  colon-delimited header lines, the default replacement mode removes earlier
+  recorded lines with the same ASCII-case-insensitive field name before
+  appending the new line; `$replace = false` appends a duplicate line. Once
+  bytes have reached unbuffered stdout, later `header()` calls are ignored
+  without modeling PHP's warning text. This is a WordPress bootstrap/request
+  compatibility boundary only; status-code parsing/state, special status
+  header replacement, whitespace normalization, web-server/SAPI integration,
+  network response emission, exact diagnostics, warning recovery,
   partial-output behavior, and native lowering remain unsupported.
   `headers_list()` accepts no arguments and returns the current deterministic
   CLI header log as an ordered array of strings in current log order. It
-  exposes only this project-local request-state scaffold; PHP CLI parity, SAPI
-  response state, duplicate replacement policy, status-code headers, cookie
-  formatting, header normalization, output buffers, exact warnings, and native
-  lowering remain unsupported.
+  exposes only this project-local request-state scaffold after accepted
+  `header()` replacement/appends, simple `setcookie()` appends, and bounded
+  `header_remove()` mutations; PHP CLI parity, SAPI response state,
+  status-code headers, full cookie formatting, header normalization, output
+  buffers beyond the current output-started bookkeeping, exact warnings, and
+  native lowering remain unsupported.
   `header_remove($name = null)` accepts no argument or one string header name,
   returns `null`, mutates the current deterministic CLI header log by clearing
   it when no argument is provided, and removes entries whose raw header line
@@ -4682,7 +4704,8 @@
   `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`,
   `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
-  `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
+  `spl_autoload_register`, `spl_autoload_functions`,
+  `spl_autoload_unregister`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -5195,9 +5218,11 @@
   truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and missing included-declaration
-  `extends`/`implements`/trait-use dependencies, while closure invocation
-  and direct native calls still reject under explicit boundaries. Native
-  function-table introspection recognizes the name.
+  `extends`/`implements`/trait-use dependencies. `spl_autoload_functions`
+  exposes the current bounded callback list, and `spl_autoload_unregister`
+  removes matching bounded callback values. Closure invocation and direct
+  native calls still reject under explicit boundaries. Native function-table
+  introspection recognizes the names.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -7127,16 +7152,19 @@
   non-UTF-8 paths, broad scalar coercions, exact diagnostics, and native
   lowering beyond function-table introspection
 - `header()` behavior beyond accepting current string/bool/int arguments,
-  appending the raw header line to deterministic CLI request state, and
-  returning `null`: duplicate replacement policy, status-code parsing/state,
-  output-sent warnings, SAPI/web-server integration, network response
-  emission, exact `ValueError`/`TypeError` diagnostics, partial-output
-  behavior, and native lowering beyond function-table introspection
+  recording ordinary colon-delimited header lines in deterministic CLI request
+  state with bounded ASCII-case-insensitive replacement when `$replace` is true,
+  and returning `null`: status-code parsing/state, special status header
+  replacement, whitespace normalization, output-sent warnings, SAPI/web-server
+  integration, network response emission, exact `ValueError`/`TypeError`
+  diagnostics, partial-output behavior, and native lowering beyond
+  function-table introspection
 - `headers_list()` behavior beyond returning the current deterministic CLI
-  header log after accepted `header()` appends and bounded `header_remove()`
-  mutations: PHP CLI parity, SAPI response state, duplicate replacement
-  policy, status-code headers, cookie formatting, header normalization, output
-  buffers, exact warnings, and native lowering beyond function-table
+  header log after accepted `header()` replacement/appends, simple
+  `setcookie()` appends, and bounded `header_remove()` mutations: PHP CLI
+  parity, SAPI response state, status-code headers, full cookie formatting,
+  header normalization, output buffers beyond the current output-started
+  bookkeeping, exact warnings, and native lowering beyond function-table
   introspection
 - `header_remove()` behavior beyond clearing the current deterministic CLI
   header log with no arguments or removing raw colon-delimited entries whose
@@ -7229,7 +7257,8 @@
   objects for truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and included class declaration class/interface/trait
-  dependencies: unregistering, `spl_autoload_functions()`, closure invocation,
+  dependencies, plus bounded callback-list introspection and unregistering:
+  closure invocation, nonexistent string callback validation,
   non-public/static `__invoke`, invokable-object dispatch outside autoloading,
   non-public methods, class-string non-static methods, object static methods,
   `self::`/`parent::`/`static::` callback strings, enum autoload lookup,

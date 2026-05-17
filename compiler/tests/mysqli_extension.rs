@@ -4394,6 +4394,58 @@ mysqli_stmt_execute($stmt);
 }
 
 #[test]
+fn mysqli_deletes_current_wordpress_transient_prefix_options_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_feed_mod', 'cached-feed', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '123456', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_theme_roots', '789000', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_core', 'core-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_timeout_update_core', '456789', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name LIKE '_transient_timeout_%'") ? "direct" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$remaining = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE '_transient_%'");
+$row = mysqli_fetch_assoc($remaining);
+echo mysqli_num_rows($remaining);
+echo ":";
+echo $row["option_name"], "=", $row["option_value"];
+echo "|";
+$stmt = mysqli_prepare($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE ?");
+$site_prefix = "\\_site_transient\\_%";
+mysqli_stmt_bind_param($stmt, "s", $site_prefix);
+echo mysqli_stmt_execute($stmt) ? "prepared" : "failed";
+echo ":";
+echo mysqli_stmt_affected_rows($stmt);
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "DELETE FROM wp_options WHERE `option_name` LIKE ?", array("_transient_%")) ? "execute" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$rows = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+$left = array();
+while ($row = mysqli_fetch_assoc($rows)) {
+    $left[] = $row["option_name"] . "=" . $row["option_value"];
+}
+echo implode(",", $left);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct:2|1:_transient_feed_mod=cached-feed|prepared:2:2|execute:1|siteurl=https://example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

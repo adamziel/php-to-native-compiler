@@ -996,6 +996,60 @@ echo $cache->cache["options"]["alloptions"], "|", $cache_alias;
 }
 
 #[test]
+fn method_reference_return_assignment_binds_array_offset_arguments() {
+    let execution = run_source(
+        r#"<?php
+class RefTagger {
+    public $cache = [];
+
+    public function &tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+
+    public static function &tagStatic(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+
+    public function runSelf(&$value) {
+        $alias =& self::tagStatic($value, "self");
+        $alias = $alias . ":alias";
+    }
+}
+
+$tagger = new RefTagger();
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$request_alias =& $tagger->tag($_REQUEST["payload"]["slot"], "method");
+$request_alias = $request_alias . ":alias";
+echo $_REQUEST["payload"]["slot"], "|", $request_alias, "\n";
+
+$items = ["outer" => ["slot" => "array"]];
+$array_alias =& RefTagger::tagStatic($items["outer"]["slot"], "static");
+$array_alias = $array_alias . ":alias";
+echo $items["outer"]["slot"], "|", $array_alias, "\n";
+
+$tagger->cache["options"]["alloptions"] = "cold";
+$cache_alias =& $tagger->tag($tagger->cache["options"]["alloptions"], "method");
+$cache_alias = $cache_alias . ":alias";
+echo $tagger->cache["options"]["alloptions"], "|", $cache_alias, "\n";
+
+$self_items = ["slot" => "self"];
+$tagger->runSelf($self_items["slot"]);
+echo $self_items["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:method:alias|request:method:alias\narray:static:alias|array:static:alias\ncold:method:alias|cold:method:alias\nself:self:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_return_assignment_binds_returned_cell() {
     let execution = run_source(
         r#"<?php

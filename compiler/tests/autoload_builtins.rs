@@ -67,6 +67,24 @@ spl_autoload_register($loader);
         non_invokable_object.message,
         "unsupported call spl_autoload_register(): object callback LoaderWithoutInvoke must define public non-static __invoke($name) in the current subset"
     );
+
+    let functions_arity = run_source("<?php\nspl_autoload_functions(1);\n").unwrap_err();
+    assert_eq!(functions_arity.phase, Phase::Runtime);
+    assert_eq!(functions_arity.line, 2);
+    assert_eq!(functions_arity.column, 1);
+    assert_eq!(
+        functions_arity.message,
+        "arity mismatch for spl_autoload_functions(): expected 0 argument(s), got 1"
+    );
+
+    let unregister_non_callable = run_source("<?php\nspl_autoload_unregister(42);\n").unwrap_err();
+    assert_eq!(unregister_non_callable.phase, Phase::Runtime);
+    assert_eq!(unregister_non_callable.line, 2);
+    assert_eq!(unregister_non_callable.column, 1);
+    assert_eq!(
+        unregister_non_callable.message,
+        "unsupported call spl_autoload_unregister(): callback argument must be closure, string, array callable, or invokable object in the current subset, got int"
+    );
 }
 
 #[test]
@@ -620,9 +638,79 @@ echo trait_exists("InvokeLoadedTrait", false) ? "trait" : "missing-trait";
 }
 
 #[test]
+fn spl_autoload_functions_and_unregister_manage_bounded_callback_lifecycle() {
+    let execution = run_source(
+        r#"<?php
+function FirstLoader($name) {
+    echo "first:", $name, "\n";
+}
+
+function OtherLoader($name) {
+    echo "other:", $name, "\n";
+}
+
+class StaticLoader {
+    public static function load($name) {
+        echo "static:", $name, "\n";
+    }
+}
+
+class ObjectLoader {
+    public function load($name) {
+        echo "object:", $name, "\n";
+    }
+
+    public function __invoke($name) {
+        echo "invoke:", $name, "\n";
+    }
+}
+
+$loader = new ObjectLoader();
+echo count(spl_autoload_functions()), "\n";
+spl_autoload_register("FirstLoader");
+spl_autoload_register(array("StaticLoader", "load"));
+spl_autoload_register(array($loader, "load"));
+spl_autoload_register($loader, true, true);
+
+$callbacks = spl_autoload_functions();
+echo count($callbacks), "\n";
+echo is_object($callbacks[0]) ? get_class($callbacks[0]) : "not-object", "\n";
+echo $callbacks[1], "\n";
+echo $callbacks[2][0], "::", $callbacks[2][1], "\n";
+echo get_class($callbacks[3][0]), "::", $callbacks[3][1], "\n";
+
+echo class_exists("MissingOne") ? "loaded\n" : "missing\n";
+echo spl_autoload_unregister($loader) ? "removed-invoke\n" : "missing-invoke\n";
+echo spl_autoload_unregister(array("StaticLoader", "load")) ? "removed-static\n" : "missing-static\n";
+echo spl_autoload_unregister("OtherLoader") ? "removed-missing\n" : "missing-callback\n";
+
+$callbacks = spl_autoload_functions();
+echo count($callbacks), "\n";
+echo class_exists("MissingTwo") ? "loaded" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0\n4\nObjectLoader\nFirstLoader\nStaticLoader::load\nObjectLoader::load\ninvoke:MissingOne\nfirst:MissingOne\nstatic:MissingOne\nobject:MissingOne\nmissing\nremoved-invoke\nremoved-static\nmissing-callback\n2\nfirst:MissingTwo\nobject:MissingTwo\nmissing"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let functions_error = emit_ir_source("<?php\nspl_autoload_functions();\n").unwrap_err();
+    assert_eq!(functions_error.phase, Phase::Codegen);
+    assert_eq!(functions_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let unregister_error =
+        emit_ir_source("<?php\nspl_autoload_unregister('MissingAutoloader');\n").unwrap_err();
+    assert_eq!(unregister_error.phase, Phase::Codegen);
+    assert_eq!(unregister_error.message, LLVM_FUNCTION_CALL_REJECTION);
 }

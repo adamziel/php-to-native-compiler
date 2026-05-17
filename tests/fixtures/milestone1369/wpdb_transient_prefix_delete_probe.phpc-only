@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and bounded direct/prepared option_name LIKE prefix deletes for transient-shaped rows rather than a real MySQL database, SQL LIKE engine, full WordPress option APIs, or persistent object cache.

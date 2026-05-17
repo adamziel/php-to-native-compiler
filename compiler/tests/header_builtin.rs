@@ -58,6 +58,30 @@ echo $headers[2];
 }
 
 #[test]
+fn header_replaces_matching_cli_header_names_by_default() {
+    let execution = run_source(
+        r#"<?php
+header("X-Replace: one");
+header("X-Keep: one");
+header("x-replace: two");
+header("X-Keep: two", false);
+$headers = headers_list();
+echo count($headers);
+echo "|";
+echo $headers[0];
+echo "|";
+echo $headers[1];
+echo "|";
+echo $headers[2];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3|X-Keep: one|x-replace: two|X-Keep: two");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn header_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+3|X-Keep: one|x-replace: two|X-Keep: two|open::0|sent:header_request_state_replacement.php:8|3
+stderr:

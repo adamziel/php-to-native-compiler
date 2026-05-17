@@ -1,0 +1,1 @@
+System PHP CLI does not expose phpc's deterministic in-process CLI header log through headers_list(); this fixture documents bounded request-local header replacement and output-started bookkeeping.

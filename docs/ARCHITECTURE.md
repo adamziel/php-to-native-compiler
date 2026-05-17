@@ -111,13 +111,15 @@ assignment shape.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
-element slice. Direct reference-returning free-function assignment now also
-uses the array-offset writeback/alias result path when a reached
-by-reference parameter is supplied by a direct array-offset or public
-object-property array-offset argument and the function returns that parameter
-directly. They do not promote callback argument arrays, object-property array
-bridges, method/static direct-call array arguments, or stored array-offset
-metadata into general runtime reference containers. By-reference
+element slice. Direct reference-returning free-function, visible
+object-method, named-static-method, method-context `self::`/`parent::`/
+`static::`, and dynamic-static-receiver assignment now also use the
+array-offset writeback/alias result path when a reached by-reference parameter
+is supplied by a direct array-offset or public object-property array-offset
+argument and the function or method returns that parameter directly. They do
+not promote callback argument arrays, non-public/dynamic object-property array
+bridges, ArrayAccess roots, or stored array-offset metadata into general
+runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -1564,17 +1566,21 @@ buffers, shutdown flushing, output-started/header interaction, SAPI
 integration, and exact diagnostics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
-shape, appends the raw header line to deterministic in-process CLI request
-state, and returns `null`. `headers_list()` returns that header log as an
-ordered array of strings. Native function-table introspection recognizes the
-names, while direct native calls reject through a header-state boundary until
-response storage, diagnostics, output-started tracking, status handling, and
-SAPI integration have a lowered runtime model.
+shape, records the raw header line in deterministic in-process CLI request
+state, and returns `null`. For ordinary colon-delimited header lines, default
+replacement removes earlier lines with the same ASCII-case-insensitive field
+name before appending the new line; `$replace = false` keeps duplicate lines.
+`headers_list()` returns that header log as an ordered array of strings. Native
+function-table introspection recognizes the names, while direct native calls
+reject through a header-state boundary until response storage, diagnostics,
+output-started tracking, status handling, and SAPI integration have a lowered
+runtime model.
 `header_remove()` mutates that deterministic CLI header log for the current
 bounded subset: no arguments clear the log, and one string removes entries
 whose raw header line has exactly that field name before the first colon. It
-still does not detect output-sent state, model status headers, normalize header
-names, or model full SAPI removal behavior.
+leaves the log unchanged after unbuffered output has started. It still does
+not model status headers, normalize header names, emit PHP's warning text, or
+model full SAPI removal behavior.
 `setcookie()` is another interpreter-only header-state boundary. The current
 slice accepts a string cookie name plus an optional string value, appends a
 simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
@@ -1642,7 +1648,7 @@ full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
 bounded direct `option_name LIKE '<prefix>%'` and prepared
-`option_name LIKE ?` result scans for transient-shaped option rows;
+`option_name LIKE ?` result scans and deletes for transient-shaped option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1664,9 +1670,12 @@ registration metadata only and report a stable unsupported autoload boundary if
 lookup needs to invoke them. Non-public/static `__invoke`, invokable-object
 dispatch outside autoloading, non-public methods, class-string non-static
 methods, object static methods, `self::`/`parent::`/`static::` callback
-strings, exact callable validation, and `spl_autoload_functions()` remain
-unsupported. Native function-table
-introspection recognizes the name, while direct native calls reject under the
+strings, and exact callable validation remain unsupported. The same stored
+callback vector backs `spl_autoload_functions()`, which reifies the current
+bounded callback shapes as PHP values in dispatch order, and
+`spl_autoload_unregister()`, which removes the first matching bounded callback
+or returns false for valid unregistered callbacks. Native function-table
+introspection recognizes the names, while direct native calls reject under the
 function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
