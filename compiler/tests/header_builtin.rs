@@ -247,7 +247,7 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old%20value|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Lax"
+        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old%20value|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; Max-Age=0; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/; HttpOnly; SameSite=Lax"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -305,6 +305,31 @@ echo implode("|", $out);
 }
 
 #[test]
+fn setcookie_emits_bounded_max_age_for_nonzero_expiration() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+$first = setcookie("wordpress_delete", "gone", 1, "/");
+$second = setrawcookie("wordpress_raw_delete", "raw gone", 1700000000, "/wp-admin");
+$headers = headers_list();
+$out[] = $first ? "first" : "first-failed";
+$out[] = $second ? "second" : "second-failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|second|2|Set-Cookie: wordpress_delete=gone; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/|Set-Cookie: wordpress_raw_delete=raw gone; expires=Tue, 14 Nov 2023 22:13:20 GMT; Max-Age=0; path=/wp-admin"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
     let execution = run_source(
         r#"<?php
@@ -327,7 +352,7 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old raw|Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Strict"
+        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old raw|Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; Max-Age=0; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/; HttpOnly; SameSite=Strict"
     );
     assert_eq!(execution.exit_code, 0);
 }

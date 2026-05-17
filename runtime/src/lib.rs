@@ -2075,6 +2075,8 @@ impl PhpClassTable {
             "isInstantiable",
             "getParentClass",
             "getInterfaceNames",
+            "getTraitNames",
+            "getTraits",
             "hasMethod",
             "hasProperty",
             "getProperty",

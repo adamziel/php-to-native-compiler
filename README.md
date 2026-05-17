@@ -95,8 +95,9 @@ parity, session-cookie encoding/expiration/replacement beyond the documented
 `session_start()` attribute scaffold, and cache-header emission remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
-expiration dates, attributes, and path/domain-aware replacement with
-ASCII-case-insensitive domain identity matching. `fopen()` can create bounded
+expiration dates with host-clock-derived `Max-Age`, attributes, and
+path/domain-aware replacement with ASCII-case-insensitive domain identity
+matching. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -218,7 +219,8 @@ incorrect native code.
   removal, nested object-property array offset removal, array iteration
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
-  object-property array roots, plus direct free-function, direct visible
+  named or direct dynamic object-property array roots, plus direct
+  free-function, direct visible
   instance-method, direct named-static-method, method-context
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
   `call_user_func_array()` reference-return iterable roots when the returned
@@ -296,7 +298,8 @@ incorrect native code.
   metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
   `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection, including
   bounded schema metadata `LIKE` wildcards and single-character `ESCAPE`
-  clauses;
+  clauses, plus a bounded `NO_BACKSLASH_ESCAPES` branch for those schema
+  metadata `LIKE` filters;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -433,7 +436,8 @@ incorrect native code.
   for current object values or declared string class names, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, `hasMethod($name)`, class-like
+  `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
+  `hasMethod($name)`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions with
@@ -565,7 +569,7 @@ core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
-and trait method source-file persistence, and
+and trait method source-file persistence, trait-body `use` reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -760,7 +764,8 @@ array-offset, object-property, and object-property array-offset filename/line
 outputs including direct variables backed by the current bounded array-offset
 reference-alias metadata, bounded ordinary header-name replacement in the
 request-local CLI header log, bounded path/domain-aware cookie replacement,
-bounded request-local status-code state, and
+bounded cookie `Max-Age` emission for nonzero expirations, bounded
+request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,

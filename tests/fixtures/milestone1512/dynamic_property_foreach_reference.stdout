@@ -1,0 +1,4 @@
+public:a|public:b|public:c|public:c
+direct-public|tail-public|tail-public
+private:x|private:y|private:z|private:z
+direct-private|tail-private|tail-private

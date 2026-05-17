@@ -130,6 +130,7 @@ struct Interpreter {
     mysqli_options: HashMap<i64, HashMap<i64, Value>>,
     mysqli_wp_options: HashMap<i64, HashMap<String, WordPressOptionState>>,
     mysqli_schema_tables: HashMap<i64, HashMap<String, WordPressSchemaTableState>>,
+    mysqli_sql_modes: HashMap<i64, String>,
     mysqli_transactions: HashMap<i64, MysqliTransactionState>,
     mysqli_affected_rows: HashMap<i64, i64>,
     mysqli_insert_ids: HashMap<i64, i64>,
@@ -3258,6 +3259,7 @@ impl Interpreter {
             mysqli_options: HashMap::new(),
             mysqli_wp_options: HashMap::new(),
             mysqli_schema_tables: HashMap::new(),
+            mysqli_sql_modes: HashMap::new(),
             mysqli_transactions: HashMap::new(),
             mysqli_affected_rows: HashMap::new(),
             mysqli_insert_ids: HashMap::new(),
@@ -3460,6 +3462,23 @@ impl Interpreter {
                     return Ok(ForeachArrayRoot::Alias { root, keys });
                 }
 
+                if let Some((object_name, property, indices)) =
+                    Self::collect_direct_dynamic_object_property_array_index_path(target, index)
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+                    let root = self.foreach_object_property_alias_root(
+                        object_name,
+                        &property,
+                        scope,
+                        span,
+                    )?;
+                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                }
+
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -3482,6 +3501,28 @@ impl Interpreter {
                 };
                 let root =
                     self.foreach_object_property_alias_root(object_name, property, scope, span)?;
+                Ok(ForeachArrayRoot::Alias {
+                    root,
+                    keys: Vec::new(),
+                })
+            }
+            Expr::DynamicProperty {
+                target,
+                property,
+                ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "foreach",
+                            "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
+                        ),
+                    ));
+                };
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let root =
+                    self.foreach_object_property_alias_root(object_name, &property, scope, span)?;
                 Ok(ForeachArrayRoot::Alias {
                     root,
                     keys: Vec::new(),
@@ -14700,8 +14741,13 @@ impl Interpreter {
             ));
         };
 
-        if is_wordpress_charset_setup_query(query) || is_wordpress_sql_mode_assignment_query(query)
-        {
+        if is_wordpress_charset_setup_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            return Ok(Value::Bool(true));
+        }
+
+        if let Some(modes) = parse_wordpress_sql_mode_assignment_query(query) {
+            self.mysqli_sql_modes.insert(handle_id, modes);
             self.mysqli_affected_rows.insert(handle_id, 0);
             return Ok(Value::Bool(true));
         }
@@ -15290,12 +15336,24 @@ impl Interpreter {
         if let Some(result) = self
             .mysqli_schema_tables
             .get(&handle_id)
-            .and_then(|tables| wordpress_dynamic_schema_result_for_query(query, tables))
+            .and_then(|tables| {
+                wordpress_dynamic_schema_result_for_query(
+                    query,
+                    tables,
+                    self.mysqli_sql_mode_disables_backslash_escapes(handle_id),
+                )
+            })
         {
             return Some(result);
         }
 
         wordpress_options_schema_result_for_query(query)
+    }
+
+    fn mysqli_sql_mode_disables_backslash_escapes(&self, handle_id: i64) -> bool {
+        self.mysqli_sql_modes
+            .get(&handle_id)
+            .is_some_and(|modes| sql_modes_include_no_backslash_escapes(modes))
     }
 
     fn call_mysqli_real_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -15313,6 +15371,12 @@ impl Interpreter {
                 ),
             ));
         };
+
+        if let Some(modes) = parse_wordpress_sql_mode_assignment_query(query) {
+            self.mysqli_sql_modes.insert(handle_id, modes);
+            self.set_mysqli_pending_result_queue(handle_id, vec![MysqliMultiResultSlot::NoResult]);
+            return Ok(Value::Bool(true));
+        }
 
         if is_mysqli_no_result_placeholder_query(query) {
             self.set_mysqli_pending_result_queue(handle_id, vec![MysqliMultiResultSlot::NoResult]);
@@ -15417,6 +15481,12 @@ impl Interpreter {
                     ),
                 ),
             ));
+        }
+
+        if let Some(modes) = parse_wordpress_sql_mode_assignment_query(query) {
+            self.mysqli_sql_modes.insert(handle_id, modes);
+            self.set_mysqli_pending_result_queue(handle_id, vec![MysqliMultiResultSlot::NoResult]);
+            return Ok(Value::Bool(true));
         }
 
         if is_mysqli_no_result_placeholder_query(query) {
@@ -16969,6 +17039,32 @@ impl Interpreter {
                 }
                 Ok(Value::Array(names))
             }
+            "gettraitnames" => {
+                expect_expr_arity("ReflectionClass::getTraitNames", args.len(), 0, span)?;
+                let mut names = PhpArray::new();
+                for trait_name in self.reflection_class_trait_names(&state) {
+                    names
+                        .append(Value::String(trait_name))
+                        .expect("trait count fits in array keys");
+                }
+                Ok(Value::Array(names))
+            }
+            "gettraits" => {
+                expect_expr_arity("ReflectionClass::getTraits", args.len(), 0, span)?;
+                let mut traits = PhpArray::new();
+                for trait_name in self.reflection_class_trait_names(&state) {
+                    let trait_reflection = self.create_reflection_class_object(
+                        self.reflection_class_state_for(
+                            trait_name.clone(),
+                            ReflectionClassKind::Trait,
+                            None,
+                        ),
+                        span,
+                    )?;
+                    traits.insert(ArrayKey::String(trait_name), trait_reflection);
+                }
+                Ok(Value::Array(traits))
+            }
             "hasmethod" => {
                 expect_expr_arity("ReflectionClass::hasMethod", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -17049,6 +17145,17 @@ impl Interpreter {
                 span,
                 RuntimeError::undefined_function(format!("ReflectionClass::{method_name}()")),
             )),
+        }
+    }
+
+    fn reflection_class_trait_names(&self, state: &ReflectionClassState) -> Vec<String> {
+        match state.kind {
+            ReflectionClassKind::Class => state
+                .class_id
+                .and_then(|class_id| self.classes.get(class_id))
+                .map(|class| class.traits().to_vec())
+                .unwrap_or_default(),
+            ReflectionClassKind::Interface | ReflectionClassKind::Trait => Vec::new(),
         }
     }
 
@@ -31851,6 +31958,33 @@ impl Interpreter {
         }
     }
 
+    fn collect_direct_dynamic_object_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a str, &'a Expr, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::DynamicProperty {
+                    target, property, ..
+                } => {
+                    let Expr::Variable(name, _) = target.as_ref() else {
+                        return None;
+                    };
+                    indices.reverse();
+                    return Some((name, property, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
     fn literal_array_key_path(indices: &[&Expr]) -> Option<Vec<ArrayKey>> {
         indices
             .iter()
@@ -36255,12 +36389,13 @@ struct ParsedWordPressSchemaColumnDefinition {
 fn wordpress_dynamic_schema_result_for_query(
     query: &str,
     tables: &HashMap<String, WordPressSchemaTableState>,
+    no_backslash_escapes: bool,
 ) -> Option<MysqliPendingResultState> {
     let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
 
     if let Some(table_filter) = query
         .strip_prefix("SHOW TABLES LIKE ")
-        .and_then(parse_sql_single_quoted_schema_like_filter)
+        .and_then(|input| parse_sql_single_quoted_schema_like_filter(input, no_backslash_escapes))
     {
         let mut table_names = tables
             .keys()
@@ -36281,7 +36416,9 @@ fn wordpress_dynamic_schema_result_for_query(
         return None;
     }
 
-    if let Some(table_filter) = parse_dynamic_schema_show_table_status_query(query) {
+    if let Some(table_filter) =
+        parse_dynamic_schema_show_table_status_query(query, no_backslash_escapes)
+    {
         let mut table_names = tables
             .keys()
             .filter(|table_name| wordpress_schema_name_matches_filter(table_name, &table_filter))
@@ -36336,7 +36473,8 @@ fn wordpress_dynamic_schema_result_for_query(
         });
     }
 
-    if let Some(column_query) = parse_dynamic_schema_show_columns_query(query) {
+    if let Some(column_query) = parse_dynamic_schema_show_columns_query(query, no_backslash_escapes)
+    {
         let table = tables.get(&column_query.table_name)?;
         return Some(MysqliPendingResultState {
             fields: vec![
@@ -36359,7 +36497,7 @@ fn wordpress_dynamic_schema_result_for_query(
         });
     }
 
-    if let Some(index_query) = parse_dynamic_schema_show_index_query(query) {
+    if let Some(index_query) = parse_dynamic_schema_show_index_query(query, no_backslash_escapes) {
         let table = tables.get(&index_query.table_name)?;
         return Some(MysqliPendingResultState {
             fields: vec![
@@ -36395,7 +36533,10 @@ fn wordpress_dynamic_schema_result_for_query(
     None
 }
 
-fn parse_dynamic_schema_show_index_query(query: &str) -> Option<WordPressSchemaIndexQuery> {
+fn parse_dynamic_schema_show_index_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressSchemaIndexQuery> {
     let rest = query
         .strip_prefix("SHOW INDEX FROM ")
         .or_else(|| query.strip_prefix("SHOW INDEXES FROM "))
@@ -36419,7 +36560,10 @@ fn parse_dynamic_schema_show_index_query(query: &str) -> Option<WordPressSchemaI
         .strip_prefix("WHERE Key_name LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `Key_name` LIKE "))
     {
-        Some(parse_sql_single_quoted_schema_like_filter(key_name)?)
+        Some(parse_sql_single_quoted_schema_like_filter(
+            key_name,
+            no_backslash_escapes,
+        )?)
     } else {
         return None;
     };
@@ -36449,7 +36593,10 @@ fn parse_dynamic_schema_describe_query(query: &str) -> Option<WordPressSchemaCol
     })
 }
 
-fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchemaColumnQuery> {
+fn parse_dynamic_schema_show_columns_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressSchemaColumnQuery> {
     let rest = query
         .strip_prefix("SHOW FULL COLUMNS FROM ")
         .or_else(|| query.strip_prefix("SHOW COLUMNS FROM "))?
@@ -36459,7 +36606,10 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
     let column_filter = if rest.is_empty() {
         None
     } else if let Some(like) = rest.strip_prefix("LIKE ") {
-        Some(parse_sql_single_quoted_schema_like_filter(like)?)
+        Some(parse_sql_single_quoted_schema_like_filter(
+            like,
+            no_backslash_escapes,
+        )?)
     } else if let Some(field) = rest
         .strip_prefix("WHERE Field = ")
         .or_else(|| rest.strip_prefix("WHERE `Field` = "))
@@ -36474,7 +36624,10 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
         .strip_prefix("WHERE Field LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `Field` LIKE "))
     {
-        Some(parse_sql_single_quoted_schema_like_filter(field)?)
+        Some(parse_sql_single_quoted_schema_like_filter(
+            field,
+            no_backslash_escapes,
+        )?)
     } else {
         return None;
     };
@@ -36556,9 +36709,13 @@ impl WordPressSchemaNameFilter {
     }
 }
 
-fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSchemaNameFilter> {
+fn parse_sql_single_quoted_schema_like_filter(
+    input: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressSchemaNameFilter> {
     let mut rest = input.trim();
-    let (mut filter, next) = parse_sql_single_quoted_schema_like_value(rest, '\\')?;
+    let (mut filter, next) =
+        parse_sql_single_quoted_schema_like_value(rest, '\\', no_backslash_escapes)?;
     rest = next.trim_start();
     if let Some(escape) = rest.strip_prefix("ESCAPE ") {
         let (escape, next) = parse_sql_single_quoted_value(escape.trim_start())?;
@@ -36570,8 +36727,11 @@ fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSc
         if escape_chars.next().is_some() {
             return None;
         }
-        let (escaped_filter, escaped_next) =
-            parse_sql_single_quoted_schema_like_value(input.trim(), escape_char)?;
+        let (escaped_filter, escaped_next) = parse_sql_single_quoted_schema_like_value(
+            input.trim(),
+            escape_char,
+            no_backslash_escapes,
+        )?;
         if !escaped_next.trim_start().starts_with("ESCAPE ") {
             return None;
         }
@@ -36588,6 +36748,7 @@ fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSc
 fn parse_sql_single_quoted_schema_like_value(
     input: &str,
     escape_char: char,
+    no_backslash_escapes: bool,
 ) -> Option<(WordPressSchemaNameFilter, &str)> {
     let rest = input.strip_prefix('\'')?;
     let mut pattern = String::new();
@@ -36609,7 +36770,7 @@ fn parse_sql_single_quoted_schema_like_value(
             };
             return Some((filter, &rest[index + ch.len_utf8()..]));
         }
-        if ch == escape_char {
+        if ch == escape_char && (!no_backslash_escapes || escape_char != '\\') {
             let (_, escaped) = chars.next()?;
             let literal = if escape_char == '\\' {
                 match escaped {
@@ -36633,7 +36794,7 @@ fn parse_sql_single_quoted_schema_like_value(
             tokens.push(WordPressSchemaLikeToken::Literal(literal));
             continue;
         }
-        if ch == '\\' {
+        if ch == '\\' && !no_backslash_escapes {
             let (_, escaped) = chars.next()?;
             let literal = match escaped {
                 '0' => '\0',
@@ -36687,10 +36848,13 @@ fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, 
     ))
 }
 
-fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<WordPressSchemaNameFilter> {
+fn parse_dynamic_schema_show_table_status_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressSchemaNameFilter> {
     if let Some(table_filter) = query
         .strip_prefix("SHOW TABLE STATUS LIKE ")
-        .and_then(parse_sql_single_quoted_schema_like_filter)
+        .and_then(|input| parse_sql_single_quoted_schema_like_filter(input, no_backslash_escapes))
     {
         return Some(table_filter);
     }
@@ -39611,23 +39775,38 @@ fn is_wordpress_charset_setup_query(query: &str) -> bool {
 }
 
 fn is_wordpress_sql_mode_assignment_query(query: &str) -> bool {
+    parse_wordpress_sql_mode_assignment_query(query).is_some()
+}
+
+fn parse_wordpress_sql_mode_assignment_query(query: &str) -> Option<String> {
     let Some(modes) = query.strip_prefix("SET SESSION sql_mode=") else {
-        return false;
+        return None;
     };
     let Some(modes) = modes
         .strip_prefix('\'')
         .and_then(|value| value.strip_suffix('\''))
     else {
-        return false;
+        return None;
     };
 
-    modes.is_empty()
+    if modes.is_empty()
         || modes.split(',').all(|mode| {
             !mode.is_empty()
                 && mode
                     .chars()
                     .all(|ch| ch == '_' || ch.is_ascii_uppercase() || ch.is_ascii_digit())
         })
+    {
+        Some(modes.to_string())
+    } else {
+        None
+    }
+}
+
+fn sql_modes_include_no_backslash_escapes(modes: &str) -> bool {
+    modes
+        .split(',')
+        .any(|mode| mode.trim() == "NO_BACKSLASH_ESCAPES")
 }
 
 fn is_mysqli_no_result_placeholder_query(query: &str) -> bool {
@@ -42278,6 +42457,10 @@ fn format_setcookie_header(
     if let Some(expires) = options.expires.filter(|value| *value != 0) {
         header.push_str("; expires=");
         header.push_str(&format_cookie_expires(expires));
+        if let Some(now) = current_unix_timestamp() {
+            header.push_str("; Max-Age=");
+            header.push_str(&expires.saturating_sub(now).max(0).to_string());
+        }
     }
     if let Some(path) = options.path.as_deref().filter(|value| !value.is_empty()) {
         header.push_str("; path=");
@@ -42302,6 +42485,11 @@ fn format_setcookie_header(
         header.push_str(samesite);
     }
     header
+}
+
+fn current_unix_timestamp() -> Option<i64> {
+    let seconds = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    i64::try_from(seconds).ok()
 }
 
 fn set_cookie_header_matches_identity(

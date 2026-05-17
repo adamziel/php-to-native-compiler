@@ -5532,6 +5532,37 @@ echo $row["Key_name"], ":", $row["Sub_part"];
 }
 
 #[test]
+fn mysqli_query_applies_bounded_no_backslash_escapes_to_schema_like_filters() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_sql_mode_filter (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(255) NOT NULL default '', meta_value longtext NOT NULL, PRIMARY KEY  (ID), KEY meta_lookup (meta_key(191)), KEY metaXlookup (meta_value(10))) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$default = mysqli_query($handle, "SHOW INDEX FROM wp_probe_sql_mode_filter WHERE Key_name LIKE 'meta\\_%'");
+echo "default=", mysqli_num_rows($default), ":";
+while ($index = mysqli_fetch_assoc($default)) {
+    echo $index["Key_name"], ";";
+}
+mysqli_query($handle, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
+$mode = mysqli_query($handle, "SHOW INDEX FROM wp_probe_sql_mode_filter WHERE Key_name LIKE 'meta\\_%'");
+echo "|mode=", mysqli_num_rows($mode);
+$explicit = mysqli_query($handle, "SHOW INDEX FROM wp_probe_sql_mode_filter WHERE Key_name LIKE 'meta!_%' ESCAPE '!'");
+echo "|explicit=", mysqli_num_rows($explicit), ":";
+while ($index = mysqli_fetch_assoc($explicit)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "default=1:meta_lookup;|mode=0|explicit=1:meta_lookup:meta_key;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

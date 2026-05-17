@@ -1,0 +1,6 @@
+name|0|RegistersHooks
+name|1|AddsFilters
+trait|RegistersHooks|ReflectionClass|RegistersHooks|1|RegistersHooks
+trait|AddsFilters|ReflectionClass|AddsFilters|1|AddsFilters
+interface|0|0
+trait-empty|0|0

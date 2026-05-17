@@ -39,8 +39,11 @@ direct nested array-offset roots, request-bag roots such as
 `$_REQUEST["payload"]`, and string-keyed nested `$GLOBALS` paths such as
 `$GLOBALS["bag"]["child"]`. The same path now covers direct visible
 object-property array roots such as `$object->items` and
-`$object->items["child"]`, using the existing public/context property alias
-root instead of a general PHP reference container. Direct free-function calls
+`$object->items["child"]`, plus direct dynamic-property spellings such as
+`$object->{$name}` and `$object->{$name}["child"]` when the evaluated property
+is visible in the current public/private/protected context, using the existing
+public/context property alias root instead of a general PHP reference
+container. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
@@ -161,15 +164,17 @@ sources, non-direct holder expressions, mixed nested `ArrayAccess` chains,
 magic-property references, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
-`foreach` currently consumes direct free-function, direct visible
+`foreach` currently consumes direct visible named and dynamic object-property
+array roots, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
 including bounded direct caller-cell and direct static-local cell cases.
-Property-return, array-offset-return beyond that assignment-only covered
-parent-slot suffix shape, expression-return, magic `__callStatic`, and callback
-forms outside the bounded `call_user_func_array()` slice remain outside the
-executable foreach slice.
+Non-direct dynamic-property holders, invisible selected properties,
+magic-property containers, property-return, array-offset-return beyond that
+assignment-only covered parent-slot suffix shape, expression-return, magic
+`__callStatic`, and callback forms outside the bounded
+`call_user_func_array()` slice remain outside the executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared visible object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -1757,19 +1762,21 @@ full SAPI removal behavior.
 boundaries. The current slice accepts a string cookie name plus optional string
 value, bounded positional attributes, or the bounded options-array attribute
 form. It formats nonzero expiration timestamps as GMT dates, appends a
-deterministic `Set-Cookie:` line to the same CLI header log, and replaces
-earlier deterministic `Set-Cookie` lines with the same cookie name plus
-normalized non-empty path/domain identity while preserving same-name cookies
-for different path/domain identities. Domain identity matching lowercases
-non-empty ASCII domain text for replacement only; the emitted header preserves
-the caller-provided domain text.
+deterministic `Set-Cookie:` line to the same CLI header log, adds a bounded
+`Max-Age` attribute for nonzero expirations using the current host clock
+(`Max-Age=0` for past expirations), and replaces earlier deterministic
+`Set-Cookie` lines with the same cookie name plus normalized non-empty
+path/domain identity while preserving same-name cookies for different
+path/domain identities. Domain identity matching lowercases non-empty ASCII
+domain text for replacement only; the emitted header preserves the
+caller-provided domain text.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
 string value. After unbuffered output starts these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,
-`Max-Age`, full option validation, IDNA/trailing-dot/domain-policy
-canonicalization, exact warning text, SAPI emission, and native lowering
-remain outside the model.
+exact request-time/Date-header parity for future `Max-Age` values, full option
+validation, IDNA/trailing-dot/domain-policy canonicalization, exact warning
+text, SAPI emission, and native lowering remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1917,8 +1924,12 @@ predicates before result materialization. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
 wildcards, backslash-escaped `%`, `_`, and `\` literals, and a bounded
 single-character `ESCAPE '<char>'` clause for table names, table status rows,
-column names, and index names. The same placeholder transaction and savepoint
-helpers that snapshot the `wp_options` state island also snapshot
+column names, and index names. A per-handle accepted
+`SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'` toggles the bounded schema
+metadata `LIKE` parser so implicit backslash escaping is disabled for later
+metadata filters on that handle while explicit `ESCAPE '<char>'` clauses
+still work. The same placeholder transaction and savepoint helpers that
+snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
 `CREATE TABLE`/`ALTER TABLE` metadata. It does not model arbitrary
 multi-table deletes, subqueries, schema DDL beyond the documented bounded
@@ -1926,7 +1937,9 @@ multi-table deletes, subqueries, schema DDL beyond the documented bounded
 charset/collation negotiation, locks, real index inspection
 beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
 duplicate aliases, malformed `CONCAT`/`SUBSTRING`
-forms, exact MySQL affected-row or insert-ID edge cases, real transactional
+forms, SQL-mode behavior beyond the bounded schema metadata
+`NO_BACKSLASH_ESCAPES` parser branch, exact MySQL affected-row or insert-ID
+edge cases, real transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
 schema model, host database connection, PDO layer, or native database runtime.
@@ -2670,6 +2683,12 @@ bounded property type shapes. Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
 exact PHP union scalar coercion preference rules, reference/COW interactions,
 and native lowering remain unsupported.
+`ReflectionClass::getTraitNames()` and `getTraits()` read the direct trait-name
+list already stored on runtime class metadata by the trait-composition pass.
+`getTraits()` wraps each direct user trait name in the same request-local
+`ReflectionClass` state used by direct trait reflection. The slice intentionally
+does not add trait-body `use` parsing, recursive parent-trait aggregation,
+built-in/internal trait catalogs, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

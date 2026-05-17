@@ -208,36 +208,43 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1511 targets property file/line metadata,
-  parameter source metadata, closure/internal reflection, attributes and exact
-  docblock association, exact reflection exceptions, invocation/value
-  mutation, readonly/property hooks, magic hooks reached by WordPress,
-  autoload/class-alias lifecycle parity, interface/trait metadata, or broader
-  class/object semantics.
-- Reference/COW lane: Milestone 1512 targets real reference containers,
+- Object/interface lane: Milestone 1516 targets trait-body `use`
+  declarations, property file/line metadata, parameter source metadata,
+  closure/internal reflection, attributes and exact docblock association,
+  exact reflection exceptions, invocation/value mutation, readonly/property
+  hooks, magic hooks reached by WordPress, autoload/class-alias lifecycle
+  parity, interface/trait metadata, or broader class/object semantics.
+- Reference/COW lane: Milestone 1517 targets real reference containers,
   magic-property reference containers, arbitrary reference expressions,
-  non-direct holder expressions, invisible dynamic property reference sources,
-  mixed nested `ArrayAccess` chains, alias cleanup beyond covered
+  non-direct dynamic-property holder expressions, invisible selected dynamic
+  properties, mixed nested `ArrayAccess` chains, alias cleanup beyond covered
   root/property/slot paths, broader array/object copy-on-write, exact alias
-  destruction ordering, by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1513 targets cookie
-  name/option validation, `Max-Age`, session cookie replacement parity, cache
-  headers, session locking, save handlers, garbage collection, binary reads,
-  shutdown/fatal/destructor ordering, include-path/stat-cache behavior, stream
-  wrappers/contexts, request-body lifetime, host filesystem edge cases, exact
-  warning text, IDNA/trailing-dot/domain-policy canonicalization, real SAPI
-  emission, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1514 targets broader
+  destruction ordering, object/Traversable by-reference iteration, or native
+  lowering.
+- Request/SAPI/filesystem/stream lane: Milestone 1518 targets cookie name
+  validation/encoding, exact request-time/Date-header parity for future
+  `Max-Age` values, array option validation beyond documented keys, session
+  cookie replacement parity, cache headers, session locking, save handlers,
+  garbage collection, binary reads, shutdown/fatal/destructor ordering,
+  include-path/stat-cache behavior, broader stream wrappers and context
+  effects, request-body lifetime, host filesystem edge cases, exact warning
+  text, IDNA/trailing-dot/domain-policy canonicalization, real SAPI emission,
+  or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1519 targets broad SQL-mode
+  semantics, exact MySQL string-literal and wildcard parity, broader
   dbDelta-relevant schema diffing, real SQL parsing slices, host database
   inspection, arbitrary query/result behavior, prepared statements,
-  charset/collation/error fidelity, SQL-mode-aware wildcard behavior,
-  persistent object-cache/transient behavior, hooks under realistic callback
-  shapes, deterministic plugin/theme loading probes, or a bootstrap/request
-  probe that moves past its next real blocker.
-- Tests/docs lane: Milestone 1515 is the next tests/docs slot after the next
+  charset/collation/error fidelity, persistent object-cache/transient
+  behavior, hooks under realistic callback shapes, deterministic plugin/theme
+  loading probes, or a bootstrap/request probe that moves past its next real
+  blocker.
+- Tests/docs lane: Milestone 1520 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1506 through 1509 closed the latest four WordPress-focused
+Milestones 1511 through 1514 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1515 refreshed the queue and recorded the
+full-gate result.
+Milestones 1506 through 1509 closed the previous four WordPress-focused
 implementation lanes, and Milestone 1510 refreshed the queue and recorded the
 full-gate result.
 Milestones 1501 through 1504 closed the previous four WordPress-focused

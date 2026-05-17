@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for bounded SQL-mode-aware schema metadata LIKE filtering; system PHP needs a real database connection and is not comparable.

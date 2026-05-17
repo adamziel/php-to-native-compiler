@@ -315,7 +315,9 @@
   method-call sources are executable only for the bounded direct-variable
   reference-return shapes documented above. Magic `__callStatic`
   reference-return method sources report the explicit runtime boundary
-  documented above. Exact by-reference `foreach`, broader reference returns,
+  documented above. By-reference `foreach` forms beyond the documented
+  direct array, direct object-property, direct dynamic-property, and bounded
+  reference-return iterable roots, broader reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names and the documented array-offset slices, PHP
   reference-container edge cases, copy-on-write, and native lowering remain
@@ -746,6 +748,11 @@
   `foreach ($object->items["child"] as &$value)` route the loop value to the
   selected property array slot through the same bounded alias metadata,
   including visible non-public properties from valid method contexts. Direct
+  dynamic-property spellings such as
+  `foreach ($object->{$name} as &$value)` and
+  `foreach ($object->{$name}["child"] as &$value)` use the evaluated string or
+  integer property name and the same public/context-aware alias root when the
+  selected property is visible in the current context. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -764,12 +771,14 @@
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
-  ArrayAccess iterables, dynamic-property iterable roots, non-string-keyed `$GLOBALS` roots,
-  reference-return iterables that return properties, array offsets,
-  expressions, or nested-control-flow returns, callback forms outside the
-  bounded `call_user_func_array()` slice, magic `__callStatic` return sources,
-  foreach destructuring, array/object/ArrayAccess offset loop variables,
-  nested-offset loop values, and native lowering remain unsupported.
+  ArrayAccess iterables, non-direct dynamic-property holder expressions,
+  invisible selected dynamic properties, magic-property reference containers,
+  non-string-keyed `$GLOBALS` roots, reference-return iterables that return
+  properties, array offsets, expressions, or nested-control-flow returns,
+  callback forms outside the bounded `call_user_func_array()` slice, magic
+  `__callStatic` return sources, foreach destructuring,
+  array/object/ArrayAccess offset loop variables, nested-offset loop values,
+  and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
@@ -2138,9 +2147,13 @@
   filters support `%` wildcards, `_`
   single-character wildcards, and backslash-escaped `%`, `_`, and `\` literal
   characters, plus a bounded custom single-character `ESCAPE '<char>'` clause
-  for those schema metadata `LIKE` filters, with deterministic sorted
-  table/status rows while preserving exact matching for patterns without
-  unescaped wildcard characters.
+  for those schema metadata `LIKE` filters. After the same placeholder handle
+  accepts `SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'`, this bounded schema
+  `LIKE` parser treats backslashes as literal characters instead of implicit
+  escapes; explicit single-character `ESCAPE '<char>'` clauses still escape
+  `%`, `_`, and the escape character for the documented schema metadata
+  filters. Table/status rows remain deterministically sorted, and patterns
+  without unescaped wildcard characters keep exact matching behavior.
   `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
@@ -2159,7 +2172,8 @@
   metadata beyond recorded index parts, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
-  SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
+  SQL modes beyond the bounded `NO_BACKSLASH_ESCAPES` schema `LIKE` parser
+  branch, arbitrary
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
   documented `Key_name` equality and `Key_name LIKE` forms,
@@ -2339,7 +2353,11 @@
   `SHOW TABLE STATUS LIKE '<table>'` and
   `SHOW TABLE STATUS WHERE Name = '<table>'` probes that expose the recorded
   table collation with deterministic placeholder engine/storage metadata.
-  This state island is not broad SQL parsing, SQL-mode-aware escaping,
+  The documented schema metadata `LIKE` filters also honor the bounded
+  `NO_BACKSLASH_ESCAPES` SQL-mode branch recorded on that placeholder handle,
+  disabling implicit backslash escaping while keeping explicit
+  `ESCAPE '<char>'` clauses available. This state island is not broad SQL
+  parsing, SQL-mode-aware escaping beyond that bounded schema metadata slice,
   character-set/collation fidelity, arbitrary column alteration beyond the
   exact direct shapes listed above, expression indexes, index opclass/parser
   metadata beyond the bounded `ASC`/`DESC` part ordering slice, exact MySQL
@@ -3007,20 +3025,22 @@
   array. Accepted values append a deterministic `Set-Cookie:` line to the same
   CLI header log used by `header()`/`headers_list()` while output is still
   open, percent-encode the cookie value, format nonzero expiration timestamps
-  as GMT dates, and replace earlier deterministic cookie headers with the same
+  as GMT dates with a bounded `Max-Age` attribute computed from the current
+  host clock, and replace earlier deterministic cookie headers with the same
   cookie name, normalized non-empty path, and normalized non-empty domain while
   matching the domain identity ASCII-case-insensitively and keeping same-name
-  cookies for different path/domain identities. The emitted header preserves
-  the caller-provided domain text. Once
+  cookies for different path/domain identities. Past expirations emit
+  `Max-Age=0`, and the emitted header preserves the caller-provided domain
+  text. Once
   unbuffered output has started, it returns `false`, does not append a cookie
   header, and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback. `setrawcookie()`
   accepts the same bounded signature and attributes, but writes the string
   value unchanged instead of percent-encoding it. Cookie name
-  validation/encoding, `Max-Age`, array option validation
-  beyond the documented keys, IDNA/trailing-dot/domain-policy
-  canonicalization, SAPI/web-server emission, exact warning text, and native
-  lowering remain unsupported.
+  validation/encoding, exact request-time/Date-header parity for future
+  `Max-Age` values, array option validation beyond the documented keys,
+  IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
+  exact warning text, and native lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
@@ -5961,13 +5981,20 @@
   and string class-like names, invokes the existing autoload path for string
   misses, and supports `getName()`, `getShortName()`, `isInterface()`,
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, `hasMethod($name)`, `getFileName()`,
+  `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
+  `hasMethod($name)`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
   metadata tables. For declared user classes, interfaces, and traits loaded
   from a known CLI/fixture or include path, `getFileName()` returns that path,
   line numbers come from the parsed class-like declaration and closing brace,
   and `getDocComment()` returns the directly preceding `/** ... */` docblock
-  or `false`.
+  or `false`. For declared user classes that directly use supported traits,
+  `getTraitNames()` returns a zero-indexed array of those direct trait names
+  and `getTraits()` returns an associative array keyed by trait name whose
+  values are bounded `ReflectionClass` metadata objects for the traits.
+  Interfaces and traits currently report empty trait metadata because
+  interface trait use is not a PHP construct and trait-body `use` declarations
+  are not parsed by the current subset.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -7662,8 +7689,9 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `hasMethod($name)`, `getFileName()`, `getStartLine()`, `getEndLine()`,
-  `getDocComment()`, `hasProperty($name)`, `getProperty($name)`, and
+  `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
+  `getStartLine()`, `getEndLine()`, `getDocComment()`,
+  `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
@@ -7696,7 +7724,8 @@
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation/value mutation,
-  `ReflectionClass::getProperties()` filter masks, exact `ReflectionException`
+  `ReflectionClass::getProperties()` filter masks, trait-use metadata inside
+  trait declarations, exact `ReflectionException`
   behavior, namespace/import alias expansion beyond parsed class-like names,
   and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
@@ -8009,16 +8038,17 @@
   partial-output behavior, and native lowering beyond function-table introspection
 - `setcookie()`/`setrawcookie()` behavior beyond accepting the documented
   bounded positional/options-array attributes, formatting nonzero expiration
-  timestamps, replacing deterministic cookie headers by cookie name plus
-  normalized non-empty path/domain identity with ASCII-case-insensitive domain
-  matching, returning `false` after unbuffered output starts with a bounded
-  `E_WARNING`, and
+  timestamps with a bounded `Max-Age` attribute computed from the current host
+  clock and pinned to `0` for past expirations, replacing deterministic cookie
+  headers by cookie name plus normalized non-empty path/domain identity with
+  ASCII-case-insensitive domain matching, returning `false` after unbuffered
+  output starts with a bounded `E_WARNING`, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
-  cookie name validation/encoding, `Max-Age`, option validation
-  beyond the documented keys, IDNA/trailing-dot/domain-policy
-  canonicalization, SAPI/web-server emission, exact warning text, and native
-  lowering beyond function-table introspection
+  cookie name validation/encoding, exact request-time/Date-header parity for
+  future `Max-Age` values, option validation beyond the documented keys,
+  IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
+  exact warning text, and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct writable filename/line output-argument slice, including direct
   variables, direct array offsets, direct object properties, direct

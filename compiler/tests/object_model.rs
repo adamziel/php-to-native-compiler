@@ -4505,6 +4505,47 @@ echo class_uses("App\\Missing", false) ? "missing-true" : "missing-false";
 }
 
 #[test]
+fn reflection_class_reports_direct_trait_metadata() {
+    let execution = run_source(
+        r#"<?php
+trait RegistersHooks {}
+trait AddsFilters {}
+
+class Plugin {
+    use RegistersHooks, AddsFilters;
+}
+
+interface Hookable {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$class = new ReflectionClass(Plugin::class);
+foreach ($class->getTraitNames() as $index => $name) {
+    echo "name|", $index, "|", $name, "\n";
+}
+foreach ($class->getTraits() as $key => $trait) {
+    echo "trait|", $key, "|", get_class($trait), "|", $trait->getName(), "|", yn($trait->isTrait()), "|", $trait->getShortName(), "\n";
+}
+
+$interface = new ReflectionClass(Hookable::class);
+echo "interface|", count($interface->getTraitNames()), "|", count($interface->getTraits()), "\n";
+
+$trait = new ReflectionClass(RegistersHooks::class);
+echo "trait-empty|", count($trait->getTraitNames()), "|", count($trait->getTraits());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "name|0|RegistersHooks\nname|1|AddsFilters\ntrait|RegistersHooks|ReflectionClass|RegistersHooks|1|RegistersHooks\ntrait|AddsFilters|ReflectionClass|AddsFilters|1|AddsFilters\ninterface|0|0\ntrait-empty|0|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn class_uses_requires_object_or_string_and_bool_autoload_arguments() {
     let name_error = runtime_error("<?php\nvar_dump(class_uses(42));\n");
 
