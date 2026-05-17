@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1371/spl_autoload_call_lifecycle.php
+manual:ManualLoadedBox
+null
+class
+unregistered
+static:ManualLoadedContract
+interface
+static:ManualLoadedTrait
+trait

@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and exact direct/prepared autoload equality row-set reads for an alloptions-shaped probe rather than a real MySQL database, arbitrary SQL, persistent object cache, full WordPress option APIs, or native DB lowering.

@@ -4094,6 +4094,52 @@ echo $named_second["option_name"], "=", $named_second["option_value"];
 }
 
 #[test]
+fn mysqli_reads_current_wordpress_option_autoload_equality_rows_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('blogname', 'Example Blog', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('theme_mods', 'theme-db', 'auto-on')");
+$direct = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE autoload = 'yes'");
+$direct_first = mysqli_fetch_assoc($direct);
+$direct_second = mysqli_fetch_assoc($direct);
+echo mysqli_num_rows($direct);
+echo ":";
+echo $direct_first["option_name"], "=", $direct_first["option_value"];
+echo ",";
+echo $direct_second["option_name"], "=", $direct_second["option_value"];
+echo "|";
+$prepared = mysqli_execute_query($handle, "SELECT `option_name`, `option_value` FROM `wp_options` WHERE `autoload` = ?", array("auto-on"));
+$prepared_row = mysqli_fetch_assoc($prepared);
+echo mysqli_num_rows($prepared);
+echo ":";
+echo $prepared_row["option_name"], "=", $prepared_row["option_value"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE autoload = ?");
+$autoload = "yes";
+mysqli_stmt_bind_param($stmt, "s", $autoload);
+$autoload = "no";
+mysqli_stmt_execute($stmt);
+$stmt_rows = mysqli_stmt_get_result($stmt);
+$stmt_row = mysqli_fetch_assoc($stmt_rows);
+echo mysqli_num_rows($stmt_rows);
+echo ":";
+echo $stmt_row["option_name"], "=", $stmt_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:blogname=Example Blog,siteurl=https://example.test|1:theme_mods=theme-db|1:home=https://home.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_id_from_state() {
     let execution = run_source(
         r#"<?php

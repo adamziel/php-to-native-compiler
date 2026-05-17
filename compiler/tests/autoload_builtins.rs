@@ -85,6 +85,15 @@ spl_autoload_register($loader);
         unregister_non_callable.message,
         "unsupported call spl_autoload_unregister(): callback argument must be closure, string, array callable, or invokable object in the current subset, got int"
     );
+
+    let call_non_string = run_source("<?php\nspl_autoload_call(42);\n").unwrap_err();
+    assert_eq!(call_non_string.phase, Phase::Runtime);
+    assert_eq!(call_non_string.line, 2);
+    assert_eq!(call_non_string.column, 1);
+    assert_eq!(
+        call_non_string.message,
+        "unsupported call spl_autoload_call(): class name argument must be string in the current subset, got int"
+    );
 }
 
 #[test]
@@ -633,6 +642,87 @@ echo trait_exists("InvokeLoadedTrait", false) ? "trait" : "missing-trait";
     let _ = fs::remove_file(class_include_path);
     let _ = fs::remove_file(interface_include_path);
     let _ = fs::remove_file(plugin_include_path);
+    let _ = fs::remove_file(trait_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
+fn spl_autoload_call_invokes_registered_callbacks_for_manual_class_like_loads() {
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-autoload-manual-call-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let class_include_path = fixture_dir.join("ManualLoadedBox.inc");
+    fs::write(
+        &class_include_path,
+        r#"<?php
+class ManualLoadedBox {
+    public $name = "manual";
+}
+"#,
+    )
+    .unwrap();
+    let interface_include_path = fixture_dir.join("ManualLoadedContract.inc");
+    fs::write(
+        &interface_include_path,
+        r#"<?php
+interface ManualLoadedContract {
+    public function boot();
+}
+"#,
+    )
+    .unwrap();
+    let trait_include_path = fixture_dir.join("ManualLoadedTrait.inc");
+    fs::write(
+        &trait_include_path,
+        r#"<?php
+trait ManualLoadedTrait {
+    public function hook() {
+        return "hook";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+function ManualLoader($name) {
+    echo "manual:", $name, "\n";
+    require_once __DIR__ . "/" . $name . ".inc";
+}
+
+class ManualStaticLoader {
+    public static function load($name) {
+        echo "static:", $name, "\n";
+        require_once __DIR__ . "/" . $name . ".inc";
+    }
+}
+
+spl_autoload_register("ManualLoader");
+spl_autoload_register(array("ManualStaticLoader", "load"));
+
+$result = spl_autoload_call("ManualLoadedBox");
+echo is_null($result) ? "null\n" : "not-null\n";
+echo class_exists("ManualLoadedBox", false) ? "class\n" : "missing-class\n";
+
+spl_autoload_unregister("ManualLoader");
+spl_autoload_call("ManualLoadedContract");
+echo interface_exists("ManualLoadedContract", false) ? "interface\n" : "missing-interface\n";
+
+spl_autoload_call("ManualLoadedTrait");
+echo trait_exists("ManualLoadedTrait", false) ? "trait" : "missing-trait";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "manual:ManualLoadedBox\nnull\nclass\nstatic:ManualLoadedContract\ninterface\nstatic:ManualLoadedTrait\ntrait"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(class_include_path);
+    let _ = fs::remove_file(interface_include_path);
     let _ = fs::remove_file(trait_include_path);
     let _ = fs::remove_dir(fixture_dir);
 }

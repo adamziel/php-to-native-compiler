@@ -174,7 +174,8 @@ incorrect native code.
   direct free-function, visible object-method, and current static dispatch
   reference-return assignment that binds a returned by-reference parameter
   back to covered direct array-offset and public object-property array-offset
-  arguments,
+  arguments, including the narrow `return $param[$key]` child-slot shape when
+  `$param` was supplied by a covered parent array/property slot,
   plus bounded
   direct array-offset reference elements in literal `call_user_func_array()`
   argument arrays for request bags, `$GLOBALS`, and nested arrays,
@@ -211,7 +212,7 @@ incorrect native code.
   WordPress bootstrap probes, including exact option insert/update/delete/read
   shapes and selected prepared option-value-only, option-name-only,
   option-name-list, full-row, star-projection, name/autoload-list, and
-  autoload-list result sets, plus bounded direct and prepared
+  autoload-list/equality result sets, plus bounded direct and prepared
   transient-shaped option-name prefix result scans and deletes;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
@@ -292,9 +293,10 @@ incorrect native code.
   `implements` interfaces, and direct class-body trait `use` names, while
   interface declarations loaded through that path invoke them for parent
   interfaces reached from autoloaded interface declarations before final
-  registration validation; `spl_autoload_functions()` exposes the current
-  bounded callback list and `spl_autoload_unregister()` removes matching
-  bounded callbacks,
+  registration validation; `spl_autoload_call($class)` manually invokes the
+  current bounded callback list for class/interface/trait names,
+  `spl_autoload_functions()` exposes the current bounded callback list, and
+  `spl_autoload_unregister()` removes matching bounded callbacks,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -390,9 +392,11 @@ callables, public class-string static-method array callables, and public
 invokable-object callbacks registered through `spl_autoload_register()` for
 `class_exists()`, `interface_exists()`, `trait_exists()`, missing `new` class
 instantiation, and included
-class/interface/trait declaration dependencies; autoload lifecycle behavior
-beyond bounded `spl_autoload_functions()` and `spl_autoload_unregister()`,
-including closure invocation, exact callable validation, and enum autoloading,
+class/interface/trait declaration dependencies and manual
+`spl_autoload_call()` loads; autoload lifecycle behavior beyond bounded
+`spl_autoload_functions()`, `spl_autoload_unregister()`, and
+`spl_autoload_call()`, including closure invocation, exact callable
+validation, and enum autoloading,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -441,9 +445,12 @@ metadata, so writes through the global slot and the original slot observe the
 same value. These paths are still symbol-table alias metadata rather than full
 PHP reference containers; broader alias rebinding, exact mutation ordering, and
 copy-on-write remain unsupported.
-By-reference function and method return declarations also parse as runtime
-boundaries: containing code can register, but invocation fails with a stable
-unsupported diagnostic until reference-return binding exists.
+By-reference function and method return declarations also parse and have
+bounded statement-form reference-assignment execution for direct variable
+returns, covered array/property-slot by-reference arguments, and the narrow
+`return $param[$key]` child-slot shape when `$param` was supplied by a covered
+parent array/property slot. Normal by-value invocation of reference-return
+functions and methods still reports a stable unsupported diagnostic.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including
@@ -522,10 +529,11 @@ direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/
 `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer
 calls,
-direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/`setcookie()`
-response header-state calls, including interpreter-only `headers_sent()`
-output-started tracking, direct-variable filename/line outputs, and bounded
-ordinary header-name replacement in the request-local CLI header log,
+direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
+`http_response_code()`/`setcookie()` response header-state calls, including
+interpreter-only `headers_sent()` output-started tracking, direct-variable
+filename/line outputs, bounded ordinary header-name replacement in the
+request-local CLI header log, and bounded request-local status-code state,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

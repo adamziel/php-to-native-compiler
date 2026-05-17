@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source};
 use php_compiler::{run_source, run_source_with_source_file};
 
-const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
+const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), http_response_code(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -82,6 +82,36 @@ echo $headers[2];
 }
 
 #[test]
+fn header_and_http_response_code_track_bounded_status_state() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+$initial = http_response_code();
+$out[] = $initial === false ? "false" : "not-false";
+$previous = http_response_code(201);
+$out[] = $previous === true ? "true" : "not-true";
+$out[] = (string) http_response_code();
+header("Location: /wp-admin/");
+$out[] = (string) http_response_code();
+http_response_code(404);
+header("Location: /wp-login.php");
+$out[] = (string) http_response_code();
+header("HTTP/1.1 503 Service Unavailable");
+$out[] = (string) http_response_code();
+header("X-Test: one", true, 204);
+$out[] = (string) http_response_code();
+header("HTTP/1.1 500 Internal Server Error", true, 0);
+$out[] = (string) http_response_code();
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "false|true|201|201|302|503|204|500");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn header_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
@@ -122,6 +152,26 @@ echo $after_clear;
     .unwrap();
 
     assert_eq!(execution.stdout, "null|1|Content-Type: text/plain|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn header_remove_matches_header_names_case_insensitively() {
+    let execution = run_source(
+        r#"<?php
+header("Last-Modified: today");
+header("X-Keep: one");
+header("last-modified: tomorrow", false);
+header_remove("LAST-MODIFIED");
+$headers = headers_list();
+echo count($headers);
+echo "|";
+echo $headers[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|X-Keep: one");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -388,6 +438,33 @@ echo headers_sent("", 0, "extra");
 }
 
 #[test]
+fn http_response_code_rejects_forms_outside_current_subset() {
+    let non_int = runtime_error(
+        r#"<?php
+echo http_response_code("404");
+"#,
+    );
+    assert_eq!(non_int.line, 2);
+    assert_eq!(non_int.column, 6);
+    assert_eq!(
+        non_int.message,
+        "unsupported call http_response_code(): response code argument must be int in the current subset, got string"
+    );
+
+    let too_many = runtime_error(
+        r#"<?php
+echo http_response_code(200, 404);
+"#,
+    );
+    assert_eq!(too_many.line, 2);
+    assert_eq!(too_many.column, 6);
+    assert_eq!(
+        too_many.message,
+        "arity mismatch for http_response_code(): expected 0 to 1 argument(s), got 2"
+    );
+}
+
+#[test]
 fn header_remove_rejects_forms_outside_current_subset() {
     let non_string = runtime_error(
         r#"<?php
@@ -521,6 +598,16 @@ fn emit_ir_rejects_headers_sent_until_native_header_state_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_http_response_code_until_native_header_state_exists() {
+    let error = emit_ir_source("<?php\necho http_response_code();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
+}
+
+#[test]
 fn emit_ir_rejects_setcookie_until_native_header_state_exists() {
     let error = emit_ir_source("<?php\nsetcookie('wordpress_test_cookie', '1');\n").unwrap_err();
 
@@ -542,13 +629,15 @@ echo function_exists("headers_list") ? "1" : "0";
 echo is_callable("headers_list") ? "1" : "0";
 echo function_exists("headers_sent") ? "1" : "0";
 echo is_callable("headers_sent") ? "1" : "0";
+echo function_exists("http_response_code") ? "1" : "0";
+echo is_callable("http_response_code") ? "1" : "0";
 echo function_exists("setcookie") ? "1" : "0";
 echo is_callable("setcookie") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

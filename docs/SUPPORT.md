@@ -67,11 +67,17 @@
   `$alias =& identity($_REQUEST["payload"]["slot"]);` and
   `$alias =& $object->method($items["slot"]);`,
   `$alias =& ClassName::method($object->items["slot"]);`. The assigned alias
-  binds back to the same covered slot group after the call. Non-direct return
-  expressions such as `return $items["slot"];`, nested-control-flow returns,
-  non-public/dynamic object-property argument roots, `ArrayAccess` argument
-  roots, real PHP reference containers, broader copy-on-write, and native
-  lowering remain unsupported.
+  binds back to the same covered slot group after the call. The same direct
+  reference-return assignment path also covers the narrow non-direct return
+  expression shape `return $param[$key];` when `$param` is a by-reference
+  parameter supplied by one of those covered parent array-slot roots, such as
+  `$alias =& pick($_REQUEST["payload"], "slot");` or
+  `$alias =& $object->pick($object->items["group"], "slot");`; the returned
+  child path is appended to the covered caller alias group. Direct-variable
+  parent containers for this array-offset return shape, nested-control-flow
+  returns, non-public/dynamic object-property argument roots, `ArrayAccess`
+  argument roots, arbitrary return expressions, real PHP reference containers,
+  broader copy-on-write, and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -1143,7 +1149,8 @@
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
+  `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
+  `setcookie`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
@@ -1152,8 +1159,8 @@
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `spl_autoload_register`,
-  `spl_autoload_functions`, `spl_autoload_unregister`, `var_dump`,
-  and `print_r`;
+  `spl_autoload_functions`, `spl_autoload_unregister`, `spl_autoload_call`,
+  `var_dump`, and `print_r`;
   `gettype` returns PHP legacy type names for the current value model
   (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and `object`);
   `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
@@ -1916,10 +1923,12 @@
   Exact option-row reads for
   `SELECT option_name, option_value FROM wp_options`,
   `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
-  'on', 'auto-on', 'auto' )`, and exact
-  `WHERE option_name IN (...)` shapes return recorded name/value rows through
-  the same placeholder result path. The same all-row, autoload-filtered, and
-  explicit-name-list shapes are also supported for the exact
+  'on', 'auto-on', 'auto' )`, exact
+  `SELECT option_name, option_value FROM wp_options WHERE autoload = 'yes'`,
+  and exact `WHERE option_name IN (...)` shapes return recorded name/value
+  rows through the same placeholder result path. The same all-row,
+  autoload-filtered, autoload-equality, and explicit-name-list shapes are also
+  supported for the exact
   `SELECT option_value FROM wp_options ...` projection, returning recorded
   option values only, for the exact
   `SELECT option_name FROM wp_options ...` projection, returning recorded
@@ -1974,6 +1983,7 @@
   `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
   `SELECT option_value FROM wp_options WHERE option_name IN (?, ...)`,
   `SELECT option_value FROM wp_options WHERE autoload IN (?, ...)`,
+  `SELECT option_name, option_value FROM wp_options WHERE autoload = ?`,
   `SELECT option_name FROM wp_options WHERE option_name IN (?, ...)`,
   `SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
   `SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
@@ -1987,7 +1997,7 @@
   placeholder results when every requested name is missing, while autoload-list
   reads sort matching rows by option name and skip unmatched autoload values.
   Backticked table/column spellings are accepted for this prepared name-list
-  slice. Exact prepared
+  and autoload-equality slice. Exact prepared
   `SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?`,
   `SELECT option_value FROM wp_options WHERE option_name LIKE ?`,
   `SELECT option_name FROM wp_options WHERE option_name LIKE ?`,
@@ -2381,6 +2391,10 @@
   objects, and inert closures. `spl_autoload_unregister($callback)` removes
   the first matching callback for those same bounded shapes and returns
   `true`, or returns `false` for valid but unregistered bounded callbacks.
+  `spl_autoload_call($class)` accepts one string class/interface/trait name,
+  invokes the same bounded non-closure callback list in registration order,
+  stops once any class-like metadata with that name exists, and returns
+  `null`.
   Closure callbacks remain a registration-only shape and report a stable
   unsupported autoload boundary if a lookup needs to invoke them. Nonexistent
   string callback validation for register/unregister, non-public `__invoke`,
@@ -2443,12 +2457,25 @@
   colon-delimited header lines, the default replacement mode removes earlier
   recorded lines with the same ASCII-case-insensitive field name before
   appending the new line; `$replace = false` appends a duplicate line. Once
+  accepted before output, an explicit non-zero integer `$response_code` updates
+  the request-local response status, `HTTP/... NNN ...` status lines update
+  that status from the three-digit code, and `Location:` defaults the status to
+  `302` unless the current status is `201` or already in the `3xx` range. A
+  zero `$response_code` is treated as no explicit status argument. Once
   bytes have reached unbuffered stdout, later `header()` calls are ignored
   without modeling PHP's warning text. This is a WordPress bootstrap/request
-  compatibility boundary only; status-code parsing/state, special status
-  header replacement, whitespace normalization, web-server/SAPI integration,
-  network response emission, exact diagnostics, warning recovery,
-  partial-output behavior, and native lowering remain unsupported.
+  compatibility boundary only; `Status:` pseudo-header parsing, special status
+  header replacement, reason-phrase handling, whitespace normalization,
+  web-server/SAPI integration, network response emission, exact diagnostics,
+  warning recovery, partial-output behavior, and native lowering remain
+  unsupported.
+  `http_response_code($code = null)` accepts no argument or one integer
+  argument. With no argument it returns the current request-local status code,
+  or `false` when no status code has been set. With an integer argument it
+  updates that status and returns the previous status code, or `true` when no
+  previous status code existed. SAPI emission, exact validation/ranges,
+  interaction with real web-server state, warning recovery, and native lowering
+  remain unsupported.
   `headers_list()` accepts no arguments and returns the current deterministic
   CLI header log as an ordered array of strings in current log order. It
   exposes only this project-local request-state scaffold after accepted
@@ -2460,11 +2487,12 @@
   `header_remove($name = null)` accepts no argument or one string header name,
   returns `null`, mutates the current deterministic CLI header log by clearing
   it when no argument is provided, and removes entries whose raw header line
-  has exactly `$name` before the first colon while output is still open. After
-  unbuffered output has started, it leaves the log unchanged without modeling
-  PHP's warning text. Case folding, whitespace normalization, status-header
-  removal, SAPI/web-server behavior, exact diagnostics, warning recovery,
-  partial-output behavior, and native lowering remain unsupported.
+  has the same ASCII-case-insensitive field name before the first colon while
+  output is still open. After unbuffered output has started, it leaves the log
+  unchanged without modeling PHP's warning text. Whitespace normalization,
+  response-status reset, status-header removal, SAPI/web-server behavior, exact
+  diagnostics, warning recovery, partial-output behavior, and native lowering
+  remain unsupported.
   `setcookie($name, $value = "")` accepts a string name and optional string
   value, appends `Set-Cookie: name=value` to the same deterministic CLI header
   log used by `header()`/`headers_list()` while output is still open, and
@@ -4522,7 +4550,8 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
+  `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
+  `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -4703,10 +4732,11 @@
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`,
   `ob_end_clean`, `ob_end_flush`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
+  `setcookie`, `assert`,
   `spl_autoload_register`, `spl_autoload_functions`,
-  `spl_autoload_unregister`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `interface_exists`,
+  `spl_autoload_unregister`, `spl_autoload_call`, `get_class`, `is_object`,
+  `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
@@ -5021,6 +5051,10 @@
   filename/line output-argument subset as the builtin section above; direct
   native `headers_sent(...)` calls reject under the header-state boundary,
   while native function-table introspection recognizes the name.
+  `http_response_code` accepts the same current bounded request-local status
+  subset as the builtin section above; direct native `http_response_code(...)`
+  calls reject under the header-state boundary, while native function-table
+  introspection recognizes the name.
   `setcookie` accepts the same current simple CLI `Set-Cookie` append subset
   as the builtin section above; direct native `setcookie(...)` calls reject
   under the header-state boundary, while native function-table introspection
@@ -5219,10 +5253,11 @@
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and missing included-declaration
   `extends`/`implements`/trait-use dependencies. `spl_autoload_functions`
-  exposes the current bounded callback list, and `spl_autoload_unregister`
-  removes matching bounded callback values. Closure invocation and direct
-  native calls still reject under explicit boundaries. Native function-table
-  introspection recognizes the names.
+  exposes the current bounded callback list, `spl_autoload_unregister`
+  removes matching bounded callback values, and `spl_autoload_call` manually
+  invokes the stored bounded callback list for a class/interface/trait string
+  name. Closure invocation and direct native calls still reject under explicit
+  boundaries. Native function-table introspection recognizes the names.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -7154,11 +7189,18 @@
 - `header()` behavior beyond accepting current string/bool/int arguments,
   recording ordinary colon-delimited header lines in deterministic CLI request
   state with bounded ASCII-case-insensitive replacement when `$replace` is true,
-  and returning `null`: status-code parsing/state, special status header
-  replacement, whitespace normalization, output-sent warnings, SAPI/web-server
-  integration, network response emission, exact `ValueError`/`TypeError`
-  diagnostics, partial-output behavior, and native lowering beyond
-  function-table introspection
+  updating request-local status from explicit non-zero response codes,
+  `HTTP/... NNN` status lines, and bounded `Location:` default status behavior,
+  and returning `null`: `Status:` pseudo-header parsing, reason-phrase
+  handling, special status header replacement, whitespace normalization,
+  output-sent warnings, SAPI/web-server integration, network response emission,
+  exact `ValueError`/`TypeError` diagnostics, partial-output behavior, and
+  native lowering beyond function-table introspection
+- `http_response_code()` behavior beyond no-argument reads and integer writes
+  of request-local status state, including previous-value return behavior:
+  real SAPI emission, exact valid-code ranges, reason phrases, web-server
+  interaction, output-sent warnings, exact diagnostics, and native lowering
+  beyond function-table introspection
 - `headers_list()` behavior beyond returning the current deterministic CLI
   header log after accepted `header()` replacement/appends, simple
   `setcookie()` appends, and bounded `header_remove()` mutations: PHP CLI
@@ -7168,10 +7210,11 @@
   introspection
 - `header_remove()` behavior beyond clearing the current deterministic CLI
   header log with no arguments or removing raw colon-delimited entries whose
-  field name exactly matches one string argument: case folding, whitespace
-  normalization, status-header removal, output-sent warnings, SAPI/web-server
-  behavior, exact diagnostics, partial-output behavior, and native lowering
-  beyond function-table introspection
+  field name ASCII-case-insensitively matches one string argument: whitespace
+  normalization, response-status reset, status-header removal,
+  output-sent warnings, SAPI/web-server behavior, exact diagnostics,
+  partial-output behavior, and native lowering beyond function-table
+  introspection
 - `setcookie()` behavior beyond accepting a string name and optional string
   value, appending a simple `Set-Cookie: name=value` line to deterministic CLI
   request state before output starts, returning `false` after unbuffered output
@@ -7257,7 +7300,8 @@
   objects for truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses, missing `new`
   class instantiation, and included class declaration class/interface/trait
-  dependencies, plus bounded callback-list introspection and unregistering:
+  dependencies, plus bounded callback-list introspection, unregistering, and
+  manual `spl_autoload_call()` dispatch:
   closure invocation, nonexistent string callback validation,
   non-public/static `__invoke`, invokable-object dispatch outside autoloading,
   non-public methods, class-string non-static methods, object static methods,

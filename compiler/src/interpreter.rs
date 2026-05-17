@@ -145,6 +145,7 @@ struct Interpreter {
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     response_headers: Vec<String>,
+    response_status_code: Option<i64>,
     output_buffers: Vec<String>,
     output_start: Option<OutputStart>,
     session_status: i64,
@@ -350,6 +351,7 @@ enum AutoloadKind {
     Class,
     Interface,
     Trait,
+    Any,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2408,6 +2410,15 @@ enum ReferenceReturnBinding {
     ArrayOffsets(Vec<ArrayOffsetAlias>),
 }
 
+#[derive(Debug, Clone)]
+enum ReferenceReturnLocalBinding {
+    Cell(VariableCell),
+    ArrayOffset {
+        root_name: String,
+        keys: Vec<ArrayKey>,
+    },
+}
+
 #[derive(Debug, Clone, Default)]
 struct ConstantTable {
     values: HashMap<String, Value>,
@@ -2635,6 +2646,7 @@ impl Interpreter {
             class_context: Vec::new(),
             called_class_context: Vec::new(),
             response_headers: Vec::new(),
+            response_status_code: None,
             output_buffers: Vec::new(),
             output_start: None,
             session_status: PHP_SESSION_NONE,
@@ -9677,6 +9689,30 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_value_select_autoload_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_value_select_prefix_query(query) {
             let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -16166,6 +16202,26 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_spl_autoload_call(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("spl_autoload_call", args, 1, span)?;
+
+        let Value::String(class_name) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "spl_autoload_call()",
+                    format!(
+                        "class name argument must be string in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+
+        self.run_autoload_callbacks(class_name, AutoloadKind::Any, span)?;
+        Ok(Value::Null)
+    }
+
     fn autoload_callback_from_value(
         &self,
         value: Value,
@@ -16280,6 +16336,11 @@ impl Interpreter {
                         .contains_key(&name.to_ascii_lowercase())
             }
             AutoloadKind::Trait => self.trait_lookup.contains_key(&name.to_ascii_lowercase()),
+            AutoloadKind::Any => {
+                self.class_like_exists(name, AutoloadKind::Class)
+                    || self.class_like_exists(name, AutoloadKind::Interface)
+                    || self.class_like_exists(name, AutoloadKind::Trait)
+            }
         }
     }
 
@@ -18252,9 +18313,10 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
-        let result = self.execute_reference_return_statements(function, &mut local_scope);
-        let returned_array_offset = result.as_ref().ok().and_then(|returned_cell| {
-            array_offset_binding_cells
+        let result =
+            self.execute_reference_return_assignment_statements(function, &mut local_scope);
+        let returned_array_offset = result.as_ref().ok().and_then(|returned| match returned {
+            ReferenceReturnLocalBinding::Cell(returned_cell) => array_offset_binding_cells
                 .iter()
                 .find_map(|(_, aliases, original_cell)| {
                     if Rc::ptr_eq(returned_cell, original_cell) {
@@ -18262,7 +18324,22 @@ impl Interpreter {
                     } else {
                         None
                     }
-                })
+                }),
+            ReferenceReturnLocalBinding::ArrayOffset { root_name, keys } => {
+                array_offset_binding_cells.iter().find_map(
+                    |(param_name, aliases, original_cell)| {
+                        if param_name != root_name {
+                            return None;
+                        }
+                        let local_cell = local_scope.read_cell(param_name)?;
+                        if Rc::ptr_eq(&local_cell, original_cell) {
+                            Some(Self::array_offset_aliases_with_suffix(aliases, keys))
+                        } else {
+                            None
+                        }
+                    },
+                )
+            }
         });
         let writeback_result = if result.is_ok() {
             let mut writeback_result = Ok(());
@@ -18326,8 +18403,10 @@ impl Interpreter {
         }
 
         writeback_result?;
-        let cell = result?;
         if let Some(aliases) = returned_array_offset {
+            for alias in &aliases {
+                caller_scope.materialize_array_offset_alias(alias, function.span)?;
+            }
             if aliases.len() == 1 {
                 Ok(ReferenceReturnBinding::ArrayOffset(
                     aliases.into_iter().next().expect("checked len"),
@@ -18336,7 +18415,16 @@ impl Interpreter {
                 Ok(ReferenceReturnBinding::ArrayOffsets(aliases))
             }
         } else {
-            Ok(ReferenceReturnBinding::Cell(cell))
+            match result? {
+                ReferenceReturnLocalBinding::Cell(cell) => Ok(ReferenceReturnBinding::Cell(cell)),
+                ReferenceReturnLocalBinding::ArrayOffset { .. } => Err(runtime_error(
+                    function.span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return array-offset expressions require a covered by-reference array-slot argument in the current subset",
+                    ),
+                )),
+            }
         }
     }
 
@@ -18427,6 +18515,122 @@ impl Interpreter {
         }
 
         result
+    }
+
+    fn execute_reference_return_assignment_statements(
+        &mut self,
+        function: &FunctionDecl,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReferenceReturnLocalBinding> {
+        for stmt in &function.body {
+            self.tick(stmt.span())?;
+            if let Stmt::Return { value, span } = stmt {
+                let Some(value) = value else {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference-return functions must return a value in the current subset",
+                        ),
+                    ));
+                };
+                match value {
+                    Expr::Variable(name, variable_span) => {
+                        return scope
+                            .read_cell(name)
+                            .map(ReferenceReturnLocalBinding::Cell)
+                            .ok_or_else(|| {
+                                runtime_error(
+                                    *variable_span,
+                                    RuntimeError::undefined_variable(name),
+                                )
+                            });
+                    }
+                    Expr::Index { target, index, .. } => {
+                        let Some((root_name, indices)) =
+                            Self::collect_direct_variable_array_index_path(target, index)
+                        else {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::unsupported_call(
+                                    callable_name(&function.name),
+                                    "reference-return array-offset expressions are only implemented for direct variable roots in the current subset",
+                                ),
+                            ));
+                        };
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        let alias = ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: root_name.to_string(),
+                            },
+                            keys: keys.clone(),
+                        };
+                        scope.materialize_array_offset_alias(&alias, *span)?;
+                        return Ok(ReferenceReturnLocalBinding::ArrayOffset {
+                            root_name: root_name.to_string(),
+                            keys,
+                        });
+                    }
+                    _ => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "reference returns are only implemented for direct variable and direct array-offset return expressions",
+                            ),
+                        ));
+                    }
+                }
+            }
+
+            match self.execute_statement(stmt, scope)? {
+                Flow::Normal => {}
+                Flow::Return(_) => {
+                    return Err(runtime_error(
+                        stmt.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference returns through nested control flow are not implemented",
+                        ),
+                    ));
+                }
+                Flow::Break { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+                    ));
+                }
+                Flow::Continue { span, .. } => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue cannot be used outside a loop",
+                        ),
+                    ));
+                }
+                Flow::Exit(_) => {
+                    return Err(runtime_error(
+                        stmt.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "exit during reference-return evaluation is not implemented",
+                        ),
+                    ));
+                }
+                Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
+            }
+        }
+
+        Err(runtime_error(
+            function.span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference-return functions must return a direct variable or direct array offset in the current subset",
+            ),
+        ))
     }
 
     fn execute_reference_return_statements(
@@ -18782,6 +18986,20 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn array_offset_aliases_with_suffix(
+        aliases: &[ArrayOffsetAlias],
+        keys: &[ArrayKey],
+    ) -> Vec<ArrayOffsetAlias> {
+        aliases
+            .iter()
+            .map(|alias| {
+                let mut alias = alias.clone();
+                alias.keys.extend(keys.iter().cloned());
+                alias
+            })
+            .collect()
     }
 
     fn call_user_function_with_checked_values(
@@ -20330,6 +20548,11 @@ impl Interpreter {
             Some(Value::Bool(replace)) => *replace,
             _ => true,
         };
+        let explicit_response_code = match args.get(2) {
+            Some(Value::Int(0)) => None,
+            Some(Value::Int(code)) => Some(*code),
+            _ => None,
+        };
 
         if self.output_start.is_none() {
             if replace {
@@ -20341,9 +20564,71 @@ impl Interpreter {
                     });
                 }
             }
+            self.update_response_status_from_header(&header, explicit_response_code);
             self.response_headers.push(header);
         }
         Ok(Value::Null)
+    }
+
+    fn update_response_status_from_header(
+        &mut self,
+        header: &str,
+        explicit_response_code: Option<i64>,
+    ) {
+        if let Some(code) = explicit_response_code {
+            self.response_status_code = Some(code);
+            return;
+        }
+
+        if let Some(code) = http_status_line_code(header) {
+            self.response_status_code = Some(code);
+            return;
+        }
+
+        if header_name(header).is_some_and(|name| header_names_equal(name, "Location")) {
+            let should_default_redirect =
+                !matches!(self.response_status_code, Some(201) | Some(300..=399));
+            if should_default_redirect {
+                self.response_status_code = Some(302);
+            }
+        }
+    }
+
+    fn call_http_response_code(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "http_response_code()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self
+            .response_status_code
+            .map(Value::Int)
+            .unwrap_or(Value::Bool(args.first().is_some()));
+
+        let Some(code) = args.first() else {
+            return Ok(previous);
+        };
+        let Value::Int(code) = code else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "http_response_code()",
+                    format!(
+                        "response code argument must be int in the current subset, got {}",
+                        code.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        self.response_status_code = Some(*code);
+        Ok(previous)
     }
 
     fn call_headers_list(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -20391,8 +20676,11 @@ impl Interpreter {
             ));
         };
 
-        self.response_headers
-            .retain(|header| header_name(header) != Some(name.as_str()));
+        self.response_headers.retain(|header| {
+            header_name(header)
+                .map(|existing| !header_names_equal(existing, name))
+                .unwrap_or(true)
+        });
         Ok(Value::Null)
     }
 
@@ -22650,6 +22938,7 @@ impl Interpreter {
             "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
             "headers_sent" => self.call_headers_sent_values(&args, span),
+            "http_response_code" => self.call_http_response_code(&args, span),
             "setcookie" => self.call_setcookie(&args, span),
             "session_start" => self.call_session_start(&args, span),
             "session_status" => self.call_session_status(&args, span),
@@ -23227,6 +23516,7 @@ impl Interpreter {
             },
             "spl_autoload_functions" => self.call_spl_autoload_functions(&args, span),
             "spl_autoload_unregister" => self.call_spl_autoload_unregister(&args, span),
+            "spl_autoload_call" => self.call_spl_autoload_call(&args, span),
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
                     Ok(Value::Bool(self.value_is_a(object_or_class, class_name, false)))
@@ -28091,6 +28381,7 @@ fn is_builtin(name: &str) -> bool {
             | "header_remove"
             | "headers_list"
             | "headers_sent"
+            | "http_response_code"
             | "setcookie"
             | "session_start"
             | "session_status"
@@ -28113,6 +28404,7 @@ fn is_builtin(name: &str) -> bool {
             | "spl_autoload_register"
             | "spl_autoload_functions"
             | "spl_autoload_unregister"
+            | "spl_autoload_call"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"
@@ -28888,6 +29180,14 @@ fn is_wordpress_option_prepared_name_value_select_autoloads_query(query: &str) -
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_value_select_autoload_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_name, option_value FROM wp_options WHERE autoload = ?"
+            | "SELECT `option_name`, `option_value` FROM `wp_options` WHERE `autoload` = ?"
+    )
+}
+
 fn is_wordpress_option_prepared_name_value_select_prefix_query(query: &str) -> bool {
     matches!(
         query.trim(),
@@ -29217,10 +29517,8 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29244,10 +29542,8 @@ fn parse_wordpress_options_name_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29269,10 +29565,8 @@ fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPres
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29297,10 +29591,8 @@ fn parse_wordpress_options_value_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29326,10 +29618,8 @@ fn parse_wordpress_options_name_value_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29357,10 +29647,8 @@ fn parse_wordpress_options_id_name_value_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29382,10 +29670,8 @@ fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPres
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
-        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
-    {
-        return Some(WordPressOptionsRowFilter::Autoload);
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+        return Some(filter);
     }
     if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
         return Some(filter);
@@ -29396,6 +29682,23 @@ fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPres
         .strip_suffix(')')?;
     let names = parse_sql_single_quoted_list(names)?;
     Some(WordPressOptionsRowFilter::Names(names))
+}
+
+fn parse_wordpress_options_autoload_filter(rest: &str) -> Option<WordPressOptionsRowFilter> {
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+
+    let value_sql = rest
+        .strip_prefix("WHERE autoload = ")
+        .or_else(|| rest.strip_prefix("WHERE `autoload` = "))?;
+    let values = parse_sql_single_quoted_list(value_sql)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(WordPressOptionsRowFilter::AutoloadValues(values))
 }
 
 fn parse_wordpress_options_option_name_like_filter(
@@ -32185,6 +32488,15 @@ fn header_name(header: &str) -> Option<&str> {
 
 fn header_names_equal(left: &str, right: &str) -> bool {
     left.eq_ignore_ascii_case(right)
+}
+
+fn http_status_line_code(header: &str) -> Option<i64> {
+    let rest = header.strip_prefix("HTTP/")?;
+    let code = rest.split_whitespace().nth(1)?;
+    if code.len() != 3 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    code.parse().ok()
 }
 
 fn apply_stream_context_options(

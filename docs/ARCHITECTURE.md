@@ -116,18 +116,23 @@ object-method, named-static-method, method-context `self::`/`parent::`/
 `static::`, and dynamic-static-receiver assignment now also use the
 array-offset writeback/alias result path when a reached by-reference parameter
 is supplied by a direct array-offset or public object-property array-offset
-argument and the function or method returns that parameter directly. They do
-not promote callback argument arrays, non-public/dynamic object-property array
-bridges, ArrayAccess roots, or stored array-offset metadata into general
-runtime reference containers. By-reference
+argument and the function or method returns that parameter directly. The same
+assignment-only path can bind a returned direct array-offset expression such
+as `return $param[$key];` when `$param` is one of those copied-in covered
+parent array-slot arguments; after the local parent array is written back, the
+returned key suffix is appended to the caller alias group. It does not make
+direct-variable parent arrays, callback argument arrays, non-public/dynamic
+object-property array bridges, ArrayAccess roots, or stored array-offset
+metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
 including bounded direct caller-cell and direct static-local cell cases.
-Property-return, array-offset-return, expression-return, magic
-`__callStatic`, and callback forms outside the bounded `call_user_func_array()`
-slice remain outside the executable foreach slice.
+Property-return, array-offset-return beyond that assignment-only covered
+parent-slot suffix shape, expression-return, magic `__callStatic`, and callback
+forms outside the bounded `call_user_func_array()` slice remain outside the
+executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -1570,6 +1575,13 @@ shape, records the raw header line in deterministic in-process CLI request
 state, and returns `null`. For ordinary colon-delimited header lines, default
 replacement removes earlier lines with the same ASCII-case-insensitive field
 name before appending the new line; `$replace = false` keeps duplicate lines.
+Before output starts, it also updates request-local status state from an
+explicit non-zero integer response-code argument, from bounded `HTTP/... NNN`
+status lines, and from PHP-compatible `Location:` defaulting to `302` unless
+the current status is `201` or already a redirect. A zero response-code
+argument is treated as no explicit status. `http_response_code()` reads or
+writes that request-local status state and preserves PHP's current
+previous-value return shape for the covered integer argument slice.
 `headers_list()` returns that header log as an ordered array of strings. Native
 function-table introspection recognizes the names, while direct native calls
 reject through a header-state boundary until response storage, diagnostics,
@@ -1577,10 +1589,10 @@ output-started tracking, status handling, and SAPI integration have a lowered
 runtime model.
 `header_remove()` mutates that deterministic CLI header log for the current
 bounded subset: no arguments clear the log, and one string removes entries
-whose raw header line has exactly that field name before the first colon. It
-leaves the log unchanged after unbuffered output has started. It still does
-not model status headers, normalize header names, emit PHP's warning text, or
-model full SAPI removal behavior.
+whose raw header line has the same ASCII-case-insensitive field name before
+the first colon. It leaves the log and response status unchanged after
+unbuffered output has started. It still does not model status-header removal,
+whitespace normalization, PHP's warning text, or full SAPI removal behavior.
 `setcookie()` is another interpreter-only header-state boundary. The current
 slice accepts a string cookie name plus an optional string value, appends a
 simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
@@ -1647,6 +1659,7 @@ autoload, option-name/option-value, exact value/autoload updates, and bounded
 full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
+direct/prepared autoload equality reads for alloptions-shaped probes, plus
 bounded direct `option_name LIKE '<prefix>%'` and prepared
 `option_name LIKE ?` result scans and deletes for transient-shaped option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
@@ -1674,9 +1687,11 @@ strings, and exact callable validation remain unsupported. The same stored
 callback vector backs `spl_autoload_functions()`, which reifies the current
 bounded callback shapes as PHP values in dispatch order, and
 `spl_autoload_unregister()`, which removes the first matching bounded callback
-or returns false for valid unregistered callbacks. Native function-table
-introspection recognizes the names, while direct native calls reject under the
-function-call boundary.
+or returns false for valid unregistered callbacks. `spl_autoload_call($class)`
+manually dispatches the same bounded callback vector for a string
+class/interface/trait name and stops once any class-like metadata with that
+name exists. Native function-table introspection recognizes the names, while
+direct native calls reject under the function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and

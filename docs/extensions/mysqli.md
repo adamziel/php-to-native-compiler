@@ -365,9 +365,11 @@ autoload columns together through the same placeholder result/fetch path.
 Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
-'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
-return recorded option-name/option-value rows. The same all-row,
-autoload-filtered, and explicit-name-list shapes are also supported for the
+'on', 'auto-on', 'auto' )`, exact
+`SELECT option_name, option_value FROM wp_options WHERE autoload = 'yes'`,
+and exact `WHERE option_name IN (...)` shapes return recorded
+option-name/option-value rows. The same all-row, autoload-filtered,
+autoload-equality, and explicit-name-list shapes are also supported for the
 exact `SELECT option_value FROM wp_options ...` projection, returning recorded
 option values only, for the
 exact `SELECT option_name FROM wp_options ...` projection, returning recorded
@@ -444,6 +446,7 @@ full-row prepared name-list slice. The
 exact
 `SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ...)`,
+`SELECT option_name, option_value FROM wp_options WHERE autoload = ?`,
 `SELECT option_name, autoload FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`,
 and
@@ -453,7 +456,7 @@ through the same prepared result paths. Matching rows are sorted by option
 name, duplicate autoload parameters do not duplicate rows, and missing
 autoload values return empty zero-field placeholder results when no rows
 match. Backticked table/column spellings are accepted for this prepared
-autoload-list slice. Exact prepared
+autoload-list/equality slice. Exact prepared
 `SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?`,
 `SELECT option_value FROM wp_options WHERE option_name LIKE ?`,
 `SELECT option_name FROM wp_options WHERE option_name LIKE ?`,

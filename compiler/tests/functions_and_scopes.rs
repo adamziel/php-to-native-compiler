@@ -996,6 +996,55 @@ echo $cache->cache["options"]["alloptions"], "|", $cache_alias;
 }
 
 #[test]
+fn reference_return_assignment_binds_returned_array_offset_from_covered_arguments() {
+    let execution = run_source(
+        r#"<?php
+function &pick_slot(&$items, $key, $suffix) {
+    $items[$key] = $items[$key] . ":" . $suffix;
+    return $items[$key];
+}
+
+class SlotPicker {
+    public $cache = [];
+
+    public function &pick(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+
+    public static function &pickStatic(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+}
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$request_alias =& pick_slot($_REQUEST["payload"], "slot", "function");
+$request_alias = $request_alias . ":alias";
+echo $_REQUEST["payload"]["slot"], "|", $request_alias, "\n";
+
+$items = ["outer" => ["slot" => "array"]];
+$array_alias =& SlotPicker::pickStatic($items["outer"], "slot", "static");
+$array_alias = $array_alias . ":alias";
+echo $items["outer"]["slot"], "|", $array_alias, "\n";
+
+$picker = new SlotPicker();
+$picker->cache["options"]["alloptions"] = "cold";
+$cache_alias =& $picker->pick($picker->cache["options"], "alloptions", "method");
+$cache_alias = $cache_alias . ":alias";
+echo $picker->cache["options"]["alloptions"], "|", $cache_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:function:alias|request:function:alias\narray:static:alias|array:static:alias\ncold:method:alias|cold:method:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_return_assignment_binds_array_offset_arguments() {
     let execution = run_source(
         r#"<?php
