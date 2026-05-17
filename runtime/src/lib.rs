@@ -2078,6 +2078,9 @@ impl PhpClassTable {
             "getName",
             "getDeclaringClass",
             "getModifiers",
+            "getParameters",
+            "getNumberOfParameters",
+            "getNumberOfRequiredParameters",
             "isPublic",
             "isProtected",
             "isPrivate",
@@ -2089,6 +2092,29 @@ impl PhpClassTable {
             reflection_method
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionMethod core metadata should not duplicate methods");
+        }
+        let reflection_parameter_id = classes
+            .declare_class("ReflectionParameter")
+            .expect("core class table should contain ReflectionMethod before ReflectionParameter");
+        let reflection_parameter = classes
+            .get_mut(reflection_parameter_id)
+            .expect("declared ReflectionParameter class id should resolve");
+        for method in [
+            "__construct",
+            "getName",
+            "getPosition",
+            "getDeclaringClass",
+            "getDeclaringFunction",
+            "isOptional",
+            "isDefaultValueAvailable",
+            "getDefaultValue",
+            "isPassedByReference",
+            "isVariadic",
+            "hasType",
+        ] {
+            reflection_parameter
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionParameter core metadata should not duplicate methods");
         }
         classes
     }
@@ -7750,6 +7776,13 @@ mod tests {
         assert!(reflection_method.properties().is_empty());
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
         assert!(reflection_method.method("getModifiers").is_some());
+
+        let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
+        assert_eq!(reflection_parameter.name(), "ReflectionParameter");
+        assert_eq!(reflection_parameter.id().index(), 9);
+        assert!(reflection_parameter.parent_id().is_none());
+        assert!(reflection_parameter.properties().is_empty());
+        assert!(reflection_parameter.method("getDefaultValue").is_some());
     }
 
     #[test]

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1422/call_user_func_array_append_reference_roots.php

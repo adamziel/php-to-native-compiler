@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and an exact WordPress-shaped transient payload/timeout pair delete query rather than a real MySQL database, general multi-table DELETE, subqueries, persistent object cache, full WordPress option APIs, or native DB lowering.

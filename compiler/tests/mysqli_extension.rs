@@ -4881,6 +4881,50 @@ echo implode(",", $parts);
 }
 
 #[test]
+fn mysqli_deletes_current_wordpress_expired_transient_payload_pairs_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_feed_mod', 'cached-feed', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '500', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_core', 'core-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_timeout_update_core', '120', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE a, b FROM wp_options a, wp_options b WHERE a.option_name LIKE '_transient_%' AND a.option_name NOT LIKE '_transient_timeout_%' AND b.option_name = CONCAT( '_transient_timeout_', SUBSTRING( a.option_name, 12 ) ) AND b.option_value < 300") ? "direct" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$stmt = mysqli_prepare($handle, "DELETE a, b FROM wp_options a, wp_options b WHERE a.option_name LIKE ? AND a.option_name NOT LIKE ? AND b.option_name = CONCAT( '_site_transient_timeout_', SUBSTRING( a.option_name, 17 ) ) AND b.option_value < ?");
+mysqli_stmt_execute($stmt, array("\\_site_transient\\_%", "\\_site_transient\\_timeout\\_%", "300"));
+echo mysqli_stmt_affected_rows($stmt);
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "DELETE a, b FROM wp_options a, wp_options b WHERE a.option_name LIKE ? AND a.option_name NOT LIKE ? AND b.option_name = CONCAT( '_transient_timeout_', SUBSTRING( a.option_name, 12 ) ) AND b.option_value < ?", array("_transient_%", "_transient_timeout_%", 600)) ? "execute" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$left = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+$parts = array();
+while ($row = mysqli_fetch_assoc($left)) {
+    $parts[] = $row["option_name"] . "=" . $row["option_value"];
+}
+echo implode(",", $parts);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct:2|2:2|execute:2|siteurl=https://example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

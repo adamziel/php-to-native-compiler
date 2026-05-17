@@ -338,8 +338,12 @@ de-duplicated for affected-row accounting. Exact
 trailing-percent option-name prefix matches, including backticked table/column
 spellings and escaped transient prefixes such as `\_transient\_%`. This gives
 the current transient-shaped cleanup probe a deterministic option-state path
-for literal/prepared name lists and prefix deletes; it is not broad `DELETE`
-SQL, subquery support, arbitrary predicates, general SQL `LIKE` wildcard
+for literal/prepared name lists and prefix deletes. An exact WordPress-shaped
+`DELETE a, b FROM wp_options a, wp_options b ...` transient cleanup shape
+also deletes payload rows and matching timeout rows when the supported
+payload prefix, timeout prefix, `CONCAT`/`SUBSTRING` timeout expression, and
+threshold match. This is not broad `DELETE` SQL, arbitrary multi-table
+deletes, subquery support, arbitrary predicates, general SQL `LIKE` wildcard
 semantics, non-string option-name params, real index/lock behavior, or host
 database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
@@ -566,15 +570,18 @@ handle, updates statement and connection affected-row metadata, and treats
 missing option names as successful zero-row deletes. The exact
 `DELETE FROM wp_options WHERE option_name LIKE ?` prepared statement removes
 recorded options whose names match one string trailing-percent prefix pattern
-and updates statement and connection affected-row metadata. Prepared mutation
-SQL without a prior state island remains unsupported. This does not add broad
+and updates statement and connection affected-row metadata. The exact
+prepared WordPress transient pair cleanup shape over `wp_options` aliases `a`
+and `b` also removes reached payload rows plus matching timeout rows and
+updates statement and connection affected-row metadata. Prepared mutation SQL
+without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
 affected-row fidelity, prepared mutation shapes beyond the exact option value,
 value/autoload, autoload-only, insert, replace, upsert, equality delete,
-name-list delete, and prefix delete forms listed above, arbitrary projections,
-non-string parameter coercion, result binding fidelity beyond exact metadata,
-real auto-increment fidelity, host database execution, PDO, or native
-lowering.
+name-list delete, prefix delete, and transient pair cleanup forms listed
+above, arbitrary projections, non-string parameter coercion, result binding
+fidelity beyond exact metadata, real auto-increment fidelity, host database
+execution, PDO, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

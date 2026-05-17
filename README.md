@@ -81,7 +81,9 @@ params on those contexts. Context resources may be passed to the current
 wrapper-specific behavior, and `file_get_contents()` accepts bounded integer
 offset plus optional non-negative length reads over those UTF-8 payloads.
 Missing local files and negative offsets before the start of those payloads
-emit bounded PHP-style warnings to stderr, return `false`, and continue.
+emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
+current slice can route those warnings through registered string or public
+array-callable `set_error_handler()` handlers before the stderr fallback.
 `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Bounded
 `register_shutdown_function()` callbacks run supported string and public
@@ -95,7 +97,7 @@ binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, stat-cache behavior, closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
-integration, temp-file spillover,
+integration beyond that `file_get_contents()` recovery slice, temp-file spillover,
 and native stream resources remain unsupported. Native lowering
 still rejects request/session/stream state
 until a native runtime ABI exists.
@@ -244,8 +246,9 @@ incorrect native code.
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
   scans and a bounded expired-transient-timeout
-  `option_name LIKE ... AND option_value < timestamp` option-name scan and
-  timeout-row delete shape;
+  `option_name LIKE ... AND option_value < timestamp` option-name scan,
+  timeout-row delete shape, and exact WordPress-shaped transient payload plus
+  timeout pair delete shape;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -380,7 +383,10 @@ incorrect native code.
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, and `hasMethod($name)`, bounded `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
-  constructor, and modifier-mask inspection, declared trait
+  constructor, modifier-mask, and parameter-list inspection, bounded
+  `ReflectionParameter` method-parameter metadata with name, position,
+  declaring class/function, optional/default, by-reference, variadic, and
+  type-presence predicates, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -481,7 +487,8 @@ magic methods beyond direct missing-property
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
-bounded `ReflectionClass`/`ReflectionMethod` metadata table slices, and
+bounded `ReflectionClass`/`ReflectionMethod`/`ReflectionParameter` metadata
+table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -541,6 +548,11 @@ property, including private/protected properties reached from a valid method
 visibility context, and a direct stored argument-array variable may itself be
 backed by covered array-offset alias metadata such as
 `$args =& $_REQUEST["callback_args"]` or `$args =& $object->store["args"]`.
+Stored callback argument slots may also be assigned by reference from covered
+append-offset sources such as `$args[] =& $items[]` and
+`$args["value"] =& $object->items[]`; the appended source slot and stored
+argument slot share the same bounded alias group for callback writeback and
+supported reference-return binding.
 Literal reference elements may also use a
 direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and

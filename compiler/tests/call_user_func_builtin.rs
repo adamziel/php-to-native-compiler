@@ -729,6 +729,50 @@ echo $cache, "|", $box->store["args"][0], "|", $static_alias;
 }
 
 #[test]
+fn call_user_func_array_binds_stored_append_reference_argument_roots() {
+    let execution = run_source(
+        r#"<?php
+function wp_refcow_append_mark(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+    return $value;
+}
+
+function &wp_refcow_append_pick(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+    return $value;
+}
+
+class WP_RefCow_Append_Store {
+    public $items = [];
+}
+
+$items = [];
+$args = [];
+$args[] =& $items[];
+$args[] = "direct";
+echo call_user_func_array("wp_refcow_append_mark", $args), "|", $items[0], "|", $args[0], "\n";
+
+$alias =& call_user_func_array("wp_refcow_append_pick", $args);
+$alias = $alias . ":alias";
+echo $items[0], "|", $args[0], "|", $alias, "\n";
+
+$store = new WP_RefCow_Append_Store();
+$named = [];
+$named["value"] =& $store->items[];
+$named["suffix"] = "property";
+echo call_user_func_array("wp_refcow_append_mark", $named), "|", $store->items[0], "|", $named["value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "null:direct|null:direct|null:direct\nnull:direct:direct:alias|null:direct:direct:alias|null:direct:direct:alias\nnull:property|null:property|null:property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_visible_non_public_object_property_array_reference_arguments() {
     let execution = run_source(
         r#"<?php

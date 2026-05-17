@@ -166,7 +166,12 @@
   routed through the same covered alias metadata, such as
   `$args =& $registry["args"]`, `$args =& $_REQUEST["callback_args"]`, or
   `$args =& $object->store["args"]`, before its reached slots are assigned by
-  reference. It also covers normal
+  reference. Stored argument-array slots may also be assigned by reference
+  from covered append-offset sources such as `$args[] =& $items[]` and
+  `$args["value"] =& $object->items[]`; the append source is materialized as
+  `null`, then the stored callback slot and appended source slot share the
+  same bounded alias group for callback writeback and supported
+  reference-return binding. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
   callables declared as returning by reference when the callback writes through
   reached by-reference parameters. Statement-form reference assignment from
@@ -201,11 +206,11 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Dynamic-property, append-offset, ArrayAccess, reference array
+  Dynamic-property append-offset sources, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
-  object-property array offsets without an intermediate alias variable,
+  non-append object-property array offsets without an intermediate alias variable,
   dynamic static receiver, executing duplicate or unknown string-keyed
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
@@ -1459,10 +1464,13 @@
   unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
-  returning the previous mask. The interpreter initializes the mask to `E_ALL`.
-  PHP's warning/notice/deprecation filtering, ini integration,
-  disabled-function policy, non-integer coercions, exact diagnostics, and
-  native lowering remain unsupported.
+  returning the previous mask. The interpreter initializes the mask to `E_ALL`;
+  the current mask filters only the bounded stderr fallback for
+  `file_get_contents()` recoverable `E_WARNING` events after any matching
+  custom handler has run or declined handling. Broader PHP
+  warning/notice/deprecation filtering, ini integration, disabled-function
+  policy, non-integer coercions, exact diagnostics, and native lowering remain
+  unsupported.
   `str_replace($search, $replace, $subject, $count = null)` supports scalar or
   array search values when each search value is scalar/null
   string-convertible, a scalar/null string-convertible replacement, and a
@@ -1760,11 +1768,15 @@
   `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements, including
   the current backticked table/column spelling, when every placeholder is a
   string option name; it removes each distinct reached option name and updates
-  statement and connection affected-row metadata. This is not broader
-  statement execution, named params-array support, true by-reference aliasing,
-  mutation SQL beyond exact `wp_options` state-island shapes, host database
-  state, PHP warning/error fidelity, mysqlnd behavior, or native statement
-  lowering.
+  statement and connection affected-row metadata. The same state island also
+  accepts one exact WordPress-shaped prepared transient payload pair delete
+  over `wp_options` aliases `a` and `b`, with payload and timeout
+  trailing-percent patterns plus a decimal threshold; it deletes each reached
+  payload row and its matching timeout row when the timeout value is below the
+  threshold. This is not broader statement execution, named params-array
+  support, true by-reference aliasing, mutation SQL beyond exact `wp_options`
+  state-island shapes, arbitrary multi-table deletes, host database state, PHP
+  warning/error fidelity, mysqlnd behavior, or native statement lowering.
   `mysqli_execute_query($handle, $query, $params = null)` accepts a
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
@@ -1992,7 +2004,15 @@
   shapes also remove recorded expired transient-timeout rows whose option
   names match one trailing-percent prefix and whose recorded option value
   parses as a decimal integer below the threshold, including current
-  backticked table/column spellings and escaped transient prefixes. They also
+  backticked table/column spellings and escaped transient prefixes. An exact
+  `DELETE a, b FROM wp_options a, wp_options b ...` transient pair cleanup
+  shape also removes payload rows plus matching timeout rows when the payload
+  pattern, timeout `NOT LIKE` pattern, supported `CONCAT`/`SUBSTRING` timeout
+  expression, and threshold line up with the current WordPress transient
+  cleanup form. It does not support arbitrary multi-table deletes, subqueries,
+  general SQL functions, tables outside the deterministic `wp_options` state
+  island, collation fidelity, locks, indexes, or exact MySQL affected-row edge
+  cases. They also
   let a later exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
@@ -2372,10 +2392,17 @@
   offsets read from the start, negative offsets read from the end, and a
   non-negative max length truncates the returned UTF-8 string. Missing local
   file reads and negative offsets before the start of the current payload emit
-  a bounded PHP-style warning to stderr, return `false`, and let execution
-  continue. This is a
+  a bounded PHP-style `E_WARNING`, return `false`, and let execution continue.
+  When a bounded string user-function handler or public object/static array
+  callable handler is registered through `set_error_handler()` for
+  `E_WARNING`, the warning is delivered to that handler with the current
+  four-argument shape `(errno, errstr, errfile, errline)` before the fallback
+  stderr path. A handler return value of `false` falls through to the normal
+  stderr warning path when `error_reporting()` includes `E_WARNING`; any other
+  return value treats the warning as handled. This is a
   bounded WordPress bootstrap compatibility slice, not full PHP filesystem
-  support: binary string byte fidelity, exact PHP warning text,
+  support: binary string byte fidelity, exact PHP warning text or handler
+  `errstr` text,
   other stream wrappers, context option effects, wrapper-specific context
   behavior, exact byte offsets through non-UTF-8 data, negative offsets before
   the start for stream/resource types outside the current local/`php://input`
@@ -2610,14 +2637,18 @@
   `set_error_handler($callback, $error_levels = E_ALL)` accepts a currently
   valid string callable, object/static array callable, or closure plus an
   optional integer error-level mask, records the current handler value, and
-  returns the previous handler value or `null`. The current slice validates
-  registration only; it does not invoke handlers or route warnings, notices,
-  deprecations, or fatal conditions through user callbacks.
+  returns the previous handler value or `null`. The current invocation slice
+  routes only recoverable `file_get_contents()` `E_WARNING` events through
+  string user-function handlers and public object/static array callable
+  handlers. Handler masks filter which handlers receive those warnings;
+  `false` return values fall through to the bounded stderr warning path, and
+  other return values suppress that fallback.
   `restore_error_handler()` accepts no arguments, clears the current bounded
   handler registration, and returns `true`. True PHP handler-stack behavior,
-  error-level filtering, callback invocation arguments, by-reference callback
-  behavior, output buffering, shutdown/fatal interaction, exact diagnostics,
-  and native lowering remain unsupported.
+  warnings/notices/deprecations outside the current `file_get_contents()`
+  recovery path, closure handler invocation, by-reference callback behavior,
+  output buffering, shutdown/fatal interaction, exact handler `errstr`
+  diagnostics, and native lowering remain unsupported.
   `ob_start()` accepts no arguments, starts a new interpreter-owned output
   buffer, and returns `true`. While a buffer is active, PHP-visible output from
   `echo`, `print`, `exit("...")`, `var_dump()`, and `print_r()` is appended to
@@ -5580,9 +5611,18 @@
   probing for string class-like misses. It supports `getName()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
-  `isConstructor()` plus the current `ReflectionMethod::IS_PUBLIC`,
-  `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`, `IS_FINAL`, and `IS_ABSTRACT`
-  constants.
+  `isConstructor()`, plus bounded parameter inspection through
+  `getParameters()`, `getNumberOfParameters()`, and
+  `getNumberOfRequiredParameters()`. `new ReflectionParameter([$object_or_class,
+  $method], $parameter)` accepts the current array-callable method shape with
+  an integer position or string parameter name, and `ReflectionParameter`
+  objects produced by that constructor or by `ReflectionMethod::getParameters()`
+  support `getName()`, `getPosition()`, `getDeclaringClass()`,
+  `getDeclaringFunction()`, `isOptional()`, `isDefaultValueAvailable()`,
+  `getDefaultValue()`, `isPassedByReference()`, `isVariadic()`, and
+  `hasType()` over the current parsed method parameter metadata. The current
+  `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
+  `IS_FINAL`, and `IS_ABSTRACT` constants are available.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7194,12 +7234,17 @@
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
   `hasMethod($name)`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
-  modifier and predicate methods documented above. `ReflectionProperty`,
-  `ReflectionParameter`, attributes, file/line/doc-comment metadata,
-  parameter and default-value inspection, extension/internal method metadata,
-  method invocation through reflection, exact `ReflectionException` behavior,
-  namespace/import alias expansion beyond parsed class-like names, and native
-  lowering remain unsupported.
+  modifier, predicate, and parameter-list methods documented above.
+  `ReflectionParameter` currently supports only method parameters from that
+  same metadata slice, scalar/array default expressions accepted by the parser,
+  by-reference and variadic flags, and type-presence checks without materialized
+  `ReflectionType` objects. `ReflectionProperty`, attributes,
+  file/line/doc-comment metadata, extension/internal method or parameter
+  metadata, parameter attributes, `getType()`/`ReflectionNamedType`,
+  `allowsNull()`, default constant-name introspection, function/closure
+  `ReflectionParameter` targets, method invocation through reflection, exact
+  `ReflectionException` behavior, namespace/import alias expansion beyond
+  parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

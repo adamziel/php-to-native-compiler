@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 10);
+    assert_eq!(classes.classes().len(), 11);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -47,6 +47,7 @@ echo "ready\n";
     assert_eq!(classes.classes()[6].name(), "PDOStatement");
     assert_eq!(classes.classes()[7].name(), "ReflectionClass");
     assert_eq!(classes.classes()[8].name(), "ReflectionMethod");
+    assert_eq!(classes.classes()[9].name(), "ReflectionParameter");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4335,7 +4336,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => Box\n    [10] => Profile\n)\n11|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => Box\n    [11] => Profile\n)\n12|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4356,7 +4357,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => App\\Mode\n    [10] => App\\Status\n)\n11\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => App\\Mode\n    [11] => App\\Status\n)\n12\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4706,6 +4707,47 @@ echo "trait|", $trait->getName(), "|", $trait->getDeclaringClass()->getName(), "
     assert_eq!(
         execution.stdout,
         "1|2|4|16|32|64\nboot|boot|Plugin|1|1000000\nctor|__construct|Plugin|1|1000001\nstatic|register|Plugin|17|1001000\nprotected|compute|Plugin|2|0100000\nprivate|hidden|Plugin|4|0010000\nfinal|seal|BasePlugin|33|1000100\nabstract|compute|BasePlugin|66|0100010\ninterface|register|HookContract|81|1001010\ntrait|helper|HookTools|1|1000000"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_reports_bounded_method_parameter_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Plugin {
+    public function boot(string $hook, &$value = "seed", $count = 3, ...$rest) {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function default_value($parameter) {
+    if (!$parameter->isDefaultValueAvailable()) {
+        return "-";
+    }
+    return $parameter->getDefaultValue();
+}
+
+function line($label, $parameter, $ending = "\n") {
+    echo $label, "|", $parameter->getName(), "|", $parameter->getPosition(), "|", $parameter->getDeclaringClass()->getName(), "|", $parameter->getDeclaringFunction()->getName(), "|", yn($parameter->isOptional()), yn($parameter->isDefaultValueAvailable()), "|", default_value($parameter), "|", yn($parameter->isPassedByReference()), yn($parameter->isVariadic()), yn($parameter->hasType()), $ending;
+}
+
+$method = new ReflectionMethod(Plugin::class, "boot");
+echo "counts|", $method->getNumberOfParameters(), "|", $method->getNumberOfRequiredParameters(), "\n";
+foreach ($method->getParameters() as $index => $parameter) {
+    line("param" . $index, $parameter);
+}
+line("named", new ReflectionParameter(array(Plugin::class, "boot"), "value"));
+line("indexed", new ReflectionParameter(array(new Plugin(), "boot"), 2), "");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "counts|4|1\nparam0|hook|0|Plugin|boot|00|-|001\nparam1|value|1|Plugin|boot|11|seed|100\nparam2|count|2|Plugin|boot|11|3|000\nparam3|rest|3|Plugin|boot|10|-|010\nnamed|value|1|Plugin|boot|11|seed|100\nindexed|count|2|Plugin|boot|11|3|000"
     );
     assert_eq!(execution.exit_code, 0);
 }

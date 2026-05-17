@@ -16,9 +16,10 @@ Array
     [6] => PDOStatement
     [7] => ReflectionClass
     [8] => ReflectionMethod
-    [9] => App\State\Box
-    [10] => App\State\Mode
-    [11] => App\State\Status
+    [9] => ReflectionParameter
+    [10] => App\State\Box
+    [11] => App\State\Mode
+    [12] => App\State\Status
 )
 
 --- stdout end ---

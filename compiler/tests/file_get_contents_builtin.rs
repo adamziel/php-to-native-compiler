@@ -171,6 +171,100 @@ echo $value === false ? "false" : "value";
 }
 
 #[test]
+fn file_get_contents_recoverable_warnings_route_through_bounded_error_handlers() {
+    let handled = run_source_with_source_file(
+        r#"<?php
+function capture_warning($errno, $errstr, $errfile, $errline) {
+    echo "handler:" . $errno;
+    echo ":" . (str_contains($errstr, "missing-error-handler-read.txt") ? "path" : "missing");
+    echo ":" . basename($errfile);
+    echo ":" . $errline;
+    return true;
+}
+set_error_handler("capture_warning", E_WARNING);
+$value = file_get_contents("tests/fixtures/missing-error-handler-read.txt");
+echo $value === false ? "|false" : "|value";
+"#,
+        "tests/fixtures/milestone1423/file_get_contents_error_handler.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        handled.stdout,
+        "handler:2:path:file_get_contents_error_handler.php:10|false"
+    );
+    assert_eq!(handled.stderr, "");
+    assert_eq!(handled.exit_code, 0);
+
+    let passthrough = run_source_with_source_file(
+        r#"<?php
+function passthrough_warning($errno, $errstr) {
+    echo "passthrough:" . $errno . ":" . (str_contains($errstr, "missing-passthrough-read.txt") ? "path" : "missing");
+    return false;
+}
+error_reporting(0);
+set_error_handler("passthrough_warning", E_WARNING);
+$value = file_get_contents("tests/fixtures/missing-passthrough-read.txt");
+echo $value === false ? "|false" : "|value";
+restore_error_handler();
+$quiet = file_get_contents("tests/fixtures/missing-quiet-read.txt");
+echo $quiet === false ? "|quiet-false" : "|quiet-value";
+"#,
+        "tests/fixtures/milestone1423/file_get_contents_error_handler.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(passthrough.stdout, "passthrough:2:path|false|quiet-false");
+    assert_eq!(passthrough.stderr, "");
+    assert_eq!(passthrough.exit_code, 0);
+
+    let array_callable = run_source_with_source_file(
+        r#"<?php
+class WarningSink {
+    public function handle($errno, $errstr, $errfile, $errline) {
+        echo "array:" . $errno . ":" . (str_contains($errstr, "missing-array-handler-read.txt") ? "path" : "missing") . ":" . $errline;
+        return true;
+    }
+}
+$sink = new WarningSink();
+set_error_handler(array($sink, "handle"), E_WARNING);
+$value = file_get_contents("tests/fixtures/missing-array-handler-read.txt");
+echo $value === false ? "|false" : "|value";
+"#,
+        "tests/fixtures/milestone1423/file_get_contents_error_handler.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(array_callable.stdout, "array:2:path:10|false");
+    assert_eq!(array_callable.stderr, "");
+    assert_eq!(array_callable.exit_code, 0);
+
+    let mask_miss = run_source_with_source_file(
+        r#"<?php
+function notice_only_warning($errno, $errstr) {
+    echo "unexpected-handler";
+    return true;
+}
+set_error_handler("notice_only_warning", E_NOTICE);
+$value = file_get_contents("tests/fixtures/missing-mask-read.txt");
+echo $value === false ? "false" : "value";
+"#,
+        "tests/fixtures/milestone1423/file_get_contents_error_handler.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(mask_miss.stdout, "false");
+    assert!(
+        mask_miss
+            .stderr
+            .contains("PHP Warning:  file_get_contents(): tests/fixtures/missing-mask-read.txt: Failed to open stream:"),
+        "{}",
+        mask_miss.stderr
+    );
+    assert_eq!(mask_miss.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

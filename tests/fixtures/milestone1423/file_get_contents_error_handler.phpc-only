@@ -1,0 +1,1 @@
+phpc-only: bounded file_get_contents warning text and handler errstr remain project-specific while broader PHP warning text and exact error-handler integration are still unsupported.

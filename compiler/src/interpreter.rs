@@ -19,10 +19,10 @@ use sha2::Sha256;
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
-    EnumDecl, Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition,
-    InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
-    InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator,
-    Stmt, SwitchCase, TraitDecl, TraitUseDecl, UnaryOp, UnsetTarget,
+    EnumDecl, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
+    InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -112,6 +112,7 @@ struct Interpreter {
     ini_values: HashMap<String, String>,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
+    error_handler_active: bool,
     shutdown_callbacks: Vec<ShutdownCallback>,
     shutdown_callback_index: usize,
     autoload_callbacks: Vec<AutoloadCallback>,
@@ -129,6 +130,7 @@ struct Interpreter {
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     reflection_classes: HashMap<i64, ReflectionClassState>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
+    reflection_parameters: HashMap<i64, ReflectionParameterState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -192,6 +194,9 @@ struct MethodSignature {
 struct ParameterSignature {
     name: String,
     type_decl: Option<String>,
+    by_reference: bool,
+    is_variadic: bool,
+    default: Option<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +268,23 @@ struct ReflectionMethodState {
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
+    params: Vec<ReflectionParameterMetadata>,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionParameterMetadata {
+    name: String,
+    type_decl: Option<String>,
+    by_reference: bool,
+    is_variadic: bool,
+    default: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionParameterState {
+    declaring_method: ReflectionMethodState,
+    parameter: ReflectionParameterMetadata,
+    position: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -1155,8 +1177,21 @@ impl SymbolTable {
         keys: Vec<ArrayKey>,
         span: Span,
     ) -> CompileResult<()> {
+        let alias =
+            self.append_array_offset_reference_alias(array_name, keys, Value::Null, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn append_array_offset_reference_alias(
+        &mut self,
+        array_name: &str,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ArrayOffsetAlias> {
         if array_name == "GLOBALS" {
-            return self.bind_static_to_appended_global_array_offset(target, keys, span);
+            return self.append_global_array_offset_reference_alias(keys, value, span);
         }
 
         let mut array = match self.read_storage_named(array_name) {
@@ -1172,27 +1207,22 @@ impl SymbolTable {
                 ));
             }
         };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        let alias_keys = Self::append_nested_array_offset_alias(&mut array, &keys, value, span)?;
         self.write_storage_named(array_name, Value::Array(array));
-        self.bind_static_to_array_offset_alias(
-            target,
-            ArrayOffsetAlias {
-                root: ArrayOffsetAliasRoot::StaticArray {
-                    name: array_name.to_string(),
-                },
-                keys: alias_keys,
+        Ok(ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: array_name.to_string(),
             },
-        );
-        Ok(())
+            keys: alias_keys,
+        })
     }
 
-    fn bind_static_to_appended_global_array_offset(
+    fn append_global_array_offset_reference_alias(
         &mut self,
-        target: &str,
         keys: Vec<ArrayKey>,
+        value: Value,
         span: Span,
-    ) -> CompileResult<()> {
+    ) -> CompileResult<ArrayOffsetAlias> {
         let (global_name, keys) = Self::split_globals_reference_path(keys, span)?;
         let root = ArrayOffsetAliasRoot::GlobalArray { name: global_name };
         let root_alias = ArrayOffsetAlias {
@@ -1212,17 +1242,12 @@ impl SymbolTable {
                 ));
             }
         };
-        let alias_keys =
-            Self::append_nested_array_offset_alias(&mut array, &keys, Value::Null, span)?;
+        let alias_keys = Self::append_nested_array_offset_alias(&mut array, &keys, value, span)?;
         self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
-        self.bind_static_to_array_offset_alias(
-            target,
-            ArrayOffsetAlias {
-                root,
-                keys: alias_keys,
-            },
-        );
-        Ok(())
+        Ok(ArrayOffsetAlias {
+            root,
+            keys: alias_keys,
+        })
     }
 
     fn bind_static_to_existing_context_object_property(
@@ -1983,6 +2008,38 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn append_object_property_array_offset_reference_alias(
+        &mut self,
+        root: ArrayOffsetAliasRoot,
+        keys: Vec<ArrayKey>,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<ArrayOffsetAlias> {
+        let root_alias = ArrayOffsetAlias {
+            root: root.clone(),
+            keys: Vec::new(),
+        };
+        let mut array = match self.read_alias_root_value(&root_alias, span)? {
+            Some(Value::Array(array)) => array,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+        let alias_keys = Self::append_nested_array_offset_alias(&mut array, &keys, value, span)?;
+        self.write_alias_root_value(&root_alias, Value::Array(array), span)?;
+        Ok(ArrayOffsetAlias {
+            root,
+            keys: alias_keys,
+        })
+    }
+
     fn append_nested_array_offset_to_static_source(
         &mut self,
         array_name: &str,
@@ -2155,6 +2212,69 @@ impl SymbolTable {
         for name in names {
             self.bind_static_to_array_offset_aliases(&name, new_aliases.clone());
         }
+    }
+
+    fn bind_anonymous_array_offset_alias_group(&mut self, new_aliases: Vec<ArrayOffsetAlias>) {
+        let mut aliases = new_aliases;
+        let matching_groups: Vec<(String, Vec<ArrayOffsetAlias>)> = self
+            .array_offset_aliases
+            .iter()
+            .filter_map(|(name, existing)| {
+                if existing
+                    .iter()
+                    .any(|existing_alias| aliases.contains(existing_alias))
+                {
+                    Some((name.clone(), existing.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (_, existing) in &matching_groups {
+            for alias in existing {
+                if !aliases.contains(alias) {
+                    aliases.push(alias.clone());
+                }
+            }
+        }
+
+        for (name, _) in matching_groups {
+            self.array_offset_aliases.insert(name, aliases.clone());
+        }
+
+        let mut index = self.array_offset_aliases.len();
+        loop {
+            let name = format!("\0phpc_alias_group:{index}");
+            if !self.array_offset_aliases.contains_key(&name) {
+                self.array_offset_aliases.insert(name, aliases);
+                break;
+            }
+            index += 1;
+        }
+    }
+
+    fn bind_array_offset_alias_to_reference_alias(
+        &mut self,
+        target_alias: ArrayOffsetAlias,
+        source_alias: ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.materialize_array_offset_alias(&source_alias, span)?;
+        self.materialize_array_offset_alias(&target_alias, span)?;
+        let aliases = vec![source_alias, target_alias];
+        if !self.write_array_offset_aliases(&aliases, value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind array-offset reference source".to_string(),
+                ),
+            ));
+        }
+        self.bind_anonymous_array_offset_alias_group(aliases.clone());
+        self.sync_alias_roots(&aliases);
+        Ok(())
     }
 
     fn array_offset_aliases_for_name_with_suffix(
@@ -2853,6 +2973,7 @@ impl Interpreter {
             ini_values: HashMap::new(),
             error_handler: None,
             error_handler_mask: None,
+            error_handler_active: false,
             shutdown_callbacks: Vec::new(),
             shutdown_callback_index: 0,
             autoload_callbacks: Vec::new(),
@@ -2870,6 +2991,7 @@ impl Interpreter {
             mysqli_statements: HashMap::new(),
             reflection_classes: HashMap::new(),
             reflection_methods: HashMap::new(),
+            reflection_parameters: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -3679,16 +3801,239 @@ impl Interpreter {
         self.append_output_from(output, Some(span));
     }
 
-    fn emit_warning(&mut self, function: &str, message: impl AsRef<str>, span: Span) {
-        let file = self.source_file.as_deref().unwrap_or("Command line code");
+    fn emit_warning(
+        &mut self,
+        function: &str,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = message.as_ref().to_string();
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if self.call_error_handler_for_warning(&message, &file, span)? {
+            return Ok(());
+        }
+        if self.error_reporting_mask & PHP_E_WARNING == 0 {
+            return Ok(());
+        }
         if !self.stderr.is_empty() {
             self.stderr.push('\n');
         }
         self.stderr.push_str(&format!(
             "PHP Warning:  {function}: {} in {file} on line {}",
-            message.as_ref(),
-            span.line
+            message, span.line
         ));
+        Ok(())
+    }
+
+    fn call_error_handler_for_warning(
+        &mut self,
+        message: &str,
+        file: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if self.error_handler_active {
+            return Ok(false);
+        }
+        if self
+            .error_handler_mask
+            .is_some_and(|mask| mask & PHP_E_WARNING == 0)
+        {
+            return Ok(false);
+        }
+        let Some(handler) = self.error_handler.clone() else {
+            return Ok(false);
+        };
+
+        let args = vec![
+            Value::Int(PHP_E_WARNING),
+            Value::String(message.to_string()),
+            Value::String(file.to_string()),
+            Value::Int(span.line as i64),
+        ];
+        self.error_handler_active = true;
+        let result = self.call_error_handler_callback(handler, args, span);
+        self.error_handler_active = false;
+        Ok(!matches!(result?, Value::Bool(false)))
+    }
+
+    fn call_error_handler_callback(
+        &mut self,
+        handler: Value,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match handler {
+            Value::String(name) => {
+                let callable = self.lookup_function(&name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
+                })?;
+                match callable {
+                    Callable::User(function) => {
+                        let args = error_handler_args_for_function(function.as_ref(), &args);
+                        self.call_user_function_with_values(function, args, span)
+                    }
+                    Callable::Builtin(key) => self.call_builtin(&key, args, span),
+                }
+            }
+            Value::Array(array) => self.call_error_handler_array_callable(&array, args, span),
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "set_error_handler()",
+                    "closure error-handler invocation is not implemented in the current subset",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "set_error_handler()",
+                    format!(
+                        "stored handler must be string, array callable, or closure in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_error_handler_array_callable(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "set_error_handler()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object error handlers is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "error-handler array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                let args = error_handler_args_for_function(function, &args);
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                    None,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method error handlers require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "error-handler array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                let args = error_handler_args_for_function(function, &args);
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                    None,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
     }
 
     fn append_output_from(&mut self, output: &str, span: Option<Span>) {
@@ -5335,6 +5680,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionMethod") {
             return self.instantiate_reflection_method(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionParameter") {
+            return self.instantiate_reflection_parameter(args, span, scope);
+        }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
@@ -5995,6 +6343,42 @@ impl Interpreter {
                     scope.bind_array_offset_to_static_source(name, key, source_name, span)?;
                     return Ok(());
                 }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    let target_alias = if name == "GLOBALS" {
+                        let Some(global_name) = globals_offset_name(&key) else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "$GLOBALS",
+                                    "only string-keyed direct offset reference bindings are implemented",
+                                ),
+                            ));
+                        };
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray {
+                                name: global_name.to_string(),
+                            },
+                            keys: Vec::new(),
+                        }
+                    } else {
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: name.to_string(),
+                            },
+                            keys: vec![key],
+                        }
+                    };
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
 
                 let value = self.evaluate_container_reference_source_value(source, span, scope)?;
                 if name == "GLOBALS" {
@@ -6053,6 +6437,33 @@ impl Interpreter {
                     scope.append_array_offset_to_static_source(name, source_name, span)?;
                     return Ok(());
                 }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    if name == "GLOBALS" {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "$GLOBALS",
+                                "append reference binding through $GLOBALS is not implemented",
+                            ),
+                        ));
+                    }
+                    let target_alias = scope.append_array_offset_reference_alias(
+                        name,
+                        Vec::new(),
+                        value.clone(),
+                        span,
+                    )?;
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
 
                 Err(unsupported())
             }
@@ -6082,6 +6493,37 @@ impl Interpreter {
                     )?;
                     return Ok(());
                 }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let target_alias = if name == "GLOBALS" {
+                        let (global_name, keys) =
+                            SymbolTable::split_globals_reference_path(keys, span)?;
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            keys,
+                        }
+                    } else {
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray {
+                                name: name.to_string(),
+                            },
+                            keys,
+                        }
+                    };
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
 
                 Err(unsupported())
             }
@@ -6107,6 +6549,28 @@ impl Interpreter {
                         name,
                         keys,
                         source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_array_access_reference_target_if_needed(name, span, scope)?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let target_alias = scope.append_array_offset_reference_alias(
+                        name,
+                        keys,
+                        value.clone(),
+                        span,
+                    )?;
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
                         span,
                     )?;
                     return Ok(());
@@ -6141,6 +6605,27 @@ impl Interpreter {
                     )?;
                     return Ok(());
                 }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, property, span, scope)?;
+                    let target_alias = ArrayOffsetAlias { root, keys };
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                    return Ok(());
+                }
 
                 Err(unsupported())
             }
@@ -6167,6 +6652,32 @@ impl Interpreter {
                         root,
                         keys,
                         source_name,
+                        span,
+                    )?;
+                    return Ok(());
+                }
+                if let Some((source_alias, value)) =
+                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, span, scope,
+                    )?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    let root =
+                        self.context_object_property_alias_root(object, property, span, scope)?;
+                    let target_alias = scope.append_object_property_array_offset_reference_alias(
+                        root,
+                        keys,
+                        value.clone(),
+                        span,
+                    )?;
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
                         span,
                     )?;
                     return Ok(());
@@ -6278,6 +6789,75 @@ impl Interpreter {
             self.reject_array_access_reference_source_value(&value, span)?;
         }
         Ok(())
+    }
+
+    fn evaluate_append_reference_source_alias(
+        &mut self,
+        source: &ReferenceSource,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        match source {
+            ReferenceSource::ArrayAppend {
+                name: array_name,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
+                let alias = scope.append_array_offset_reference_alias(
+                    array_name,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind missing appended array reference source".to_string(),
+                        ),
+                    )
+                })?;
+                Ok(Some((alias, value)))
+            }
+            ReferenceSource::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.reject_object_property_array_access_reference_source_if_needed(
+                    object, property, span, scope,
+                )?;
+                let root =
+                    self.context_object_property_alias_root(object, property, span, scope)?;
+                let alias = scope.append_object_property_array_offset_reference_alias(
+                    root,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind missing appended object-property reference source"
+                                .to_string(),
+                        ),
+                    )
+                })?;
+                Ok(Some((alias, value)))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn bind_static_to_context_object_property_array_offset(
@@ -8833,6 +9413,11 @@ impl Interpreter {
                     is_static,
                     is_abstract: metadata.is_abstract(),
                     is_final: metadata.is_final(),
+                    params: self
+                        .method_signatures
+                        .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
+                        .map(reflection_parameter_metadata_from_signature)
+                        .unwrap_or_default(),
                 })
             }
             ReflectionClassKind::Interface => {
@@ -8859,6 +9444,9 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: true,
                             is_final: false,
+                            params: reflection_parameter_metadata_from_function_params(
+                                &method.function.params,
+                            ),
                         });
                     }
                 }
@@ -8892,6 +9480,9 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: method.is_abstract,
                             is_final: method.is_final,
+                            params: reflection_parameter_metadata_from_function_params(
+                                &method.function.params,
+                            ),
                         });
                     }
                 }
@@ -8904,6 +9495,188 @@ impl Interpreter {
                 ))
             }
         }
+    }
+
+    fn instantiate_reflection_parameter(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionParameter::__construct()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let function_target = self.evaluate(&args[0], scope)?;
+        let parameter_target = self.evaluate(&args[1], scope)?;
+        let method = self.resolve_reflection_parameter_function_target(&function_target, span)?;
+        let state = self.resolve_reflection_parameter_target(method, &parameter_target, span)?;
+        self.create_reflection_parameter_object(state, span)
+    }
+
+    fn resolve_reflection_parameter_function_target(
+        &mut self,
+        target: &Value,
+        span: Span,
+    ) -> CompileResult<ReflectionMethodState> {
+        let Value::Array(callable) = target else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    format!(
+                        "function argument only supports [object-or-class, method] array callables in the current subset, got {}",
+                        target.type_name()
+                    ),
+                ),
+            ));
+        };
+        if callable.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    "function argument array callable must contain exactly object-or-class and method entries",
+                ),
+            ));
+        }
+        let receiver = callable.get(0).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    "function argument array callable must contain entry 0",
+                ),
+            )
+        })?;
+        let method = callable.get(1).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    "function argument array callable must contain entry 1",
+                ),
+            )
+        })?;
+        let Value::String(method_name) = method else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    format!(
+                        "array callable method entry must be string in the current subset, got {}",
+                        method.type_name()
+                    ),
+                ),
+            ));
+        };
+        let class = self.resolve_reflection_class_target(receiver, span)?;
+        self.resolve_reflection_method_target(&class, method_name, span)
+    }
+
+    fn resolve_reflection_parameter_target(
+        &self,
+        method: ReflectionMethodState,
+        target: &Value,
+        span: Span,
+    ) -> CompileResult<ReflectionParameterState> {
+        let position = match target {
+            Value::Int(index) if *index >= 0 => usize::try_from(*index).map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionParameter",
+                        "integer parameter index is too large",
+                    ),
+                )
+            })?,
+            Value::Int(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionParameter",
+                        "integer parameter index must be non-negative in the current subset",
+                    ),
+                ));
+            }
+            Value::String(name) => method
+                .params
+                .iter()
+                .position(|param| param.name == *name)
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionParameter",
+                            format!(
+                                "parameter {name} is not declared on {}::{}()",
+                                method.declaring_class_name, method.name
+                            ),
+                        ),
+                    )
+                })?,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionParameter",
+                        format!(
+                            "parameter argument must be int index or string name in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let parameter = method.params.get(position).cloned().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionParameter",
+                    format!(
+                        "parameter index {position} is not declared on {}::{}()",
+                        method.declaring_class_name, method.name
+                    ),
+                ),
+            )
+        })?;
+        Ok(ReflectionParameterState {
+            declaring_method: method,
+            parameter,
+            position,
+        })
+    }
+
+    fn create_reflection_parameter_object(
+        &mut self,
+        state: ReflectionParameterState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionParameter")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionParameter core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionParameter class id should resolve");
+        self.reflection_parameters.insert(object_id, state);
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
     }
 
     fn call_mysqli_real_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -10043,6 +10816,36 @@ impl Interpreter {
                         .get_mut(&handle_id)
                         .expect("checked wp_options state should exist");
                     let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
+        if let Some((timeout_prefix, payload_offset)) =
+            parse_wordpress_option_prepared_delete_expired_transient_pair_query(&query)
+        {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let filter =
+                        wordpress_option_expired_transient_pair_delete_filter_from_prepared_params(
+                            function,
+                            &bound_parameters,
+                            span,
+                            &timeout_prefix,
+                            payload_offset,
+                        )?;
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows =
+                        delete_wordpress_expired_transient_payload_pairs(options, &filter);
                     self.mysqli_affected_rows.insert(handle_id, affected_rows);
                     let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                     state.executed_result = None;
@@ -11390,6 +12193,15 @@ impl Interpreter {
             }
         }
 
+        if let Some(filter) = parse_wordpress_option_delete_expired_transient_pair_query(&query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows =
+                    delete_wordpress_expired_transient_payload_pairs(options, &filter);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if is_wordpress_option_prepared_delete_names_query(&query) {
             let mut option_names = Vec::with_capacity(params.len());
             for parameter in &params {
@@ -11406,6 +12218,25 @@ impl Interpreter {
             }
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if let Some((timeout_prefix, payload_offset)) =
+            parse_wordpress_option_prepared_delete_expired_transient_pair_query(&query)
+        {
+            let filter =
+                wordpress_option_expired_transient_pair_delete_filter_from_prepared_params(
+                    "mysqli_execute_query()",
+                    &params,
+                    span,
+                    &timeout_prefix,
+                    payload_offset,
+                )?;
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows =
+                    delete_wordpress_expired_transient_payload_pairs(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -12167,6 +12998,15 @@ impl Interpreter {
         if let Some(option_names) = parse_wordpress_option_delete_names_query(query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if let Some(filter) = parse_wordpress_option_delete_expired_transient_pair_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows =
+                    delete_wordpress_expired_transient_payload_pairs(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -13987,6 +14827,12 @@ impl Interpreter {
         if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
             return self.call_reflection_method_method(object, method_name, args, span);
         }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionParameter")
+        {
+            return self.call_reflection_parameter_method(object, method_name, args, span);
+        }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
             let receiver_class_name = self
@@ -14264,6 +15110,48 @@ impl Interpreter {
                 expect_expr_arity("ReflectionMethod::getModifiers", args.len(), 0, span)?;
                 Ok(Value::Int(reflection_method_modifier_mask(&state)))
             }
+            "getparameters" => {
+                expect_expr_arity("ReflectionMethod::getParameters", args.len(), 0, span)?;
+                let mut parameters = PhpArray::new();
+                for (position, parameter) in state.params.iter().cloned().enumerate() {
+                    let parameter = self.create_reflection_parameter_object(
+                        ReflectionParameterState {
+                            declaring_method: state.clone(),
+                            parameter,
+                            position,
+                        },
+                        span,
+                    )?;
+                    parameters
+                        .append(parameter)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Array(parameters))
+            }
+            "getnumberofparameters" => {
+                expect_expr_arity(
+                    "ReflectionMethod::getNumberOfParameters",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Int(state.params.len() as i64))
+            }
+            "getnumberofrequiredparameters" => {
+                expect_expr_arity(
+                    "ReflectionMethod::getNumberOfRequiredParameters",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Int(
+                    state
+                        .params
+                        .iter()
+                        .filter(|param| param.default.is_none() && !param.is_variadic)
+                        .count() as i64,
+                ))
+            }
             "ispublic" => {
                 expect_expr_arity("ReflectionMethod::isPublic", args.len(), 0, span)?;
                 Ok(Value::Bool(state.visibility == Visibility::Public))
@@ -14295,6 +15183,124 @@ impl Interpreter {
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionMethod::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_reflection_parameter_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_parameters
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionParameter::{method_name}()"),
+                        "missing ReflectionParameter runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionParameter::__construct()",
+                    "reinitializing ReflectionParameter objects is not implemented",
+                ),
+            )),
+            "getname" => {
+                expect_expr_arity("ReflectionParameter::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.parameter.name))
+            }
+            "getposition" => {
+                expect_expr_arity("ReflectionParameter::getPosition", args.len(), 0, span)?;
+                Ok(Value::Int(state.position as i64))
+            }
+            "getdeclaringclass" => {
+                expect_expr_arity(
+                    "ReflectionParameter::getDeclaringClass",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                self.create_reflection_class_object(
+                    ReflectionClassState {
+                        name: state.declaring_method.declaring_class_name,
+                        kind: state.declaring_method.declaring_kind,
+                        class_id: state.declaring_method.declaring_class_id,
+                    },
+                    span,
+                )
+            }
+            "getdeclaringfunction" => {
+                expect_expr_arity(
+                    "ReflectionParameter::getDeclaringFunction",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                self.create_reflection_method_object(state.declaring_method, span)
+            }
+            "isoptional" => {
+                expect_expr_arity("ReflectionParameter::isOptional", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.parameter.default.is_some() || state.parameter.is_variadic,
+                ))
+            }
+            "isdefaultvalueavailable" => {
+                expect_expr_arity(
+                    "ReflectionParameter::isDefaultValueAvailable",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Bool(state.parameter.default.is_some()))
+            }
+            "getdefaultvalue" => {
+                expect_expr_arity("ReflectionParameter::getDefaultValue", args.len(), 0, span)?;
+                let Some(default) = state.parameter.default else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionParameter::getDefaultValue",
+                            format!(
+                                "parameter ${} has no default value in the current subset",
+                                state.parameter.name
+                            ),
+                        ),
+                    ));
+                };
+                let mut default_scope = SymbolTable::new();
+                self.evaluate(&default, &mut default_scope)
+            }
+            "ispassedbyreference" => {
+                expect_expr_arity(
+                    "ReflectionParameter::isPassedByReference",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Bool(state.parameter.by_reference))
+            }
+            "isvariadic" => {
+                expect_expr_arity("ReflectionParameter::isVariadic", args.len(), 0, span)?;
+                Ok(Value::Bool(state.parameter.is_variadic))
+            }
+            "hastype" => {
+                expect_expr_arity("ReflectionParameter::hasType", args.len(), 0, span)?;
+                Ok(Value::Bool(state.parameter.type_decl.is_some()))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionParameter::{method_name}()")),
             )),
         }
     }
@@ -25160,7 +26166,7 @@ impl Interpreter {
                         ) {
                             FileGetContentsRead::Contents(contents) => Ok(Value::String(contents)),
                             FileGetContentsRead::WarningFalse(message) => {
-                                self.emit_warning("file_get_contents()", message, span);
+                                self.emit_warning("file_get_contents()", message, span)?;
                                 Ok(Value::Bool(false))
                             }
                         }
@@ -25182,14 +26188,14 @@ impl Interpreter {
                                     "file_get_contents()",
                                     format!("{path}: Failed to open stream: {error}"),
                                     span,
-                                );
+                                )?;
                                 return Ok(Value::Bool(false));
                             }
                         };
                         match bounded_file_get_contents_slice(&contents, offset, max_length) {
                             FileGetContentsRead::Contents(contents) => Ok(Value::String(contents)),
                             FileGetContentsRead::WarningFalse(message) => {
-                                self.emit_warning("file_get_contents()", message, span);
+                                self.emit_warning("file_get_contents()", message, span)?;
                                 Ok(Value::Bool(false))
                             }
                         }
@@ -30156,9 +31162,43 @@ fn method_signature(function: &FunctionDecl) -> MethodSignature {
             .map(|param| ParameterSignature {
                 name: param.name.clone(),
                 type_decl: param.type_decl.as_ref().map(|decl| decl.text.clone()),
+                by_reference: param.by_reference,
+                is_variadic: param.is_variadic,
+                default: param.default.clone(),
             })
             .collect(),
     }
+}
+
+fn reflection_parameter_metadata_from_signature(
+    signature: &MethodSignature,
+) -> Vec<ReflectionParameterMetadata> {
+    signature
+        .params
+        .iter()
+        .map(|param| ReflectionParameterMetadata {
+            name: param.name.clone(),
+            type_decl: param.type_decl.clone(),
+            by_reference: param.by_reference,
+            is_variadic: param.is_variadic,
+            default: param.default.clone(),
+        })
+        .collect()
+}
+
+fn reflection_parameter_metadata_from_function_params(
+    params: &[FunctionParam],
+) -> Vec<ReflectionParameterMetadata> {
+    params
+        .iter()
+        .map(|param| ReflectionParameterMetadata {
+            name: param.name.clone(),
+            type_decl: param.type_decl.as_ref().map(|decl| decl.text.clone()),
+            by_reference: param.by_reference,
+            is_variadic: param.is_variadic,
+            default: param.default.clone(),
+        })
+        .collect()
 }
 
 fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {
@@ -31738,6 +32778,12 @@ enum WordPressOptionsRowFilter {
     Names(Vec<String>),
 }
 
+struct WordPressTransientPairDeleteFilter {
+    payload_prefix: String,
+    timeout_prefix: String,
+    threshold: i64,
+}
+
 fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, String)> {
     let query = query.trim();
     let values = query
@@ -32459,6 +33505,75 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
     ))
 }
 
+fn wordpress_option_expired_transient_pair_delete_filter_from_prepared_params(
+    function: &str,
+    params: &[Value],
+    span: Span,
+    timeout_prefix: &str,
+    payload_offset: usize,
+) -> CompileResult<WordPressTransientPairDeleteFilter> {
+    let [Value::String(payload_pattern), Value::String(timeout_pattern), threshold] = params else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options transient payload pair delete requires payload LIKE pattern, timeout NOT LIKE pattern, and scalar threshold parameters in the current subset",
+            ),
+        ));
+    };
+
+    let payload_pattern = payload_pattern.replace("\\_", "_");
+    let payload_prefix =
+        parse_wordpress_option_name_prefix_like_pattern(&payload_pattern).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared wp_options transient payload pair delete supports only trailing-percent payload LIKE patterns in the current subset",
+                ),
+            )
+        })?;
+
+    let timeout_pattern = timeout_pattern.replace("\\_", "_");
+    let not_like_timeout_prefix =
+        parse_wordpress_option_name_prefix_like_pattern(&timeout_pattern).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared wp_options transient payload pair delete supports only trailing-percent timeout NOT LIKE patterns in the current subset",
+                ),
+            )
+        })?;
+
+    if not_like_timeout_prefix != timeout_prefix {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options transient payload pair delete requires the NOT LIKE timeout prefix to match the CONCAT timeout prefix in the current subset",
+            ),
+        ));
+    }
+
+    if payload_offset != payload_prefix.chars().count() + 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options transient payload pair delete requires SUBSTRING offset to start after the payload prefix in the current subset",
+            ),
+        ));
+    }
+
+    let threshold = wordpress_option_timeout_threshold_from_value(function, threshold, span)?;
+    Ok(WordPressTransientPairDeleteFilter {
+        payload_prefix,
+        timeout_prefix: timeout_prefix.to_string(),
+        threshold,
+    })
+}
+
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
     let query = query.trim();
     let rest = query
@@ -32491,6 +33606,67 @@ fn parse_wordpress_option_delete_prefix_query(query: &str) -> Option<String> {
         return None;
     }
     parse_wordpress_option_name_prefix_like_pattern(&values[0])
+}
+
+fn parse_wordpress_option_delete_expired_transient_pair_query(
+    query: &str,
+) -> Option<WordPressTransientPairDeleteFilter> {
+    let (payload_sql, timeout_sql, timeout_prefix, payload_offset, threshold_sql) =
+        parse_wordpress_option_delete_expired_transient_pair_parts(query.trim())?;
+    let payload_values = parse_sql_single_quoted_list(payload_sql)?;
+    let timeout_values = parse_sql_single_quoted_list(timeout_sql)?;
+    if payload_values.len() != 1 || timeout_values.len() != 1 {
+        return None;
+    }
+    let payload_prefix = parse_wordpress_option_name_prefix_like_pattern(&payload_values[0])?;
+    let not_like_timeout_prefix =
+        parse_wordpress_option_name_prefix_like_pattern(&timeout_values[0])?;
+    if not_like_timeout_prefix != timeout_prefix {
+        return None;
+    }
+    if payload_offset != payload_prefix.chars().count() + 1 {
+        return None;
+    }
+    let threshold = parse_wordpress_option_timeout_threshold(threshold_sql)?;
+    Some(WordPressTransientPairDeleteFilter {
+        payload_prefix,
+        timeout_prefix,
+        threshold,
+    })
+}
+
+fn parse_wordpress_option_prepared_delete_expired_transient_pair_query(
+    query: &str,
+) -> Option<(String, usize)> {
+    let (payload_sql, timeout_sql, timeout_prefix, payload_offset, threshold_sql) =
+        parse_wordpress_option_delete_expired_transient_pair_parts(query.trim())?;
+    if payload_sql.trim() != "?" || timeout_sql.trim() != "?" || threshold_sql.trim() != "?" {
+        return None;
+    }
+    Some((timeout_prefix, payload_offset))
+}
+
+fn parse_wordpress_option_delete_expired_transient_pair_parts(
+    query: &str,
+) -> Option<(&str, &str, String, usize, &str)> {
+    let rest = query
+        .strip_prefix("DELETE a, b FROM wp_options a, wp_options b WHERE a.option_name LIKE ")?;
+    let (payload_sql, rest) = rest.split_once(" AND a.option_name NOT LIKE ")?;
+    let (timeout_sql, rest) = rest.split_once(" AND b.option_name = CONCAT( ")?;
+    let (timeout_prefix_sql, rest) = rest.split_once(", SUBSTRING( a.option_name, ")?;
+    let (payload_offset, threshold_sql) = rest.split_once(" ) ) AND b.option_value < ")?;
+    let timeout_prefix_values = parse_sql_single_quoted_list(timeout_prefix_sql)?;
+    if timeout_prefix_values.len() != 1 {
+        return None;
+    }
+    let payload_offset = payload_offset.trim().parse::<usize>().ok()?;
+    Some((
+        payload_sql,
+        timeout_sql,
+        timeout_prefix_values[0].clone(),
+        payload_offset,
+        threshold_sql,
+    ))
 }
 
 fn parse_wordpress_option_delete_expired_timeout_query(
@@ -32918,6 +34094,34 @@ fn delete_wordpress_options_by_filter(
     filter: &WordPressOptionsRowFilter,
 ) -> i64 {
     let names = wordpress_option_names_for_filter(options, filter);
+    delete_wordpress_options_by_names(options, &names)
+}
+
+fn delete_wordpress_expired_transient_payload_pairs(
+    options: &mut HashMap<String, WordPressOptionState>,
+    filter: &WordPressTransientPairDeleteFilter,
+) -> i64 {
+    let mut names = Vec::new();
+    for (payload_name, _) in options.iter() {
+        if !payload_name.starts_with(&filter.payload_prefix)
+            || payload_name.starts_with(&filter.timeout_prefix)
+        {
+            continue;
+        }
+        let suffix = &payload_name[filter.payload_prefix.len()..];
+        let timeout_name = format!("{}{}", filter.timeout_prefix, suffix);
+        let Some(timeout) = options.get(&timeout_name) else {
+            continue;
+        };
+        let Some(timeout_value) = timeout.value.parse::<i64>().ok() else {
+            continue;
+        };
+        if timeout_value < filter.threshold {
+            names.push(payload_name.clone());
+            names.push(timeout_name);
+        }
+    }
+    names.sort();
     delete_wordpress_options_by_names(options, &names)
 }
 
@@ -36451,6 +37655,14 @@ fn ensure_user_function_arity(
     }
 
     Ok(())
+}
+
+fn error_handler_args_for_function(function: &FunctionDecl, args: &[Value]) -> Vec<Value> {
+    if function.params.iter().any(|param| param.is_variadic) {
+        args.to_vec()
+    } else {
+        args.iter().take(function.params.len()).cloned().collect()
+    }
 }
 
 fn ensure_supported_function_signature(

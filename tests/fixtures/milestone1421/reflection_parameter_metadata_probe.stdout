@@ -1,0 +1,7 @@
+counts|4|1
+param0|hook|0|Plugin|boot|00|-|001
+param1|value|1|Plugin|boot|11|seed|100
+param2|count|2|Plugin|boot|11|3|000
+param3|rest|3|Plugin|boot|10|-|010
+named|value|1|Plugin|boot|11|seed|100
+indexed|count|2|Plugin|boot|11|3|000

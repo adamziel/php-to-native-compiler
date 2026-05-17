@@ -666,6 +666,14 @@ routed through covered array-offset alias metadata, including ordinary array
 roots, request/global roots, and visible object-property array roots; slot
 writes and stored-slot lookups compose the argument-array root alias with the
 selected integer key before binding or writing back.
+The stored callback path also has a narrow anonymous alias-group route for
+reference assignments from covered append-offset sources into stored argument
+slots, such as `$args[] =& $items[]` or
+`$args["value"] =& $object->items[]`. The append source materializes a new
+`null` slot, the stored argument target materializes its selected slot, and
+both aliases are recorded together so later callback writeback and supported
+reference-return binding sync the source slot and stored argument slot without
+introducing a general runtime reference container.
 For the bounded `call_user_func_array()` reference path, string-keyed
 argument-array entries can also bind by declared parameter name for current
 user-function callbacks and public object/static array-callable methods. The
@@ -1756,8 +1764,17 @@ projections with `option_name LIKE '<prefix>%' AND option_value < timestamp`
 or the prepared equivalent for rows whose recorded option value parses below a
 decimal threshold; the matching exact direct/prepared transient-timeout delete
 shape removes only those timeout rows and reports deterministic affected-row
-metadata. It does not delete paired transient payload rows or model the join
-cleanup WordPress can use against a real MySQL table;
+metadata. The state island also accepts one exact WordPress-shaped
+multi-table transient cleanup delete over `wp_options` aliases `a` and `b`,
+where `a.option_name` matches a trailing-percent payload prefix, does not
+match the matching timeout prefix, and `b.option_name` is the supported
+`CONCAT( '<timeout_prefix>', SUBSTRING( a.option_name, <offset> ) )` timeout
+row whose decimal value is below the direct or prepared threshold. That slice
+deletes both reached payload and timeout rows and updates affected-row
+metadata. It does not model arbitrary multi-table deletes, subqueries,
+collation, locks, indexes, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
+forms, exact MySQL affected-row edge cases, or WordPress cleanup against
+tables outside the deterministic `wp_options` state island;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1861,10 +1878,15 @@ resolution. The third argument accepts a bounded stream-context resource or
 `null`, and the fourth/fifth arguments apply integer offset plus optional
 non-negative max length over the current UTF-8 string payload. Missing local
 file reads and negative offsets before the start of the current local or
-`php://input` payload append a bounded PHP-style warning to the execution
-stderr channel, return `false`, and continue. This is intentionally a local
-recovery path, not the general PHP warning/error-handler system. It does not
-model PHP binary strings, exact PHP warning text, stream context
+`php://input` payload emit a bounded PHP-style `E_WARNING`, return `false`,
+and continue. That warning can route through the current request-local
+`set_error_handler()` registration when the stored handler is a string
+user-function callback or public object/static array callable whose mask
+includes `E_WARNING`; a `false` handler return falls through to the stderr
+warning path when `error_reporting()` still includes `E_WARNING`, while other
+return values suppress the fallback. This is intentionally a local recovery
+path, not the general PHP warning/error-handler system. It does not model PHP
+binary strings, exact PHP warning or handler `errstr` text, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
 non-UTF-8 data, warning recovery for other stream/resource paths,
 `open_basedir`, stat caching, host SAPI body streams, or native filesystem
@@ -2420,11 +2442,19 @@ only.
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
 resolves inherited class methods through the existing method metadata chain,
-and exposes the bounded modifier predicates plus `getDeclaringClass()` through
-interpreter dispatch. It does not expose `ReflectionProperty` or
-`ReflectionParameter` objects, attributes, files, line numbers, parameter
-metadata, default values, doc comments, extension/internal metadata, method
-invocation, exact exception objects, or native lowering.
+and exposes the bounded modifier predicates, `getDeclaringClass()`, parameter
+counts, and `getParameters()` through interpreter dispatch.
+`ReflectionParameter` follows the same request-local state pattern for method
+parameters reached from `ReflectionMethod::getParameters()` or from
+`new ReflectionParameter([$object_or_class, $method], $parameter)`. Parameter
+objects store copied method metadata plus the selected parsed parameter
+metadata, so the interpreter can answer names, positions, declaring
+class/function, optional/default availability and values, by-reference flags,
+variadic flags, and type-presence checks without introducing a broader
+reflection object graph. It does not expose `ReflectionProperty`, attributes,
+files, line numbers, doc comments, extension/internal metadata,
+`ReflectionType`/`ReflectionNamedType`, function or closure parameter targets,
+method invocation, exact exception objects, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

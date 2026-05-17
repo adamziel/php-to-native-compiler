@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T23:00:00Z
+
+- Checkpoint before this task:
+  `125e162f runtime: advance WordPress methods refs warnings and db lanes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1421-1425, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded `ReflectionParameter` metadata over current
+  method parameter tables; append-offset stored `call_user_func_array()`
+  reference roots; `file_get_contents()` recoverable-warning routing through
+  bounded string and public object/static array callable error handlers;
+  transient payload/timeout pair deletes over the deterministic MySQLi
+  `wp_options` state island; milestone fixtures 1421-1424; refreshed
+  class-list snapshots for the new core `ReflectionParameter`; support,
+  architecture, object model, MySQLi extension, README, queue, progress,
+  lane-worker, loop-memory, and goal docs.
+- Tests run and result: focused integration checks passed for
+  `ReflectionParameter`, append-offset callback reference roots,
+  `file_get_contents()` error-handler warning routing, transient payload pair
+  deletes, milestone fixtures 1421-1424, and system PHP comparisons where
+  applicable. Manual full gate passed before checkpoint:
+  `cargo test` completed successfully, `phpc test` reported `1515` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1515` fixture tests passed with `0` failures, `882` system PHP
+  comparisons, and `633` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/reflection/trait
+  compatibility, full PHP reference containers, broad copy-on-write, dynamic
+  lookup and magic methods, complete SAPI/request/session/upload/filesystem/
+  stream behavior, real database behavior, WordPress plugin/theme/admin/REST
+  flows, and native runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers,
+  then start Milestones 1426-1429 in separate worktrees.
+
 ## Loop Event 2026-05-17T22:00:00Z
 
 - Checkpoint before this task:
