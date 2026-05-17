@@ -56,10 +56,10 @@ The current introspection slice can check declared methods with
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
 $allow_string])` as an exact-class, single-parent class ancestor, or recorded
 interface metadata check. The current interface traversal includes
-already-declared single-parent interface inheritance. `is_subclass_of($object_or_class,
-$class_name[, $allow_string])` validates the same relationship-check boundary
-and walks the current single-parent class metadata chain plus recorded
-interface metadata. `get_parent_class($object_or_class)`
+already-declared user interface inheritance with one or more parent interfaces.
+`is_subclass_of($object_or_class, $class_name[, $allow_string])` validates the
+same relationship-check boundary and walks the current single-parent class
+metadata chain plus recorded interface metadata. `get_parent_class($object_or_class)`
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
@@ -71,9 +71,9 @@ without triggering autoloading. `class_exists()` reports true for declared
 enums in the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
 interfaces and top-level traits in declaration order. A declared interface may
-extend one already-declared user interface; concrete implementors of the child
-interface must expose both the child and parent public method names, and
-relationship checks also recognize the parent interface. Simple public instance
+extend one or more already-declared user interfaces; concrete implementors of
+the child interface must expose the child and all parent public method names,
+and relationship checks also recognize the parent interfaces. Simple public instance
 methods from already-declared traits may be composed into a class with
 `use TraitName;`, repeated simple trait-use declarations, or
 `use TraitA, TraitB;` and called through ordinary object method dispatch.
@@ -246,7 +246,7 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts
   current object values and string first arguments, with string first
   arguments considered only when `allow_string` is true, and walks the current
-  single-parent metadata chain while interface traversal remains unsupported;
+  single-parent metadata chain plus current recorded interface metadata;
 - `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns the immediate parent class name when
   one is recorded, otherwise false;
@@ -399,8 +399,8 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, multiple interface inheritance, interface constants,
-full interface signature enforcement,
+conditional class declarations, interface constants, full interface signature
+enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded single-loser `insteadof` shape,
 trait aliases beyond the current simple public, qualified public-alias, and

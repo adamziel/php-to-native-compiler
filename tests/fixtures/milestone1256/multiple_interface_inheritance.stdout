@@ -1,0 +1,9 @@
+instanceof-hookable
+instanceof-labelable
+is-a-hookable
+is-a-labelable
+subclass-hookable
+subclass-labelable
+hooks:Plugin
+label:Plugin
+boot:Plugin

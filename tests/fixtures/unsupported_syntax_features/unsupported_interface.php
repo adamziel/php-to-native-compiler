@@ -1,2 +1,4 @@
 <?php
-interface Renderable extends Displayable, Loggable {}
+interface Renderable {
+    const NAME = "view";
+}

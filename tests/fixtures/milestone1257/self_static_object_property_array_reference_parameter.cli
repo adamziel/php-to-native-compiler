@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1257/self_static_object_property_array_reference_parameter.php
+> stdout
+cold:self:child-static
+> stderr
+
+> exit
+0

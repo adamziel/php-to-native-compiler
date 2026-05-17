@@ -51,13 +51,13 @@ preserves that slot's reference identity across a copied direct array. When an
 array-offset or public object-property array-offset reference target is bound
 from a direct variable that already shares a direct variable-to-variable cell,
 the interpreter rewires every direct name in that small source cell group to
-the selected slot alias. By-reference user-function, instance-method, and
-named static method parameters can also accept a direct public object-property
-array-offset argument through a narrower output-parameter bridge: the caller
-slot is materialized and copied into the callee parameter, then the final
-parameter value is written back to the public property slot after normal
-return. That bridge intentionally does not provide in-call reference-container
-identity.
+the selected slot alias. By-reference user-function, instance-method, named
+static method, `self::` static method, and late-bound `static::` static method
+parameters can also accept a direct public object-property array-offset
+argument through a narrower output-parameter bridge: the caller slot is
+materialized and copied into the callee parameter, then the final parameter
+value is written back to the public property slot after normal return. That
+bridge intentionally does not provide in-call reference-container identity.
 Direct object-variable clone assignments also mirror public object-property
 alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
@@ -180,13 +180,13 @@ slice,
 declarations, and native trait lowering remain explicit boundaries.
 
 Top-level interface declarations are parsed as metadata for public method
-signatures. The current inheritance slice accepts a single already-declared
-user parent interface, such as `interface Child extends Parent`, and flattens
-that parent name into concrete class `implements` relationship metadata. Class
-registration enforces public method presence for both child and parent
-interface methods, including methods supplied by the current public trait
-composition and alias subset. Multiple parent interfaces, interface constants,
-forward parent-interface resolution, full variance/signature enforcement,
+signatures. The current inheritance slice accepts one or more already-declared
+user parent interfaces, such as `interface Child extends Parent, OtherParent`,
+and flattens those parent names into concrete class `implements` relationship
+metadata. Class registration enforces public method presence for child and
+parent interface methods, including methods supplied by the current public
+trait composition and alias subset. Interface constants, forward
+parent-interface resolution, full variance/signature enforcement,
 built-in/internal interface inheritance catalogs, exact PHP diagnostics, and
 native lowering remain explicit boundaries.
 
@@ -474,16 +474,23 @@ By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
 to the caller's variable cell for the duration of current user-function,
-instance-method, and constructor calls. Writes through the parameter are
+instance-method, constructor, named static method, `self::` static method, and
+late-bound `static::` static method calls. Writes through the parameter are
 visible before the call returns, and `unset($param)` detaches only the callee's
-local name from the shared cell. `call_user_func_array()` reuses that same
+local name from the shared cell. Direct public object-property array-offset
+arguments use a narrower copy-in/writeback bridge on the user-function,
+instance-method, named static method, `self::` static method, and late-bound
+`static::` static method dispatch paths, without exposing in-call PHP
+reference-container identity.
+`call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks and public object-method
 array callbacks where the argument array is an unkeyed literal containing
 `&$directVariable` elements for reached by-reference parameters. This
 deliberately does not model full PHP reference containers, stored reference
-arrays, keyed reference argument arrays, by-reference array/object offsets,
-static method array-callable reference parameters, broader reference returns,
-exact by-reference `foreach`, or copy-on-write.
+arrays, keyed reference argument arrays, callback-dispatched object-property
+array arguments, dynamic static receiver or `parent::` object-property array
+arguments, static method array-callable reference parameters, broader reference
+returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1389,6 +1396,15 @@ insertion order with either an empty default separator or a string separator.
 Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
+`ob_start()`, `ob_get_level()`, and `ob_get_clean()` are interpreter-only
+output-buffer boundaries for the current WordPress request/rendering path. The
+interpreter keeps a stack of string buffers; PHP-visible output appends to the
+innermost active buffer, `ob_get_clean()` pops and returns that buffer, and
+remaining buffers flush outward to stdout when execution completes or the
+bounded `exit()` path returns. Native function-table introspection recognizes
+the names, while direct native calls reject until generated code has stdout
+capture buffers, shutdown flushing, output-started/header interaction, SAPI
+integration, and exact diagnostics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, appends the raw header line to deterministic in-process CLI request
@@ -1905,7 +1921,7 @@ same return type text case-insensitively. Public static methods do not satisfy
 non-static interface method requirements. This is a bounded compatibility check
 only; full parameter variance, broader return type covariance/contravariance,
 type subtyping, alias/import resolution, union/intersection canonicalization,
-multiple interface inheritance, forward parent-interface resolution, broad
+forward parent-interface resolution, broad
 built-in/internal interface method enforcement beyond the current
 `Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
 objects, autoload behavior, and native lowering remain separate work. A bounded

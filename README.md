@@ -157,19 +157,23 @@ incorrect native code.
   `ClassName::class`, plus namespace-scoped function declarations and
   unqualified same-namespace calls
 - declared interface metadata: top-level `interface Name {}` declarations,
-  single already-declared parent forms such as
-  `interface Child extends Parent`, and public method signatures parse,
-  register class-like interface names, power `interface_exists()` and
+  already-declared parent forms such as
+  `interface Child extends Parent, OtherParent`, and public method signatures
+  parse, register class-like interface names, power `interface_exists()` and
   `get_declared_interfaces()`, and require concrete classes that implement
   declared interfaces, including through inherited `implements` metadata and
-  the current single-parent interface inheritance slice, to expose public
-  methods with the required names at class registration time, to avoid
+  the current already-declared parent interface inheritance slice, to expose
+  public methods with the required names at class registration time, to avoid
   requiring more parameters than those interface methods, to pass the current
   bounded interface parameter-type metadata check, and to pass the current
   bounded interface return-type metadata check; class `implements` clauses
   record comma-separated interface names and inherited parent interface names
   as relationship metadata for `is_a`, `is_subclass_of`, and `instanceof`,
-  including unresolved built-in/internal interface names; the
+  including unresolved built-in/internal interface names; forward
+  parent-interface resolution, interface constants, full variance/signature
+  compatibility beyond the current bounded checks, broad built-in/internal
+  interface inheritance catalogs, exact PHP diagnostics, and native lowering
+  remain unsupported; the
   current internal-interface enforcement slice is limited to concrete
   `Countable` implementors exposing a public non-static `count()` method with
   no required parameters and concrete `Iterator`/`IteratorAggregate`
@@ -241,8 +245,8 @@ incorrect native code.
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
   implementors that pass the current method-shape check
 - a documented builtin subset for strings, arrays, constants, filesystem and
-  request-state probes, type checks, callability checks, bounded truthy
-  assertions, object/class metadata, and debug-style output
+  request-state probes, output-buffer probes, type checks, callability checks,
+  bounded truthy assertions, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell
@@ -323,16 +327,18 @@ By-reference function and method return declarations also parse as runtime
 boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
-binding; direct-variable by-reference arguments use a bounded copy-in/copy-back
-path for output-parameter style calls. Direct public object-property array
-offset arguments now have the same bounded output-parameter writeback for user
-functions, instance methods, and named static method calls.
+binding; direct-variable by-reference arguments use a bounded direct cell path
+for output-parameter style calls. Direct public object-property array offset
+arguments now have bounded output-parameter writeback for user functions,
+instance methods, named static method calls, `self::` static method calls, and
+late-bound `static::` static method calls.
 `call_user_func_array()` also has a bounded string user-callback and public
 object-method callback slice for unkeyed literal argument arrays containing
 direct-variable reference elements such as `array(&$value)`. Stored reference
 arrays, keyed reference argument arrays, static method array-callable reference
-parameters, callback object-property array arguments, broader aliasing, and
-full copy-on-write remain unsupported.
+parameters, callback object-property array arguments, dynamic static receiver
+and `parent::` object-property array arguments, broader aliasing, and full
+copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation
@@ -370,6 +376,7 @@ direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
+direct `ob_start()`/`ob_get_level()`/`ob_get_clean()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/`setcookie()`
 response header-state calls,
 direct `realpath(...)` filesystem canonicalization calls,

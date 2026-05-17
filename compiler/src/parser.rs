@@ -681,11 +681,8 @@ impl Parser {
         let mut parents = Vec::new();
         if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
             parents.push(self.consume_class_like_name("expected interface name after 'extends'")?);
-            if self.check(|kind| matches!(kind, TokenKind::Comma)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_multiple_interface_inheritance_message(),
-                ));
+            while self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                parents.push(self.consume_class_like_name("expected interface name after ','")?);
             }
         }
 
@@ -6392,10 +6389,6 @@ fn unsupported_interface_declaration_message() -> &'static str {
 
 fn unsupported_nested_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: only top-level interface declarations are implemented"
-}
-
-fn unsupported_multiple_interface_inheritance_message() -> &'static str {
-    "unsupported interface inheritance: multiple parent interfaces are not implemented"
 }
 
 fn unsupported_interface_constant_message() -> &'static str {

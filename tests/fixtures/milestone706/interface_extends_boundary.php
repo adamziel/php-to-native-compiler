@@ -1,2 +1,4 @@
 <?php
-interface Child extends Parent, OtherParent {}
+interface Child extends Parent {
+    const NAME = "child";
+}

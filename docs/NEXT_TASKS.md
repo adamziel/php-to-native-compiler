@@ -12468,41 +12468,112 @@ handled.
 
 ## Milestone 1256: Next Trait/Interface WordPress Slice
 
-- [ ] Parser/runtime lane: advance one larger trait/interface blocker still in
-  the WordPress path. Prefer multiple parent interface inheritance, forward
-  parent-interface resolution, interface constants, or a trait property/constant
-  boundary. Prove the behavior or rejection with object-model tests, CLI
-  fixtures, docs, and PHP comparison when deterministic.
+- [x] Parser/runtime lane: advance one larger trait/interface blocker still in
+  the WordPress path. Milestone 1256 extends declared user interface
+  inheritance from the prior single-parent slice to multiple already-declared
+  user parent interfaces such as `interface Child extends A, B`. Concrete
+  implementors of the child interface must expose public methods required by
+  the child and all declared parents, including methods supplied by the current
+  public trait composition and alias subset, and relationship metadata is
+  flattened for `instanceof`, `is_a()`, and `is_subclass_of()`. Forward
+  parent-interface resolution, interface constants, full variance/signature
+  compatibility beyond existing checks, internal interface inheritance
+  catalogs, exact PHP diagnostics, and native lowering remain unsupported.
 
 ## Milestone 1257: Next Reference/COW WordPress Slice
 
-- [ ] Runtime lane: advance one larger reference or copy-on-write blocker that
-  affects WordPress-style mutable state. Prefer callback-dispatched
-  by-reference arguments, `self::`/`static::` static-method reference argument
-  coverage, globals/request-bag mutation, or another object-property array
-  mutation path. Keep full PHP reference containers, stored reference arrays,
-  broad COW, exact warnings, and native lowering unsupported unless implemented
-  and tested.
+- [x] Runtime lane: advance one larger reference or copy-on-write blocker that
+  affects WordPress-style mutable state. Milestone 1257 extends the bounded
+  direct public object-property array-offset by-reference parameter writeback
+  bridge to `self::` static method calls in active class context and
+  late-bound `static::` static method calls in active called-class context,
+  reusing the Milestone 1252 named-static bridge. The selected public property
+  array slot is still materialized, copied into the callee parameter, and
+  written back after normal static method completion. Callback-dispatched
+  object-property array reference arguments, dynamic static receivers,
+  `parent::` object-property array reference arguments, reference-returning
+  methods with object-property array arguments, non-public or dynamic property
+  arguments, append-offset arguments, ArrayAccess, stored reference arrays,
+  full PHP reference containers, broad COW, exact warnings, and native
+  lowering remain unsupported.
 
 ## Milestone 1258: Next Request/SAPI/Filesystem WordPress Slice
 
-- [ ] Runtime or IR/lowering lane: implement one bounded request, SAPI,
+- [x] Runtime or IR/lowering lane: implement one bounded request, SAPI,
   output-buffering, include-path, stream, filesystem, cookie, upload, or
   superglobal behavior that moves real WordPress bootstrap/request execution
   forward. Native lowering must reject runtime-only state explicitly when direct
-  lowering would be misleading.
+  lowering would be misleading. Milestone 1258 adds bounded interpreter-owned
+  output buffering for `ob_start()`, `ob_get_level()`, and `ob_get_clean()`;
+  PHP-visible output is captured while a buffer is active, `ob_get_clean()`
+  returns and closes the innermost buffer, unclosed buffers flush at normal
+  completion or bounded `exit()`, and direct native calls reject under an
+  output-buffer lowering boundary. Callbacks, chunk sizes, flags, flush/end/
+  status/list variants, output-started/header interaction, fatal-error cleanup,
+  SAPI emission, exact warnings, and native output-buffer lowering remain
+  unsupported.
 
 ## Milestone 1259: Next WordPress Database/Bootstrap Evidence Slice
+
+- [x] Compatibility/runtime lane: advance the synthetic or operator-supplied
+  WordPress probe to a later bootstrap point, or implement one small
+  `wpdb`/MySQLi/object-cache/option behavior needed by such a probe. Avoid
+  claiming real MySQL, arbitrary SQL, broad `wpdb`, plugin/theme loading, full
+  request support, or native support. Milestone 1259 adds an exact
+  `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+  row read over the placeholder `wp_options` state island, including direct
+  `mysqli_query()` and prepared/`mysqli_execute_query()` paths, and advances
+  the synthetic add-option probe to prove the cached value and database
+  autoload flag after duplicate rejection.
+
+## Milestone 1260: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1256-1259 land, refresh support and
+  compatibility docs around the remaining WordPress blockers, record focused
+  verification, run the serialized full gate, checkpoint the batch, and open
+  the next parallel implementation queue. Milestone 1260 keeps the next split
+  focused on the remaining large WordPress blockers: trait constants and
+  interface constants/forward resolution, callback/reference/COW fidelity,
+  output-buffer/request/filesystem breadth, and executable `wpdb`/bootstrap
+  evidence. Full gate passed at checkpoint: `1384` fixture tests, `793`
+  system PHP comparisons, and `591` skipped `phpc-only` fixtures.
+
+## Milestone 1261: Next Trait/Interface WordPress Slice
+
+- [ ] Parser/runtime lane: advance one large trait/interface blocker still in
+  the WordPress path. Prefer trait constants, interface constants, forward
+  parent-interface resolution, or another trait/interface construct reached by
+  WordPress bootstrap. Prove the behavior or rejection with object-model or
+  syntax-boundary tests, fixtures, docs, and PHP comparison when deterministic.
+
+## Milestone 1262: Next Reference/COW WordPress Slice
+
+- [ ] Runtime lane: advance one large reference or copy-on-write blocker that
+  affects WordPress mutable state. Prefer callback-dispatched by-reference
+  object-property array arguments, `parent::` static-method reference argument
+  coverage, globals/request-bag mutation, or another executable mutation path.
+  Keep full PHP reference containers, stored reference arrays, broad COW, exact
+  warnings, and native lowering unsupported unless implemented and tested.
+
+## Milestone 1263: Next Request/SAPI/Filesystem WordPress Slice
+
+- [ ] Runtime or IR/lowering lane: implement one bounded request, SAPI,
+  output-buffering, include-path, stream, filesystem, cookie, upload,
+  superglobal, or header/output-started behavior that moves real WordPress
+  bootstrap/request execution forward. Native lowering must reject runtime-only
+  state explicitly when direct lowering would be misleading.
+
+## Milestone 1264: Next WordPress Database/Bootstrap Evidence Slice
 
 - [ ] Compatibility/runtime lane: advance the synthetic or operator-supplied
   WordPress probe to a later bootstrap point, or implement one small
   `wpdb`/MySQLi/object-cache/option behavior needed by such a probe. Avoid
-  claiming real MySQL, arbitrary SQL, broad `wpdb`, plugin/theme loading, full
-  request support, or native support.
+  claiming real MySQL, arbitrary SQL, broad `wpdb`, persistent object cache,
+  plugin/theme loading, full request support, or native support.
 
-## Milestone 1260: WordPress-Focused Queue Refresh
+## Milestone 1265: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1256-1259 land, refresh support and
+- [ ] Tests/docs lane: after Milestones 1261-1264 land, refresh support and
   compatibility docs around the remaining WordPress blockers, record focused
   verification, run the serialized full gate, checkpoint the batch, and open
   the next parallel implementation queue.

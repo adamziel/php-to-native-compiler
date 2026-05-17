@@ -26,6 +26,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T01:08:00Z
+
+- Checkpoint before this task:
+  `1168f946 runtime: add WordPress interface request and db slices`, pushed to
+  `origin/master`.
+- Task attempted: Milestones 1256-1260, four WordPress-focused implementation
+  lanes plus queue refresh.
+- Files changed: parser/runtime support for multiple already-declared parent
+  interfaces in `interface Child extends A, B`, reference-parameter writeback
+  for `self::` and late-bound `static::` static method calls over direct public
+  object-property array-offset arguments, bounded interpreter output buffering
+  through `ob_start()`, `ob_get_level()`, and `ob_get_clean()` with explicit
+  native rejection, exact `wp_options` value/autoload selects over the
+  placeholder MySQLi state island, an advanced synthetic WordPress
+  add-option/autoload probe, focused tests and fixtures, plus `README.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/extensions/mysqli.md`, and this
+  memory file.
+- Tests run and result: focused lane checks passed for multiple-interface
+  inheritance, `self::`/`static::` object-property array by-reference
+  writeback, output buffering and header-state regression coverage, MySQLi
+  WordPress option value/autoload reads, WordPress inventory probes, milestone
+  fixtures/PHP comparisons, legacy interface-boundary fixtures, formatting,
+  fixture manifests, and diff hygiene. `tools/checkpoint.sh "runtime: add
+  WordPress buffering interface and db slices"` passed with `1384` fixture
+  tests, `793` system PHP comparisons, and `591` skipped `phpc-only` fixtures
+  before the scoped checkpoint commit `fab44343 runtime: add WordPress
+  buffering interface and db slices`.
+- Remaining semantic gaps: forward parent-interface resolution, interface
+  constants, trait constants/properties, broader trait visibility/adaptation
+  semantics, callback-dispatched object-property array references, `parent::`
+  object-property array references, full PHP reference containers, stored
+  reference arrays, broad copy-on-write, output-buffer callbacks/chunk
+  sizes/flags/status APIs/header interaction/fatal cleanup, real request
+  imports, query/body parsing, multipart uploads, include-path/open_basedir/
+  stat-cache/stream fidelity, persistent object cache, real database
+  connections, arbitrary SQL, broad `wpdb`, plugins/themes, real WordPress
+  request state, and native object/request/filesystem/database/output-buffer
+  lowering remain implementation work.
+- Next concrete task: push `master`, clean dedicated target directories, close
+  completed workers, then start Milestones 1261-1264 in separate worktrees
+  focused on the same largest WordPress blockers.
+
 ## Loop Event 2026-05-17T00:11:01Z
 
 - Checkpoint before this task:

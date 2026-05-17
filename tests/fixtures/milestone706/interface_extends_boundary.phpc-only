@@ -1,1 +1,1 @@
-phpc intentionally rejects multiple interface inheritance before broad interface relationship metadata and implementation checks exist.
+phpc intentionally rejects interface constants before interface constant metadata exists.

@@ -317,6 +317,10 @@ return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
 `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` can return
 the recorded autoload value through the same placeholder result/fetch path.
+The exact
+`SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+shape can return the recorded value and autoload columns together through the
+same placeholder result/fetch path.
 Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
@@ -350,6 +354,12 @@ empty placeholder result. The exact
 also returns a recorded option-name/option-value row for string option-name
 parameters on the same handle through the same prepared result paths; missing
 names return an empty zero-field placeholder result. The exact
+`SELECT option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
+query returns recorded option-value/autoload rows for string option-name
+parameters on the same handle through
+`mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array($name))`; missing names return an
+empty zero-field placeholder result. The exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
 prepared statement records string option-name, option-value, and autoload
 parameters on the same handle, updates statement and connection affected-row

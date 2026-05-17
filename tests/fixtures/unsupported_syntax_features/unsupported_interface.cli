@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_interface.php:2:41: unsupported interface inheritance: multiple parent interfaces are not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_interface.php:3:5: unsupported interface constant declaration: interface constants are not implemented
 --- stderr end ---

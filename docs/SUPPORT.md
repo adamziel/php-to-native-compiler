@@ -64,17 +64,19 @@
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
   provide a by-reference parameter are supported only for direct variable
-  arguments in the current user-function, instance-method, constructor, and
-  named static method dispatch paths: the callee local parameter shares the
-  caller's variable cell during execution, so writes through the parameter are
-  visible to other reads of the caller variable before the call returns.
+  arguments in the current user-function, instance-method, constructor, named
+  static method, `self::` static method, and late-bound `static::` static
+  method dispatch paths: the callee local parameter shares the caller's
+  variable cell during execution, so writes through the parameter are visible
+  to other reads of the caller variable before the call returns.
   Direct public
   object-property array-offset arguments such as
   `handler($object->items[$group][$key])` are supported for user functions,
-  instance methods, and named static method calls as a bounded
-  output-parameter path: the selected public property array slot is
-  materialized when needed, copied into the callee parameter, and written back
-  to the same slot when the callee returns normally or with `return`. This
+  instance methods, named static method calls, `self::` static method calls,
+  and late-bound `static::` static method calls as a bounded output-parameter
+  path: the selected public property array slot is materialized when needed,
+  copied into the callee parameter, and written back to the same slot when the
+  callee returns normally or with `return`. This
   object-property argument path does not expose a general in-call PHP
   reference container. The same direct-variable cell
   binding is supported for string user-function callbacks and public
@@ -86,10 +88,10 @@
   caller variable or write back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
   array, callback-dispatched object-property array, dynamic static receiver,
-  `self::`, `parent::`, `static::`, and reference-returning function or method
-  forms remain unsupported for object-property array reference arguments. This
-  is still a bounded direct-variable alias and public object-property output
-  path, not full PHP reference containers or copy-on-write.
+  `parent::`, and reference-returning function or method forms remain
+  unsupported for object-property array reference arguments. This is still a
+  bounded direct-variable alias and public object-property output path, not
+  full PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -651,20 +653,21 @@
   violations report stable runtime boundaries. Method required-parameter
   compatibility violations report stable runtime boundaries. Concrete classes
   that implement declared user interfaces, including through inherited
-  `implements` metadata and the current single already-declared parent
-  interface inheritance slice, must expose public methods with the required
-  interface method names and must not require more parameters than those
-  interface methods at class registration time. For interface method parameter
-  type metadata, implementations may omit an interface parameter type or use
-  the same type text case-insensitively, but may not add a type where the
-  interface parameter is untyped or change a typed interface parameter to a
-  different type. For interface method return type metadata, implementations
-  may add a return type when the interface method is untyped, but a typed
-  interface method requires the implementation to declare the same return type
-  text case-insensitively. Full PHP method signature variance,
+  `implements` metadata and the current already-declared parent interface
+  inheritance slice with one or more user parents, must expose public methods
+  with the required interface method names and must not require more
+  parameters than those interface methods at class registration time. For
+  interface method parameter type metadata, implementations may omit an
+  interface parameter type or use the same type text case-insensitively, but
+  may not add a type where the interface parameter is untyped or change a typed
+  interface parameter to a different type. For interface method return type
+  metadata, implementations may add a return type when the interface method is
+  untyped, but a typed interface method requires the implementation to declare
+  the same return type text case-insensitively. Full PHP method signature variance,
   class/interface return covariance and type subtyping, type aliases,
-  union/intersection canonicalization, multiple interface inheritance,
-  built-in/internal interface method enforcement, named arguments,
+  union/intersection canonicalization, forward parent-interface resolution,
+  interface constants, broad built-in/internal interface inheritance catalogs,
+  named arguments,
   trait composition beyond the current public-method and simple-alias slice,
   exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -875,7 +878,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_clean`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -932,7 +935,8 @@
   `mysqli_fetch_field`, `mysqli_fetch_fields`, `mysqli_fetch_field_direct`, `mysqli_fetch_lengths`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
-  `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
+  `ob_start`, `ob_get_level`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -1636,6 +1640,10 @@
   path, and a later exact
   `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` returns
   the recorded autoload value through that same placeholder result/fetch path.
+  The exact
+  `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+  shape returns the recorded value and autoload columns together
+  through the same placeholder result/fetch path.
   Exact option-row reads for
   `SELECT option_name, option_value FROM wp_options`,
   `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
@@ -1670,6 +1678,12 @@
   query also returns a recorded option-name/option-value row for string
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
+  `SELECT option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
+  query returns recorded option-value/autoload rows for string option-name
+  parameters on the same handle through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array($name))`; missing names return
+  an empty zero-field placeholder result. The exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
   prepared statement records string option-name, option-value, and autoload
   parameters on the same handle, updates statement and connection affected-row
@@ -1920,6 +1934,17 @@
   error-level filtering, callback invocation arguments, by-reference callback
   behavior, output buffering, shutdown/fatal interaction, exact diagnostics,
   and native lowering remain unsupported.
+  `ob_start()` accepts no arguments, starts a new interpreter-owned output
+  buffer, and returns `true`. While a buffer is active, PHP-visible output from
+  `echo`, `print`, `exit("...")`, `var_dump()`, and `print_r()` is appended to
+  the innermost buffer instead of final stdout. `ob_get_level()` accepts no
+  arguments and returns the active buffer depth. `ob_get_clean()` accepts no
+  arguments, pops the innermost buffer, and returns its captured string, or
+  `false` when no buffer is active. Any buffers still active at normal program
+  completion or bounded `exit()` are flushed outward to stdout. Callbacks,
+  chunk sizes, flags, flush/end variants, nested buffer handler semantics,
+  output-started interaction with headers, fatal-error cleanup, exact warning
+  behavior, and native lowering remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for `UTC`, and returns `false` for other identifiers without PHP's
   notice machinery. Full timezone database validation, global timezone state,
@@ -1976,8 +2001,8 @@
   class metadata by string name without autoloading, `interface_exists`
   accepts string names and checks the bounded core interface catalog plus
   current declared interface metadata without autoloading, including child
-  interfaces declared with the current single already-declared parent
-  inheritance form, `trait_exists`
+  interfaces declared with one or more already-declared user parent
+  interfaces, `trait_exists`
   accepts string names and checks current declared
   trait metadata without autoloading,
   `enum_exists` accepts string names and checks current declared unit-enum
@@ -2202,8 +2227,8 @@
   not implemented
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
-  single-parent class `extends` and single-parent interface `extends`,
-  multiple interface inheritance, interface constants, non-public or
+  single-parent class `extends` and already-declared interface parent lists,
+  interface constants, non-public or
   static interface methods, trait properties/constants, static/abstract/final
   or non-public trait methods, adaptation blocks beyond the current simple
   method alias and single-loser `insteadof` shapes, broad conflict
@@ -2517,8 +2542,8 @@
   satisfy non-static interface method requirements. This is a bounded
   public-method compatibility check only, not full parameter type
   compatibility, broader return type covariance/contravariance, full signature
-  variance, class or interface type subtyping, multiple interface inheritance,
-  forward parent-interface resolution, type-alias/import resolution,
+  variance, class or interface type subtyping, forward parent-interface
+  resolution, type-alias/import resolution,
   union/intersection canonicalization, or exact PHP error-object behavior.
   Unresolved interface names remain relationship metadata only. Most
   built-in/internal interface names are still metadata-only, except for the
@@ -3921,7 +3946,8 @@
   `array_unshift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `basename`, `dirname`, `extension_loaded`, `mysqli_connect`,
+  `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
+  `ob_get_level`, `ob_get_clean`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -3954,7 +3980,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
@@ -4085,7 +4111,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_clean`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4132,7 +4158,8 @@
   `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
-  `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
+  `ob_get_level`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
@@ -4423,6 +4450,10 @@
   `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/`mysqli_poll(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
+  `ob_start`, `ob_get_level`, and `ob_get_clean` accept the same current
+  output-buffer subset as the builtin section above; direct native calls reject
+  under the output-buffer boundary, while native function-table introspection
+  recognizes the names.
   `header` accepts the same current deterministic CLI header-log subset as the
   builtin section above; direct native `header(...)` calls reject under the
   header-state boundary, while native function-table introspection recognizes
@@ -6243,7 +6274,7 @@
   runtime boundaries; native throw and try-block lowering are still separate
   explicit boundaries
 - broad interface implementation enforcement beyond the current
-  public-method/signature metadata slice, multiple interface inheritance,
+  public-method/signature metadata slice,
   trait composition beyond the current public method/adaptation subset, and
   enum case objects/backed values/methods/interfaces
 - generator functions, generator objects, `yield`, `yield from` delegation,
@@ -6509,6 +6540,11 @@
   shim: filename/line output arguments, output-started tracking, output
   buffers, SAPI differences, exact warnings, and native lowering beyond
   function-table introspection
+- `ob_start()`/`ob_get_level()`/`ob_get_clean()` behavior beyond the current
+  no-argument interpreter-owned buffer stack: callbacks, chunk sizes, flags,
+  flush/end/status/list variants, output handler nesting semantics,
+  output-started/header interaction, fatal-error cleanup, exact warnings, and
+  native lowering beyond function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic
   `cli` result: host PHP SAPI discovery, web-server/CGI/FPM SAPI states,
   request-specific SAPI switching, exact diagnostics, and native lowering

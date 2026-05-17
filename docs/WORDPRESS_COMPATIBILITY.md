@@ -214,6 +214,19 @@ object-cache behavior, broad uniqueness/index fidelity, real MySQL errors,
 arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1259, that synthetic add-option smoke also reads the
+reinserted option with the exact
+`SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+shape. The generated bootstrap shim and front-controller path prove the
+database-backed row still has value `added-db` and autoload `no` after the
+duplicate add is rejected, emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db|added-db:no`
+(`stdout_bytes: 96` in normalized output). This is executable evidence for
+one bounded option value/autoload row read only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -263,6 +276,17 @@ does not implement expiration, path, domain, secure, HttpOnly, SameSite,
 options arrays, deletion cookies, cookie encoding fidelity, output-started
 tracking, web-server/SAPI network emission, exact warnings, or native
 header-state lowering.
+
+After Milestone 1258, `phpc run` has a bounded interpreter-owned output-buffer
+stack for `ob_start()`, `ob_get_level()`, and `ob_get_clean()`: echoed and
+printed output is captured while a buffer is active, `ob_get_clean()` returns
+the innermost captured string and closes that buffer, and unclosed buffers are
+flushed outward when execution completes. This supports small
+WordPress-shaped bootstrap/rendering paths that capture generated markup in
+the current CLI scaffold only. It does not implement callbacks, chunk sizes,
+flags, flush/end/status/list variants, output handler nesting semantics,
+output-started/header interaction, fatal-error cleanup, exact warnings, SAPI
+network emission, or native output-buffer lowering.
 
 ## Current Probe Status
 
@@ -796,9 +820,10 @@ historical blockers and remaining full-support gaps include:
   `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
   corresponding to `$l10n[ $domain ] = &$noop_translations;` in
   `wp-includes/l10n.php:1428`. Current later milestones add bounded
-  `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks, but
-  this is still not broad interface method enforcement, interface constants,
-  multiple interface inheritance, built-in/internal interface catalogs,
+  `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks plus
+  multiple already-declared user parent interface inheritance, but this is
+  still not broad interface method enforcement, interface constants,
+  forward parent-interface resolution, built-in/internal interface catalogs,
   variance/signature checks, autoload-triggered interface discovery, exact PHP
   fatal behavior, native lowering, or WordPress bootstrap support.
   Milestone 762 implements the bounded object-handle `=&` slice needed for
