@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1383/output_buffer_length.php

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1384/wpdb_option_object_row_no_limit_probe.php

@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T15:00:00Z
+
+- Checkpoint before this task:
+  `105d4980 runtime: advance WordPress autoload refs sapi and db lanes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1381-1385, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded default `spl_autoload()` local file probing
+  through the SPL extension registry; nested direct-parent child-slot
+  reference-return regression coverage; no-argument `ob_get_length()` over the
+  interpreter-owned output-buffer stack; no-`LIMIT` full-row option lookups
+  over the deterministic MySQLi `wp_options` placeholder state island;
+  milestone fixtures 1381-1384; support, architecture, MySQLi extension,
+  WordPress compatibility, README, queue, progress, lane-worker, loop-memory,
+  and goal docs.
+- Tests run and result: focused integration checks passed for default
+  `spl_autoload()` file probing, nested child-slot reference returns,
+  output-buffer length state, MySQLi WordPress option object-row reads,
+  milestone fixtures, and system PHP comparisons where applicable. Manual full
+  gate passed before checkpoint:
+  `cargo test` completed successfully, `phpc test` reported `1483` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1483` fixture tests passed with `0` failures, `860` system PHP
+  comparisons, and `623` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, complete SAPI/request/session/upload/filesystem/stream behavior,
+  real database behavior, WordPress plugin/theme/admin/REST flows, and native
+  runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers,
+  then start Milestones 1386-1389 in separate worktrees.
+
 ## Loop Event 2026-05-17T14:00:00Z
 
 - Checkpoint before this task:

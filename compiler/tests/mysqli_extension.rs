@@ -4175,6 +4175,41 @@ echo mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_reads_current_wordpress_option_object_rows_without_limit_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('theme_mods', 'theme-db', 'on')");
+$direct = mysqli_query($handle, "SELECT * FROM wp_options WHERE option_name = 'siteurl'");
+$direct_row = mysqli_fetch_object($direct);
+echo mysqli_num_rows($direct);
+echo ":";
+echo $direct_row->option_id, ":", $direct_row->option_name, ":", $direct_row->option_value, ":", $direct_row->autoload;
+echo "|";
+$prepared = mysqli_execute_query($handle, "SELECT * FROM `wp_options` WHERE `option_name` = ?", array("theme_mods"));
+$prepared_row = mysqli_fetch_object($prepared);
+echo mysqli_num_fields($prepared);
+echo ":";
+echo $prepared_row->option_id, ":", $prepared_row->option_name, ":", $prepared_row->option_value, ":", $prepared_row->autoload;
+echo "|";
+$missing = mysqli_execute_query($handle, "SELECT * FROM wp_options WHERE option_name = ?", array("missing"));
+echo mysqli_num_rows($missing);
+echo ":";
+echo mysqli_fetch_object($missing) === false ? "missing" : "row";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1:1:siteurl:https://example.test:yes|4:2:theme_mods:theme-db:on|0:missing"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_id_from_state() {
     let execution = run_source(
         r#"<?php

@@ -178,9 +178,9 @@ incorrect native code.
   direct free-function, visible object-method, and current static dispatch
   reference-return assignment that binds a returned by-reference parameter
   back to covered direct array-offset and public object-property array-offset
-  arguments, including the narrow `return $param[$key]` child-slot shape when
-  `$param` was supplied by a direct variable parent array or a covered parent
-  array/property slot,
+  arguments, including the narrow `return $param[$key]` and
+  `return $param[$key][$subkey]` child-slot shapes when `$param` was supplied
+  by a direct variable parent array or a covered parent array/property slot,
   plus bounded
   direct array-offset reference elements in literal `call_user_func_array()`
   argument arrays for request bags, `$GLOBALS`, and nested arrays,
@@ -216,7 +216,8 @@ incorrect native code.
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
   shapes and selected prepared option-value-only equality reads including
-  `LIMIT 1`, option-name-only, option-name-list, full-row, star-projection,
+  `LIMIT 1`, option-name-only, option-name-list, full-row, star-projection
+  including exact option-name equality with and without `LIMIT 1`,
   name/autoload-list, and autoload-list/equality result sets, plus bounded
   direct and prepared transient-shaped option-name prefix result scans and
   deletes;
@@ -304,8 +305,9 @@ incorrect native code.
   `spl_autoload_functions()` exposes the current bounded callback list, and
   `spl_autoload_unregister()` removes matching bounded callbacks,
   `spl_autoload_extensions()` reads and replaces the request-local extension
-  string used by PHP's default SPL autoload surface, while the default
-  `spl_autoload()` file-probing callback itself remains unsupported,
+  string used by PHP's default SPL autoload surface, and bounded
+  `spl_autoload($class)` probes local lowercased class/interface/trait file
+  names through that extension registry and the current include resolver,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -402,11 +404,13 @@ invokable-object callbacks registered through `spl_autoload_register()` for
 `class_exists()`, `interface_exists()`, `trait_exists()`, missing `new` class
 instantiation, and included
 class/interface/trait declaration dependencies and manual
-`spl_autoload_call()` loads; autoload lifecycle behavior beyond bounded
+`spl_autoload_call()` loads; bounded default `spl_autoload()` local file
+probing through the current extension registry; autoload lifecycle behavior beyond bounded
 `spl_autoload_functions()`, `spl_autoload_unregister()`, and
-`spl_autoload_call()`, including default `spl_autoload()` file probing,
-closure invocation, exact callable validation, scalar-to-string coercions for
-`spl_autoload_extensions()`, and enum autoloading,
+`spl_autoload_call()`/`spl_autoload()` behavior, including closure invocation,
+exact callable validation, scalar-to-string coercions for SPL autoload
+extension arguments, warning parity, recursive loader edge cases, and enum
+autoloading,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -458,8 +462,9 @@ copy-on-write remain unsupported.
 By-reference function and method return declarations also parse and have
 bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
-`return $param[$key]` child-slot shape when `$param` was supplied by a direct
-variable parent array or a covered parent array/property slot. Normal by-value
+`return $param[$key]` and `return $param[$key][$subkey]` child-slot shapes
+when `$param` was supplied by a direct variable parent array or a covered
+parent array/property slot. Normal by-value
 invocation of reference-return functions and methods still reports a stable
 unsupported diagnostic.
 Omitted optional by-reference parameters can use their defaults without alias
@@ -537,8 +542,8 @@ direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
-direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/
-`ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer
+direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
+`ob_get_clean()`/`ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer
 calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()` response header-state calls, including

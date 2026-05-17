@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and exact no-LIMIT option row object fetching rather than a real MySQL database, arbitrary SQL, persistent WordPress option APIs, or native DB lowering.

@@ -564,13 +564,14 @@ options arrays, deletion cookies, cookie encoding fidelity, output-started
 tracking, web-server/SAPI network emission, exact warnings, or native
 header-state lowering.
 
-After Milestone 1268, `phpc run` has a bounded interpreter-owned output-buffer
+After Milestone 1383, `phpc run` has a bounded interpreter-owned output-buffer
 stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`,
-`ob_get_clean()`, `ob_clean()`, `ob_flush()`, `ob_end_clean()`, and
-`ob_end_flush()`: echoed and printed output is captured while a buffer is
+`ob_get_length()`, `ob_get_clean()`, `ob_clean()`, `ob_flush()`,
+`ob_end_clean()`, and `ob_end_flush()`: echoed and printed output is captured while a buffer is
 active, `ob_get_contents()` returns the innermost captured string without
-closing that buffer, `ob_get_clean()` returns the innermost captured string and
-closes that buffer, `ob_clean()` clears the innermost buffer, `ob_flush()`
+closing that buffer, `ob_get_length()` returns its current byte length,
+`ob_get_clean()` returns the innermost captured string and closes that buffer,
+`ob_clean()` clears the innermost buffer, `ob_flush()`
 flushes the innermost buffer to the next outer buffer or stdout while keeping
 it active, `ob_end_clean()` closes and discards the innermost buffer, and
 `ob_end_flush()` closes and flushes the innermost buffer outward. Unclosed

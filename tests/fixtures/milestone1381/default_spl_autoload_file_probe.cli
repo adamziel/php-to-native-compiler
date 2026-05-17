@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1381/default_spl_autoload_file_probe.php

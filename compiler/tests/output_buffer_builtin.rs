@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -105,6 +105,34 @@ echo ob_get_contents() === false ? "false" : "not-false";
 }
 
 #[test]
+fn ob_get_length_reports_active_buffer_byte_length() {
+    let execution = run_source(
+        r#"<?php
+echo ob_get_length() === false ? "initial=false" : "initial=true";
+ob_start();
+echo "abc";
+echo "|len=" . ob_get_length();
+ob_start();
+echo "xy";
+echo "|inner-len=" . ob_get_length();
+$inner = ob_get_clean();
+echo "|after-inner-len=" . ob_get_length();
+$outer = ob_get_clean();
+echo "outer=[" . $outer . "]";
+echo "|inner=[" . $inner . "]";
+echo "|final=" . (ob_get_length() === false ? "false" : "true");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "initial=falseouter=[abc|len=3|after-inner-len=9]|inner=[xy|inner-len=2]|final=false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ob_flush_and_ob_end_flush_move_nested_buffer_output_outward() {
     let execution = run_source(
         r#"<?php
@@ -188,6 +216,7 @@ fn output_buffer_builtins_are_available_through_string_valued_calls() {
 $start = "ob_start";
 $level = "ob_get_level";
 $contents = "ob_get_contents";
+$length = "ob_get_length";
 $flush = "ob_flush";
 $end_flush = "ob_end_flush";
 $clean = "ob_get_clean";
@@ -204,6 +233,7 @@ echo "|after-flush";
 $ended = $end_flush();
 echo "|";
 echo $level();
+echo "|len=" . $length();
 $peek = $contents();
 $captured = $clean();
 echo "clean=";
@@ -217,7 +247,7 @@ echo "|ended=" . ($ended ? "true" : "false");
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|clean=captured|inner|after-flush|1|peek=captured|inner|after-flush|1|ended=true"
+        "yes|callable|clean=captured|inner|after-flush|1|len=28|peek=captured|inner|after-flush|1|len=28|ended=true"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -270,6 +300,18 @@ echo ob_get_contents(1);
     assert_eq!(
         contents_arg.message,
         "arity mismatch for ob_get_contents(): expected 0 argument(s), got 1"
+    );
+
+    let length_arg = runtime_error(
+        r#"<?php
+echo ob_get_length(1);
+"#,
+    );
+    assert_eq!(length_arg.line, 2);
+    assert_eq!(length_arg.column, 6);
+    assert_eq!(
+        length_arg.message,
+        "arity mismatch for ob_get_length(): expected 0 argument(s), got 1"
     );
 
     let clean_buffer_arg = runtime_error(
@@ -329,6 +371,13 @@ fn emit_ir_rejects_output_buffer_builtins_until_native_state_exists() {
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_OUTPUT_BUFFER_REJECTION);
+
+    let length_error = emit_ir_source("<?php\necho ob_get_length();\n").unwrap_err();
+
+    assert_eq!(length_error.phase, Phase::Codegen);
+    assert_eq!(length_error.line, 2);
+    assert_eq!(length_error.column, 6);
+    assert_eq!(length_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
 }
 
 #[test]
@@ -351,6 +400,8 @@ echo function_exists("ob_get_level") ? "1" : "0";
 echo is_callable("ob_get_level") ? "1" : "0";
 echo function_exists("ob_get_contents") ? "1" : "0";
 echo is_callable("ob_get_contents") ? "1" : "0";
+echo function_exists("ob_get_length") ? "1" : "0";
+echo is_callable("ob_get_length") ? "1" : "0";
 echo function_exists("ob_get_clean") ? "1" : "0";
 echo is_callable("ob_get_clean") ? "1" : "0";
 echo function_exists("ob_clean") ? "1" : "0";
@@ -365,7 +416,7 @@ echo is_callable("ob_end_flush") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 16, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 18, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

@@ -123,12 +123,13 @@ array-offset writeback/alias result path when a reached by-reference parameter
 is supplied by a direct array-offset or public object-property array-offset
 argument and the function or method returns that parameter directly. The same
 assignment-only path can bind a returned direct array-offset expression such
-as `return $param[$key];` when `$param` is one of those copied-in covered
-parent array-slot arguments or a direct caller variable bound through a
-by-reference parameter. For copied-in slots, after the local parent array is
-written back, the returned key suffix is appended to the caller alias group.
-For direct caller variables, the returned suffix is mapped to that caller
-variable's child slot. It does not make callback argument arrays,
+as `return $param[$key];` or `return $param[$key][$subkey];` when `$param` is
+one of those copied-in covered parent array-slot arguments or a direct caller
+variable bound through a by-reference parameter. For copied-in slots, after
+the local parent array is written back, the returned key suffix is appended to
+the caller alias group. For direct caller variables, the returned explicit key
+suffix is mapped to that caller variable's child slot. It does not make
+callback argument arrays,
 non-public/dynamic object-property array bridges, ArrayAccess roots, or stored
 array-offset metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
@@ -1562,13 +1563,15 @@ insertion order with either an empty default separator or a string separator.
 Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
-`ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_clean()`,
-`ob_clean()`, `ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
+`ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_length()`,
+`ob_get_clean()`, `ob_clean()`, `ob_flush()`, `ob_end_clean()`, and
+`ob_end_flush()` are
 interpreter-only output-buffer boundaries for the current WordPress
 request/rendering path. The interpreter keeps a stack of string buffers;
 PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
-peeks at that buffer without closing it, `ob_get_clean()` pops and returns that
-buffer, `ob_clean()` clears the innermost buffer, `ob_flush()` moves its
+peeks at that buffer without closing it, `ob_get_length()` reports its current
+byte length, `ob_get_clean()` pops and returns that buffer, `ob_clean()` clears
+the innermost buffer, `ob_flush()` moves its
 contents outward while keeping it active, `ob_end_clean()` closes and discards
 it, `ob_end_flush()` closes it and flushes its contents outward, and remaining
 buffers flush outward to stdout when execution completes or the bounded
@@ -1668,7 +1671,9 @@ deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
 direct/prepared autoload equality reads for alloptions-shaped probes, plus
 prepared option-value equality reads with `LIMIT 1` for transient-shaped
-`wpdb::get_var()` probes, plus bounded direct
+`wpdb::get_var()` probes, plus exact star-projection option-name equality
+reads with and without `LIMIT 1` for object-row `wpdb::get_row()` probes, plus
+bounded direct
 `option_name LIKE '<prefix>%'` and prepared `option_name LIKE ?` result scans
 and deletes for transient-shaped option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
@@ -1703,9 +1708,17 @@ name exists. `spl_autoload_extensions()` is a separate request-local string
 slot initialized to PHP's `.inc,.php` default; string arguments replace the
 slot, `null` reads it without mutation, and the value is exposed for parity
 with autoload lifecycle introspection. The default `spl_autoload()` callback
-does not yet probe files through this extension list. Native function-table
-introspection recognizes the names, while direct native calls reject under the
-function-call boundary.
+uses that string as a comma-separated extension registry, lowercases the
+requested class-like name, maps namespace separators to local path separators,
+resolves candidate files through the same bounded local include resolver, and
+includes the first existing file once. Registering `"spl_autoload"` stores it
+as an ordinary function callback, but dispatch handles it as this builtin
+probe instead of requiring a user function body. Stream/URL paths, exact PHP
+warnings, scalar-to-string extension coercions, recursive edge cases beyond
+the current same-name guard, enum autoload lookup, and native autoload
+lowering remain outside this slice. Native function-table introspection
+recognizes the names, while direct native calls reject under the function-call
+boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and

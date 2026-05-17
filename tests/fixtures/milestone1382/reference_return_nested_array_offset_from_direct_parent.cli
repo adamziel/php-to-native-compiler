@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1382/reference_return_nested_array_offset_from_direct_parent.php

@@ -113,6 +113,25 @@ spl_autoload_register($loader);
         extensions_non_string.message,
         "unsupported call spl_autoload_extensions(): file_extensions argument must be string or null in the current subset, got array"
     );
+
+    let default_autoload_non_string = run_source("<?php\nspl_autoload(42);\n").unwrap_err();
+    assert_eq!(default_autoload_non_string.phase, Phase::Runtime);
+    assert_eq!(default_autoload_non_string.line, 2);
+    assert_eq!(default_autoload_non_string.column, 1);
+    assert_eq!(
+        default_autoload_non_string.message,
+        "unsupported call spl_autoload(): class name argument must be string in the current subset, got int"
+    );
+
+    let default_autoload_extension_non_string =
+        run_source("<?php\nspl_autoload('Box', []);\n").unwrap_err();
+    assert_eq!(default_autoload_extension_non_string.phase, Phase::Runtime);
+    assert_eq!(default_autoload_extension_non_string.line, 2);
+    assert_eq!(default_autoload_extension_non_string.column, 1);
+    assert_eq!(
+        default_autoload_extension_non_string.message,
+        "unsupported call spl_autoload(): file_extensions argument must be string or null in the current subset, got array"
+    );
 }
 
 #[test]
@@ -135,6 +154,72 @@ echo spl_autoload_extensions();
         ".inc,.php\n.php,.inc\n.php,.inc\n.php,.inc\n.class.php\n.class.php"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_autoload_probes_local_files_through_current_extension_registry() {
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-default-spl-autoload-{}", std::process::id()));
+    fs::create_dir_all(fixture_dir.join("acme")).unwrap();
+    let class_path = fixture_dir.join("wp_loader.class.inc");
+    fs::write(
+        &class_path,
+        r#"<?php
+class Wp_Loader {
+    public $name = "direct";
+}
+"#,
+    )
+    .unwrap();
+    let namespace_path = fixture_dir.join("acme").join("plugin.inc");
+    fs::write(
+        &namespace_path,
+        r#"<?php
+namespace Acme;
+class Plugin {
+    public $name = "namespaced";
+}
+"#,
+    )
+    .unwrap();
+    let registered_path = fixture_dir.join("registeredbox.autoload.inc");
+    fs::write(
+        &registered_path,
+        r#"<?php
+class RegisteredBox {
+    public $name = "registered";
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+spl_autoload_extensions(".class.inc,.inc");
+spl_autoload("Wp_Loader");
+$box = new Wp_Loader();
+echo $box->name, "\n";
+
+$call = "spl_autoload";
+$call("Acme\\Plugin", null);
+echo class_exists("Acme\\Plugin", false) ? "namespace\n" : "missing-namespace\n";
+
+spl_autoload_extensions(".autoload.inc");
+spl_autoload_register("spl_autoload");
+$registered = new RegisteredBox();
+echo $registered->name;
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(execution.stdout, "direct\nnamespace\nregistered");
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(class_path);
+    let _ = fs::remove_file(namespace_path);
+    let _ = fs::remove_file(registered_path);
+    let _ = fs::remove_dir(fixture_dir.join("acme"));
+    let _ = fs::remove_dir(fixture_dir);
 }
 
 #[test]
@@ -831,6 +916,10 @@ echo class_exists("MissingTwo") ? "loaded" : "missing";
 
 #[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
+    let autoload_error = emit_ir_source("<?php\nspl_autoload('MissingBox');\n").unwrap_err();
+    assert_eq!(autoload_error.phase, Phase::Codegen);
+    assert_eq!(autoload_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);

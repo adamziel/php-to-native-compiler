@@ -4221,7 +4221,19 @@ impl Interpreter {
             ));
         };
 
-        let path = self.resolve_required_path(&path_value, construct, span)?;
+        self.evaluate_file_include_path(&path_value, once, required, construct, span, scope)
+    }
+
+    fn evaluate_file_include_path(
+        &mut self,
+        path_value: &str,
+        once: bool,
+        required: bool,
+        construct: &'static str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Flow, Value)> {
+        let path = self.resolve_required_path(path_value, construct, span)?;
         if self.trace_includes {
             eprintln!("phpc trace include: {}", path.source_file.display());
         }
@@ -9673,7 +9685,9 @@ impl Interpreter {
             query,
             "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
                 | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+                | "SELECT * FROM wp_options WHERE option_name = ?"
                 | "SELECT * FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT * FROM `wp_options` WHERE `option_name` = ?"
                 | "SELECT * FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
         ) {
             if let Some((option_id, option_name, option_value, autoload)) =
@@ -15077,6 +15091,9 @@ impl Interpreter {
                 if key == "spl_autoload_register" {
                     return self.call_spl_autoload_register(args, span, caller_scope);
                 }
+                if key == "spl_autoload" {
+                    return self.call_spl_autoload(args, span, caller_scope);
+                }
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
@@ -15158,6 +15175,9 @@ impl Interpreter {
             Callable::Builtin(key) => {
                 if key == "spl_autoload_register" {
                     return self.call_spl_autoload_register(args, span, caller_scope);
+                }
+                if key == "spl_autoload" {
+                    return self.call_spl_autoload(args, span, caller_scope);
                 }
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
@@ -16249,6 +16269,143 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_spl_autoload(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "spl_autoload()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let class_name = self.evaluate(&args[0], caller_scope)?;
+        let Value::String(class_name) = class_name else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "spl_autoload()",
+                    format!(
+                        "class name argument must be string in the current subset, got {}",
+                        class_name.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        let extensions = if let Some(extension_arg) = args.get(1) {
+            match self.evaluate(extension_arg, caller_scope)? {
+                Value::Null => self.autoload_extensions.clone(),
+                Value::String(extensions) => extensions,
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "spl_autoload()",
+                            format!(
+                                "file_extensions argument must be string or null in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        } else {
+            self.autoload_extensions.clone()
+        };
+
+        self.run_default_spl_autoload(&class_name, &extensions, span, caller_scope)?;
+        Ok(Value::Null)
+    }
+
+    fn call_spl_autoload_values(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "spl_autoload()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Value::String(class_name) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "spl_autoload()",
+                    format!(
+                        "class name argument must be string in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        let extensions = match args.get(1) {
+            None | Some(Value::Null) => self.autoload_extensions.clone(),
+            Some(Value::String(extensions)) => extensions.clone(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "spl_autoload()",
+                        format!(
+                            "file_extensions argument must be string or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+        self.run_default_spl_autoload(class_name, &extensions, span, &mut scope)?;
+        Ok(Value::Null)
+    }
+
+    fn run_default_spl_autoload(
+        &mut self,
+        class_name: &str,
+        extensions: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let base_name = class_name.replace('\\', "/").to_ascii_lowercase();
+        for extension in extensions.split(',') {
+            let candidate = format!("{base_name}{extension}");
+            let resolved = self.resolve_required_path(&candidate, "spl_autoload()", span)?;
+            if !resolved.read_path.exists() {
+                continue;
+            }
+
+            let (flow, _) = self.evaluate_file_include_path(
+                &candidate,
+                true,
+                false,
+                "spl_autoload()",
+                span,
+                scope,
+            )?;
+            match flow {
+                Flow::Normal => {}
+                Flow::Exit(_) | Flow::Break { .. } | Flow::Continue { .. } => break,
+                Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
+                Flow::Return(_) => unreachable!("file include normalizes return flow"),
+            }
+            break;
+        }
+
+        Ok(())
+    }
+
     fn call_spl_autoload_functions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("spl_autoload_functions", args, 0, span)?;
 
@@ -16470,6 +16627,20 @@ impl Interpreter {
             for callback in callbacks {
                 match callback {
                     AutoloadCallback::Function(function_name) => {
+                        if function_name.eq_ignore_ascii_case("spl_autoload") {
+                            let extensions = self.autoload_extensions.clone();
+                            let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+                            self.run_default_spl_autoload(
+                                class_name,
+                                &extensions,
+                                span,
+                                &mut scope,
+                            )?;
+                            if self.class_like_exists(class_name, kind) {
+                                break;
+                            }
+                            continue;
+                        }
                         let callable =
                             self.lookup_function_exact(&function_name).ok_or_else(|| {
                                 runtime_error(
@@ -20685,6 +20856,15 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_ob_get_length(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_get_length", args, 0, span)?;
+        Ok(self
+            .output_buffers
+            .last()
+            .map(|buffer| Value::Int(buffer.len() as i64))
+            .unwrap_or(Value::Bool(false)))
+    }
+
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_clean", args, 0, span)?;
         Ok(self
@@ -23172,6 +23352,7 @@ impl Interpreter {
             "ob_start" => self.call_ob_start(&args, span),
             "ob_get_level" => self.call_ob_get_level(&args, span),
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
+            "ob_get_length" => self.call_ob_get_length(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
             "ob_clean" => self.call_ob_clean(&args, span),
             "ob_flush" => self.call_ob_flush(&args, span),
@@ -23757,6 +23938,7 @@ impl Interpreter {
                     ),
                 )),
             },
+            "spl_autoload" => self.call_spl_autoload_values(&args, span),
             "spl_autoload_functions" => self.call_spl_autoload_functions(&args, span),
             "spl_autoload_extensions" => self.call_spl_autoload_extensions(&args, span),
             "spl_autoload_unregister" => self.call_spl_autoload_unregister(&args, span),
@@ -28618,6 +28800,7 @@ fn is_builtin(name: &str) -> bool {
             | "ob_start"
             | "ob_get_level"
             | "ob_get_contents"
+            | "ob_get_length"
             | "ob_get_clean"
             | "ob_clean"
             | "ob_flush"
@@ -28647,6 +28830,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_called_class"
             | "spl_object_id"
             | "spl_object_hash"
+            | "spl_autoload"
             | "spl_autoload_register"
             | "spl_autoload_functions"
             | "spl_autoload_extensions"
@@ -29279,7 +29463,7 @@ fn parse_wordpress_option_star_select_query(query: &str) -> Option<String> {
     let rest = query
         .strip_prefix("SELECT * FROM wp_options WHERE option_name = ")
         .or_else(|| query.strip_prefix("SELECT * FROM `wp_options` WHERE `option_name` = "))?;
-    let rest = rest.strip_suffix(" LIMIT 1")?;
+    let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
     let values = parse_sql_single_quoted_list(rest)?;
     if values.len() != 1 {
         return None;

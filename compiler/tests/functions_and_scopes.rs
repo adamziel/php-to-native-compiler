@@ -1098,6 +1098,59 @@ echo $shared_items["slot"], "|", $shared_parent["slot"], "|", $shared_alias;
 }
 
 #[test]
+fn reference_return_assignment_binds_nested_returned_array_offset_from_direct_variable_parent() {
+    let execution = run_source(
+        r#"<?php
+function &pick_nested_slot_from_parent(&$items, $key, $subkey, $suffix) {
+    $items[$key][$subkey] = $items[$key][$subkey] . ":" . $suffix;
+    return $items[$key][$subkey];
+}
+
+class DirectParentNestedSlotPicker {
+    public function &pick(&$items, $key, $subkey, $suffix) {
+        $items[$key][$subkey] = $items[$key][$subkey] . ":" . $suffix;
+        return $items[$key][$subkey];
+    }
+
+    public static function &pickStatic(&$items, $key, $subkey, $suffix) {
+        $items[$key][$subkey] = $items[$key][$subkey] . ":" . $suffix;
+        return $items[$key][$subkey];
+    }
+}
+
+$function_items = ["outer" => ["slot" => "function"]];
+$function_alias =& pick_nested_slot_from_parent($function_items, "outer", "slot", "direct");
+$function_alias = $function_alias . ":alias";
+echo $function_items["outer"]["slot"], "|", $function_alias, "\n";
+
+$static_items = ["outer" => ["slot" => "static"]];
+$static_alias =& DirectParentNestedSlotPicker::pickStatic($static_items, "outer", "slot", "direct");
+$static_alias = $static_alias . ":alias";
+echo $static_items["outer"]["slot"], "|", $static_alias, "\n";
+
+$method_items = ["outer" => ["slot" => "method"]];
+$picker = new DirectParentNestedSlotPicker();
+$method_alias =& $picker->pick($method_items, "outer", "slot", "direct");
+$method_alias = $method_alias . ":alias";
+echo $method_items["outer"]["slot"], "|", $method_alias, "\n";
+
+$shared_items = ["outer" => ["slot" => "shared"]];
+$shared_parent =& $shared_items;
+$shared_alias =& pick_nested_slot_from_parent($shared_items, "outer", "slot", "direct");
+$shared_parent["outer"]["slot"] = $shared_parent["outer"]["slot"] . ":parent";
+echo $shared_items["outer"]["slot"], "|", $shared_parent["outer"]["slot"], "|", $shared_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function:direct:alias|function:direct:alias\nstatic:direct:alias|static:direct:alias\nmethod:direct:alias|method:direct:alias\nshared:direct:parent|shared:direct:parent|shared:direct:parent"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_return_assignment_binds_array_offset_arguments() {
     let execution = run_source(
         r#"<?php

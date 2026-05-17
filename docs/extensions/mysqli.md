@@ -385,7 +385,8 @@ returning recorded option-name, value, and autoload columns, and for the exact
 `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
 projection, returning deterministic option-id, name, value, and autoload
 columns, and for exact `SELECT * FROM wp_options ...` star projections,
-returning the same deterministic option-id, name, value, and autoload columns.
+including exact option-name equality with or without `LIMIT 1`, returning the
+same deterministic option-id, name, value, and autoload columns.
 These row-set projections also accept exact
 `WHERE option_name LIKE '<prefix>%'` and backtick-quoted
 ``WHERE `option_name` LIKE '<prefix>%'`` filters for deterministic
@@ -494,8 +495,9 @@ names return an empty zero-field placeholder result. The exact
 query returns deterministic option-id/name/value/autoload rows for string
 option-name parameters on the same handle through the same prepared result
 paths; missing names return an empty zero-field placeholder result. The exact
-`SELECT * FROM wp_options WHERE option_name = ? LIMIT 1` query returns the
-same recorded full option row for string option-name parameters. The exact
+`SELECT * FROM wp_options WHERE option_name = ?` query, with or without
+`LIMIT 1`, returns the same recorded full option row for string option-name
+parameters. The exact
 `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query returns
 recorded deterministic option-id rows for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
