@@ -157,12 +157,13 @@ incorrect native code.
   `ClassName::class`, plus namespace-scoped function declarations and
   unqualified same-namespace calls
 - declared interface metadata: top-level `interface Name {}` declarations,
-  already-declared parent forms such as
-  `interface Child extends Parent, OtherParent`, and public method signatures
-  parse, register class-like interface names, power `interface_exists()` and
+  parent forms such as `interface Child extends Parent, OtherParent`,
+  including parent interfaces declared later in the same parsed program, and
+  public method signatures parse, register class-like interface names, power
+  `interface_exists()` and
   `get_declared_interfaces()`, and require concrete classes that implement
   declared interfaces, including through inherited `implements` metadata and
-  the current already-declared parent interface inheritance slice, to expose
+  the current parent interface inheritance slice, to expose
   public methods with the required names at class registration time, to avoid
   requiring more parameters than those interface methods, to pass the current
   bounded interface parameter-type metadata check, and to pass the current
@@ -172,8 +173,9 @@ incorrect native code.
   including unresolved built-in/internal interface names; public interface
   constants in the current untyped expression subset resolve through
   interface names, parent-interface inheritance, implementing classes, and
-  string `defined()`/`constant()` lookups; forward
-  parent-interface resolution, typed/static/non-public/abstract/final or
+  string `defined()`/`constant()` lookups; missing or cyclic parent interface
+  inheritance reports stable runtime boundaries;
+  typed/static/non-public/abstract/final or
   multi-constant interface declarations, full variance/signature compatibility
   beyond the current bounded checks, broad built-in/internal interface
   inheritance catalogs, exact PHP diagnostics, and native lowering remain
@@ -266,7 +268,7 @@ type declaration enforcement, cast behavior outside the current `(string)`,
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
 typed/static/non-public/abstract/final or multi-constant interface
-declarations, forward parent-interface resolution, full interface signature
+declarations, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs
 beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
 checks, trait properties, non-public/typed/abstract/final/static trait
@@ -337,7 +339,8 @@ binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct public object-property array offset
 arguments now have bounded output-parameter writeback for user functions,
 instance methods, named static method calls, `self::` static method calls, and
-late-bound `static::` static method calls.
+`parent::` instance/static method calls, and late-bound `static::` static
+method calls.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
 for unkeyed literal argument arrays containing direct-variable reference
@@ -345,8 +348,8 @@ elements such as `array(&$value)`, plus direct public object-property
 array-offset elements such as `array(&$object->items[$key])` through
 copy-in/writeback. Stored reference arrays, keyed reference argument arrays,
 non-public or dynamic callback object-property array arguments, dynamic static
-receiver and `parent::` object-property array arguments, broader aliasing, and
-full copy-on-write remain unsupported.
+receiver callback object-property array arguments, broader aliasing, and full
+copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation
@@ -388,7 +391,8 @@ direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/
 `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer
 calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/`setcookie()`
-response header-state calls,
+response header-state calls, including interpreter-only `headers_sent()`
+output-started tracking and direct-variable filename/line outputs,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

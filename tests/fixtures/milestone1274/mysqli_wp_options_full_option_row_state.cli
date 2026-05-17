@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1274/mysqli_wp_options_full_option_row_state.php

@@ -138,14 +138,15 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed small slices of public interface
-constants, static array-callable reference arguments, output-buffer flush/end
-operations, and exact option-name reads over the placeholder `wp_options`
-state. Those are useful compatibility steps, but they do not change the larger
-project shape: the next lanes should keep attacking forward interface/object
-semantics, real reference/COW behavior, request/SAPI/stream breadth, and
-executable WordPress database/bootstrap evidence until those areas become
-coherent subsystems instead of reached slices.
+The latest WordPress-focused batch closed small slices of forward
+parent-interface resolution, parent-call object-property array reference
+arguments, output-started/header state, and exact full-row `wp_options` reads
+over the placeholder MySQLi state island. Those are useful compatibility
+steps, but they do not change the larger project shape: the next lanes should
+keep attacking broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress
+database/bootstrap evidence until those areas become coherent subsystems
+instead of reached slices.
 
 ## What We Have Been Doing
 

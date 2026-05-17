@@ -252,6 +252,30 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1274, that synthetic add-option smoke also reads the
+reinserted option with the exact
+`SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+shape after duplicate rejection. The generated bootstrap shim and
+front-controller path prove the row still has option name `blogdescription`,
+value `added-db`, and autoload `no`, emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db|added-db:no|id=2|name=blogdescription|row=blogdescription:added-db:no`
+(`stdout_bytes: 154` in normalized output). This is executable evidence for
+one bounded full option-row read only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
+After Milestone 1273, `phpc run` tracks whether response headers are still open
+or whether bytes have reached unbuffered stdout. The current
+`headers_sent($file, $line)` slice writes direct-variable filename and line
+outputs, keeps output buffered by `ob_start()` from marking headers sent, marks
+headers sent when an outermost output buffer is flushed, and ignores late
+`header()`/`header_remove()` calls while returning `false` for late
+`setcookie()`. This is executable request/SAPI evidence for WordPress
+output-started guards only; it does not claim web-server SAPI emission, exact
+warning text, non-variable output arguments, cookie attributes, shutdown-time
+buffer visibility, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such

@@ -1,0 +1,27 @@
+<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, 'localhost', 'user', 'pass', null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'no')");
+$direct = mysqli_query($handle, "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$direct_row = mysqli_fetch_assoc($direct);
+echo $direct_row['option_name'], ':', $direct_row['option_value'], ':', $direct_row['autoload'];
+echo '|';
+$missing = mysqli_query($handle, "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = 'missing' LIMIT 1");
+echo mysqli_num_rows($missing);
+echo '|';
+$stmt = mysqli_prepare($handle, 'SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1');
+$name = 'siteurl';
+mysqli_stmt_bind_param($stmt, 's', $name);
+mysqli_stmt_execute($stmt);
+$prepared = mysqli_stmt_get_result($stmt);
+$prepared_row = mysqli_fetch_assoc($prepared);
+echo $prepared_row['option_name'], ':', $prepared_row['option_value'], ':', $prepared_row['autoload'];
+echo '|';
+$name = 'missing';
+mysqli_stmt_execute($stmt);
+$prepared_missing = mysqli_stmt_get_result($stmt);
+echo mysqli_num_rows($prepared_missing);
+echo '|';
+$execute_query = mysqli_execute_query($handle, 'SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1', array('siteurl'));
+$execute_query_row = mysqli_fetch_assoc($execute_query);
+echo $execute_query_row['option_name'], ':', $execute_query_row['option_value'], ':', $execute_query_row['autoload'];

@@ -186,15 +186,16 @@ declarations, and native trait lowering remain explicit boundaries.
 
 Top-level interface declarations are parsed as metadata for public method
 signatures and public constants. The current inheritance slice accepts one or
-more already-declared user parent interfaces, such as
-`interface Child extends Parent, OtherParent`, and flattens those parent names
-into concrete class `implements` relationship metadata. Class registration
+more user parent interfaces declared before or after the child interface, such
+as `interface Child extends Parent, OtherParent`, and flattens those parent
+names into concrete class `implements` relationship metadata. Class registration
 enforces public method presence for child and parent interface methods,
 including methods supplied by the current public trait composition and alias
 subset. Public interface constants declared as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and
-implementing-class class-constant lookup. Forward parent-interface resolution,
+implementing-class class-constant lookup. Missing or cyclic parent interface
+inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
 declarations, full variance/signature enforcement, built-in/internal interface
 inheritance catalogs, exact PHP diagnostics, and native lowering remain
@@ -485,13 +486,14 @@ by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
 to the caller's variable cell for the duration of current user-function,
 instance-method, constructor, named static method, `self::` static method, and
-late-bound `static::` static method calls. Writes through the parameter are
-visible before the call returns, and `unset($param)` detaches only the callee's
-local name from the shared cell. Direct public object-property array-offset
-arguments use a narrower copy-in/writeback bridge on the user-function,
-instance-method, named static method, `self::` static method, and late-bound
-`static::` static method dispatch paths, without exposing in-call PHP
-reference-container identity.
+`parent::` instance/static method calls, and late-bound `static::` static
+method calls. Writes through the parameter are visible before the call returns,
+and `unset($param)` detaches only the callee's local name from the shared cell.
+Direct public object-property array-offset arguments use a narrower
+copy-in/writeback bridge on the user-function, instance-method, named static
+method, `self::` static method, `parent::` instance/static method, and
+late-bound `static::` static method dispatch paths, without exposing in-call
+PHP reference-container identity.
 `call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks, public object-method
 array callbacks, and public class-string static-method array callbacks where
@@ -502,7 +504,7 @@ such as `&$object->items[$group][$key]`, using the bounded output-parameter
 bridge rather than in-call reference-container identity. This deliberately
 does not model full PHP reference containers, stored reference arrays, keyed
 reference argument arrays, non-public or dynamic property callback arguments,
-dynamic static receiver or `parent::` object-property array arguments, broader
+dynamic static receiver callback object-property array arguments, broader
 reference returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
@@ -1439,12 +1441,20 @@ names, or model full SAPI removal behavior.
 `setcookie()` is another interpreter-only header-state boundary. The current
 slice accepts a string cookie name plus an optional string value, appends a
 simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
-and returns `true`; full cookie attributes, encoding, output-started behavior,
-SAPI emission, and native lowering remain outside the model.
+and returns `true` while output is open. After unbuffered output starts it
+returns `false` and leaves the header log unchanged; full cookie attributes,
+encoding, warning recovery, SAPI emission, and native lowering remain outside
+the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
-no-argument slice returns `false` so reached WordPress guard branches can
-continue, but filename/line output arguments, output-started tracking, output
-buffers, SAPI differences, and native lowering are not modeled.
+slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
+print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
+`ob_flush()`/`ob_end_flush()` stamp that state with the current source filename
+and source line; output held only inside active output buffers does not. Direct
+variable filename/line output arguments are written with `""`/`0` before output
+starts and the stamped file/line after it starts. Non-variable output
+arguments, array/object-property output targets, exact warning text, SAPI
+differences, shutdown-time buffer flushing visibility, and native lowering are
+not modeled.
 `php_sapi_name()` is an interpreter-only request/SAPI identity boundary that
 returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
@@ -1928,8 +1938,9 @@ internal names can participate in relationships without being declared. For
 interfaces declared in the current parsed program, runtime class registration
 checks concrete classes, including concrete children of abstract implementors,
 for public methods with the required interface method names and the current
-supported non-static method shape. Single already-declared parent interfaces
-are flattened into both relationship metadata and method-presence checks.
+supported non-static method shape. Parent interfaces declared before or after
+the child are flattened into both relationship metadata and method-presence
+checks.
 Implementations may omit an interface parameter type or repeat the same type
 text case-insensitively, but may not add a parameter type to an untyped
 interface parameter or substitute a different type for a typed interface
@@ -1939,7 +1950,7 @@ same return type text case-insensitively. Public static methods do not satisfy
 non-static interface method requirements. This is a bounded compatibility check
 only; full parameter variance, broader return type covariance/contravariance,
 type subtyping, alias/import resolution, union/intersection canonicalization,
-forward parent-interface resolution, broad
+cyclic parent-interface inheritance beyond stable rejection, broad
 built-in/internal interface method enforcement beyond the current
 `Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
 objects, autoload behavior, and native lowering remain separate work. A bounded

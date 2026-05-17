@@ -1,0 +1,7 @@
+base
+base
+instanceof-base
+is-a-base
+subclass-base
+base:contract
+hook:Plugin

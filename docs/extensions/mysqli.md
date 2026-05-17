@@ -330,6 +330,10 @@ The exact
 `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
 shape can return the recorded value and autoload columns together through the
 same placeholder result/fetch path.
+The exact
+`SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+shape can return the recorded option name, value, and autoload columns
+together through the same placeholder result/fetch path.
 Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
@@ -344,7 +348,7 @@ quotes, backslashes, newlines, and carriage returns, plus doubled single
 quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
-projection beyond exact option id/name/value/autoload/name-value shapes,
+projection beyond exact option id/name/value/autoload/name-value/full-row shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -374,6 +378,10 @@ parameters on the same handle through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array($name))`; missing names return an
 empty zero-field placeholder result. The exact
+`SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
+query returns recorded option-name/value/autoload rows for string option-name
+parameters on the same handle through the same prepared result paths; missing
+names return an empty zero-field placeholder result. The exact
 `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query returns
 recorded deterministic option-id rows for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

@@ -129,6 +129,7 @@ struct Interpreter {
     called_class_context: Vec<ClassId>,
     response_headers: Vec<String>,
     output_buffers: Vec<String>,
+    output_start: Option<OutputStart>,
     stdout: String,
     exit_signal: Option<i32>,
 }
@@ -222,6 +223,12 @@ struct MysqliStatementState {
     bound_result_variables: Vec<String>,
     attributes: HashMap<i64, Value>,
     long_data: HashMap<usize, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OutputStart {
+    file: String,
+    line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2007,6 +2014,7 @@ impl Interpreter {
                 _ => {}
             }
         }
+        validate_interface_parent_relationships(&interface_lookup, &interfaces)?;
 
         for stmt in &program.statements {
             if let Stmt::Class(class) = stmt {
@@ -2091,6 +2099,7 @@ impl Interpreter {
             called_class_context: Vec::new(),
             response_headers: Vec::new(),
             output_buffers: Vec::new(),
+            output_start: None,
             stdout: String::new(),
             exit_signal: None,
         };
@@ -2276,6 +2285,7 @@ impl Interpreter {
                 _ => {}
             }
         }
+        validate_interface_parent_relationships(&self.interface_lookup, &self.interfaces)?;
 
         for stmt in &program.statements {
             let Stmt::Class(class) = stmt else {
@@ -2528,9 +2538,18 @@ impl Interpreter {
     }
 
     fn append_output(&mut self, output: &str) {
+        self.append_output_from(output, None);
+    }
+
+    fn append_output_at(&mut self, output: &str, span: Span) {
+        self.append_output_from(output, Some(span));
+    }
+
+    fn append_output_from(&mut self, output: &str, span: Option<Span>) {
         if let Some(buffer) = self.output_buffers.last_mut() {
             buffer.push_str(output);
         } else {
+            self.mark_output_started(output, span);
             self.stdout.push_str(output);
         }
     }
@@ -2541,13 +2560,24 @@ impl Interpreter {
         }
     }
 
-    fn append_output_below_active_buffer(&mut self, output: &str) {
+    fn append_output_below_active_buffer_at(&mut self, output: &str, span: Span) {
         if self.output_buffers.len() >= 2 {
             let parent_index = self.output_buffers.len() - 2;
             self.output_buffers[parent_index].push_str(output);
         } else {
+            self.mark_output_started(output, Some(span));
             self.stdout.push_str(output);
         }
+    }
+
+    fn mark_output_started(&mut self, output: &str, span: Option<Span>) {
+        if output.is_empty() || self.output_start.is_some() {
+            return;
+        }
+
+        let line = span.map(|span| span.line).unwrap_or(0);
+        let file = self.source_file.clone().unwrap_or_default();
+        self.output_start = Some(OutputStart { file, line });
     }
 
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
@@ -2558,14 +2588,14 @@ impl Interpreter {
                 for expr in exprs {
                     let value = self.evaluate(expr, scope)?;
                     let output = self.value_to_echo_string(value, expr.span())?;
-                    self.append_output(&output);
+                    self.append_output_at(&output, expr.span());
                 }
                 Ok(Flow::Normal)
             }
             Stmt::Print { expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
                 let output = self.value_to_echo_string(value, expr.span())?;
-                self.append_output(&output);
+                self.append_output_at(&output, expr.span());
                 Ok(Flow::Normal)
             }
             Stmt::Assign { target, expr, .. } => {
@@ -8311,6 +8341,46 @@ impl Interpreter {
             }));
         }
 
+        if matches!(
+            query,
+            "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
+            if let Some((option_name, option_value, autoload)) =
+                match (connection_handle_id, params) {
+                    (Some(handle_id), [Value::String(option_name)]) => self
+                        .mysqli_wp_options
+                        .get(&handle_id)
+                        .and_then(|options| options.get(option_name))
+                        .map(|option| {
+                            (
+                                option_name.clone(),
+                                option.value.clone(),
+                                option.autoload.clone(),
+                            )
+                        }),
+                    _ => None,
+                }
+            {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows: vec![vec![
+                        ("option_name".to_string(), Value::String(option_name)),
+                        ("option_value".to_string(), Value::String(option_value)),
+                        ("autoload".to_string(), Value::String(autoload)),
+                    ]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         mysqli_statement_result_for_query_with_params(function, query, params, span)
     }
 
@@ -9220,6 +9290,31 @@ impl Interpreter {
                     span,
                     vec!["option_value".to_string(), "autoload".to_string()],
                     vec![vec![
+                        ("option_value".to_string(), Value::String(option_value)),
+                        ("autoload".to_string(), Value::String(autoload)),
+                    ]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(option_name) = parse_wordpress_option_name_value_autoload_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some((option_value, autoload)) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .map(|option| (option.value.clone(), option.autoload.clone()))
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    vec![vec![
+                        ("option_name".to_string(), Value::String(option_name)),
                         ("option_value".to_string(), Value::String(option_value)),
                         ("autoload".to_string(), Value::String(autoload)),
                     ]],
@@ -10879,13 +10974,11 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
-        }
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
         let called_class_id = self
             .called_class_context
@@ -10900,8 +10993,8 @@ impl Interpreter {
                 None,
                 Some(class_id),
                 Some(called_class_id),
-                Vec::new(),
-                None,
+                reference_bindings,
+                Some(caller_scope),
             )
         } else {
             let this_object = match caller_scope.read_named("this") {
@@ -10916,12 +11009,14 @@ impl Interpreter {
                     ));
                 }
             };
-            self.call_user_function_with_this(
+            self.call_user_function_with_checked_values(
                 function,
-                this_object,
                 values,
+                Some(this_object),
                 Some(class_id),
                 Some(called_class_id),
+                reference_bindings,
+                Some(caller_scope),
             )
         }
     }
@@ -12784,6 +12879,9 @@ impl Interpreter {
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
                 }
+                if key == "headers_sent" {
+                    return self.call_headers_sent_direct(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -12862,6 +12960,9 @@ impl Interpreter {
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
+                }
+                if key == "headers_sent" {
+                    return self.call_headers_sent_direct(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -14154,7 +14255,7 @@ impl Interpreter {
                     })?;
                 }
                 Value::String(value) => {
-                    self.append_output(&value);
+                    self.append_output_at(&value, arg.span());
                 }
                 other => {
                     return Err(runtime_error(
@@ -15446,7 +15547,7 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         };
         let output = std::mem::take(buffer);
-        self.append_output_below_active_buffer(&output);
+        self.append_output_below_active_buffer_at(&output, span);
         Ok(Value::Bool(true))
     }
 
@@ -15464,7 +15565,7 @@ impl Interpreter {
         let Some(output) = self.output_buffers.pop() else {
             return Ok(Value::Bool(false));
         };
-        self.append_output(&output);
+        self.append_output_at(&output, span);
         Ok(Value::Bool(true))
     }
 
@@ -15522,7 +15623,9 @@ impl Interpreter {
             ));
         }
 
-        self.response_headers.push(header);
+        if self.output_start.is_none() {
+            self.response_headers.push(header);
+        }
         Ok(Value::Null)
     }
 
@@ -15547,6 +15650,10 @@ impl Interpreter {
                     args.len(),
                 ),
             ));
+        }
+
+        if self.output_start.is_some() {
+            return Ok(Value::Null);
         }
 
         let Some(name) = args.first() else {
@@ -15617,9 +15724,69 @@ impl Interpreter {
             None => "",
         };
 
+        if self.output_start.is_some() {
+            return Ok(Value::Bool(false));
+        }
+
         self.response_headers
             .push(format!("Set-Cookie: {name}={value}"));
         Ok(Value::Bool(true))
+    }
+
+    fn call_headers_sent_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "headers_sent()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if let Some(arg) = args.first() {
+            let Expr::Variable(name, _) = arg else {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        "headers_sent()",
+                        "filename output argument must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            let file = self
+                .output_start
+                .as_ref()
+                .map(|start| start.file.clone())
+                .unwrap_or_default();
+            caller_scope.write_static(name, Value::String(file));
+        }
+
+        if let Some(arg) = args.get(1) {
+            let Expr::Variable(name, _) = arg else {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        "headers_sent()",
+                        "line output argument must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            let line = self
+                .output_start
+                .as_ref()
+                .map(|start| start.line as i64)
+                .unwrap_or(0);
+            caller_scope.write_static(name, Value::Int(line));
+        }
+
+        Ok(Value::Bool(self.output_start.is_some()))
     }
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -17492,7 +17659,7 @@ impl Interpreter {
             "header" => self.call_header(&args, span),
             "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
-            "headers_sent" => call_headers_sent(&args, span),
+            "headers_sent" => self.call_headers_sent_values(&args, span),
             "setcookie" => self.call_setcookie(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
@@ -18205,20 +18372,20 @@ impl Interpreter {
             },
             "var_dump" => {
                 for value in &args {
-                    self.append_output(&format_var_dump(value));
+                    self.append_output_at(&format_var_dump(value), span);
                 }
                 Ok(Value::Null)
             }
             "print_r" => match args.as_slice() {
                 [value] => {
-                    self.append_output(&format_print_r(value));
+                    self.append_output_at(&format_print_r(value), span);
                     Ok(Value::Bool(true))
                 }
                 [value, return_output] if return_output.is_truthy() => {
                     Ok(Value::String(format_print_r(value)))
                 }
                 [value, _] => {
-                    self.append_output(&format_print_r(value));
+                    self.append_output_at(&format_print_r(value), span);
                     Ok(Value::Bool(true))
                 }
                 _ => Err(runtime_error(
@@ -20256,21 +20423,6 @@ fn register_interface_name(
         ));
     }
 
-    for parent_name in &interface.parents {
-        if !interface_lookup.contains_key(&parent_name.to_ascii_lowercase()) {
-            return Err(runtime_error(
-                interface.span,
-                RuntimeError::unsupported_class_inheritance(
-                    &interface.name,
-                    format!(
-                        "interface {} extends missing or unsupported parent interface {}",
-                        interface.name, parent_name
-                    ),
-                ),
-            ));
-        }
-    }
-
     let mut constant_names = HashSet::new();
     for constant in &interface.constants {
         if !constant_names.insert(constant.name.clone()) {
@@ -20288,6 +20440,57 @@ fn register_interface_name(
     let interface = Rc::new(interface.clone());
     interfaces.push(interface.clone());
     interface_lookup.insert(key, interface);
+    Ok(())
+}
+
+fn validate_interface_parent_relationships(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interfaces: &[Rc<InterfaceDecl>],
+) -> CompileResult<()> {
+    for interface in interfaces {
+        let mut path = HashSet::new();
+        validate_interface_parent_relationship(interface_lookup, interface, &mut path)?;
+    }
+    Ok(())
+}
+
+fn validate_interface_parent_relationship(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    path: &mut HashSet<String>,
+) -> CompileResult<()> {
+    let key = interface.name.to_ascii_lowercase();
+    if !path.insert(key.clone()) {
+        return Err(runtime_error(
+            interface.span,
+            RuntimeError::unsupported_class_inheritance(
+                &interface.name,
+                format!(
+                    "interface {} has cyclic parent interface inheritance",
+                    interface.name
+                ),
+            ),
+        ));
+    }
+
+    for parent_name in &interface.parents {
+        let parent_key = parent_name.to_ascii_lowercase();
+        let Some(parent) = interface_lookup.get(&parent_key) else {
+            return Err(runtime_error(
+                interface.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &interface.name,
+                    format!(
+                        "interface {} extends missing or unsupported parent interface {}",
+                        interface.name, parent_name
+                    ),
+                ),
+            ));
+        };
+        validate_interface_parent_relationship(interface_lookup, parent, path)?;
+    }
+
+    path.remove(&key);
     Ok(())
 }
 
@@ -22661,6 +22864,23 @@ fn parse_wordpress_option_value_autoload_select_query(query: &str) -> Option<Str
         .or_else(|| {
             query.strip_prefix(
                 "SELECT `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ",
+            )
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1")?;
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
+fn parse_wordpress_option_name_value_autoload_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ")
+        .or_else(|| {
+            query.strip_prefix(
+                "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ",
             )
         })?;
     let rest = rest.strip_suffix(" LIMIT 1")?;
@@ -25325,29 +25545,31 @@ fn header_name(header: &str) -> Option<&str> {
     Some(name)
 }
 
-fn call_headers_sent(args: &[Value], span: Span) -> CompileResult<Value> {
-    if args.len() > 2 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "headers_sent()",
-                ArityExpectation::Between { min: 0, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
+impl Interpreter {
+    fn call_headers_sent_values(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "headers_sent()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
 
-    if !args.is_empty() {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "headers_sent()",
-                "filename and line output arguments are not implemented; call without arguments in the current subset",
-            ),
-        ));
-    }
+        if !args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "headers_sent()",
+                    "filename and line output arguments require direct variable call arguments in the current subset",
+                ),
+            ));
+        }
 
-    Ok(Value::Bool(false))
+        Ok(Value::Bool(self.output_start.is_some()))
+    }
 }
 
 fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {

@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+buffer|open::0|sent:headers_sent_output_state.php:6
+stderr:

@@ -29,7 +29,7 @@ bootstrap_shim_probe:
   timeout: 30s
   timed_out: no
   exit: 0
-  stdout_bytes: 122
+  stdout_bytes: 154
   first_stderr_line: <none>
   last_stderr_line: <none>
 
@@ -38,6 +38,6 @@ front_controller_probe:
   timeout: 30s
   timed_out: no
   exit: 0
-  stdout_bytes: 122
+  stdout_bytes: 154
   first_stderr_line: <none>
   last_stderr_line: <none>

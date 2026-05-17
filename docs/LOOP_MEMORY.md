@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T01:34:49Z
+
+- Checkpoint before this task:
+  `7f254227 runtime: advance WordPress interface reference buffer and db slices`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1271-1275, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger.
+- Files changed so far: bounded forward parent-interface resolution across
+  the interpreter object/interface model and object-model tests; bounded
+  `parent::` instance/static call by-reference writeback for direct public
+  object-property array-offset arguments; interpreter output-start tracking
+  for `headers_sent()`, late `header()`/`header_remove()`, and late
+  `setcookie()` behavior; exact direct and prepared full-row `wp_options`
+  placeholder reads in the MySQLi state island; milestone fixtures 1271-1274;
+  support, architecture, object-model, WordPress compatibility, MySQLi
+  extension, README, queue, progress, lane-worker, and goal docs.
+- Tests run and result: focused integration checks passed for forward
+  parent-interface resolution, object-model interface regressions, parent
+  object-property array reference arguments, reference-parameter regressions,
+  parent method/static regressions, header/output-buffer behavior, adjusted
+  header-state fixtures, MySQLi WordPress option reads, the updated WordPress
+  inventory add-option probe, milestone fixture comparisons, fixture manifests,
+  formatting, and diff hygiene. The serialized checkpoint gate passed:
+  `cargo test` completed successfully, `phpc test` reported `1396` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1396` fixture tests passed with `0` failures, `802` system PHP comparisons,
+  and `594` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, stream/resource handling, real request/SAPI state, filesystem
+  fidelity, real database behavior, WordPress plugin/theme/admin/REST flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: clean dedicated target directories, close completed
+  workers, then start Milestones 1276-1279 in separate worktrees from the
+  latest pushed checkpoint.
+
 ## Loop Event 2026-05-17T01:17:25Z
 
 - Checkpoint before this task:

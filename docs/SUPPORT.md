@@ -65,14 +65,16 @@
   default value in the callee local scope without creating an alias. Calls that
   provide a by-reference parameter are supported only for direct variable
   arguments in the current user-function, instance-method, constructor, named
-  static method, `self::` static method, and late-bound `static::` static
-  method dispatch paths: the callee local parameter shares the caller's
+  static method, `self::` static method, `parent::` instance and static method
+  calls in active child class context, and late-bound `static::` static method
+  dispatch paths: the callee local parameter shares the caller's
   variable cell during execution, so writes through the parameter are visible
   to other reads of the caller variable before the call returns.
   Direct public
   object-property array-offset arguments such as
   `handler($object->items[$group][$key])` are supported for user functions,
   instance methods, named static method calls, `self::` static method calls,
+  `parent::` instance and static method calls in active child class context,
   and late-bound `static::` static method calls as a bounded output-parameter
   path: the selected public property array slot is materialized when needed,
   copied into the callee parameter, and written back to the same slot when the
@@ -90,7 +92,7 @@
   parameter name; later local writes do not mutate the caller variable or write
   back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, dynamic static receiver, `parent::`, keyed callback argument arrays,
+  array, dynamic static receiver, keyed callback argument arrays,
   and reference-returning function or method forms remain unsupported for
   object-property array reference arguments. This is still a bounded
   direct-variable alias and public object-property output path, not full PHP
@@ -656,8 +658,9 @@
   violations report stable runtime boundaries. Method required-parameter
   compatibility violations report stable runtime boundaries. Concrete classes
   that implement declared user interfaces, including through inherited
-  `implements` metadata and the current already-declared parent interface
-  inheritance slice with one or more user parents, must expose public methods
+  `implements` metadata and the current parent interface inheritance slice
+  with one or more user parents declared before or after the child interface,
+  must expose public methods
   with the required interface method names and must not require more
   parameters than those interface methods at class registration time. For
   interface method parameter type metadata, implementations may omit an
@@ -671,9 +674,11 @@
   class-constant expression subset resolve through `InterfaceName::CONST`,
   inherited parent-interface lookup, `ClassName::CONST` on implementing
   classes, `self::CONST`/`static::CONST` in implementing class methods, and
-  `defined()`/`constant()` string lookups. Full PHP method signature variance,
+  `defined()`/`constant()` string lookups. Missing or cyclic parent interface
+  inheritance reports stable runtime boundaries. Full PHP method signature
+  variance,
   class/interface return covariance and type subtyping, type aliases,
-  union/intersection canonicalization, forward parent-interface resolution,
+  union/intersection canonicalization,
   typed/static/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
   built-in/internal interface inheritance catalogs, named arguments,
@@ -1659,6 +1664,9 @@
   the current WordPress-shaped `add_option()` preflight probe. The exact
   `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
   shape returns the recorded value and autoload columns together
+  through the same placeholder result/fetch path. The exact
+  `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+  shape returns the recorded option name, value, and autoload columns together
   through the same placeholder result/fetch path.
   Exact option-row reads for
   `SELECT option_name, option_value FROM wp_options`,
@@ -1675,7 +1683,7 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  arbitrary projection beyond exact option id/name/value/autoload/name-value shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -1705,6 +1713,10 @@
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array($name))`; missing names return
   an empty zero-field placeholder result. The exact
+  `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
+  query returns recorded option-name/value/autoload rows for string
+  option-name parameters on the same handle through the same prepared result
+  paths; missing names return an empty zero-field placeholder result. The exact
   `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns recorded deterministic option-id rows for string option-name
   parameters on the same handle through
@@ -1993,11 +2005,12 @@
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, appends the raw header line to deterministic in-process CLI request
-  state, and returns `null`. This is a WordPress bootstrap/request
-  compatibility boundary only; duplicate replacement policy, status-code
-  parsing/state, output-sent warnings, web-server/SAPI integration, network
-  response emission, exact diagnostics, partial-output behavior, and native
-  lowering remain unsupported.
+  state while output is still open, and returns `null`. Once bytes have reached
+  unbuffered stdout, later `header()` calls are ignored without modeling PHP's
+  warning text. This is a WordPress bootstrap/request compatibility boundary
+  only; duplicate replacement policy, status-code parsing/state, web-server/SAPI
+  integration, network response emission, exact diagnostics, warning recovery,
+  partial-output behavior, and native lowering remain unsupported.
   `headers_list()` accepts no arguments and returns the current deterministic
   CLI header log as an ordered array of strings in current log order. It
   exposes only this project-local request-state scaffold; PHP CLI parity, SAPI
@@ -2007,21 +2020,28 @@
   `header_remove($name = null)` accepts no argument or one string header name,
   returns `null`, mutates the current deterministic CLI header log by clearing
   it when no argument is provided, and removes entries whose raw header line
-  has exactly `$name` before the first colon. Case folding, whitespace
-  normalization, status-header removal, output-sent warnings, SAPI/web-server
-  behavior, exact diagnostics, partial-output behavior, and native lowering
-  remain unsupported.
+  has exactly `$name` before the first colon while output is still open. After
+  unbuffered output has started, it leaves the log unchanged without modeling
+  PHP's warning text. Case folding, whitespace normalization, status-header
+  removal, SAPI/web-server behavior, exact diagnostics, warning recovery,
+  partial-output behavior, and native lowering remain unsupported.
   `setcookie($name, $value = "")` accepts a string name and optional string
   value, appends `Set-Cookie: name=value` to the same deterministic CLI header
-  log used by `header()`/`headers_list()`, and returns `true`. Expiration,
-  path, domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
-  cookie-name/value encoding, duplicate/replacement policy, output-started
-  warnings, SAPI/web-server emission, exact diagnostics, and native lowering
-  remain unsupported.
-  `headers_sent()` accepts no arguments and returns `false` in the current
-  CLI runtime shim. Filename/line output arguments, output-started tracking,
-  output buffers, SAPI differences, exact warnings, and native lowering remain
-  unsupported.
+  log used by `header()`/`headers_list()` while output is still open, and
+  returns `true`. Once unbuffered output has started, it returns `false` and
+  does not append a cookie header. Expiration, path, domain, secure, HttpOnly,
+  SameSite, options arrays, deletion cookies, cookie-name/value encoding,
+  duplicate/replacement policy, SAPI/web-server emission, exact diagnostics,
+  warning recovery, and native lowering remain unsupported.
+  `headers_sent($filename = null, $line = null)` accepts zero arguments or
+  direct variable output arguments for the filename and line. It returns
+  `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
+  output variables in that state. It returns `true` after the first unbuffered
+  output byte, including `ob_flush()`/`ob_end_flush()` from the outermost
+  buffer, and writes the current source filename plus the first-output line.
+  Non-variable output arguments, array/object-property output arguments, exact
+  warning text, SAPI differences, shutdown-time buffer flushing visibility,
+  and native lowering remain unsupported.
   `abs($value)` accepts current integer and finite-float runtime values,
   returning an integer for integer input and a float for finite-float input.
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
@@ -2565,10 +2585,11 @@
   Class `implements` clauses accept comma-separated class-like names and record
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes. For interfaces declared in the current
-  parsed program, one already-declared parent interface may be named with
-  `interface Child extends Parent`; concrete classes implementing the child
-  must also expose the parent's required public method names, and relationship
-  checks record both the child and parent interface names. For declared
+  parsed program, one or more parent interfaces may be named before or after
+  the child with `interface Child extends Parent`; concrete classes
+  implementing the child must also expose the parent's required public method
+  names, and relationship checks record both the child and parent interface
+  names. For declared
   interfaces, concrete classes must expose public methods with the required
   interface method names, current supported non-static method shape, and no
   more required parameters than the interface method, and must pass the current
@@ -4511,10 +4532,10 @@
   as the builtin section above; direct native `headers_list(...)` calls reject
   under the header-state boundary, while native function-table introspection
   recognizes the name.
-  `headers_sent` accepts the same current no-argument `false` subset as the
-  builtin section above; direct native `headers_sent(...)` calls reject under
-  the header-state boundary, while native function-table introspection
-  recognizes the name.
+  `headers_sent` accepts the same current output-started and direct-variable
+  filename/line output-argument subset as the builtin section above; direct
+  native `headers_sent(...)` calls reject under the header-state boundary,
+  while native function-table introspection recognizes the name.
   `setcookie` accepts the same current simple CLI `Set-Cookie` append subset
   as the builtin section above; direct native `setcookie(...)` calls reject
   under the header-state boundary, while native function-table introspection
@@ -5280,7 +5301,8 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   typed/static/non-public/abstract/final or multi-constant interface
   declarations, interface implementation enforcement beyond the current
-  bounded method checks, forward parent-interface resolution,
+  bounded method checks, cyclic parent-interface inheritance execution beyond
+  the stable rejection,
   built-in/internal interface catalogs,
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
@@ -5555,7 +5577,7 @@
 - unsupported class forms including nested/conditional declarations, broader
   inheritance rules beyond the current single-parent metadata chain,
   typed/static/non-public/abstract/final or multi-constant interface
-  declarations, forward parent-interface resolution, full interface signature
+  declarations, full interface signature
   enforcement, built-in/internal interface catalogs, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
@@ -6587,15 +6609,17 @@
   beyond function-table introspection
 - `setcookie()` behavior beyond accepting a string name and optional string
   value, appending a simple `Set-Cookie: name=value` line to deterministic CLI
-  request state, and returning `true`: expiration, path, domain, secure,
-  HttpOnly, SameSite, options arrays, deletion cookies, cookie-name/value
-  encoding, duplicate/replacement policy, output-started warnings,
-  SAPI/web-server emission, exact diagnostics, and native lowering beyond
+  request state before output starts, returning `false` after unbuffered output
+  starts, and returning `true` for accepted pre-output cookies: expiration,
+  path, domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
+  cookie-name/value encoding, duplicate/replacement policy, SAPI/web-server
+  emission, exact diagnostics, warning recovery, and native lowering beyond
   function-table introspection
-- `headers_sent()` behavior beyond the current no-argument always-`false`
-  shim: filename/line output arguments, output-started tracking, output
-  buffers, SAPI differences, exact warnings, and native lowering beyond
-  function-table introspection
+- `headers_sent()` behavior beyond the current output-started tracking and
+  direct-variable filename/line output-argument slice: non-variable output
+  arguments, array/object-property output targets, exact warning text, SAPI
+  differences, shutdown-time buffer flushing visibility, and native lowering
+  beyond function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/`ob_clean()`/
   `ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current
   no-argument interpreter-owned buffer stack: callbacks, chunk sizes, flags,

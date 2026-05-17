@@ -1,6 +1,6 @@
 use php_compiler::error::Phase;
-use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
+use php_compiler::{run_source, run_source_with_source_file};
 
 const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
@@ -32,11 +32,12 @@ echo "|after";
 fn headers_list_returns_current_cli_header_log() {
     let execution = run_source(
         r#"<?php
-echo count(headers_list());
+$initial = count(headers_list());
 header("X-First: one");
 header("Content-Type: text/plain", true, 200);
 header("X-First: two", false);
 $headers = headers_list();
+echo $initial;
 echo "|";
 echo count($headers);
 echo "|";
@@ -82,15 +83,16 @@ header("Last-Modified: today");
 header("Content-Type: text/plain");
 header("Last-Modified: tomorrow");
 $result = header_remove("Last-Modified");
+$headers = headers_list();
+header_remove();
+$after_clear = count(headers_list());
 echo $result === null ? "null" : "not-null";
 echo "|";
-$headers = headers_list();
 echo count($headers);
 echo "|";
 echo $headers[0];
-header_remove();
 echo "|";
-echo count(headers_list());
+echo $after_clear;
 "#,
     )
     .unwrap();
@@ -124,13 +126,14 @@ echo count(headers_list());
 fn setcookie_appends_set_cookie_header_to_current_cli_header_log() {
     let execution = run_source(
         r#"<?php
-echo count(headers_list());
+$initial = count(headers_list());
 $result = setcookie("wordpress_test_cookie", "WP Cookie check");
+setcookie("empty_cookie");
+$headers = headers_list();
+echo $initial;
 echo "|";
 echo $result ? "true" : "false";
 echo "|";
-setcookie("empty_cookie");
-$headers = headers_list();
 echo count($headers);
 echo "|";
 echo $headers[0];
@@ -152,13 +155,15 @@ fn setcookie_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
 $call = "setcookie";
-echo function_exists($call) ? "yes" : "no";
-echo "|";
-echo is_callable($call) ? "callable" : "missing";
 $result = $call("wordpress_test_cookie", "1");
+$headers = headers_list();
+$exists = function_exists($call) ? "yes" : "no";
+$callable = is_callable($call) ? "callable" : "missing";
+echo $exists;
+echo "|";
+echo $callable;
 echo $result ? "|true" : "|false";
 echo "|";
-$headers = headers_list();
 echo $headers[0];
 "#,
     )
@@ -188,7 +193,67 @@ echo $call() ? "sent" : "open";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "open|yes|callable|open");
+    assert_eq!(execution.stdout, "open|yes|callable|sent");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn headers_sent_reports_first_unbuffered_output_location() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$first = headers_sent($file, $line);
+echo ($first ? "sent" : "open") . ":" . $file . ":" . $line;
+echo "|bytes";
+$second = headers_sent($file, $line);
+echo "|" . ($second ? "sent" : "open") . ":" . $file . ":" . $line;
+"#,
+        "virtual/request.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "open::0|bytes|sent:virtual/request.php:3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn headers_sent_stays_open_until_output_buffer_flushes_to_stdout() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+ob_start();
+echo "buffered";
+$before = headers_sent($file, $line);
+echo "|" . ($before ? "sent" : "open") . ":" . $file . ":" . $line;
+ob_flush();
+$after = headers_sent($file, $line);
+echo "|" . ($after ? "sent" : "open") . ":" . $file . ":" . $line;
+"#,
+        "virtual/buffered.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "buffered|open::0|sent:virtual/buffered.php:6"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn header_mutations_after_output_started_do_not_change_header_log() {
+    let execution = run_source(
+        r#"<?php
+header("X-Before: one");
+echo "body";
+header("X-After: two");
+$cookie = setcookie("late", "1");
+header_remove("X-Before");
+$headers = headers_list();
+echo "|" . count($headers) . "|" . $headers[0] . "|" . ($cookie ? "cookie-true" : "cookie-false");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "body|1|X-Before: one|cookie-false");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -262,15 +327,27 @@ echo header("X-Test: one", true, "500");
 fn headers_sent_rejects_forms_outside_current_subset() {
     let output_arg = runtime_error(
         r#"<?php
-$file = "";
-echo headers_sent($file);
+echo headers_sent("file");
 "#,
     );
-    assert_eq!(output_arg.line, 3);
-    assert_eq!(output_arg.column, 6);
+    assert_eq!(output_arg.line, 2);
+    assert_eq!(output_arg.column, 19);
     assert_eq!(
         output_arg.message,
-        "unsupported call headers_sent(): filename and line output arguments are not implemented; call without arguments in the current subset"
+        "unsupported call headers_sent(): filename output argument must be a direct variable in the current subset"
+    );
+
+    let line_arg = runtime_error(
+        r#"<?php
+$file = "";
+echo headers_sent($file, 0);
+"#,
+    );
+    assert_eq!(line_arg.line, 3);
+    assert_eq!(line_arg.column, 26);
+    assert_eq!(
+        line_arg.message,
+        "unsupported call headers_sent(): line output argument must be a direct variable in the current subset"
     );
 
     let too_many = runtime_error(

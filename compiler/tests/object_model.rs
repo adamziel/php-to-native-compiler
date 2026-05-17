@@ -2446,6 +2446,68 @@ interface PluginContract extends Hookable {}
 }
 
 #[test]
+fn forward_parent_interface_resolution_enforces_methods_relationships_and_constants() {
+    let execution = run_source(
+        r#"<?php
+interface PluginContract extends Hookable {
+    const CHILD = "contract";
+    public function boot();
+}
+
+trait HasHooks {
+    public function hook_impl() {
+        return "hook:" . get_class($this);
+    }
+}
+
+class Plugin implements PluginContract {
+    use HasHooks {
+        hook_impl as public register_hooks;
+    }
+
+    public function boot() {
+        return self::PARENT . ":" . static::CHILD;
+    }
+}
+
+interface Hookable {
+    const PARENT = "base";
+    public function register_hooks();
+}
+
+$plugin = new Plugin();
+echo PluginContract::PARENT, "\n";
+echo Plugin::PARENT, "\n";
+echo $plugin instanceof Hookable ? "instanceof-base\n" : "missing-instanceof\n";
+echo is_a("Plugin", "Hookable", true) ? "is-a-base\n" : "missing-is-a\n";
+echo is_subclass_of("Plugin", "Hookable", true) ? "subclass-base\n" : "missing-subclass\n";
+echo $plugin->boot(), "\n";
+echo $plugin->register_hooks();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base\nbase\ninstanceof-base\nis-a-base\nsubclass-base\nbase:contract\nhook:Plugin"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let cycle = runtime_error(
+        r#"<?php
+interface First extends Second {}
+interface Second extends First {}
+"#,
+    );
+    assert_eq!(cycle.line, 2);
+    assert_eq!(cycle.column, 1);
+    assert_eq!(
+        cycle.message,
+        "unsupported class inheritance for First: interface First has cyclic parent interface inheritance"
+    );
+}
+
+#[test]
 fn multiple_interface_inheritance_flattens_required_methods_and_relationships() {
     let execution = run_source(
         r#"<?php
