@@ -139,7 +139,8 @@ variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
 symbol-table cell, so returned child-slot suffixes remain attached to the
 underlying request/global/array/property slot. Literal callback argument
-arrays can also bind direct and property-held `ArrayAccess` elements,
+arrays can also bind direct, named property-held, and direct dynamic
+property-held `ArrayAccess` elements,
 including nested offset elements, when public by-reference
 `offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
 shape; the interpreter maps that to the backing property array alias root plus
@@ -147,8 +148,9 @@ any nested child-key suffix instead of creating a real reference container.
 Append-offset `ArrayAccess` reference sources such as `$bag[]` and
 `$holder->bag[]` use the same bridge and model PHP's `offsetGet(null)` call as
 the backing property array's empty-string key for that exact body shape. It
-does not make callback argument arrays, non-public/dynamic object-property
-array bridges, dynamic ArrayAccess roots, arbitrary append ArrayAccess bodies,
+does not make callback argument arrays, non-public object-property
+array bridges, dynamic ArrayAccess roots beyond direct dynamic property-held
+sources, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
@@ -594,15 +596,17 @@ non-public property sources, magic property sources, non-variable reference
 targets, full reference containers, copy-on-write, exact alias destruction
 ordering, and native lowering remain future work. Direct `ArrayAccess`
 reference sources now have a narrow root bridge for `$alias =& $bag[$key]`,
-property-held roots such as `$alias =& $holder->bag[$key]`, and literal
-callback elements such as `array(&$holder->bag[$key])` when the direct object
-variable or visible named property value implements `ArrayAccess`, public
+property-held roots such as `$alias =& $holder->bag[$key]`, direct dynamic
+property-held roots such as `$alias =& $holder->{$name}[$key]`, and literal
+callback elements such as `array(&$holder->{$name}[$key])` when the direct
+object variable or visible selected property value implements `ArrayAccess`, public
 `offsetGet($offset)` returns by reference, and the method body is exactly the
 current `return $this->property[$offset];` shape. Property-held roots are
 parked in a hidden object-handle symbol and then reuse the same backing
 property array alias metadata, including private/protected properties through
 the declaring method context. By-value `offsetGet()`, dynamic property-held
-ArrayAccess sources, alias lifetime after replacing the containing property,
+ArrayAccess sources on non-direct holder expressions or outside visible
+property access, alias lifetime after replacing the containing property,
 side-effecting or broader `offsetGet()` bodies, mixed nested ArrayAccess
 chains, append sources, and real reference containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
@@ -1730,17 +1734,18 @@ unbuffered output has started and routes a bounded `E_WARNING` through the
 current error-handler stack or stderr fallback. It still does not model
 status-header removal, whitespace normalization, exact PHP warning text, or
 full SAPI removal behavior.
-`setcookie()` is another interpreter-only header-state boundary. The current
-slice accepts a string cookie name plus optional string value, bounded
-positional attributes, or the bounded options-array attribute form. It
-percent-encodes cookie values, formats nonzero expiration timestamps as GMT
-dates, appends a deterministic `Set-Cookie:` line to the same CLI header log,
-and replaces earlier deterministic `Set-Cookie` lines with the same cookie
-name. After unbuffered output starts it returns `false`, leaves the header log
-unchanged, and routes a bounded `E_WARNING` through the current error-handler
-stack or stderr fallback; cookie-name validation/encoding, `Max-Age`,
-path/domain-aware duplicate handling, exact warning text, SAPI emission, raw
-cookie variants, and native lowering remain outside the model.
+`setcookie()` and `setrawcookie()` are interpreter-only header-state
+boundaries. The current slice accepts a string cookie name plus optional string
+value, bounded positional attributes, or the bounded options-array attribute
+form. It formats nonzero expiration timestamps as GMT dates, appends a
+deterministic `Set-Cookie:` line to the same CLI header log, and replaces
+earlier deterministic `Set-Cookie` lines with the same cookie name.
+`setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
+string value. After unbuffered output starts these calls return `false`, leave
+the header log unchanged, and route a bounded `E_WARNING` through the current
+error-handler stack or stderr fallback; cookie-name validation/encoding,
+`Max-Age`, path/domain-aware duplicate handling, exact warning text, SAPI
+emission, and native lowering remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1877,7 +1882,9 @@ per-handle dynamic schema island records the current bounded
 `CREATE TABLE`/`ALTER TABLE` WordPress/dbDelta shapes and answers deterministic
 `SHOW TABLES LIKE`, `SHOW TABLE STATUS LIKE`, `SHOW TABLE STATUS WHERE Name`,
 `DESCRIBE`/`DESC`, `SHOW [FULL] COLUMNS`, `SHOW CREATE TABLE`, and
-`SHOW INDEX`/`SHOW KEYS` probes against that recorded shape. Metadata `LIKE`
+`SHOW INDEX`/`SHOW KEYS` probes against that recorded shape, including bounded
+`ASC`/`DESC` index-part ordering metadata for `SHOW INDEX` collation values
+and deterministic `SHOW CREATE TABLE` text. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
 wildcards, and backslash-escaped `%`, `_`, and `\` literals for table names,
 table status rows, and column names. The same placeholder transaction and
@@ -1887,7 +1894,8 @@ and restore this bounded dynamic schema-state island for recorded
 multi-table deletes, subqueries, schema DDL beyond the documented bounded
 `CREATE TABLE`/`ALTER TABLE` shapes, dbDelta diffs,
 charset/collation negotiation, locks, real index inspection
-beyond recorded schema-state rows, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
+beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
+duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, exact MySQL affected-row or insert-ID edge cases, real transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
@@ -2575,10 +2583,18 @@ counts, `getParameters()`, `hasReturnType()`, and `getReturnType()` through
 interpreter dispatch. Return type objects reuse the same request-local
 `ReflectionNamedType`, `ReflectionUnionType`, and `ReflectionIntersectionType`
 state as the property type metadata slice.
-`ReflectionParameter` follows the same request-local state pattern for method
-parameters reached from `ReflectionMethod::getParameters()` or from
-`new ReflectionParameter([$object_or_class, $method], $parameter)`. Parameter
-objects store copied method metadata plus the selected parsed parameter
+`ReflectionFunction` follows that same core placeholder plus request-local
+state pattern for declared user functions named by string. It stores parsed
+user-function metadata for `getName()`, parameter counts, `getParameters()`,
+`hasReturnType()`, `getReturnType()`, and `returnsReference()`. The function
+path intentionally rejects internal functions and closure targets until those
+metadata sources exist.
+`ReflectionParameter` follows the same request-local state pattern for
+parameters reached from `ReflectionMethod::getParameters()`,
+`ReflectionFunction::getParameters()`,
+`new ReflectionParameter([$object_or_class, $method], $parameter)`, or
+`new ReflectionParameter($function, $parameter)` for declared user function
+strings. Parameter objects store copied function or method metadata plus the selected parsed parameter
 metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
 variadic flags, type-presence checks, nullability checks, and simple named
@@ -2589,7 +2605,7 @@ bounded union and pure intersection parameter types, and stores the copied
 type names, nullable flags, and builtin flags in the interpreter. Untyped
 parameters return `null`. It does not expose
 attributes, files, line numbers, doc comments, extension/internal metadata,
-function or closure parameter targets, method invocation, exact exception
+closure parameter targets, method/function invocation, exact exception
 objects, DNF type objects, runtime argument/return type enforcement, or native
 lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for

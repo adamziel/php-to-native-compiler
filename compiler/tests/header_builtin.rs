@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source};
 use php_compiler::{run_source, run_source_with_source_file};
 
-const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), http_response_code(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
+const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), http_response_code(), setcookie(), and setrawcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -247,6 +247,33 @@ echo implode("|", $out);
     assert_eq!(
         execution.stdout,
         "1|first|second|2|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Lax"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+setrawcookie("wordpress_test_cookie", "old raw");
+$out[] = count(headers_list());
+$first = setrawcookie("wordpress_test_cookie", "WP Cookie check", 1700000000, "/wp-admin", "example.test", true, true);
+$second = setrawcookie("logged_in", "delete me", ["expires" => 1, "path" => "/", "secure" => false, "httponly" => true, "samesite" => "Strict"]);
+$headers = headers_list();
+$out[] = $first ? "first" : "first-failed";
+$out[] = $second ? "second" : "second-failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|first|second|2|Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Strict"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -555,6 +582,32 @@ echo header_remove("A", "B");
 }
 
 #[test]
+fn setrawcookie_is_available_through_string_valued_calls() {
+    let execution = run_source(
+        r#"<?php
+$call = "setrawcookie";
+$result = $call("wordpress_test_cookie", "a b");
+$headers = headers_list();
+$exists = function_exists($call) ? "yes" : "no";
+$callable = is_callable($call) ? "callable" : "missing";
+echo $exists;
+echo "|";
+echo $callable;
+echo $result ? "|true" : "|false";
+echo "|";
+echo $headers[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|true|Set-Cookie: wordpress_test_cookie=a b"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn setcookie_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php
@@ -614,6 +667,45 @@ echo setcookie("A", "B", 0, "", "", false, false, "extra");
     assert_eq!(
         too_many.message,
         "arity mismatch for setcookie(): expected 1 to 7 argument(s), got 8"
+    );
+}
+
+#[test]
+fn setrawcookie_rejects_forms_outside_current_subset() {
+    let missing = runtime_error(
+        r#"<?php
+echo setrawcookie();
+"#,
+    );
+    assert_eq!(missing.line, 2);
+    assert_eq!(missing.column, 6);
+    assert_eq!(
+        missing.message,
+        "arity mismatch for setrawcookie(): expected 1 to 7 argument(s), got 0"
+    );
+
+    let non_string_value = runtime_error(
+        r#"<?php
+echo setrawcookie("wordpress_test_cookie", 1);
+"#,
+    );
+    assert_eq!(non_string_value.line, 2);
+    assert_eq!(non_string_value.column, 6);
+    assert_eq!(
+        non_string_value.message,
+        "unsupported call setrawcookie(): value argument must be string in the current subset, got int"
+    );
+
+    let bad_expires = runtime_error(
+        r#"<?php
+echo setrawcookie("A", "B", "soon");
+"#,
+    );
+    assert_eq!(bad_expires.line, 2);
+    assert_eq!(bad_expires.column, 6);
+    assert_eq!(
+        bad_expires.message,
+        "unsupported call setrawcookie(): expires argument must be int or options array in the current subset, got string"
     );
 }
 
@@ -693,6 +785,16 @@ fn emit_ir_rejects_setcookie_until_native_header_state_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_setrawcookie_until_native_header_state_exists() {
+    let error = emit_ir_source("<?php\nsetrawcookie('wordpress_test_cookie', '1');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
+}
+
+#[test]
 fn emit_ir_includes_header_in_native_callable_lookup_table() {
     let ir = emit_ir_source(
         r#"<?php
@@ -708,11 +810,13 @@ echo function_exists("http_response_code") ? "1" : "0";
 echo is_callable("http_response_code") ? "1" : "0";
 echo function_exists("setcookie") ? "1" : "0";
 echo is_callable("setcookie") ? "1" : "0";
+echo function_exists("setrawcookie") ? "1" : "0";
+echo is_callable("setrawcookie") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 14, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

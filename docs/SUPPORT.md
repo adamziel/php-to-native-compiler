@@ -154,7 +154,10 @@
   implements `ArrayAccess`, and property-held elements such as
   `array(&$holder->bag[$key], ...)` and
   `array(&$holder->bag["outer"]["slot"], ...)` when the visible named object
-  property holds such an `ArrayAccess` object. In both cases public
+  property holds such an `ArrayAccess` object. Dynamic property-held elements
+  such as `array(&$holder->{$name}["outer"]["slot"], ...)` are covered when
+  the direct holder object exposes the selected visible property and that
+  property holds the same bounded `ArrayAccess` shape. In these cases public
   `offsetGet($offset)` must return by reference and its body must be exactly
   the current bounded root shape `return $this->property[$offset];`. The
   selected property array slot or nested child slot is materialized when
@@ -188,7 +191,8 @@
   reference-return binding. Stored argument-array slots may also be assigned
   by reference from direct and property-held `ArrayAccess` sources such as
   `$args[0] =& $bag["slot"]`, `$args["value"] =& $bag["outer"]["slot"]`,
-  and `$args[] =& $holder->bag["created"]["leaf"]` when the same bounded
+  `$args[] =& $holder->bag["created"]["leaf"]`, and
+  `$args["value"] =& $holder->{$name}["created"]["leaf"]` when the same bounded
   public by-reference `offsetGet($offset) { return $this->property[$offset]; }`
   bridge applies; callback writeback and reference-return binding reuse the
   backing property array alias metadata. Direct and property-held append-offset
@@ -266,7 +270,8 @@
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
-  reference named-argument path, dynamic `ArrayAccess` roots, append-offset
+  reference named-argument path, dynamic `ArrayAccess` roots beyond direct
+  dynamic property-held sources, append-offset
   `ArrayAccess` source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
@@ -428,7 +433,10 @@
   class implements `ArrayAccess`. Property-held sources such as
   `$alias =& $holder->bag[$key];` and nested property-held sources such as
   `$alias =& $holder->bag["outer"]["slot"];` execute when the visible named
-  object property holds an `ArrayAccess` object. In both cases public
+  object property holds an `ArrayAccess` object. Dynamic property-held sources
+  such as `$alias =& $holder->{$name}["outer"]["slot"];` execute for direct
+  holder variables when the selected visible property holds the same bounded
+  `ArrayAccess` object. In these cases public
   `offsetGet($offset)` must return by reference and its body must be exactly
   `return $this->property[$offset];` in the current subset. The bridge binds
   the alias to the backing property array slot or nested child slot,
@@ -440,7 +448,8 @@
   Normal reads through that same bounded reference-returning `offsetGet()`
   return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
   with side effects or broader return expressions, dynamic property-held
-  sources, property-held alias lifetime after replacing the containing
+  sources on non-direct holder expressions or outside visible property access,
+  property-held alias lifetime after replacing the containing
   property, append `ArrayAccess` sources outside the exact `offsetGet(null)`
   bridge, mixed nested `ArrayAccess` chains, and real runtime reference
   containers remain unsupported. Direct
@@ -1329,7 +1338,7 @@
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
-  `setcookie`,
+  `setcookie`, `setrawcookie`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
@@ -2273,7 +2282,8 @@
   A separate bounded schema-state island for direct `mysqli_query()` accepts
   exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` definitions with direct
   columns and primary/unique/non-unique indexes, including ordered
-  multi-column parts and numeric prefix sub-parts, plus exact
+  multi-column parts, numeric prefix sub-parts, and explicit `ASC`/`DESC`
+  index-part ordering metadata, plus exact
   `ALTER TABLE <table> ADD ...`, `CHANGE COLUMN ...`, `MODIFY COLUMN ...`,
   `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
   `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
@@ -2285,8 +2295,9 @@
   table collation with deterministic placeholder engine/storage metadata.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, arbitrary column alteration beyond the
-  exact direct shapes listed above, expression indexes, index
-  ordering/opclass/parser metadata, exact MySQL `SHOW CREATE TABLE`
+  exact direct shapes listed above, expression indexes, index opclass/parser
+  metadata beyond the bounded `ASC`/`DESC` part ordering slice, exact MySQL
+  `SHOW CREATE TABLE`
   formatting for every column attribute, exact MySQL `SHOW TABLE STATUS`
   counters/timestamps/options, dbDelta diff generation, real transactional DDL
   behavior beyond bounded in-memory schema snapshots, or real index behavior,
@@ -2928,7 +2939,7 @@
   `headers_list()` accepts no arguments and returns the current deterministic
   CLI header log as an ordered array of strings in current log order. It
   exposes only this project-local request-state scaffold after accepted
-  `header()` replacement/appends, bounded `setcookie()` formatting and
+  `header()` replacement/appends, bounded `setcookie()`/`setrawcookie()` formatting and
   name-only replacement, and bounded `header_remove()` mutations; PHP CLI
   parity, SAPI response state, status-code headers, full cookie formatting,
   header normalization, output buffers beyond the current output-started
@@ -2953,8 +2964,10 @@
   as GMT dates, and replace earlier deterministic cookie headers with the same
   cookie name. Once unbuffered output has started, it returns `false`, does
   not append a cookie header, and emits a bounded `E_WARNING` through the
-  current `set_error_handler()` stack or stderr fallback. Cookie name
-  validation/encoding, `Max-Age`, raw-cookie variants, array option validation
+  current `set_error_handler()` stack or stderr fallback. `setrawcookie()`
+  accepts the same bounded signature and attributes, but writes the string
+  value unchanged instead of percent-encoding it. Cookie name
+  validation/encoding, `Max-Age`, array option validation
   beyond the documented keys, path/domain-aware duplicate handling, SAPI/
   web-server emission, exact warning text, and native lowering remain
   unsupported.
@@ -5088,7 +5101,7 @@
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
-  `setcookie`,
+  `setcookie`, `setrawcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `class_implements`, `class_uses`, `class_parents`, `get_class_methods`, `get_class_vars`,
@@ -5270,7 +5283,7 @@
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
   `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
-  `setcookie`, `assert`,
+  `setcookie`, `setrawcookie`, `assert`,
   `spl_autoload`, `spl_autoload_register`, `spl_autoload_functions`,
   `spl_autoload_unregister`, `spl_autoload_call`, `get_class`, `is_object`,
   `get_debug_type`, `class_exists`, `interface_exists`,
@@ -5593,10 +5606,12 @@
   subset as the builtin section above; direct native `http_response_code(...)`
   calls reject under the header-state boundary, while native function-table
   introspection recognizes the name.
-  `setcookie` accepts the same current deterministic CLI `Set-Cookie`
-  formatting and name-only replacement subset as the builtin section above;
-  direct native `setcookie(...)` calls reject under the header-state boundary,
-  while native function-table introspection recognizes the name.
+  `setcookie` and `setrawcookie` accept the same current deterministic CLI
+  `Set-Cookie` formatting and name-only replacement subset as the builtin
+  section above, with `setcookie` percent-encoding values and `setrawcookie`
+  preserving raw string values; direct native calls reject under the
+  header-state boundary, while native function-table introspection recognizes
+  both names.
   `session_start`, `session_status`, `session_id`, and `session_write_close`
   accept the same current bounded in-memory CLI session subset as the builtin
   section above; direct native calls reject under the session-state boundary,
@@ -5901,15 +5916,25 @@
   materialize `ReflectionNamedType`; bounded union and pure intersection return
   types materialize `ReflectionUnionType` or `ReflectionIntersectionType` with
   `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
-  objects. `new ReflectionParameter([$object_or_class,
+  objects. `new ReflectionFunction($function)` creates a bounded metadata
+  object for declared user functions named by string. It supports
+  `getName()`, `getParameters()`, `getNumberOfParameters()`,
+  `getNumberOfRequiredParameters()`, `hasReturnType()`, `getReturnType()`, and
+  `returnsReference()` over parsed user-function metadata. Function return
+  type objects use the same simple named, bounded union, and pure intersection
+  reflection type objects as the method path. `new ReflectionParameter($function,
+  $parameter)` accepts a declared user function string with an integer position
+  or string parameter name; `getDeclaringFunction()` returns a bounded
+  `ReflectionFunction` object and `getDeclaringClass()` returns `null` for
+  that function-parameter slice. `new ReflectionParameter([$object_or_class,
   $method], $parameter)` accepts the current array-callable method shape with
   an integer position or string parameter name, and `ReflectionParameter`
   objects produced by that constructor or by `ReflectionMethod::getParameters()`
   support `getName()`, `getPosition()`, `getDeclaringClass()`,
   `getDeclaringFunction()`, `isOptional()`, `isDefaultValueAvailable()`,
   `getDefaultValue()`, `isPassedByReference()`, `isVariadic()`, and
-  `hasType()` over the current parsed method parameter metadata. The bounded
-  `ReflectionParameter::getType()` path returns `null` for untyped method
+  `hasType()` over the current parsed function or method parameter metadata. The bounded
+  `ReflectionParameter::getType()` path returns `null` for untyped function or method
   parameters or a request-local `ReflectionNamedType` object for simple named
   parameter types. Bounded union and pure intersection parameter types now
   return `ReflectionUnionType` or `ReflectionIntersectionType` with
@@ -5917,7 +5942,7 @@
   objects. Those named type objects support `getName()`, `allowsNull()`, and
   `isBuiltin()` for the current parsed type strings, and
   `ReflectionParameter::allowsNull()` reports untyped, nullable `?T`, `null`
-  union member, `mixed`, and typed-default-`null` cases in the current method
+  union member, `mixed`, and typed-default-`null` cases in the current function/method
   parameter slice. Direct user instantiation of `ReflectionType`,
   `ReflectionNamedType`, `ReflectionUnionType`, and
   `ReflectionIntersectionType` is rejected; these objects are only materialized
@@ -7560,9 +7585,12 @@
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   modifier, predicate, parameter-list, and return-type methods documented
-  above.
+  above. `ReflectionFunction` currently supports only declared user-function
+  metadata named by string, with the name, parameter-list, return-type, and
+  by-reference-return methods documented above.
   `ReflectionParameter` currently supports only method parameters from that
-  same metadata slice, scalar/array default expressions accepted by the parser,
+  same metadata slice and declared user-function parameters named by string,
+  scalar/array default expressions accepted by the parser,
   by-reference and variadic flags, and simple named, bounded union, and bounded
   pure intersection type metadata. `ReflectionProperty` currently supports
   only declared user-class property metadata for the methods documented above,
@@ -7579,9 +7607,9 @@
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
   file/line/doc-comment metadata,
-  extension/internal method/property/parameter metadata, parameter and property
-  attributes, default constant-name introspection, function/closure
-  `ReflectionParameter` targets, reflection invocation/value mutation,
+  extension/internal function/method/property/parameter metadata, parameter and property
+  attributes, default constant-name introspection, closure
+  `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation/value mutation,
   `ReflectionClass::getProperties()` filter masks, exact `ReflectionException`
   behavior, namespace/import alias expansion beyond parsed class-like names,
   and native lowering remain unsupported.
@@ -7880,7 +7908,7 @@
   beyond function-table introspection
 - `headers_list()` behavior beyond returning the current deterministic CLI
   header log after accepted `header()` replacement/appends, bounded
-  `setcookie()` formatting/name-only replacement, and bounded
+  `setcookie()`/`setrawcookie()` formatting/name-only replacement, and bounded
   `header_remove()` mutations: PHP CLI
   parity, SAPI response state, status-code headers, full cookie formatting,
   header normalization, output buffers beyond the current output-started
@@ -7893,12 +7921,13 @@
   stderr fallback: whitespace normalization, response-status reset,
   status-header removal, SAPI/web-server behavior, exact warning text,
   partial-output behavior, and native lowering beyond function-table introspection
-- `setcookie()` behavior beyond accepting the documented bounded
-  positional/options-array attributes, percent-encoding values, formatting
-  nonzero expiration timestamps, replacing deterministic cookie headers by
-  cookie name, returning `false` after unbuffered output starts with a bounded
-  `E_WARNING`, and returning `true` for accepted pre-output cookies: cookie
-  name validation/encoding, `Max-Age`, raw-cookie variants, option validation
+- `setcookie()`/`setrawcookie()` behavior beyond accepting the documented
+  bounded positional/options-array attributes, formatting nonzero expiration
+  timestamps, replacing deterministic cookie headers by cookie name, returning
+  `false` after unbuffered output starts with a bounded `E_WARNING`, and
+  returning `true` for accepted pre-output cookies, with `setcookie()`
+  percent-encoding values and `setrawcookie()` preserving raw string values:
+  cookie name validation/encoding, `Max-Age`, option validation
   beyond the documented keys, path/domain-aware duplicate handling, SAPI/
   web-server emission, exact warning text, and native lowering beyond
   function-table introspection

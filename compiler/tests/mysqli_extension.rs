@@ -5175,6 +5175,33 @@ while ($column = mysqli_fetch_assoc($columns)) {
 }
 
 #[test]
+fn mysqli_query_tracks_bounded_wordpress_schema_index_ordering_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_lookup (lookup_id bigint(20) unsigned NOT NULL auto_increment, object_id bigint(20) unsigned NOT NULL default 0, meta_key varchar(191) NOT NULL default '', updated_at datetime NOT NULL default '0000-00-00 00:00:00', PRIMARY KEY  (lookup_id), KEY object_recent (object_id ASC, updated_at DESC), KEY meta_recent (meta_key(100) DESC)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_lookup ADD KEY object_meta_recent (object_id, meta_key(100) ASC, updated_at DESC)");
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_probe_lookup");
+echo mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Seq_in_index"], ":", $index["Column_name"], ":", $index["Sub_part"], ":", $index["Collation"], ";";
+}
+$create = mysqli_query($handle, "SHOW CREATE TABLE wp_probe_lookup");
+$row = mysqli_fetch_assoc($create);
+echo "|", $row["Create Table"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "7:PRIMARY:1:lookup_id::A;object_recent:1:object_id::A;object_recent:2:updated_at::D;meta_recent:1:meta_key:100:D;object_meta_recent:1:object_id::A;object_meta_recent:2:meta_key:100:A;object_meta_recent:3:updated_at::D;|CREATE TABLE `wp_probe_lookup` (\n  `lookup_id` bigint(20) unsigned NOT NULL auto_increment,\n  `object_id` bigint(20) unsigned NOT NULL DEFAULT '0',\n  `meta_key` varchar(191) NOT NULL DEFAULT '',\n  `updated_at` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',\n  PRIMARY KEY (`lookup_id`),\n  KEY `object_recent` (`object_id`,`updated_at` DESC),\n  KEY `meta_recent` (`meta_key`(100) DESC),\n  KEY `object_meta_recent` (`object_id`,`meta_key`(100),`updated_at` DESC)\n) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_tracks_bounded_wordpress_schema_column_and_index_changes() {
     let execution = run_source(
         r#"<?php

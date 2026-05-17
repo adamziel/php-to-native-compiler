@@ -1,0 +1,7 @@
+fn|select_hook|ReflectionFunction|3|2|1|1
+return|ReflectionUnionType|1|1
+param0|hook|0|ReflectionFunction|select_hook|1|0|1
+param1|tagged|1|ReflectionFunction|select_hook|1|0|1
+param2|fallback|2|ReflectionFunction|select_hook|1|1|0
+direct|tagged|1|ReflectionFunction|select_hook|1|0|1
+raw|0|raw-return|null

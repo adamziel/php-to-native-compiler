@@ -2700,6 +2700,25 @@ impl Parser {
             Expr::Variable(name, span) => Ok(ReferenceSource::Variable { name, span }),
             Expr::Index { .. } => {
                 if let Some((object, property, mut indices, span)) =
+                    Self::dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    if indices.len() == 1 {
+                        return Ok(ReferenceSource::DynamicObjectPropertyArrayIndex {
+                            object,
+                            property,
+                            index: indices.remove(0),
+                            span,
+                        });
+                    }
+                    return Ok(ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+
+                if let Some((object, property, mut indices, span)) =
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
                     if indices.len() == 1 {
@@ -2738,6 +2757,16 @@ impl Parser {
                 Err(self.error_at(span, unsupported_reference_assignment_source_message()))
             }
             Expr::AppendIndex { target, span } => {
+                if let Some((object, property, indices, _)) =
+                    Self::dynamic_object_property_array_append_target_from_expr(target.as_ref())
+                {
+                    return Ok(ReferenceSource::DynamicObjectPropertyArrayAppend {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 if let Some((object, property, indices, _)) =
                     Self::object_property_array_append_target_from_expr(target.as_ref())
                 {
@@ -3350,6 +3379,38 @@ impl Parser {
         }
     }
 
+    fn dynamic_object_property_array_index_path_from_expr(
+        expr: &Expr,
+    ) -> Option<(String, Expr, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match target.as_ref() {
+                Expr::DynamicProperty {
+                    target, property, ..
+                } => match target.as_ref() {
+                    Expr::Variable(object, _) => Some((
+                        object.clone(),
+                        (**property).clone(),
+                        vec![(**index).clone()],
+                        *span,
+                    )),
+                    _ => None,
+                },
+                Expr::Index { .. } => {
+                    let (object, property, mut indices, _) =
+                        Self::dynamic_object_property_array_index_path_from_expr(target.as_ref())?;
+                    indices.push((**index).clone());
+                    Some((object, property, indices, *span))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn object_property_array_append_target_from_expr(
         expr: &Expr,
     ) -> Option<(String, String, Vec<Expr>, Span)> {
@@ -3365,6 +3426,25 @@ impl Parser {
                 _ => None,
             },
             Expr::Index { .. } => Self::object_property_array_index_path_from_expr(expr),
+            _ => None,
+        }
+    }
+
+    fn dynamic_object_property_array_append_target_from_expr(
+        expr: &Expr,
+    ) -> Option<(String, Expr, Vec<Expr>, Span)> {
+        match expr {
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => match target.as_ref() {
+                Expr::Variable(object, _) => {
+                    Some((object.clone(), (**property).clone(), Vec::new(), *span))
+                }
+                _ => None,
+            },
+            Expr::Index { .. } => Self::dynamic_object_property_array_index_path_from_expr(expr),
             _ => None,
         }
     }

@@ -175,13 +175,13 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded compound method
-parameter/return reflection type metadata, non-public dynamic-property
-reference-array alias roots, deterministic `setcookie()` value/attribute
-formatting with same-name replacement, and transaction/savepoint rollback
-snapshots for the MySQLi schema-state island. Those are useful compatibility
-steps, but they do not change the larger project shape: the next lanes should
-keep attacking broad object/interface semantics, real reference/COW behavior,
+The latest WordPress-focused batch closed bounded declared-user-function
+`ReflectionFunction` metadata, dynamic property-held `ArrayAccess` reference
+roots for direct holder variables, deterministic `setrawcookie()` raw-value
+header formatting, and `ASC`/`DESC` index-part ordering metadata in the
+MySQLi schema-state island. Those are useful compatibility steps, but they do
+not change the larger project shape: the next lanes should keep attacking
+broad object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress
 database/bootstrap evidence until those areas become coherent subsystems
 instead of reached slices.

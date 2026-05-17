@@ -1,0 +1,10 @@
+7:PRIMARY:1:lookup_id::A;object_recent:1:object_id::A;object_recent:2:updated_at::D;meta_recent:1:meta_key:100:D;object_meta_recent:1:object_id::A;object_meta_recent:2:meta_key:100:A;object_meta_recent:3:updated_at::D;|CREATE TABLE `wp_order_probe` (
+  `lookup_id` bigint(20) unsigned NOT NULL auto_increment,
+  `object_id` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `meta_key` varchar(191) NOT NULL DEFAULT '',
+  `updated_at` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  PRIMARY KEY (`lookup_id`),
+  KEY `object_recent` (`object_id`,`updated_at` DESC),
+  KEY `meta_recent` (`meta_key`(100) DESC),
+  KEY `object_meta_recent` (`object_id`,`meta_key`(100),`updated_at` DESC)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1489/wpdb_schema_index_ordering_probe.php

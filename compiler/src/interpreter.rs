@@ -130,6 +130,7 @@ struct Interpreter {
     mysqli_insert_ids: HashMap<i64, i64>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     reflection_classes: HashMap<i64, ReflectionClassState>,
+    reflection_functions: HashMap<i64, ReflectionFunctionState>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -262,6 +263,13 @@ struct WordPressSchemaIndexState {
 struct WordPressSchemaIndexPart {
     column_name: String,
     sub_part: Option<i64>,
+    order: WordPressSchemaIndexOrder,
+}
+
+#[derive(Clone, Copy)]
+enum WordPressSchemaIndexOrder {
+    Asc,
+    Desc,
 }
 
 #[derive(Clone)]
@@ -296,6 +304,14 @@ enum ReflectionClassKind {
 }
 
 #[derive(Debug, Clone)]
+struct ReflectionFunctionState {
+    name: String,
+    return_type: Option<String>,
+    returns_by_reference: bool,
+    params: Vec<ReflectionParameterMetadata>,
+}
+
+#[derive(Debug, Clone)]
 struct ReflectionMethodState {
     declaring_class_name: String,
     declaring_kind: ReflectionClassKind,
@@ -320,9 +336,15 @@ struct ReflectionParameterMetadata {
 
 #[derive(Debug, Clone)]
 struct ReflectionParameterState {
-    declaring_method: ReflectionMethodState,
+    declaring: ReflectionParameterDeclaring,
     parameter: ReflectionParameterMetadata,
     position: usize,
+}
+
+#[derive(Debug, Clone)]
+enum ReflectionParameterDeclaring {
+    Function(ReflectionFunctionState),
+    Method(ReflectionMethodState),
 }
 
 #[derive(Debug, Clone)]
@@ -3109,6 +3131,7 @@ impl Interpreter {
             mysqli_insert_ids: HashMap::new(),
             mysqli_statements: HashMap::new(),
             reflection_classes: HashMap::new(),
+            reflection_functions: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -5823,6 +5846,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionClass") {
             return self.instantiate_reflection_class(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionFunction") {
+            return self.instantiate_reflection_function(args, span, scope);
+        }
         if declared_class_name.eq_ignore_ascii_case("ReflectionMethod") {
             return self.instantiate_reflection_method(args, span, scope);
         }
@@ -6472,6 +6498,38 @@ impl Interpreter {
                         span,
                         scope,
                     )?;
+                } else if let ReferenceSource::DynamicObjectPropertyArrayIndex {
+                    object,
+                    property,
+                    index,
+                    ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let key = self.evaluate_array_key(index, scope)?;
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object,
+                            &property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    self.bind_static_to_context_object_property_array_offset(
+                        name,
+                        object,
+                        &property,
+                        vec![key],
+                        span,
+                        scope,
+                    )?;
                 } else if let ReferenceSource::ObjectPropertyNestedArrayIndex {
                     object,
                     property,
@@ -6501,6 +6559,36 @@ impl Interpreter {
                     self.bind_static_to_context_object_property_array_offset(
                         name, object, property, keys, span, scope,
                     )?;
+                } else if let ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+                    object,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    self.bind_static_to_context_object_property_array_offset(
+                        name, object, &property, keys, span, scope,
+                    )?;
                 } else if let ReferenceSource::ObjectPropertyArrayAppend {
                     object,
                     property,
@@ -6527,6 +6615,34 @@ impl Interpreter {
                     )?;
                     self.bind_static_to_appended_context_object_property_array_offset(
                         name, object, property, keys, span, scope,
+                    )?;
+                } else if let ReferenceSource::DynamicObjectPropertyArrayAppend {
+                    object,
+                    property,
+                    indices,
+                    ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    if keys.is_empty() {
+                        if let Some((alias, _)) = self
+                            .evaluate_object_property_array_access_append_reference_source_alias(
+                                object, &property, span, scope,
+                            )?
+                        {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                            return Ok(());
+                        }
+                    }
+                    self.reject_object_property_array_access_reference_source_if_needed(
+                        object, &property, span, scope,
+                    )?;
+                    self.bind_static_to_appended_context_object_property_array_offset(
+                        name, object, &property, keys, span, scope,
                     )?;
                 } else if let ReferenceSource::Property {
                     expr:
@@ -7141,6 +7257,48 @@ impl Interpreter {
                 })?;
                 Ok(Some((alias, value)))
             }
+            ReferenceSource::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                if keys.is_empty() {
+                    if let Some(alias) = self
+                        .evaluate_object_property_array_access_append_reference_source_alias(
+                            object, &property, span, scope,
+                        )?
+                    {
+                        return Ok(Some(alias));
+                    }
+                }
+                self.reject_object_property_array_access_reference_source_if_needed(
+                    object, &property, span, scope,
+                )?;
+                let root =
+                    self.context_object_property_alias_root(object, &property, span, scope)?;
+                let alias = scope.append_object_property_array_offset_reference_alias(
+                    root,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind missing appended object-property reference source"
+                                .to_string(),
+                        ),
+                    )
+                })?;
+                Ok(Some((alias, value)))
+            }
             _ => Ok(None),
         }
     }
@@ -7193,6 +7351,22 @@ impl Interpreter {
                     scope,
                 )
             }
+            ReferenceSource::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let key = self.evaluate_array_key(index, scope)?;
+                self.evaluate_object_property_array_access_reference_source_alias(
+                    object,
+                    &property,
+                    vec![key],
+                    span,
+                    scope,
+                )
+            }
             ReferenceSource::ObjectPropertyNestedArrayIndex {
                 object,
                 property,
@@ -7205,6 +7379,21 @@ impl Interpreter {
                     .collect::<CompileResult<Vec<_>>>()?;
                 self.evaluate_object_property_array_access_reference_source_alias(
                     object, property, keys, span, scope,
+                )
+            }
+            ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.evaluate_object_property_array_access_reference_source_alias(
+                    object, &property, keys, span, scope,
                 )
             }
             _ => self.evaluate_append_reference_source_alias(source, span, scope),
@@ -7823,7 +8012,10 @@ impl Interpreter {
             | ReferenceSource::ArrayAppend { .. }
             | ReferenceSource::ObjectPropertyArrayIndex { .. }
             | ReferenceSource::ObjectPropertyArrayAppend { .. }
-            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
+            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::DynamicObjectPropertyArrayIndex { .. }
+            | ReferenceSource::DynamicObjectPropertyArrayAppend { .. }
+            | ReferenceSource::DynamicObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -7871,7 +8063,10 @@ impl Interpreter {
             | ReferenceSource::ArrayAppend { .. }
             | ReferenceSource::ObjectPropertyArrayIndex { .. }
             | ReferenceSource::ObjectPropertyArrayAppend { .. }
-            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. } => {
+            | ReferenceSource::ObjectPropertyNestedArrayIndex { .. }
+            | ReferenceSource::DynamicObjectPropertyArrayIndex { .. }
+            | ReferenceSource::DynamicObjectPropertyArrayAppend { .. }
+            | ReferenceSource::DynamicObjectPropertyNestedArrayIndex { .. } => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -10362,6 +10557,90 @@ impl Interpreter {
         }
     }
 
+    fn instantiate_reflection_function(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionFunction::__construct()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let target = self.evaluate(&args[0], scope)?;
+        let state = self.resolve_reflection_function_target(&target, span)?;
+        self.create_reflection_function_object(state, span)
+    }
+
+    fn resolve_reflection_function_target(
+        &self,
+        target: &Value,
+        span: Span,
+    ) -> CompileResult<ReflectionFunctionState> {
+        let Value::String(name) = target else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionFunction",
+                    format!(
+                        "target must be user function string in the current subset, got {}",
+                        target.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        match self.lookup_function(name) {
+            Some(Callable::User(function)) => Ok(reflection_function_state_from_decl(&function)),
+            Some(Callable::Builtin(_)) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionFunction",
+                    format!("internal function {name} reflection is not implemented"),
+                ),
+            )),
+            None => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionFunction",
+                    format!("function {name} is not declared in the current subset"),
+                ),
+            )),
+        }
+    }
+
+    fn create_reflection_function_object(
+        &mut self,
+        state: ReflectionFunctionState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionFunction")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionFunction core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionFunction class id should resolve");
+        self.reflection_functions.insert(object_id, state);
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
     fn instantiate_reflection_method(
         &mut self,
         args: &[Expr],
@@ -10596,16 +10875,19 @@ impl Interpreter {
         &mut self,
         target: &Value,
         span: Span,
-    ) -> CompileResult<ReflectionMethodState> {
+    ) -> CompileResult<ReflectionParameterDeclaring> {
+        if let Value::String(_) = target {
+            return self
+                .resolve_reflection_function_target(target, span)
+                .map(ReflectionParameterDeclaring::Function);
+        }
+
         let Value::Array(callable) = target else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     "ReflectionParameter",
-                    format!(
-                        "function argument only supports [object-or-class, method] array callables in the current subset, got {}",
-                        target.type_name()
-                    ),
+                    format!("function argument only supports user function strings and [object-or-class, method] array callables in the current subset, got {}", target.type_name()),
                 ),
             ));
         };
@@ -10650,14 +10932,17 @@ impl Interpreter {
         };
         let class = self.resolve_reflection_class_target(receiver, span)?;
         self.resolve_reflection_method_target(&class, method_name, span)
+            .map(ReflectionParameterDeclaring::Method)
     }
 
     fn resolve_reflection_parameter_target(
         &self,
-        method: ReflectionMethodState,
+        declaring: ReflectionParameterDeclaring,
         target: &Value,
         span: Span,
     ) -> CompileResult<ReflectionParameterState> {
+        let params = reflection_declaring_params(&declaring);
+        let declaring_name = reflection_declaring_name(&declaring);
         let position = match target {
             Value::Int(index) if *index >= 0 => usize::try_from(*index).map_err(|_| {
                 runtime_error(
@@ -10677,8 +10962,7 @@ impl Interpreter {
                     ),
                 ));
             }
-            Value::String(name) => method
-                .params
+            Value::String(name) => params
                 .iter()
                 .position(|param| param.name == *name)
                 .ok_or_else(|| {
@@ -10686,10 +10970,7 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_object_instantiation(
                             "ReflectionParameter",
-                            format!(
-                                "parameter {name} is not declared on {}::{}()",
-                                method.declaring_class_name, method.name
-                            ),
+                            format!("parameter {name} is not declared on {declaring_name}"),
                         ),
                     )
                 })?,
@@ -10706,20 +10987,17 @@ impl Interpreter {
                 ));
             }
         };
-        let parameter = method.params.get(position).cloned().ok_or_else(|| {
+        let parameter = params.get(position).cloned().ok_or_else(|| {
             runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     "ReflectionParameter",
-                    format!(
-                        "parameter index {position} is not declared on {}::{}()",
-                        method.declaring_class_name, method.name
-                    ),
+                    format!("parameter index {position} is not declared on {declaring_name}"),
                 ),
             )
         })?;
         Ok(ReflectionParameterState {
-            declaring_method: method,
+            declaring,
             parameter,
             position,
         })
@@ -16144,6 +16422,12 @@ impl Interpreter {
                 caller_scope,
             );
         }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionFunction")
+        {
+            return self.call_reflection_function_method(object, method_name, args, span);
+        }
         if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
             return self.call_reflection_method_method(object, method_name, args, span);
         }
@@ -16534,6 +16818,112 @@ impl Interpreter {
         }
     }
 
+    fn call_reflection_function_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_functions
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionFunction::{method_name}()"),
+                        "missing ReflectionFunction runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionFunction::__construct()",
+                    "reinitializing ReflectionFunction objects is not implemented",
+                ),
+            )),
+            "getname" => {
+                expect_expr_arity("ReflectionFunction::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getparameters" => {
+                expect_expr_arity("ReflectionFunction::getParameters", args.len(), 0, span)?;
+                let mut parameters = PhpArray::new();
+                for (position, parameter) in state.params.iter().cloned().enumerate() {
+                    let parameter = self.create_reflection_parameter_object(
+                        ReflectionParameterState {
+                            declaring: ReflectionParameterDeclaring::Function(state.clone()),
+                            parameter,
+                            position,
+                        },
+                        span,
+                    )?;
+                    parameters
+                        .append(parameter)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Array(parameters))
+            }
+            "getnumberofparameters" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getNumberOfParameters",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Int(state.params.len() as i64))
+            }
+            "getnumberofrequiredparameters" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getNumberOfRequiredParameters",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(Value::Int(
+                    state
+                        .params
+                        .iter()
+                        .filter(|param| param.default.is_none() && !param.is_variadic)
+                        .count() as i64,
+                ))
+            }
+            "hasreturntype" => {
+                expect_expr_arity("ReflectionFunction::hasReturnType", args.len(), 0, span)?;
+                Ok(Value::Bool(state.return_type.is_some()))
+            }
+            "getreturntype" => {
+                expect_expr_arity("ReflectionFunction::getReturnType", args.len(), 0, span)?;
+                let Some(type_decl) = state.return_type.as_deref() else {
+                    return Ok(Value::Null);
+                };
+                if let Some(compound_state) =
+                    reflection_compound_type_state_from_type_decl(type_decl)
+                {
+                    return self.create_reflection_compound_type_object(compound_state, span);
+                }
+                let Some(type_state) = reflection_named_type_state_from_type_decl(type_decl, None)
+                else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_named_type_object(type_state, span)
+            }
+            "returnsreference" => {
+                expect_expr_arity("ReflectionFunction::returnsReference", args.len(), 0, span)?;
+                Ok(Value::Bool(state.returns_by_reference))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionFunction::{method_name}()")),
+            )),
+        }
+    }
+
     fn call_reflection_method_method(
         &mut self,
         object: PhpObject,
@@ -16588,7 +16978,7 @@ impl Interpreter {
                 for (position, parameter) in state.params.iter().cloned().enumerate() {
                     let parameter = self.create_reflection_parameter_object(
                         ReflectionParameterState {
-                            declaring_method: state.clone(),
+                            declaring: ReflectionParameterDeclaring::Method(state.clone()),
                             parameter,
                             position,
                         },
@@ -16723,14 +17113,18 @@ impl Interpreter {
                     0,
                     span,
                 )?;
-                self.create_reflection_class_object(
-                    ReflectionClassState {
-                        name: state.declaring_method.declaring_class_name,
-                        kind: state.declaring_method.declaring_kind,
-                        class_id: state.declaring_method.declaring_class_id,
-                    },
-                    span,
-                )
+                match state.declaring {
+                    ReflectionParameterDeclaring::Method(method) => self
+                        .create_reflection_class_object(
+                            ReflectionClassState {
+                                name: method.declaring_class_name,
+                                kind: method.declaring_kind,
+                                class_id: method.declaring_class_id,
+                            },
+                            span,
+                        ),
+                    ReflectionParameterDeclaring::Function(_) => Ok(Value::Null),
+                }
             }
             "getdeclaringfunction" => {
                 expect_expr_arity(
@@ -16739,7 +17133,14 @@ impl Interpreter {
                     0,
                     span,
                 )?;
-                self.create_reflection_method_object(state.declaring_method, span)
+                match state.declaring {
+                    ReflectionParameterDeclaring::Function(function) => {
+                        self.create_reflection_function_object(function, span)
+                    }
+                    ReflectionParameterDeclaring::Method(method) => {
+                        self.create_reflection_method_object(method, span)
+                    }
+                }
             }
             "isoptional" => {
                 expect_expr_arity("ReflectionParameter::isOptional", args.len(), 0, span)?;
@@ -24089,11 +24490,44 @@ impl Interpreter {
         arg: &Expr,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
-        let Some((object, property, indices)) =
+        if let Some((object, property, indices)) =
             Self::direct_object_property_array_argument_parts(arg)
+        {
+            return self.evaluate_object_property_array_reference_argument(
+                object,
+                property,
+                indices,
+                arg,
+                caller_scope,
+                true,
+            );
+        }
+
+        let Some((object, property, indices)) =
+            Self::dynamic_object_property_array_argument_parts(arg)
         else {
             return Ok(None);
         };
+        let property = self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+        self.evaluate_object_property_array_reference_argument(
+            object,
+            property,
+            indices,
+            arg,
+            caller_scope,
+            false,
+        )
+    }
+
+    fn evaluate_object_property_array_reference_argument(
+        &mut self,
+        object: String,
+        property: String,
+        indices: Vec<&Expr>,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+        allow_plain_property_array: bool,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
         let keys = indices
             .iter()
             .map(|index| self.evaluate_array_key(index, caller_scope))
@@ -24137,6 +24571,9 @@ impl Interpreter {
                     )
                     .map(Some);
             }
+        }
+        if !allow_plain_property_array {
+            return Ok(None);
         }
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
@@ -24187,6 +24624,32 @@ impl Interpreter {
             return None;
         };
         Some((object.clone(), property.clone(), indices))
+    }
+
+    fn dynamic_object_property_array_argument_parts(
+        expr: &Expr,
+    ) -> Option<(String, &Expr, Vec<&Expr>)> {
+        let mut indices = Vec::new();
+        let mut current = expr;
+        while let Expr::Index { target, index, .. } = current {
+            indices.push(index.as_ref());
+            current = target.as_ref();
+        }
+        if indices.is_empty() {
+            return None;
+        }
+        indices.reverse();
+
+        let Expr::DynamicProperty {
+            target, property, ..
+        } = current
+        else {
+            return None;
+        };
+        let Expr::Variable(object, _) = target.as_ref() else {
+            return None;
+        };
+        Some((object.clone(), property.as_ref(), indices))
     }
 
     fn write_back_reference_bindings(
@@ -26185,11 +26648,25 @@ impl Interpreter {
     }
 
     fn call_setcookie(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_cookie_header_builtin("setcookie()", args, span, true)
+    }
+
+    fn call_setrawcookie(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.call_cookie_header_builtin("setrawcookie()", args, span, false)
+    }
+
+    fn call_cookie_header_builtin(
+        &mut self,
+        function_name: &'static str,
+        args: &[Value],
+        span: Span,
+        encode_value: bool,
+    ) -> CompileResult<Value> {
         if !(1..=7).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "setcookie()",
+                    function_name,
                     ArityExpectation::Between { min: 1, max: 7 },
                     args.len(),
                 ),
@@ -26202,7 +26679,7 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "setcookie()",
+                        function_name,
                         format!(
                             "name argument must be string in the current subset, got {}",
                             other.type_name()
@@ -26218,7 +26695,7 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "setcookie()",
+                        function_name,
                         format!(
                             "value argument must be string in the current subset, got {}",
                             other.type_name()
@@ -26228,17 +26705,21 @@ impl Interpreter {
             }
             None => "",
         };
-        let cookie_options = parse_setcookie_options(args, span)?;
+        let cookie_options = parse_setcookie_options(args, function_name, span)?;
 
         if let Some(message) = self.header_output_started_warning() {
-            self.emit_warning("setcookie()", message, span)?;
+            self.emit_warning(function_name, message, span)?;
             return Ok(Value::Bool(false));
         }
 
         self.response_headers
             .retain(|header| !set_cookie_header_matches_name(header, name));
-        self.response_headers
-            .push(format_setcookie_header(name, value, &cookie_options));
+        self.response_headers.push(format_setcookie_header(
+            name,
+            value,
+            &cookie_options,
+            encode_value,
+        ));
         Ok(Value::Bool(true))
     }
 
@@ -28652,6 +29133,7 @@ impl Interpreter {
             "headers_sent" => self.call_headers_sent_values(&args, span),
             "http_response_code" => self.call_http_response_code(&args, span),
             "setcookie" => self.call_setcookie(&args, span),
+            "setrawcookie" => self.call_setrawcookie(&args, span),
             "session_start" => self.call_session_start(&args, span),
             "session_status" => self.call_session_status(&args, span),
             "session_id" => self.call_session_id(&args, span),
@@ -33378,6 +33860,33 @@ fn reflection_parameter_metadata_from_function_params(
         .collect()
 }
 
+fn reflection_function_state_from_decl(function: &FunctionDecl) -> ReflectionFunctionState {
+    ReflectionFunctionState {
+        name: function.name.clone(),
+        return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+        returns_by_reference: function.returns_by_reference,
+        params: reflection_parameter_metadata_from_function_params(&function.params),
+    }
+}
+
+fn reflection_declaring_params(
+    declaring: &ReflectionParameterDeclaring,
+) -> &[ReflectionParameterMetadata] {
+    match declaring {
+        ReflectionParameterDeclaring::Function(function) => &function.params,
+        ReflectionParameterDeclaring::Method(method) => &method.params,
+    }
+}
+
+fn reflection_declaring_name(declaring: &ReflectionParameterDeclaring) -> String {
+    match declaring {
+        ReflectionParameterDeclaring::Function(function) => format!("{}()", function.name),
+        ReflectionParameterDeclaring::Method(method) => {
+            format!("{}::{}()", method.declaring_class_name, method.name)
+        }
+    }
+}
+
 fn reflection_named_type_state_from_type_decl(
     type_decl: &str,
     default: Option<&Expr>,
@@ -34586,6 +35095,7 @@ fn is_builtin(name: &str) -> bool {
             | "headers_sent"
             | "http_response_code"
             | "setcookie"
+            | "setrawcookie"
             | "session_start"
             | "session_status"
             | "session_id"
@@ -35767,9 +36277,22 @@ fn parse_schema_index_part(part: &str) -> Option<WordPressSchemaIndexPart> {
         .strip_prefix('(')
         .and_then(|value| value.split_once(')'))
         .and_then(|(value, _)| value.trim().parse::<i64>().ok());
+    let order_rest = if rest.starts_with('(') {
+        rest.split_once(')')
+            .map(|(_, after)| after.trim())
+            .unwrap_or(rest)
+    } else {
+        rest
+    };
+    let order = match order_rest.to_ascii_uppercase().as_str() {
+        "" | "ASC" => WordPressSchemaIndexOrder::Asc,
+        "DESC" => WordPressSchemaIndexOrder::Desc,
+        _ => return None,
+    };
     Some(WordPressSchemaIndexPart {
         column_name,
         sub_part,
+        order,
     })
 }
 
@@ -35986,7 +36509,16 @@ fn dynamic_schema_index_row(
             "Column_name".to_string(),
             Value::String(part.column_name.clone()),
         ),
-        ("Collation".to_string(), Value::String("A".to_string())),
+        (
+            "Collation".to_string(),
+            Value::String(
+                match part.order {
+                    WordPressSchemaIndexOrder::Asc => "A",
+                    WordPressSchemaIndexOrder::Desc => "D",
+                }
+                .to_string(),
+            ),
+        ),
         ("Cardinality".to_string(), Value::Int(0)),
         (
             "Sub_part".to_string(),
@@ -36105,6 +36637,9 @@ fn dynamic_schema_index_sql(index: &WordPressSchemaIndexState) -> String {
                 sql.push('(');
                 sql.push_str(&sub_part.to_string());
                 sql.push(')');
+            }
+            if matches!(part.order, WordPressSchemaIndexOrder::Desc) {
+                sql.push_str(" DESC");
             }
             sql
         })
@@ -40633,7 +41168,11 @@ struct SetCookieOptions {
     samesite: Option<String>,
 }
 
-fn parse_setcookie_options(args: &[Value], span: Span) -> CompileResult<SetCookieOptions> {
+fn parse_setcookie_options(
+    args: &[Value],
+    function_name: &'static str,
+    span: Span,
+) -> CompileResult<SetCookieOptions> {
     let mut options = SetCookieOptions::default();
     let Some(third) = args.get(2) else {
         return Ok(options);
@@ -40644,21 +41183,21 @@ fn parse_setcookie_options(args: &[Value], span: Span) -> CompileResult<SetCooki
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "setcookie()",
+                    function_name,
                     "options array form cannot be combined with positional cookie attributes",
                 ),
             ));
         }
-        options.expires = optional_cookie_int_option(array, "expires", span)?;
-        options.path = optional_cookie_string_option(array, "path", span)?;
-        options.domain = optional_cookie_string_option(array, "domain", span)?;
+        options.expires = optional_cookie_int_option(array, "expires", function_name, span)?;
+        options.path = optional_cookie_string_option(array, "path", function_name, span)?;
+        options.domain = optional_cookie_string_option(array, "domain", function_name, span)?;
         options.secure = array
             .get(ArrayKey::String("secure".into()))
             .is_some_and(Value::is_truthy);
         options.httponly = array
             .get(ArrayKey::String("httponly".into()))
             .is_some_and(Value::is_truthy);
-        options.samesite = optional_cookie_string_option(array, "samesite", span)?;
+        options.samesite = optional_cookie_string_option(array, "samesite", function_name, span)?;
         return Ok(options);
     }
 
@@ -40668,7 +41207,7 @@ fn parse_setcookie_options(args: &[Value], span: Span) -> CompileResult<SetCooki
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "setcookie()",
+                    function_name,
                     format!(
                         "expires argument must be int or options array in the current subset, got {}",
                         other.type_name()
@@ -40677,8 +41216,8 @@ fn parse_setcookie_options(args: &[Value], span: Span) -> CompileResult<SetCooki
             ));
         }
     };
-    options.path = optional_cookie_positional_string(args, 3, "path", span)?;
-    options.domain = optional_cookie_positional_string(args, 4, "domain", span)?;
+    options.path = optional_cookie_positional_string(args, 3, "path", function_name, span)?;
+    options.domain = optional_cookie_positional_string(args, 4, "domain", function_name, span)?;
     options.secure = args.get(5).is_some_and(Value::is_truthy);
     options.httponly = args.get(6).is_some_and(Value::is_truthy);
     Ok(options)
@@ -40688,6 +41227,7 @@ fn optional_cookie_positional_string(
     args: &[Value],
     index: usize,
     name: &str,
+    function_name: &'static str,
     span: Span,
 ) -> CompileResult<Option<String>> {
     match args.get(index) {
@@ -40695,7 +41235,7 @@ fn optional_cookie_positional_string(
         Some(other) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "setcookie()",
+                function_name,
                 format!(
                     "{name} argument must be string in the current subset, got {}",
                     other.type_name()
@@ -40709,6 +41249,7 @@ fn optional_cookie_positional_string(
 fn optional_cookie_int_option(
     options: &PhpArray,
     name: &str,
+    function_name: &'static str,
     span: Span,
 ) -> CompileResult<Option<i64>> {
     match options.get(ArrayKey::String(name.into())) {
@@ -40716,7 +41257,7 @@ fn optional_cookie_int_option(
         Some(other) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "setcookie()",
+                function_name,
                 format!(
                     "{name} option must be int in the current subset, got {}",
                     other.type_name()
@@ -40730,6 +41271,7 @@ fn optional_cookie_int_option(
 fn optional_cookie_string_option(
     options: &PhpArray,
     name: &str,
+    function_name: &'static str,
     span: Span,
 ) -> CompileResult<Option<String>> {
     match options.get(ArrayKey::String(name.into())) {
@@ -40737,7 +41279,7 @@ fn optional_cookie_string_option(
         Some(other) => Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "setcookie()",
+                function_name,
                 format!(
                     "{name} option must be string in the current subset, got {}",
                     other.type_name()
@@ -40748,8 +41290,18 @@ fn optional_cookie_string_option(
     }
 }
 
-fn format_setcookie_header(name: &str, value: &str, options: &SetCookieOptions) -> String {
-    let mut header = format!("Set-Cookie: {name}={}", percent_encode_cookie_value(value));
+fn format_setcookie_header(
+    name: &str,
+    value: &str,
+    options: &SetCookieOptions,
+    encode_value: bool,
+) -> String {
+    let cookie_value = if encode_value {
+        percent_encode_cookie_value(value)
+    } else {
+        value.to_string()
+    };
+    let mut header = format!("Set-Cookie: {name}={cookie_value}");
     if let Some(expires) = options.expires.filter(|value| *value != 0) {
         header.push_str("; expires=");
         header.push_str(&format_cookie_expires(expires));

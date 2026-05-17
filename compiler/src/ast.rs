@@ -358,15 +358,33 @@ pub enum ReferenceSource {
         index: Expr,
         span: Span,
     },
+    DynamicObjectPropertyArrayIndex {
+        object: String,
+        property: Expr,
+        index: Expr,
+        span: Span,
+    },
     ObjectPropertyArrayAppend {
         object: String,
         property: String,
         indices: Vec<Expr>,
         span: Span,
     },
+    DynamicObjectPropertyArrayAppend {
+        object: String,
+        property: Expr,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     ObjectPropertyNestedArrayIndex {
         object: String,
         property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    DynamicObjectPropertyNestedArrayIndex {
+        object: String,
+        property: Expr,
         indices: Vec<Expr>,
         span: Span,
     },

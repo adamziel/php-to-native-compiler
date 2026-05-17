@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 16);
+    assert_eq!(classes.classes().len(), 17);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -46,13 +46,14 @@ echo "ready\n";
     assert_eq!(classes.classes()[5].name(), "PDO");
     assert_eq!(classes.classes()[6].name(), "PDOStatement");
     assert_eq!(classes.classes()[7].name(), "ReflectionClass");
-    assert_eq!(classes.classes()[8].name(), "ReflectionMethod");
-    assert_eq!(classes.classes()[9].name(), "ReflectionParameter");
-    assert_eq!(classes.classes()[10].name(), "ReflectionType");
-    assert_eq!(classes.classes()[11].name(), "ReflectionNamedType");
-    assert_eq!(classes.classes()[12].name(), "ReflectionUnionType");
-    assert_eq!(classes.classes()[13].name(), "ReflectionIntersectionType");
-    assert_eq!(classes.classes()[14].name(), "ReflectionProperty");
+    assert_eq!(classes.classes()[8].name(), "ReflectionFunction");
+    assert_eq!(classes.classes()[9].name(), "ReflectionMethod");
+    assert_eq!(classes.classes()[10].name(), "ReflectionParameter");
+    assert_eq!(classes.classes()[11].name(), "ReflectionType");
+    assert_eq!(classes.classes()[12].name(), "ReflectionNamedType");
+    assert_eq!(classes.classes()[13].name(), "ReflectionUnionType");
+    assert_eq!(classes.classes()[14].name(), "ReflectionIntersectionType");
+    assert_eq!(classes.classes()[15].name(), "ReflectionProperty");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4341,7 +4342,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionUnionType\n    [13] => ReflectionIntersectionType\n    [14] => ReflectionProperty\n    [15] => Box\n    [16] => Profile\n)\n17|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionFunction\n    [9] => ReflectionMethod\n    [10] => ReflectionParameter\n    [11] => ReflectionType\n    [12] => ReflectionNamedType\n    [13] => ReflectionUnionType\n    [14] => ReflectionIntersectionType\n    [15] => ReflectionProperty\n    [16] => Box\n    [17] => Profile\n)\n18|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4362,7 +4363,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionUnionType\n    [13] => ReflectionIntersectionType\n    [14] => ReflectionProperty\n    [15] => App\\Mode\n    [16] => App\\Status\n)\n17\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionFunction\n    [9] => ReflectionMethod\n    [10] => ReflectionParameter\n    [11] => ReflectionType\n    [12] => ReflectionNamedType\n    [13] => ReflectionUnionType\n    [14] => ReflectionIntersectionType\n    [15] => ReflectionProperty\n    [16] => App\\Mode\n    [17] => App\\Status\n)\n18\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4846,6 +4847,57 @@ line("raw-return", (new ReflectionMethod(Plugin::class, "raw"))->getReturnType()
     assert_eq!(
         execution.stdout,
         "method|1|2\nreturn-union|ReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1\nparam-union|ReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1\nparam-intersection|ReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0\nreturn-intersection|ReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0\nraw|0|raw-return|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_reports_bounded_user_function_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface HookContract {}
+interface TaggedContract {}
+class Hook implements HookContract, TaggedContract {}
+
+function &select_hook(HookContract|array|null $hook, HookContract&TaggedContract $tagged, $fallback = "seed"): HookContract|array|null {
+    return $hook;
+}
+
+function raw_hook($value) {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function type_line($label, $type) {
+    if ($type === null) {
+        echo $label, "|null\n";
+        return;
+    }
+    echo $label, "|", get_class($type), "|", yn($type->allowsNull()), "\n";
+}
+
+function param_line($label, $parameter) {
+    $declaringClass = $parameter->getDeclaringClass();
+    echo $label, "|", $parameter->getName(), "|", $parameter->getPosition(), "|", get_class($parameter->getDeclaringFunction()), "|", $parameter->getDeclaringFunction()->getName(), "|", yn($declaringClass === null), "|", yn($parameter->isDefaultValueAvailable()), "|", yn($parameter->hasType()), "\n";
+}
+
+$function = new ReflectionFunction("select_hook");
+echo "fn|", $function->getName(), "|", get_class($function), "|", $function->getNumberOfParameters(), "|", $function->getNumberOfRequiredParameters(), "|", yn($function->hasReturnType()), "|", yn($function->returnsReference()), "\n";
+type_line("return", $function->getReturnType());
+foreach ($function->getParameters() as $index => $parameter) {
+    param_line("param" . $index, $parameter);
+}
+param_line("direct", new ReflectionParameter("select_hook", "tagged"));
+echo "raw|", yn((new ReflectionFunction("raw_hook"))->hasReturnType()), "|";
+type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fn|select_hook|ReflectionFunction|3|2|1|1\nreturn|ReflectionUnionType|1\nparam0|hook|0|ReflectionFunction|select_hook|1|0|1\nparam1|tagged|1|ReflectionFunction|select_hook|1|0|1\nparam2|fallback|2|ReflectionFunction|select_hook|1|1|0\ndirect|tagged|1|ReflectionFunction|select_hook|1|0|1\nraw|0|raw-return|null\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

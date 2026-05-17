@@ -8,15 +8,16 @@ Array
     [5] => PDO
     [6] => PDOStatement
     [7] => ReflectionClass
-    [8] => ReflectionMethod
-    [9] => ReflectionParameter
-    [10] => ReflectionType
-    [11] => ReflectionNamedType
-    [12] => ReflectionUnionType
-    [13] => ReflectionIntersectionType
-    [14] => ReflectionProperty
-    [15] => Box
-    [16] => Profile
+    [8] => ReflectionFunction
+    [9] => ReflectionMethod
+    [10] => ReflectionParameter
+    [11] => ReflectionType
+    [12] => ReflectionNamedType
+    [13] => ReflectionUnionType
+    [14] => ReflectionIntersectionType
+    [15] => ReflectionProperty
+    [16] => Box
+    [17] => Profile
 )
-17|Exception|stdClass|mysqli
+18|Exception|stdClass|mysqli
 Exception|stdClass|mysqli

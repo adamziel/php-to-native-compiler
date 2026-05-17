@@ -93,9 +93,9 @@ integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
 parity, session-cookie encoding/expiration/replacement beyond the documented
 `session_start()` attribute scaffold, and cache-header emission remain
-unsupported. `setcookie()` separately supports a bounded deterministic CLI
-header-log slice for value encoding, expiration dates, attributes, and
-name-only replacement. `fopen()` can create bounded
+unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
+deterministic CLI header-log slice for encoded or raw string values,
+expiration dates, attributes, and name-only replacement. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -287,12 +287,14 @@ incorrect native code.
   wp_options`, and `SHOW INDEX`/`SHOW KEYS FROM wp_options` schema probe rows
   for the current option table, plus a bounded per-handle dynamic schema island
   for exact `CREATE TABLE`, `ALTER TABLE` add/change/modify/drop column and
-  add/drop index probes, and later `DESCRIBE`/`SHOW COLUMNS`/`SHOW INDEX`/
-  `SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
+  add/drop index probes with bounded `ASC`/`DESC` index-part ordering metadata,
+  and later `DESCRIBE`/`SHOW COLUMNS`/`SHOW INDEX`/`SHOW CREATE TABLE`/
+  `SHOW TABLE STATUS` inspection;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
-  index inspection, exact table-status counters or timestamps, dbDelta diffing,
-  real transactional DDL beyond bounded in-memory schema snapshots, persistent
-  object cache, full `wpdb`, or native database support
+  index inspection, expression indexes, index opclass/parser metadata, exact
+  table-status counters or timestamps, dbDelta diffing, real transactional DDL
+  beyond bounded in-memory schema snapshots, persistent object cache, full
+  `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -425,11 +427,13 @@ incorrect native code.
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `hasMethod($name)`, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
+  `ReflectionFunction` metadata objects for declared user functions with
+  name, parameter-list, return-type, and by-reference-return inspection,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, parameter-list, and return-type inspection,
   bounded
-  `ReflectionParameter` method-parameter metadata with name, position,
+  `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
   type-presence predicates plus simple named and bounded compound
   `ReflectionType` metadata through `getType()`, `getReturnType()`,
@@ -548,7 +552,7 @@ magic methods beyond direct missing-property
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
-bounded `ReflectionClass`/`ReflectionMethod`/`ReflectionParameter`/
+bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
@@ -652,15 +656,18 @@ visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
 object-property array arguments, dynamic property-held ArrayAccess reference
-roots, ArrayAccess append reference sources outside the exact
-`offsetGet(null)` bridge, broader aliasing, and full copy-on-write remain
-unsupported.
+roots beyond direct visible holder-property sources, ArrayAccess append
+reference sources outside the exact `offsetGet(null)` bridge, broader
+aliasing, and full copy-on-write remain unsupported.
 The current interpreter does include a narrow direct and property-held
 ArrayAccess reference
 root bridge for `$alias =& $bag[$key]`, nested direct sources such as
 `$alias =& $bag["outer"]["slot"]`, property-held sources such as
 `$alias =& $holder->bag["outer"]["slot"]`, and literal callback elements such
-as `array(&$holder->bag["outer"]["slot"])` when public by-reference
+as `array(&$holder->bag["outer"]["slot"])`. It also covers direct dynamic
+property-held sources such as `$alias =& $holder->{$name}["outer"]["slot"]`,
+`array(&$holder->{$name}["outer"]["slot"])`, and stored callback slots
+assigned from `$holder->{$name}["created"]["leaf"]` when public by-reference
 `offsetGet($offset)` is exactly `return $this->property[$offset];`. Direct and
 property-held append reference sources such as `$alias =& $bag[]` and
 `$args[0] =& $holder->bag[]` are covered only for that same exact body shape,
@@ -720,12 +727,12 @@ direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
 `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
 `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
-`http_response_code()`/`setcookie()` response header-state calls, including
+`http_response_code()`/`setcookie()`/`setrawcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct-variable
 filename/line outputs, bounded ordinary header-name replacement in the
 request-local CLI header log, bounded request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
-and `setcookie()`,
+and `setcookie()`/`setrawcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

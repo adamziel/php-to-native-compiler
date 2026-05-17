@@ -13,14 +13,15 @@ Array
     [5] => PDO
     [6] => PDOStatement
     [7] => ReflectionClass
-    [8] => ReflectionMethod
-    [9] => ReflectionParameter
-    [10] => ReflectionType
-    [11] => ReflectionNamedType
-    [12] => ReflectionUnionType
-    [13] => ReflectionIntersectionType
-    [14] => ReflectionProperty
-    [15] => App\State\Box
-    [16] => App\State\Mode
-    [17] => App\State\Status
+    [8] => ReflectionFunction
+    [9] => ReflectionMethod
+    [10] => ReflectionParameter
+    [11] => ReflectionType
+    [12] => ReflectionNamedType
+    [13] => ReflectionUnionType
+    [14] => ReflectionIntersectionType
+    [15] => ReflectionProperty
+    [16] => App\State\Box
+    [17] => App\State\Mode
+    [18] => App\State\Status
 )

@@ -208,33 +208,37 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1486 targets readonly/property-hook
-  behavior, attributes/metadata/reflection, function/closure reflection
-  targets, magic hooks reached by WordPress, broader autoload/class-alias
-  lifecycle parity, interface diagnostics, exact reflection exceptions,
-  invocation/value mutation, or broader class metadata behavior.
-- Reference/COW lane: Milestone 1487 targets real reference containers,
-  magic-property reference containers, arbitrary reference expressions, dynamic
-  `ArrayAccess` roots, mixed nested `ArrayAccess` chains, alias cleanup,
-  broader array/object copy-on-write, exact alias destruction ordering,
-  by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1488 targets `setrawcookie()`,
-  cookie name validation/encoding, `Max-Age`, path/domain-aware cookie
-  replacement, full cookie option validation, exact warning text, real SAPI
-  emission, session cookie replacement parity, cache headers, session locking,
-  save handlers, garbage collection, binary reads, shutdown ordering,
+- Object/interface lane: Milestone 1491 targets closure reflection targets,
+  function file/line/doc-comment metadata, internal/builtin reflection
+  metadata, readonly/property-hook behavior, attributes, exact reflection
+  exceptions, invocation/value mutation, magic hooks reached by WordPress,
+  broader autoload/class-alias lifecycle parity, interface diagnostics, or
+  broader class metadata behavior.
+- Reference/COW lane: Milestone 1492 targets real reference containers,
+  magic-property reference containers, arbitrary reference expressions,
+  non-direct dynamic holder expressions, invisible dynamic property reference
+  sources, mixed nested `ArrayAccess` chains, alias cleanup, broader
+  array/object copy-on-write, exact alias destruction ordering, by-reference
+  foreach, or native lowering.
+- Request/SAPI/filesystem/stream lane: Milestone 1493 targets cookie
+  name/option validation, `Max-Age`, path/domain-aware cookie replacement,
+  session cookie replacement parity, cache headers, session locking, save
+  handlers, garbage collection, binary reads, shutdown ordering,
   include-path/stat-cache behavior, stream wrappers/contexts, request-body
   lifetime, host filesystem edge cases, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1489 targets real SQL parsing slices,
-  dbDelta diff generation, expression indexes, host database inspection,
-  broader `wpdb`/MySQLi result or mutation behavior, prepared option/transient
-  query shapes, object-cache/transient persistence, hooks under realistic
-  callback shapes, deterministic plugin/theme loading probes, or a
-  bootstrap/request probe that moves past its next real blocker.
-- Tests/docs lane: Milestone 1490 is the next tests/docs slot after the next
+- WordPress DB/bootstrap lane: Milestone 1494 targets real SQL parsing slices,
+  dbDelta diff generation, expression indexes, opclass/parser metadata, host
+  database inspection, broader `wpdb`/MySQLi result or mutation behavior,
+  prepared option/transient query shapes, object-cache/transient persistence,
+  hooks under realistic callback shapes, deterministic plugin/theme loading
+  probes, or a bootstrap/request probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1495 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1481 through 1484 closed the latest four WordPress-focused
+Milestones 1486 through 1489 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1490 refreshed the queue and recorded the
+full-gate result.
+Milestones 1481 through 1484 closed the previous four WordPress-focused
 implementation lanes, and Milestone 1485 refreshed the queue and recorded the
 full-gate result.
 Milestones 1476 through 1479 closed the latest four WordPress-focused
