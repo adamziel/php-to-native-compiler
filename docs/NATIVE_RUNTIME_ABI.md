@@ -31,6 +31,11 @@ pub struct NativeByteBuffer {
     pub len: usize,
     pub cap: usize,
 }
+
+#[repr(C)]
+pub struct NativeStringHandle {
+    ptr: *mut NativeString,
+}
 ```
 
 The exported constructor symbols are:
@@ -47,6 +52,11 @@ The first scalar output helper symbols are:
 - `phpc_native_scalar_echo_bytes(NativeScalarValue) -> NativeByteBuffer`
 - `phpc_native_byte_buffer_from_bytes(*const u8, usize) -> NativeByteBuffer`
 - `phpc_native_byte_buffer_free(NativeByteBuffer)`
+- `phpc_native_string_from_bytes(*const u8, usize) -> NativeStringHandle`
+- `phpc_native_string_len(NativeStringHandle) -> usize`
+- `phpc_native_string_bytes(NativeStringHandle) -> *const u8`
+- `phpc_native_string_clone_bytes(NativeStringHandle) -> NativeByteBuffer`
+- `phpc_native_string_free(NativeStringHandle)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
@@ -67,6 +77,16 @@ zero-length inputs return the canonical empty buffer. This is heap ownership
 groundwork for future PHP string handoff only; it is not a PHP string value
 handle, does not intern strings, and does not change normal generated string or
 echo lowering.
+
+`phpc_native_string_from_bytes` copies caller-provided bytes into an opaque
+runtime-owned PHP string handle. Empty strings are valid handles that must be
+freed; a null pointer with a nonzero length returns a null handle. The length
+helper returns the byte length, the bytes helper returns a borrowed pointer that
+is valid only until the handle is freed, and the clone helper returns an owned
+`NativeByteBuffer` copy for generated-code handoff or probes. This is a string
+handle ABI seed only: it does not intern strings, expose mutable string storage,
+convert handles into interpreter `Value::String`, or change normal generated
+string/echo lowering.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -115,6 +135,14 @@ target-width-aware probe function that clones a static byte payload, extracts
 the owned length, and frees the buffer. Normal `phpc compile` output remains on
 the existing direct `printf` scalar lowering path.
 
+Milestone 1573 adds the opaque string handle declaration
+`%phpc.NativeStringHandle = type { ptr }`, the string copy/length/borrowed-byte
+pointer/clone/free helper declarations, and a target-width-aware probe function
+that round-trips a static byte payload through a string handle before freeing
+both the cloned buffer and the handle. The milestone also pins a CLI
+`--emit-ir` fixture proving normal generated string output still uses the
+existing direct `printf` path and does not call the new string helpers.
+
 This is not production lowering. Normal `phpc compile --emit-ir` output remains
 unchanged and still does not link or execute runtime helper calls. The snapshot
 uses the selected target's `usize`/pointer-width shape; a real linked native
@@ -129,6 +157,7 @@ The ABI slice is covered by runtime unit tests:
 ```sh
 cargo test -p php_runtime native_scalar_abi -- --test-threads=1
 cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1
+cargo test -p php_runtime native_string_handle -- --test-threads=1
 cargo test -p phpc --test native_runtime_abi -- --test-threads=1
 ```
 
@@ -142,17 +171,22 @@ The tests pin:
   exported free helper.
 - copied runtime-owned byte buffers from caller-provided byte slices, including
   embedded NUL bytes, zero-length inputs, and null inputs.
+- opaque runtime-owned string handles copied from caller-provided bytes,
+  including embedded NUL bytes, empty-string handles, borrowed byte pointers,
+  cloned owned-byte buffers, null non-empty inputs, and handle release.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
-- explicit 32-bit and 64-bit `usize` IR rendering for scalar echo and owned
-  byte-buffer helper declarations plus the probe calls.
+- explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
+  byte-buffer, and string-handle helper declarations plus the probe calls.
 
 ## Explicit Non-Support
 
 This ABI does not yet provide:
 
-- general string ownership, string interning, or PHP string value handles beyond
-  the scalar echo owned-byte helper and copied raw-byte buffer helper;
+- string interning, mutable string storage, handle-to-`Value::String`
+  conversion, or production lowering of PHP strings through runtime helpers
+  beyond the scalar echo owned-byte helper, copied raw-byte buffer helper, and
+  opaque copied string-handle helper;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR;
 - symbol tables, stack frames, call lookup, or diagnostics;

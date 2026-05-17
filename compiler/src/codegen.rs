@@ -402,7 +402,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "; this is a dependency sketch, not production lowering or linked execution",
         "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
         &format!("%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}"),
+        "%phpc.NativeStringHandle = type { ptr }",
         "@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c\"heap\"",
+        "@phpc.probe.string = private unnamed_addr constant [7 x i8] c\"php\\00abi\"",
         "",
         &format!("declare {usize_type} @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)"),
         &format!(
@@ -413,6 +415,13 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
             "declare %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr, {usize_type})"
         ),
         "declare void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer)",
+        &format!(
+            "declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, {usize_type})"
+        ),
+        &format!("declare {usize_type} @phpc_native_string_len(%phpc.NativeStringHandle)"),
+        "declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)",
+        "declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)",
+        "declare void @phpc_native_string_free(%phpc.NativeStringHandle)",
         "",
         &format!("define {usize_type} @phpc_probe_scalar_echo_len() {{"),
         "entry:",
@@ -444,6 +453,24 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         ),
         "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_string_handle_roundtrip() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        &format!(
+            "  %len = call {usize_type} @phpc_native_string_len(%phpc.NativeStringHandle %string)"
+        ),
+        "  %raw = call ptr @phpc_native_string_bytes(%phpc.NativeStringHandle %string)",
+        "  %clone = call %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle %string)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
         &format!("  ret {usize_type} %len"),
         "}",
         "",

@@ -98,7 +98,10 @@ interfaces and top-level traits in declaration order. `class_uses()` reports
 the direct user traits recorded on a current object value or declared string
 class name, without recursing into parent classes. `class_parents()` reports
 declared parent classes from immediate parent to root, which enables covered
-userland recursive trait-helper patterns. A declared interface may
+userland recursive trait-helper patterns. `ReflectionClass` on a declared
+user trait exposes direct trait-body `use` declarations through
+`getTraitNames()`/`getTraits()` and exposes simple methods imported from those
+used traits through `hasMethod()`, `getMethod()`, and `getMethods()`. A declared interface may
 extend one or more user interfaces declared before or after the child
 interface; concrete implementors of the child interface must expose the child
 and all parent public method names with matching static/non-static shape, and
@@ -532,7 +535,8 @@ implementation relationships,
 `get_declared_interfaces` built-in/internal interface entries,
 `get_declared_traits` built-in/internal trait entries,
 `class_uses` remains non-recursive; recursive trait helpers are limited to
-userland code combining `class_parents()` and `class_uses()`.
+userland code combining `class_parents()` and `class_uses()` or bounded
+`ReflectionClass` trait metadata.
 Built-in/internal trait entries, `class_parents` internal parent metadata,
 exact missing-class warning behavior, broader Reflection integration,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,

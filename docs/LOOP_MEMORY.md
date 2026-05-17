@@ -26,6 +26,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T21:22:30+02:00
+
+- Checkpoint before this task:
+  `c3509814 runtime: advance WordPress reflection refs session time db escape and native bytes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1569-1574, focused on large WordPress/PHP
+  blockers with five disjoint implementation/native lanes plus one
+  integration/full-gate slot.
+- Files changed so far: bounded recursive trait reflection metadata for
+  `ReflectionClass` on user traits; normal static reference-return invocation
+  for direct and dynamic static receivers; deterministic `session_start()`
+  cookie replacement by matching session-name/path/domain identity; prepared
+  option-row `wp_options` scans with single-character `ESCAPE` clauses; opaque
+  PHP string-handle native ABI helpers and deterministic probe declarations;
+  milestone fixtures 1569-1573; support, architecture, README, queue,
+  progress, loop-memory, object-model, MySQLi, and native ABI docs.
+- Tests run and result: focused integrated checks passed for the named
+  object/reflection, reference/COW, session, MySQLi, native ABI, and runtime
+  string-handle tests. Milestone fixtures 1569-1573 passed, with system PHP
+  comparisons for 1569, 1570, and 1573 and documented `phpc-only` skips for
+  1571 and 1572. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1569-1574 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1630` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1630` fixture tests
+  passed with `0` failures, `952` system PHP comparisons, and `678` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: interface/trait/closure/internal reflection
+  invocation, exact reflection exceptions, inherited interface compatibility,
+  constructor/destructor and broader magic-hook fidelity, class alias/autoload
+  lifecycle, real PHP reference containers, inaccessible declared-property
+  magic fallback, magic-property reference containers, arbitrary reference
+  expressions, broad array/object copy-on-write, mixed nested `ArrayAccess`,
+  superglobal reference lifetime, real SAPI `Date` emission, locking/save
+  handlers, real SAPI emission, realpath/stat-cache breadth, uploads/output/
+  shutdown fidelity, SQL-mode-aware option reads/deletes, arbitrary
+  SQL/database/schema execution, dbDelta, persistent cache/transients, real
+  WordPress plugin/theme/admin/REST/front-controller flows, normal generated
+  LLVM runtime helper calls, linked native execution,
+  PHP array/object/resource/reference ABI handles, request-state handles, and
+  native runtime integration remain explicit blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1569-1573 lane worktrees and target directories, then
+  start the next blocker-focused lanes from Milestones 1575-1579. Keep one
+  integration owner and one serialized full gate per checkpoint batch.
+
 ## Loop Event 2026-05-17T21:01:55+02:00
 
 - Checkpoint before this task:

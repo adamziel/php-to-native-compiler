@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1571/session_cookie_replacement.php
+exit: 0
+stdout:
+2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=firstid; path=/wp-admin; domain=example.test; secure; HttpOnly|2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=secondid; path=/wp-admin; domain=EXAMPLE.TEST
+--- stdout end ---
+stderr:
+--- stderr end ---

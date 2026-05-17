@@ -735,13 +735,16 @@ materialization, full reference containers, copy-on-write, exact mutation
 ordering, and native lowering remain future work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
-of direct free-function and direct visible object-method reference-return calls
-can execute the same direct-variable return shape used by statement-form
-reference assignment and then expose a by-value snapshot of the returned cell.
-That path now reuses the covered array-offset writeback machinery for
-by-reference parameters, including array offsets below missing magic
-properties when visible public `__get()` returns a direct variable by
-reference. Static, dynamic-static, nested-control-flow, and arbitrary
+of direct free-function, direct visible object-method, direct named static
+method, `self::`, `parent::`, `static::`, and dynamic static receiver
+reference-return calls can execute the same direct-variable return shape used
+by statement-form reference assignment and then expose a by-value snapshot of
+the returned cell. That path reuses the covered array-offset writeback
+machinery for by-reference parameters. Direct named static method and dynamic
+static receiver calls also use the bounded array-offset bridge below missing
+magic properties when visible public `__get()` returns a direct variable by
+reference. Inaccessible declared-property magic fallback, general
+magic-property containers, nested-control-flow returns, and arbitrary
 reference-return invocations still report stable runtime boundaries before any
 by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
@@ -889,13 +892,14 @@ full reference containers, or PHP copy-on-write.
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
 `null`, booleans, integers, and floats, plus exported constructor symbols in
-`php_runtime`. This is intentionally only an ABI seed for future generated-code
-runtime helper calls. The compiler-side scalar echo helper probe renders
-`usize`-shaped helper signatures from an explicit pointer-width target so the
-ABI sketch can distinguish 32-bit and 64-bit targets. Linked native execution,
-runtime helper calls from normal generated IR, strings, arrays, objects,
-references, copy-on-write, stack frames, and diagnostics are still not
-implemented.
+`php_runtime`. It also has probe-only owned byte-buffer helpers and an opaque
+copied PHP string-handle helper surface. This is intentionally only an ABI seed
+for future generated-code runtime helper calls. The compiler-side helper probe
+renders `usize`-shaped helper signatures from an explicit pointer-width target
+so the ABI sketch can distinguish 32-bit and 64-bit targets. Linked native
+execution, runtime helper calls from normal generated IR, production string
+helper lowering, string interning, arrays, objects, references,
+copy-on-write, stack frames, and diagnostics are still not implemented.
 
 ## Native Codegen
 
@@ -1888,12 +1892,16 @@ snapshot keyed by the current session id, or to an empty array when no snapshot
 exists, and marks the session active. A fresh
 successful start appends a deterministic
 `Set-Cookie: PHPSESSID=<id>` line to the same request-local CLI header log used
-by `header()`, `setcookie()`, and `headers_list()`; the bounded `use_cookies`
+by `header()`, `setcookie()`, and `headers_list()`, replacing earlier
+deterministic `PHPSESSID` cookie lines with the same normalized non-empty path
+and ASCII-case-insensitive normalized non-empty domain identity while keeping
+same-name cookies for different path/domain identities; the bounded `use_cookies`
 session option suppresses that line when it is falsey. The bounded
 `cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
 `cookie_httponly`, and `cookie_samesite` options only format deterministic
 attributes on that in-memory header log; they do not model cookie encoding,
-expiration-date formatting, replacement policy, or host SAPI emission. A fresh
+expiration-date formatting beyond the bounded `Max-Age` attribute, broader
+replacement policy, or host SAPI emission. A fresh
 successful start also appends the bounded default no-cache session headers to
 the same CLI header log: `Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
 `Cache-Control: no-store, no-cache, must-revalidate`, and `Pragma: no-cache`.
@@ -1924,7 +1932,7 @@ returns `false`, leaves session status/data unchanged, and routes a bounded
 applying options. Session cache-header variants outside the documented
 empty, `nocache`, `private`, `private_no_expire`, and `public` behavior,
 exact request-time/script-mtime parity, cookie encoding, expiration-date formatting,
-replacement policy, trans-sid behavior, locking, save handlers, garbage
+broader replacement policy, trans-sid behavior, locking, save handlers, garbage
 collection, broader PHP session-id policy, integer top-level session
 keys, object/resource session serialization, exact malformed-session recovery
 parity, option effects beyond the documented session-start options, exact
@@ -2004,7 +2012,8 @@ bounded direct
 `option_name LIKE '<pattern>'` result scans with `%` wildcards, `_`
 single-character wildcards, backslash escapes, and a bounded
 single-character `ESCAPE '<char>'` clause, plus prepared `option_name LIKE ?`
-prefix result scans and deletes for transient-shaped option rows. Those scan
+prefix result scans with the same bounded single-character `ESCAPE '<char>'`
+clause and prepared deletes for transient-shaped option rows. Those scan
 result shapes also accept the exact trailing `ORDER BY option_name` /
 backticked `ORDER BY` suffix with optional `ASC`, while preserving the
 deterministic ascending option-name order already used by the state island. A
@@ -2061,10 +2070,11 @@ beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
 duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, SQL-mode behavior beyond the bounded schema metadata
 `NO_BACKSLASH_ESCAPES` parser branch, option-name `LIKE` wildcard semantics
-beyond direct read filters, prepared option-name prefix scans, and schema
-metadata filters, exact MySQL affected-row or insert-ID edge cases, prepared
-schema placeholders beyond the single string filter parameter on documented
-metadata probes, real transactional
+beyond direct read filters, prepared option-name prefix scans, prepared
+option-row `ESCAPE` clauses, and schema metadata filters, exact MySQL
+affected-row or insert-ID edge cases, prepared schema placeholders beyond the
+single string filter parameter on documented metadata probes, real
+transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
 schema model, host database connection, PDO layer, or native database runtime.
@@ -2831,11 +2841,15 @@ docblock association across unusual trivia, parenthesized DNF property types,
 exact PHP union scalar coercion preference rules, reference/COW interactions,
 and native lowering remain unsupported.
 `ReflectionClass::getTraitNames()` and `getTraits()` read the direct trait-name
-list already stored on runtime class metadata by the trait-composition pass.
+list already stored on runtime class metadata by the trait-composition pass
+for user classes, and direct trait-body `use` declarations for user traits.
 `getTraits()` wraps each direct user trait name in the same request-local
-`ReflectionClass` state used by direct trait reflection. The slice intentionally
-does not add recursive trait reflection metadata, built-in/internal trait
-catalogs, or native lowering.
+`ReflectionClass` state used by direct trait reflection. Trait reflection also
+expands simple methods imported from direct trait-body `use` declarations for
+`getMethod()`, `getMethods()`, and `hasMethod()`, using the reflected trait as
+the declaring class for that bounded metadata slice. The slice intentionally
+does not add built-in/internal trait catalogs, exact adapted trait-method
+ordering, recursive conflict/adaptation edge cases, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

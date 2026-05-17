@@ -358,10 +358,8 @@ expired-timeout predicates also accept an exact single-character
 `ESCAPE '<char>'` clause after `LIKE ?` for the current plain/backticked
 table and column spellings. This is not broad
 `DELETE` SQL, arbitrary multi-table deletes, subquery support, arbitrary
-predicates, SQL-mode-aware deletes, prepared `ESCAPE` clauses for general
-option-row scans, non-string option-name params, real index/lock behavior, or
-host database
-execution. A later exact
+predicates, SQL-mode-aware deletes, non-string option-name params, real
+index/lock behavior, or host database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
@@ -499,15 +497,15 @@ and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
 deterministic row sets for one string pattern parameter, including backticked
 table/column spellings, `%` wildcards, `_` single-character wildcards, and
 backslash-escaped `%`, `_`, and `\` literals such as `\_transient\_%`.
-These prepared LIKE scans also accept an exact
-trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
-optional `ASC`, and keep the existing deterministic ascending option-name row
-order. This prepared path is still bounded to the documented option-row
-projections and does not support prepared `ESCAPE` clauses, SQL-mode-aware
-`NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists, `DESC` ordering,
-arbitrary `ORDER BY` expressions, collation fidelity, or host database
-execution, except for the separate expired-timeout predicate slice documented
-above. The exact
+These prepared LIKE scans also accept an exact single-character
+`ESCAPE '<char>'` clause before the supported trailing `ORDER BY option_name`
+or ``ORDER BY `option_name` `` suffix, with optional `ASC`, and keep the
+existing deterministic ascending option-name row order. This prepared path is
+still bounded to the documented option-row projections and does not support
+SQL-mode-aware `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists,
+`DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
+database execution, except for the separate expired-timeout predicate slice
+documented above. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

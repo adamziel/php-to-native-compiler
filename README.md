@@ -104,11 +104,15 @@ or unsupported existing session files emit one bounded recoverable warning and
 recover with an empty session array. Starting a session with an explicit id
 outside that bounded file-safe subset returns `false` with a bounded warning
 before headers or `$_SESSION` are changed.
+Fresh `session_start()` cookie headers replace earlier deterministic
+`PHPSESSID` cookie headers with the same normalized non-empty path and
+ASCII-case-insensitive normalized non-empty domain identity in the CLI header
+log, while same-name cookies for different path/domain identities are kept.
 Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
-parity, session-cookie encoding/expiration/replacement beyond the documented
-`session_start()` attribute scaffold, real SAPI `Date` header emission,
+parity, session-cookie encoding, expiration-date formatting beyond the bounded
+`Max-Age` attribute, broader replacement policy, real SAPI `Date` header emission,
 host-webserver request-time initialization, cache-header variants beyond empty
 suppression, `nocache`, `private`, `private_no_expire`, and `public` remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
@@ -321,8 +325,9 @@ incorrect native code.
   buffered-only,
   plus bounded direct option-name `LIKE` result scans/deletes with `%`, `_`,
   backslash escapes, and single-character `ESCAPE` clauses, bounded prepared
-  transient-shaped option-name prefix result scans, and prepared LIKE deletes,
-  including exact `ORDER BY option_name` suffixes on those scans and a bounded
+  transient-shaped option-name prefix result scans with single-character
+  `ESCAPE` clauses, and prepared LIKE deletes, including exact
+  `ORDER BY option_name` suffixes on those scans and a bounded
   expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
   timeout-row delete shape, and exact WordPress-shaped transient payload plus
@@ -623,7 +628,8 @@ and trait method source-file persistence, exact `ReflectionClass::getMethod()`
 and `getMethods()` exception objects/text and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
 method slice, non-public or dynamic
-`ReflectionProperty` value mutation, recursive trait metadata reflection, and
+`ReflectionProperty` value mutation, adapted recursive trait metadata edge
+cases, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -653,11 +659,14 @@ returns, covered array/property-slot by-reference arguments, and the narrow
 `return $param[$key]` and `return $param[$key][$subkey]` child-slot shapes
 when `$param` was supplied by a direct variable parent array or a covered
 parent array/property slot. Normal by-value invocation of direct free-function
-and direct visible object-method reference-return calls can execute the same
-direct-variable return shape and write back covered by-reference array-offset
-arguments, including array offsets below missing magic properties when visible
-public `__get()` returns a direct variable by reference; static and
-dynamic-static reference-return invocation remains unsupported.
+direct visible object-method, direct named static method, `self::`,
+`parent::`, `static::`, and dynamic static receiver reference-return calls can
+execute the same direct-variable return shape and write back covered
+by-reference array-offset arguments. Direct named static method and dynamic
+static receiver reference-return calls also use the bounded magic-property
+array-offset bridge when visible public `__get()` returns a direct variable by
+reference. Inaccessible declared-property magic fallback and general
+magic-property reference containers remain unsupported.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including
@@ -814,6 +823,12 @@ The current native path is focused on straight-line scalar lowering:
 - selected direct builtin folds such as scalar type checks, `strlen`, selected
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
+
+The native runtime ABI has an early probe-only helper surface for scalar echo
+conversion, owned byte buffers, and opaque copied PHP string handles. Normal
+generated LLVM for strings still uses the existing direct static-string
+`printf` path; linked native execution and production runtime string-helper
+lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

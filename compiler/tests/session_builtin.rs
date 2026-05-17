@@ -102,6 +102,47 @@ echo implode("|", $out);
 }
 
 #[test]
+fn session_start_replaces_cookie_header_by_name_path_and_domain_identity() {
+    let execution = run_source(
+        r#"<?php
+session_cache_limiter("");
+$out = array();
+setcookie("PHPSESSID", "manual", 0, "/wp-admin", "EXAMPLE.test");
+setcookie("PHPSESSID", "root", 0, "/");
+session_id("firstid");
+session_start([
+    "cookie_path" => "/wp-admin",
+    "cookie_domain" => "example.test",
+    "cookie_secure" => true,
+    "cookie_httponly" => true,
+]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+session_write_close();
+session_id("secondid");
+session_start([
+    "cookie_path" => "/wp-admin",
+    "cookie_domain" => "EXAMPLE.TEST",
+]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=firstid; path=/wp-admin; domain=example.test; secure; HttpOnly|2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=secondid; path=/wp-admin; domain=EXAMPLE.TEST"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_start_emits_default_nocache_headers() {
     let execution = run_source(
         r#"<?php

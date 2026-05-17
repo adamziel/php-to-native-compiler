@@ -4287,6 +4287,42 @@ echo $escaped_row["option_name"], "=", $escaped_row["option_value"];
 }
 
 #[test]
+fn mysqli_prepared_option_like_scans_apply_escape_clause() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_feed_mod', 'payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-update-feed-mod', 'wildcard', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_feed_mod', 'site-payload', 'no')");
+$names = mysqli_execute_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ? ESCAPE '!' ORDER BY option_name", array("!_transient!_%"));
+$first = mysqli_fetch_assoc($names);
+$second = mysqli_fetch_assoc($names);
+echo mysqli_num_rows($names);
+echo ":";
+echo $first["option_name"], ",";
+echo $second["option_name"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` LIKE ? ESCAPE '!' ORDER BY `option_name` ASC");
+mysqli_stmt_execute($stmt, array("!_site!_transient!_%"));
+$site = mysqli_stmt_get_result($stmt);
+$site_row = mysqli_fetch_assoc($site);
+echo mysqli_num_fields($site);
+echo ":";
+echo $site_row["option_name"], "=", $site_row["option_value"], ":", $site_row["autoload"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_timeout_feed_mod,_transient_update_feed_mod|3:_site_transient_update_feed_mod=site-payload:no"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_prepared_transient_prefix_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

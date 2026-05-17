@@ -52,13 +52,12 @@
   they resolve to visible static methods in that same direct-variable return
   shape. In those shapes, the assigned alias binds to the returned variable
   cell and `unset($alias)` detaches only the alias name. Normal invocation of
-  direct free-function and direct visible object-method reference-return calls
-  is executable for the same direct-variable return shape as a by-value read
-  of the returned cell, so by-reference argument mutations are still written
-  back when the caller ignores the returned reference. Normal invocation of
-  `Box::identity($value)`, `self::identity($value)`,
-  `parent::identity($value)`, `static::identity($value)`,
-  `$class::identity($value)`, or `$object::identity($value)`, non-static
+  direct free-function, direct visible object-method, direct named static
+  method, `self::` static method, `parent::` static method, `static::`
+  late-static method, and dynamic static receiver reference-return calls is
+  executable for the same direct-variable return shape as a by-value read of
+  the returned cell, so by-reference argument mutations are still written back
+  when the caller ignores the returned reference. Non-static
   `self::`/`parent::`/`static::` sources, non-static dynamic static receiver
   sources, missing-parent parent calls, `static::` sources outside
   class/method context, and non-object/non-string dynamic receivers remain
@@ -97,7 +96,9 @@
   `touch($object->missing["slot"])` and
   `$picker->touch($object->{$name}["outer"]["slot"])`; callee mutations write
   back through the array cell returned by visible public `__get()`, and the
-  produced reference is discarded as a by-value result.
+  produced reference is discarded as a by-value result. Direct named static
+  method and dynamic static receiver reference-return calls also use that
+  bounded magic `__get()` array-offset bridge for normal invocation.
   Nested-control-flow returns, dynamic object-property argument roots,
   non-public object-property roots outside valid method visibility contexts,
   `ArrayAccess` argument roots outside the documented direct `offsetGet()`
@@ -154,14 +155,13 @@
   accepts array offsets below those magic properties, such as
   `handler($object->missing["slot"])` and
   `handler($object->{$name}["outer"]["slot"])`, as a bounded copy-in/writeback
-  bridge through the array cell returned by `__get()`. Direct free-function
-  and direct visible object-method calls that return by reference now use that
-  same bridge for normal invocation when the returned reference is discarded.
-  This does not add static/dynamic-static reference-returning calls with
-  magic-property array-offset arguments, inaccessible declared-property magic
-  fallback, mixed nested `ArrayAccess` chains, general magic-property
-  reference containers, arbitrary reference expressions, or a general in-call
-  PHP reference container. String
+  bridge through the array cell returned by `__get()`. Direct free-function,
+  direct visible object-method, direct named static method, and dynamic static
+  receiver calls that return by reference use that same bridge for normal
+  invocation when the returned reference is discarded. This does not add
+  inaccessible declared-property magic fallback, mixed nested `ArrayAccess`
+  chains, general magic-property reference containers, arbitrary reference
+  expressions, or a general in-call PHP reference container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -2033,9 +2033,8 @@
   the predicate as prefix-only. Prepared expired-timeout predicates also accept
   exact single-character `ESCAPE '<char>'` clauses after `LIKE ?` for the
   current plain/backticked table and column spellings. This does not add
-  SQL-mode-aware deletes, prepared `ESCAPE` clauses for general option-row
-  scans, arbitrary predicates, or host database execution. The same state
-  island also
+  SQL-mode-aware deletes, arbitrary predicates, or host database execution.
+  The same state island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
   trailing-percent patterns plus a decimal threshold; it deletes each reached
@@ -2540,13 +2539,14 @@
   backticked table/column spellings, `%` wildcards, `_` single-character
   wildcards, and backslash-escaped `%`, `_`, and `\` literals such as
   `\_transient\_%`. These prepared LIKE scans also accept an exact
-  trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
-  optional `ASC`, and return rows in the existing deterministic ascending
-  option-name order. This prepared path remains bounded to the documented
-  option-row projections and does not support prepared `ESCAPE` clauses,
-  SQL-mode-aware `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists,
-  `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
-  host database execution. Expired-timeout predicates remain prefix-only. The
+  single-character `ESCAPE '<char>'` clause before the supported trailing
+  `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
+  `ASC`, and return rows in the existing deterministic ascending option-name
+  order. This prepared path remains bounded to the documented option-row
+  projections and does not support SQL-mode-aware
+  `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists, `DESC`
+  ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
+  database execution. The
   exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
@@ -3196,6 +3196,11 @@
   `PHP_SESSION_NONE` while leaving `$_SESSION` visible for the rest of the
   request. The `use_cookies` option is recognized with PHP truthiness: when
   falsey, the bounded session cookie header is not appended for that start.
+  Fresh starts that emit a session cookie replace earlier deterministic
+  `Set-Cookie: PHPSESSID=...` entries with the same normalized non-empty path
+  and ASCII-case-insensitive normalized non-empty domain identity in the CLI
+  header log, including entries created by `setcookie()`/`setrawcookie()`;
+  same-name cookies for different path/domain identities are kept.
   Fresh successful starts append deterministic default no-cache session
   headers (`Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
   `Cache-Control: no-store, no-cache, must-revalidate`, and
@@ -3262,7 +3267,8 @@
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_regenerate_id()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
-  expiration-date formatting, cookie replacement, real SAPI `Date` header
+  expiration-date formatting beyond the bounded `Max-Age` attribute, broader
+  cookie replacement policy, real SAPI `Date` header
   emission, host-webserver request-time initialization, cache-limiter variants
   beyond empty suppression, `nocache`, `private`, `private_no_expire`, and
   `public`, garbage collection, integer top-level session keys,
@@ -4507,13 +4513,15 @@
   Native echo conversion is limited to this static scalar path: `null` and
   `false` emit nothing, `true` emits `1`, integers use `%lld`, floats use
   `%g`, and strings are emitted through generated static string constants.
-  The compiler-side native runtime scalar echo helper probe now renders
-  `usize`-shaped helper signatures from an explicit pointer-width target, with
-  committed 32-bit and current host-width coverage. This is still a dependency
-  sketch: normal `phpc compile --emit-ir` output does not call those helpers,
-  and linked native execution, heap-owned strings, arrays, objects, resources,
-  references/copy-on-write, stack frames, diagnostics, and WordPress host state
-  remain unsupported in native lowering.
+  The compiler-side native runtime helper probe now renders `usize`-shaped
+  helper signatures from an explicit pointer-width target, with committed
+  32-bit and current host-width coverage. The probe includes scalar echo
+  helpers, owned byte-buffer helpers, and an opaque copied PHP string-handle
+  helper surface. This is still a dependency sketch: normal
+  `phpc compile --emit-ir` output does not call those helpers, and linked
+  native execution, production string helper lowering, string interning,
+  arrays, objects, resources, references/copy-on-write, stack frames,
+  diagnostics, and WordPress host state remain unsupported in native lowering.
   Statement-form reference assignment is an explicit native codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject direct variable,
   array-offset, object-property, function-call, method-call, static-call,
@@ -6179,20 +6187,21 @@
   or `false`. For declared user classes that directly use supported traits,
   `getTraitNames()` returns a zero-indexed array of those direct trait names
   and `getTraits()` returns an associative array keyed by trait name whose
-  values are bounded `ReflectionClass` metadata objects for the traits.
+  values are bounded `ReflectionClass` metadata objects for the traits. For
+  declared user traits, those same methods expose direct trait-body `use`
+  declarations as bounded trait metadata objects.
   `getMethod($name)` returns the same bounded `ReflectionMethod` metadata
   object as `new ReflectionMethod($class, $name)` for methods declared on
   current user classes, inherited class methods, composed trait methods,
-  interface methods, and direct trait methods when the method-name argument is
-  a string. `getMethods()` returns bounded `ReflectionMethod` metadata arrays
-  for current user classes, inherited non-private class methods, composed
-  trait methods, interface methods, and direct trait methods. It also accepts
-  one int-like scalar modifier mask using the current `ReflectionMethod::IS_*`
-  constants; a zero mask returns an empty array.
-  Interfaces and traits currently report empty trait metadata because
-  interface trait use is not a PHP construct and trait-body `use` declarations
-  are composed for consuming classes but are not exposed as trait reflection
-  metadata.
+  interface methods, direct trait methods, and simple methods imported by
+  trait-body `use` declarations when the method-name argument is a string.
+  `getMethods()` returns bounded `ReflectionMethod` metadata arrays for
+  current user classes, inherited non-private class methods, composed trait
+  methods, interface methods, direct trait methods, and those same simple
+  trait-body imports. It also accepts one int-like scalar modifier mask using
+  the current `ReflectionMethod::IS_*` constants; a zero mask returns an empty
+  array. Interfaces report empty trait metadata because interface trait use is
+  not a PHP construct.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -7989,8 +7998,8 @@
   `ReflectionClass::getProperties()` filter masks, exact
   `ReflectionClass::getMethod()`/`getMethods()` exception objects/text for
   missing methods, non-string names, non-int filter arguments, and exact
-  `getMethods()` ordering for recursive or adapted trait method compositions,
-  trait-use metadata inside trait declarations, exact
+  `getMethods()` ordering for adapted trait method compositions,
+  recursive trait conflict/adaptation edge cases, exact
   `ReflectionException` behavior, namespace/import alias expansion beyond
   parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,

@@ -11430,7 +11430,7 @@ impl Interpreter {
                         ),
                     ));
                 };
-                for method in &trait_decl.methods {
+                for method in self.reflection_trait_methods(trait_decl)? {
                     if method.function.name.eq_ignore_ascii_case(method_name) {
                         return Ok(ReflectionMethodState {
                             reflected_class_id: None,
@@ -13400,8 +13400,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_value_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| wordpress_option_rows_for_filter(options, &filter))
@@ -13466,8 +13467,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_value_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| wordpress_option_value_rows_for_filter(options, &filter))
@@ -13532,8 +13534,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_autoload_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| wordpress_option_name_autoload_rows_for_filter(options, &filter))
@@ -13598,8 +13601,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| wordpress_option_name_rows_for_filter(options, &filter))
@@ -13692,8 +13696,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
@@ -13774,8 +13779,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
@@ -13835,8 +13841,9 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_star_select_prefix_query(query) {
-            let filter =
-                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
+            let filter = wordpress_option_name_like_filter_from_prepared_params(
+                function, query, params, span,
+            )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
@@ -17618,8 +17625,8 @@ impl Interpreter {
             }
             ReflectionClassKind::Trait => {
                 if let Some(trait_decl) = self.trait_lookup.get(&state.name.to_ascii_lowercase()) {
-                    for method in &trait_decl.methods {
-                        let method_state = self.reflection_trait_method_state(trait_decl, method);
+                    for method in self.reflection_trait_methods(trait_decl)? {
+                        let method_state = self.reflection_trait_method_state(trait_decl, &method);
                         if reflection_method_matches_filter(&method_state, filter) {
                             methods.push(method_state);
                         }
@@ -17637,7 +17644,12 @@ impl Interpreter {
                 .and_then(|class_id| self.classes.get(class_id))
                 .map(|class| class.traits().to_vec())
                 .unwrap_or_default(),
-            ReflectionClassKind::Interface | ReflectionClassKind::Trait => Vec::new(),
+            ReflectionClassKind::Trait => self
+                .trait_lookup
+                .get(&state.name.to_ascii_lowercase())
+                .map(|trait_decl| self.reflection_trait_trait_names(trait_decl))
+                .unwrap_or_default(),
+            ReflectionClassKind::Interface => Vec::new(),
         }
     }
 
@@ -17659,12 +17671,43 @@ impl Interpreter {
                 .trait_lookup
                 .get(&state.name.to_ascii_lowercase())
                 .is_some_and(|trait_decl| {
-                    trait_decl
-                        .methods
+                    self.reflection_trait_methods(trait_decl)
+                        .unwrap_or_default()
                         .iter()
                         .any(|method| method.function.name.eq_ignore_ascii_case(method_name))
                 }),
         }
+    }
+
+    fn reflection_trait_methods(
+        &self,
+        trait_decl: &TraitDecl,
+    ) -> CompileResult<Vec<ClassMethodDecl>> {
+        let mut methods = trait_decl.methods.clone();
+        let direct_method_names = declared_trait_method_names(trait_decl);
+        methods.extend(composed_trait_methods_from_uses(
+            &trait_decl.trait_uses,
+            &self.trait_lookup,
+            &mut HashSet::new(),
+            &direct_method_names,
+        )?);
+        Ok(methods)
+    }
+
+    fn reflection_trait_trait_names(&self, trait_decl: &TraitDecl) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        for trait_use in &trait_decl.trait_uses {
+            let Some(used_trait) = self.trait_lookup.get(&trait_use.name.to_ascii_lowercase())
+            else {
+                continue;
+            };
+            let canonical_key = used_trait.name.to_ascii_lowercase();
+            if seen.insert(canonical_key) {
+                names.push(used_trait.name.clone());
+            }
+        }
+        names
     }
 
     fn reflection_class_method_state(
@@ -18972,17 +19015,40 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_metadata(function, span)?;
-        self.ensure_user_function_call_depth(function, span)?;
-
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
-
         let called_class_id = self
             .called_class_context
             .last()
             .copied()
             .unwrap_or(current_class_id);
+        if is_static && function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+
+            let returned_cell = self.call_reference_return_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(class_id),
+                Some(called_class_id),
+                reference_bindings,
+                Some(caller_scope),
+            )?;
+            return Ok(returned_cell.borrow().clone());
+        }
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
         if is_static {
             self.call_user_function_with_checked_values(
@@ -19078,6 +19144,30 @@ impl Interpreter {
             )?;
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+
+                let (values, reference_bindings) = self
+                    .evaluate_user_function_call_arguments_with_options(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
+
+                let returned_cell = self.call_reference_return_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    reference_bindings,
+                    Some(caller_scope),
+                )?;
+                return Ok(returned_cell.borrow().clone());
+            }
             ensure_supported_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
@@ -19197,6 +19287,30 @@ impl Interpreter {
         )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+
+            let returned_cell = self.call_reference_return_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(declaring_class_id),
+                Some(receiver_class_id),
+                reference_bindings,
+                Some(caller_scope),
+            )?;
+            return Ok(returned_cell.borrow().clone());
+        }
         ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -20486,6 +20600,30 @@ impl Interpreter {
                 self.method_function(class_id, &class_name, &resolved_method_name, span)?;
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
+            if function.returns_by_reference {
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+
+                let (values, reference_bindings) = self
+                    .evaluate_user_function_call_arguments_with_options(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        true,
+                    )?;
+
+                let returned_cell = self.call_reference_return_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    Some(class_id),
+                    Some(called_class_id),
+                    reference_bindings,
+                    Some(caller_scope),
+                )?;
+                return Ok(returned_cell.borrow().clone());
+            }
             ensure_supported_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
@@ -20593,6 +20731,30 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+
+            let returned_cell = self.call_reference_return_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(class_id),
+                Some(called_class_id),
+                reference_bindings,
+                Some(caller_scope),
+            )?;
+            return Ok(returned_cell.borrow().clone());
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -28816,6 +28978,14 @@ impl Interpreter {
             self.session_id = "phpc-session".to_string();
         }
         if use_cookies {
+            let cookie_identity = SetCookieOptions {
+                path: cookie_path.clone(),
+                domain: cookie_domain.clone(),
+                ..SetCookieOptions::default()
+            };
+            self.response_headers.retain(|header| {
+                !set_cookie_header_matches_identity(header, "PHPSESSID", &cookie_identity)
+            });
             self.response_headers.push(format_session_cookie_header(
                 &self.session_id,
                 cookie_lifetime,
@@ -40981,6 +41151,10 @@ fn is_wordpress_option_prepared_name_value_select_autoload_query(query: &str) ->
 
 fn is_wordpress_option_prepared_name_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?"
@@ -41009,6 +41183,10 @@ fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str
 
 fn is_wordpress_option_prepared_name_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_name, autoload FROM wp_options WHERE option_name LIKE ?"
@@ -41037,6 +41215,10 @@ fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool
 
 fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_name FROM wp_options WHERE option_name LIKE ?"
@@ -41080,6 +41262,10 @@ fn is_wordpress_option_prepared_value_select_autoloads_query(query: &str) -> boo
 
 fn is_wordpress_option_prepared_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_value FROM wp_options WHERE option_name LIKE ?"
@@ -41108,6 +41294,10 @@ fn is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query
 
 fn is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?"
@@ -41136,6 +41326,10 @@ fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(qu
 
 fn is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?"
@@ -41155,6 +41349,10 @@ fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
 
 fn is_wordpress_option_prepared_star_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    else {
+        return false;
+    };
     matches!(
         query,
         "SELECT * FROM wp_options WHERE option_name LIKE ?"
@@ -41236,6 +41434,7 @@ fn wordpress_option_autoloads_from_prepared_params(
 
 fn wordpress_option_name_like_filter_from_prepared_params(
     function: &str,
+    query: &str,
     params: &[Value],
     span: Span,
 ) -> CompileResult<WordPressOptionsRowFilter> {
@@ -41248,7 +41447,8 @@ fn wordpress_option_name_like_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+    let escape_char = wordpress_option_prepared_option_name_like_escape_char(query).unwrap_or('\\');
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41258,6 +41458,12 @@ fn wordpress_option_name_like_filter_from_prepared_params(
         ));
     };
     Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
+}
+
+fn wordpress_option_prepared_option_name_like_escape_char(query: &str) -> Option<char> {
+    let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let (_base, escape_char) = strip_wordpress_option_prepared_like_escape_suffix(query)?;
+    Some(escape_char)
 }
 
 fn wordpress_option_name_delete_like_filter_from_prepared_params(

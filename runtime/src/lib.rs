@@ -34,6 +34,17 @@ pub struct NativeByteBuffer {
     pub cap: usize,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeStringHandle {
+    ptr: *mut NativeString,
+}
+
+#[derive(Debug)]
+struct NativeString {
+    bytes: Vec<u8>,
+}
+
 impl NativeByteBuffer {
     pub const fn empty() -> Self {
         Self {
@@ -67,6 +78,28 @@ impl NativeByteBuffer {
 
     pub fn cap(&self) -> usize {
         self.cap
+    }
+}
+
+impl NativeStringHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn from_vec(bytes: Vec<u8>) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeString { bytes })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeString> {
+        unsafe { self.ptr.as_ref() }
     }
 }
 
@@ -194,6 +227,82 @@ pub unsafe extern "C" fn phpc_native_byte_buffer_from_bytes(
 
     let bytes = unsafe { std::slice::from_raw_parts(bytes, len) };
     NativeByteBuffer::from_vec(bytes.to_vec())
+}
+
+/// # Safety
+///
+/// `bytes` must either be null with `len == 0`, or point to at least `len`
+/// readable bytes. Null non-empty inputs return a null handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_from_bytes(
+    bytes: *const u8,
+    len: usize,
+) -> NativeStringHandle {
+    if bytes.is_null() {
+        return if len == 0 {
+            NativeStringHandle::from_vec(Vec::new())
+        } else {
+            NativeStringHandle::null()
+        };
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes, len) };
+    NativeStringHandle::from_vec(bytes.to_vec())
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_len(handle: NativeStringHandle) -> usize {
+    unsafe { handle.as_ref() }
+        .map(|string| string.bytes.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed. The returned pointer is borrowed and remains valid only
+/// until `phpc_native_string_free(handle)`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_bytes(handle: NativeStringHandle) -> *const u8 {
+    let Some(string) = (unsafe { handle.as_ref() }) else {
+        return ptr::null();
+    };
+
+    if string.bytes.is_empty() {
+        ptr::null()
+    } else {
+        string.bytes.as_ptr()
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_clone_bytes(
+    handle: NativeStringHandle,
+) -> NativeByteBuffer {
+    unsafe { handle.as_ref() }
+        .map(|string| NativeByteBuffer::from_vec(string.bytes.clone()))
+        .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed. Passing any other pointer is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_free(handle: NativeStringHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
 /// # Safety
@@ -4636,6 +4745,54 @@ mod tests {
         assert_eq!(empty.len(), 0);
         assert_eq!(empty.cap(), 0);
         unsafe { phpc_native_byte_buffer_free(empty) };
+    }
+
+    #[test]
+    fn native_string_handle_from_bytes_owns_php_string_bytes() {
+        let input = b"php\0abi";
+        let handle = unsafe { phpc_native_string_from_bytes(input.as_ptr(), input.len()) };
+
+        assert!(!handle.is_null());
+        assert_eq!(unsafe { phpc_native_string_len(handle) }, input.len());
+        let ptr = unsafe { phpc_native_string_bytes(handle) };
+        assert!(!ptr.is_null());
+        assert_ne!(ptr, input.as_ptr());
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, input.len()) };
+        assert_eq!(bytes, input);
+
+        let clone = unsafe { phpc_native_string_clone_bytes(handle) };
+        assert_ne!(clone.ptr(), ptr.cast_mut());
+        assert_eq!(clone.len(), input.len());
+        let cloned_bytes = unsafe { std::slice::from_raw_parts(clone.ptr(), clone.len()) };
+        assert_eq!(cloned_bytes, input);
+
+        unsafe { phpc_native_byte_buffer_free(clone) };
+        unsafe { phpc_native_string_free(handle) };
+    }
+
+    #[test]
+    fn native_string_handle_empty_and_null_inputs_are_explicit() {
+        let empty = unsafe { phpc_native_string_from_bytes(std::ptr::null(), 0) };
+        assert!(!empty.is_null());
+        assert_eq!(unsafe { phpc_native_string_len(empty) }, 0);
+        assert!(unsafe { phpc_native_string_bytes(empty) }.is_null());
+        let clone = unsafe { phpc_native_string_clone_bytes(empty) };
+        assert!(clone.ptr().is_null());
+        assert_eq!(clone.len(), 0);
+        assert_eq!(clone.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(clone) };
+        unsafe { phpc_native_string_free(empty) };
+
+        let invalid = unsafe { phpc_native_string_from_bytes(std::ptr::null(), 3) };
+        assert!(invalid.is_null());
+        assert_eq!(unsafe { phpc_native_string_len(invalid) }, 0);
+        assert!(unsafe { phpc_native_string_bytes(invalid) }.is_null());
+        let clone = unsafe { phpc_native_string_clone_bytes(invalid) };
+        assert!(clone.ptr().is_null());
+        assert_eq!(clone.len(), 0);
+        assert_eq!(clone.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(clone) };
+        unsafe { phpc_native_string_free(invalid) };
     }
 
     #[test]

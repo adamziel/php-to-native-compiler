@@ -1,0 +1,1 @@
+2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=firstid; path=/wp-admin; domain=example.test; secure; HttpOnly|2|Set-Cookie: PHPSESSID=root; path=/|Set-Cookie: PHPSESSID=secondid; path=/wp-admin; domain=EXAMPLE.TEST

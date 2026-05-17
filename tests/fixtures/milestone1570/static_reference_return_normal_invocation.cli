@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1570/static_reference_return_normal_invocation.php
+named:direct
+class:dynamic
+object:object
+context:self:parent:static
+magic:magic:dynamic_magic
+0

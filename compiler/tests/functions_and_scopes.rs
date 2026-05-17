@@ -2956,6 +2956,84 @@ echo $storage["slot"], "\n", $storage["nested"]["leaf"];
 }
 
 #[test]
+fn normal_static_reference_return_call_reads_returned_cell_by_value() {
+    let execution = run_source(
+        r#"<?php
+class StaticReferenceTouch {
+    public static function &touch(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class StaticReferenceParent {
+    public static function &touch(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class StaticReferenceChild extends StaticReferenceParent {
+    public function run(&$value) {
+        self::touch($value, "self");
+        parent::touch($value, "parent");
+        static::touch($value, "static");
+    }
+
+    public static function &touch(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+$magicStorage = ["slot" => "magic"];
+
+class StaticReferenceMagicBox {
+    public function &__get($name) {
+        global $magicStorage;
+        return $magicStorage;
+    }
+}
+
+$items = [
+    "named" => "named",
+    "class_string" => "class",
+    "object" => "object",
+    "context" => "context",
+];
+
+StaticReferenceTouch::touch($items["named"], "direct");
+
+$class = "StaticReferenceTouch";
+$class::touch($items["class_string"], "dynamic");
+
+$magicBox = new StaticReferenceMagicBox();
+StaticReferenceTouch::touch($magicBox->missing["slot"], "magic");
+$class::touch($magicBox->missing["slot"], "dynamic_magic");
+
+$object = new StaticReferenceTouch();
+$object::touch($items["object"], "object");
+
+$child = new StaticReferenceChild();
+$child->run($items["context"]);
+
+echo $items["named"], "\n";
+echo $items["class_string"], "\n";
+echo $items["object"], "\n";
+echo $items["context"], "\n";
+echo $magicStorage["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "named:direct\nclass:dynamic\nobject:object\ncontext:self:parent:static\nmagic:magic:dynamic_magic"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
     let execution = run_source(
         r#"<?php

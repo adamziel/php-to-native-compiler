@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and bounded prepared option_name LIKE ESCAPE scans over exact option-row projections rather than a real MySQL database, SQL-mode-aware option reads, collation fidelity, persistent object cache/transients, full WordPress option APIs, or native DB lowering.

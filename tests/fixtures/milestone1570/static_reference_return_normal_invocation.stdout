@@ -1,0 +1,5 @@
+named:direct
+class:dynamic
+object:object
+context:self:parent:static
+magic:magic:dynamic_magic

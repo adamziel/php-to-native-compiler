@@ -1,0 +1,14 @@
+run tests/fixtures/milestone1569/recursive_trait_reflection.php
+exit: 0
+stdout:
+names|BaseHooks
+trait|BaseHooks|BaseHooks|1
+method|directHook|HasHooks|10
+method|baseHook|HasHooks|10
+has|1
+get|baseHook|HasHooks
+construct|baseHook|HasHooks
+call|base:wp|direct
+--- stdout end ---
+stderr:
+--- stderr end ---
