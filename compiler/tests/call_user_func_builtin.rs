@@ -124,6 +124,44 @@ echo call_user_func_array($callback, array(&$option, "again")), "|", $option, "|
 }
 
 #[test]
+fn call_user_func_invokes_reference_parameters_by_value_with_warning() {
+    let execution = run_source(
+        r#"<?php
+function milestone1630_warning($errno, $errstr) {
+    echo "warning:" . $errno . ":" . (str_contains($errstr, "must be passed by reference") ? "ref" : "other") . "\n";
+    return true;
+}
+
+function milestone1630_mark(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+set_error_handler("milestone1630_warning", E_WARNING);
+$option = "autoload";
+$items = array("payload" => array("slot" => "start"));
+echo call_user_func("milestone1630_mark", $option, "direct"), "|", $option, "\n";
+echo call_user_func("milestone1630_mark", $items["payload"]["slot"], "slot"), "|", $items["payload"]["slot"], "\n";
+$counter = 0;
+$callback = function (&$value, $suffix) use (&$counter) {
+    $counter = $counter + 1;
+    $value = $value . ":" . $suffix . ":" . $counter;
+    return $value;
+};
+echo call_user_func($callback, $option, "closure"), "|", $option, "|", $counter;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:ref\nautoload:direct|autoload\nwarning:2:ref\nstart:slot|start\nwarning:2:ref\nautoload:closure:1|autoload|1"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_literal_reference_arguments_for_user_callbacks() {
     let execution = run_source(
         r#"<?php

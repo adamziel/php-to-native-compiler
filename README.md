@@ -126,7 +126,8 @@ changing that header log. Exact `ValueError` objects/text, cookie name
 validation/encoding, full domain policy, real SAPI emission, and native
 lowering remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
-`php://temp`, `php://input`, and local UTF-8 file stream resources for simple
+`php://temp`, `php://input`, local absolute `file://` URL, and local UTF-8
+file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
 `fclose()`. `php://input` handles read the deterministic
@@ -138,9 +139,12 @@ flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `stream_context_set_default()`, `stream_context_set_option()`, plus
 `stream_context_set_params()` persist string-keyed wrapper options and bounded
 params on those contexts. Context resources may be passed to the current
-`file_get_contents()`/`fopen()` local and `php://input` paths without applying
-wrapper-specific behavior, and `file_get_contents()` accepts bounded integer
-offset plus optional non-negative length reads over those UTF-8 payloads.
+`file_get_contents()`/`fopen()` local, local absolute `file://`, and
+`php://input` paths without applying wrapper-specific behavior, and
+`file_get_contents()` accepts bounded integer offset plus optional
+non-negative length reads over those UTF-8 payloads. Local absolute `file://`
+URLs with an empty host or `localhost` are also accepted by the current
+include/require resolver.
 Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
 current slice can route those warnings through the top registered string or
@@ -167,7 +171,8 @@ exact PHP memory-byte accounting remains unsupported. Bounded
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
 output-buffer flushing; callbacks registered during shutdown are appended to
-the same queue. Unsupported wrappers,
+the same queue. Unsupported wrappers beyond the bounded local `file://` and
+documented `php://` subset,
 filters, context option effects, context param effects beyond option merging,
 broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
@@ -367,7 +372,9 @@ incorrect native code.
   for the documented `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and
   `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` forms, including exact
   `SHOW TABLE STATUS WHERE Name = ?` table-name probes and bounded prepared
-  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists;
+  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists, plus bounded
+  table-identifier placeholders for `SHOW [FULL] COLUMNS FROM ?` and
+  `SHOW INDEX`/`SHOW KEYS FROM ?` with optional documented field/key filters;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -520,7 +527,8 @@ incorrect native code.
   metadata, parameter-list, return-type inspection, and public non-static
   user-class by-value `invoke()`/`invokeArgs()`, plus static trait-method
   by-value invocation with bounded trait `__CLASS__`, `__METHOD__`,
-  `self::class`, `static::class`, and `get_called_class()` context,
+  `self::class`, `static::class`, `get_called_class()`, and static
+  `self::method()`/`static::method()` context,
   bounded
   `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
@@ -576,9 +584,10 @@ include/require breadth beyond the current narrow local string-path,
 include-path, missing-include recovery, and bounded missing-require fatal
 statement/expression slice, eval, generators, closure behavior beyond the
 current direct `$closure(...)` by-value and direct-variable/direct-array-offset
-reference-parameter slice, `call_user_func()`/`call_user_func_array()`
-positional by-value, bounded `call_user_func_array()` closure
-reference-parameter support, and bounded
+reference-parameter slice, `call_user_func()` string/closure by-value dispatch
+with bounded PHP-matching by-reference-parameter warnings,
+`call_user_func_array()` positional by-value, bounded
+`call_user_func_array()` closure reference-parameter support, and bounded
 `ReflectionFunction::invoke()` slices, explicit and implicit capture binding,
 named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
@@ -729,6 +738,15 @@ reference. General magic-property reference containers, normal property-read
 magic fallback breadth, and arbitrary reference expressions remain unsupported.
 Mutations before `unset($param)` are written back; later writes to the
 detached local parameter are not.
+Direct `call_user_func()` invocation of string user-function callbacks and
+ordinary closure callbacks follows PHP's by-reference-parameter behavior for
+the reached non-variadic subset: arguments are passed by value, a bounded
+`E_WARNING` is emitted through the current error-handler stack or stderr
+fallback for reached by-reference parameters, callee writes do not mutate the
+caller argument, and closure by-reference direct-variable captures still share
+their captured cell. Array-callable `call_user_func()` callbacks, `__invoke`,
+exact warning object/text behavior, broader references/copy-on-write, and
+native lowering remain unsupported.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
 for unkeyed, integer-keyed, or supported string-keyed by-value argument arrays
@@ -866,12 +884,14 @@ string-handle-to-runtime-value bridge with diagnostic handles for that
 conversion's null-handle and non-UTF-8 failure cases. It also pins null-only
 opaque array, object, resource, and reference handle shapes for future native
 storage work, plus a deterministic probe branch for string-to-value diagnostic
-message ownership. Normal generated LLVM now uses the string/value ABI for a
-narrow output path: statement-form `echo` and `print` of a direct compile-time
-string value call runtime string/value helpers and `phpc_native_value_echo_stdout`.
-Dynamic string-pointer expression output beyond the documented selected-string
-slices, production helper diagnostic reporting, linked native execution, binary
-PHP string value handles, array/object/resource/reference storage semantics,
+message ownership and reporting. Normal generated LLVM now uses the
+string/value ABI for a narrow output path: statement-form `echo` and `print` of
+a direct compile-time string value or documented selected string pointer call
+runtime string/value helpers, branch on nullable value-handle conversion
+failure, report that helper diagnostic to stderr, and otherwise call
+`phpc_native_value_echo_stdout`. Dynamic string-pointer expression output beyond
+the documented selected-string slices, linked native execution, binary PHP
+string value handles, array/object/resource/reference storage semantics,
 general diagnostics, and broad production runtime string-helper lowering are
 not implemented.
 

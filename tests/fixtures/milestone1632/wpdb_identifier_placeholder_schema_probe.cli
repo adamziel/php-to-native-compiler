@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1632/wpdb_identifier_placeholder_schema_probe.php

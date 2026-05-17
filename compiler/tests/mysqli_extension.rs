@@ -3579,6 +3579,56 @@ echo mysqli_num_rows($committed);
 }
 
 #[test]
+fn mysqli_prepared_schema_metadata_accepts_table_identifier_placeholders() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_identifier_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', title text NULL, PRIMARY KEY  (id), KEY slug (slug)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+$columns = mysqli_execute_query($handle, "SHOW FULL COLUMNS FROM ? WHERE Field = ?", array("wp_identifier_probe", "slug"));
+$column = mysqli_fetch_assoc($columns);
+echo $column["Field"], ":", $column["Key"], ":", $column["Collation"];
+
+$indexes = mysqli_execute_query($handle, "SHOW INDEX FROM ? WHERE Key_name LIKE ?", array("wp_identifier_probe", "slu%"));
+$index = mysqli_fetch_assoc($indexes);
+echo "|";
+echo $index["Table"], ":", $index["Key_name"], ":", $index["Column_name"];
+
+$stmt = mysqli_prepare($handle, "SHOW FULL COLUMNS FROM ?");
+mysqli_stmt_execute($stmt, array("wp_identifier_probe"));
+$all = mysqli_stmt_get_result($stmt);
+echo "|columns=", mysqli_num_rows($all);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "slug:MUL:utf8mb4_unicode_ci|wp_identifier_probe:slug:slug|columns=3"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let bad_identifier = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_identifier_probe (id bigint(20) unsigned NOT NULL, PRIMARY KEY  (id)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_execute_query($handle, "SHOW FULL COLUMNS FROM ?", array("wp-bad"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_identifier.phase, Phase::Runtime);
+    assert_eq!(bad_identifier.line, 5);
+    assert_eq!(bad_identifier.column, 1);
+    assert_eq!(
+        bad_identifier.message,
+        "unsupported call mysqli_execute_query(): prepared schema metadata identifier placeholders require identifier-shaped string parameters in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php

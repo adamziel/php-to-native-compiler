@@ -438,6 +438,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
             "declare {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
         ),
         "declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)"
+        ),
         "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)",
         "declare %phpc.NativeArrayHandle @phpc_native_array_null()",
         "declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)",
@@ -534,6 +537,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
             "  %len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"
         ),
         "  %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)",
+        &format!(
+            "  %reported = call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)",
         "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
         "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
@@ -562,6 +568,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
             "  %diagnostic_len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"
         ),
         "  %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)",
+        &format!(
+            "  %reported = call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)",
         "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
         "  br label %cleanup",
@@ -613,6 +622,7 @@ struct LlvmGenerator {
     known_bools: HashMap<String, KnownBool>,
     next_string: usize,
     next_temp: usize,
+    next_label: usize,
     uses_strcmp: bool,
     uses_native_value_echo_stdout: bool,
 }
@@ -812,6 +822,9 @@ impl LlvmGenerator {
                 "declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)\n"
             ));
             output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+            output.push_str(&format!(
+                "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+            ));
             output.push_str(
                 "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
             );
@@ -832,7 +845,9 @@ impl LlvmGenerator {
 
         output.push_str("\ndefine i32 @main() {\nentry:\n");
         for line in &self.body {
-            output.push_str("  ");
+            if !line.ends_with(':') {
+                output.push_str("  ");
+            }
             output.push_str(line);
             output.push('\n');
         }
@@ -3503,7 +3518,12 @@ impl LlvmGenerator {
         let string = self.next_temp();
         let diagnostic_slot = self.next_temp();
         let runtime_value = self.next_temp();
+        let runtime_value_ptr = self.next_temp();
+        let value_failed = self.next_temp();
         let diagnostic = self.next_temp();
+        let report_label = self.next_label("native_report_diagnostic");
+        let echo_label = self.next_label("native_echo_value");
+        let cleanup_label = self.next_label("native_cleanup_string_value");
         self.uses_native_value_echo_stdout = true;
         self.body.push(format!(
             "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
@@ -3518,16 +3538,33 @@ impl LlvmGenerator {
             "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle {string}, ptr {diagnostic_slot})"
         ));
         self.body.push(format!(
-            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {runtime_value})"
+            "{runtime_value_ptr} = extractvalue %phpc.NativeValueHandle {runtime_value}, 0"
         ));
         self.body.push(format!(
-            "call void @phpc_native_value_free(%phpc.NativeValueHandle {runtime_value})"
+            "{value_failed} = icmp eq ptr {runtime_value_ptr}, null"
         ));
+        self.body.push(format!(
+            "br i1 {value_failed}, label %{report_label}, label %{echo_label}"
+        ));
+        self.body.push(format!("{report_label}:"));
         self.body.push(format!(
             "{diagnostic} = load %phpc.NativeDiagnosticHandle, ptr {diagnostic_slot}"
         ));
         self.body.push(format!(
+            "call {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+        self.body.push(format!(
             "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle {diagnostic})"
+        ));
+        self.body.push(format!("br label %{cleanup_label}"));
+        self.body.push(format!("{echo_label}:"));
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {runtime_value})"
+        ));
+        self.body.push(format!("br label %{cleanup_label}"));
+        self.body.push(format!("{cleanup_label}:"));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {runtime_value})"
         ));
         self.body.push(format!(
             "call void @phpc_native_string_free(%phpc.NativeStringHandle {string})"
@@ -3583,6 +3620,12 @@ impl LlvmGenerator {
     fn next_temp(&mut self) -> String {
         let name = format!("%tmp{}", self.next_temp);
         self.next_temp += 1;
+        name
+    }
+
+    fn next_label(&mut self, prefix: &str) -> String {
+        let name = format!("{prefix}.{}", self.next_label);
+        self.next_label += 1;
         name
     }
 

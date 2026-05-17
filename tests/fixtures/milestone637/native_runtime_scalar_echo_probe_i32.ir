@@ -30,6 +30,7 @@ declare i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 declare i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)
+declare i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)
 declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeArrayHandle @phpc_native_array_null()
 declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)
@@ -102,6 +103,7 @@ entry:
   %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
   %len = call i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
   %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)
+  %reported = call i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)
   call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
@@ -124,6 +126,7 @@ report_diagnostic:
   %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
   %diagnostic_len = call i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
   %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)
+  %reported = call i32 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %diagnostic)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)
   call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
   br label %cleanup

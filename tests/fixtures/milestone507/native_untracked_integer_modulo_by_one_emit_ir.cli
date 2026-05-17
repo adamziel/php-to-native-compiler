@@ -9,6 +9,7 @@ declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
 declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
+declare i64 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)
 declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
 
@@ -25,10 +26,19 @@ entry:
   store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %tmp2
   %tmp1 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.0, i64 1)
   %tmp3 = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle %tmp1, ptr %tmp2)
+  %tmp4 = extractvalue %phpc.NativeValueHandle %tmp3, 0
+  %tmp5 = icmp eq ptr %tmp4, null
+  br i1 %tmp5, label %native_report_diagnostic.0, label %native_echo_value.1
+native_report_diagnostic.0:
+  %tmp6 = load %phpc.NativeDiagnosticHandle, ptr %tmp2
+  call i64 @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle %tmp6)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %tmp6)
+  br label %native_cleanup_string_value.2
+native_echo_value.1:
   call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp3)
+  br label %native_cleanup_string_value.2
+native_cleanup_string_value.2:
   call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp3)
-  %tmp4 = load %phpc.NativeDiagnosticHandle, ptr %tmp2
-  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %tmp4)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp1)
   call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 0)
   ret i32 0

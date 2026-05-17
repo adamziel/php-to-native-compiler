@@ -94,6 +94,7 @@ The first scalar output helper symbols are:
 - `phpc_native_value_free(NativeValueHandle)`
 - `phpc_native_diagnostic_message_len(NativeDiagnosticHandle) -> usize`
 - `phpc_native_diagnostic_message_clone_bytes(NativeDiagnosticHandle) -> NativeByteBuffer`
+- `phpc_native_diagnostic_message_stderr(NativeDiagnosticHandle) -> usize`
 - `phpc_native_diagnostic_free(NativeDiagnosticHandle)`
 - `phpc_native_array_null() -> NativeArrayHandle`
 - `phpc_native_array_is_null(NativeArrayHandle) -> bool`
@@ -140,13 +141,14 @@ non-UTF-8 byte payloads return a null value handle. The opt-in
 `phpc_native_value_from_string_with_diagnostic` variant preserves that return
 shape and, when the caller supplies a non-null diagnostic out pointer, stores a
 runtime-owned diagnostic handle for null string handles or non-UTF-8 byte
-payloads. Diagnostic message helpers expose the stable message byte length and a
-runtime-owned message copy; callers must free diagnostic handles with
-`phpc_native_diagnostic_free` and copied message buffers with
-`phpc_native_byte_buffer_free`. This diagnostic slice covers only native
-string-to-value conversion failures; it does not provide a general exception,
-warning, or errno channel. Binary PHP string values still lack native ABI
-coverage. `phpc_native_value_echo_bytes`
+payloads. Diagnostic message helpers expose the stable message byte length, a
+runtime-owned message copy, and a bounded stderr reporting helper that writes
+the diagnostic message bytes and returns the number of bytes written. Callers
+must free diagnostic handles with `phpc_native_diagnostic_free` and copied
+message buffers with `phpc_native_byte_buffer_free`. This diagnostic slice
+covers only native string-to-value conversion failures; it does not provide a
+general exception, warning, or errno channel. Binary PHP string values still
+lack native ABI coverage. `phpc_native_value_echo_bytes`
 returns runtime-owned echo bytes for the current value handle, and
 `phpc_native_value_echo_stdout` writes the current value handle's PHP echo bytes
 to stdout and returns the number of bytes written. Null handles and host write
@@ -290,17 +292,29 @@ LLVM control-flow shape needed before normal generated helper calls can report
 runtime ABI failures. Production `phpc compile` string output still uses the
 existing helper cleanup path and does not branch on or print diagnostics.
 
+Milestone 1633 adds bounded production generated diagnostic branching/reporting
+for the existing runtime string-output lowering slices. Statement-form
+direct-string and selected string-pointer `echo`/`print` lowering now tests the
+nullable `NativeValueHandle` returned by
+`phpc_native_value_from_string_with_diagnostic`; the success branch calls
+`phpc_native_value_echo_stdout`, while the failure branch loads the diagnostic
+handle, reports its message through
+`phpc_native_diagnostic_message_stderr`, frees the diagnostic, and rejoins the
+shared cleanup that frees the value and string handles. The deterministic probe
+also declares and calls the stderr helper. The current lowerable string payloads
+remain valid UTF-8, so this pins generated failure-path control flow and
+ownership rather than claiming linked native execution.
+
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
 handles beyond valid UTF-8 byte payloads, diagnostics outside this
-string-to-value conversion helper, production generated-code branching on
-failed helper returns, production diagnostic message printing, request state,
-arrays, objects, resources, references, WordPress host state, and C fallback
-assembly helper calls remain outside this ABI slice. The snapshot uses the
-selected target's `usize`/pointer-width shape; a real linked native backend
-still needs full target data layout, calling-convention validation, runtime
-linking, and runtime helper emission before broader helper calls can execute
-truthfully for all supported targets.
+string-to-value conversion helper, request state, arrays, objects, resources,
+references, WordPress host state, and C fallback assembly helper calls remain
+outside this ABI slice. The snapshot uses the selected target's
+`usize`/pointer-width shape; a real linked native backend still needs full
+target data layout, calling-convention validation, runtime linking, and runtime
+helper emission before broader helper calls can execute truthfully for all
+supported targets.
 
 ## Verification
 
@@ -336,13 +350,14 @@ The tests pin:
 - opaque runtime-owned diagnostic handles for string-to-value conversion
   failures, including stable message bytes for null string handles and
   non-UTF-8 byte payloads, success-path diagnostic clearing, null diagnostic
-  helper behavior, message-buffer cloning, and diagnostic release.
+  helper behavior, message-buffer cloning, stderr message reporting, and
+  diagnostic release.
 - null-only opaque array/object/resource/reference handle shapes, including
   pointer-sized layout, exported null constructors, exported null predicates,
   and deterministic compiler-side probe declarations/calls.
 - a deterministic compiler-side diagnostic branch probe that tests a nullable
-  value-handle return, clones and frees the diagnostic message on the failure
-  branch, and preserves the success branch shape through stdout echo.
+  value-handle return, clones/reports/frees the diagnostic message on the
+  failure branch, and preserves the success branch shape through stdout echo.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
@@ -360,7 +375,8 @@ The tests pin:
 - the normal generated `--emit-ir` CLI path for the current runtime
   string/value stdout helper slices using
   `phpc_native_value_from_string_with_diagnostic`, initialized diagnostic
-  slots, and diagnostic-handle release.
+  slots, nullable value-handle branching, failure-path diagnostic stderr
+  reporting, and shared handle cleanup.
 
 ## Explicit Non-Support
 
@@ -378,8 +394,7 @@ This ABI does not yet provide:
   the null-only opaque handle shapes and predicates;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
-  selected string-pointer `echo`/`print` expressions, or production
-  generated-code diagnostic branching/message emission for those helper calls;
+  selected string-pointer `echo`/`print` expressions;
 - symbol tables, stack frames, call lookup, or general diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

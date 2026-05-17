@@ -873,9 +873,14 @@ characters. Prepared `SHOW TABLE STATUS WHERE Name IN (?, ...)` probes,
 including ``WHERE `Name` IN (?, ...)`` spelling, accept a non-empty
 placeholder list whose params are all identifier-shaped string table names,
 returning deterministic table-status rows in table-name order and skipping
-missing names. This does not add arbitrary prepared `SHOW TABLE STATUS`
+missing names. Bounded table-identifier placeholders are also accepted for
+`SHOW [FULL] COLUMNS FROM ?` and `SHOW INDEX`/`SHOW INDEXES`/
+`SHOW KEYS FROM ?`, including optional documented `Field`/`Key_name`
+equality or `LIKE` filter placeholders as the next parameter. This does not add
+arbitrary prepared `SHOW TABLE STATUS`
 predicates beyond the documented `Name` equality/`LIKE`/`IN` forms,
-identifier placeholders, joined metadata queries, exact table
+identifier placeholders outside those schema metadata table positions, joined
+metadata queries, exact table
 counters/timestamps, host database inspection, or native lowering.
 
 For the placeholder connection, `mysqli_store_result($handle)` and

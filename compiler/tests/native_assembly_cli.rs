@@ -14555,7 +14555,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *' br i1 '*|*' phi '*)\n\
+  *' br i1 %tmp1,'*|*' br i1 %tmp2,'*|*' phi '*)\n\
   printf '%s\\n' 'fake clang found branch/phi in boolean ternary slice' >&2\n\
   exit 211\n\
   ;;\n\
@@ -15956,7 +15956,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *' br i1 '*|*' phi '*)\n\
+  *' br i1 %tmp1,'*|*' br i1 %tmp2,'*|*' phi '*)\n\
   printf '%s\\n' 'fake clang found branch/phi in float ternary slice' >&2\n\
   exit 216\n\
   ;;\n\
@@ -16353,7 +16353,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *' br i1 '*|*' phi '*)\n\
+  *' br i1 %tmp1,'*|*' br i1 %tmp2,'*|*' phi '*)\n\
   printf '%s\\n' 'fake clang found branch/phi in string ternary slice' >&2\n\
   exit 228\n\
   ;;\n\
@@ -16611,7 +16611,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp1'*|*' br i1 '*|*' phi '*|*'@printf(ptr @.fmt_int'*|*'@printf(ptr @.fmt_float'*)\n\
+  *'select i1 %tmp1'*|*' br i1 %tmp1,'*|*' phi '*|*'@printf(ptr @.fmt_int'*|*'@printf(ptr @.fmt_float'*)\n\
   printf '%s\\n' 'fake clang found runtime null ternary select or numeric output' >&2\n\
   exit 242\n\
   ;;\n\

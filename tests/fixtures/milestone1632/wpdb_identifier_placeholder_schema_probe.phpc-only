@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for bounded prepared schema metadata table-identifier placeholders; system PHP needs a real database connection and does not support placeholders in identifier positions.

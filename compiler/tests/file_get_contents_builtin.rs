@@ -106,6 +106,22 @@ echo file_get_contents("offset_length_payload.inc", true, null, 11, 4);
 }
 
 #[test]
+fn file_get_contents_reads_bounded_local_file_urls() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$path = realpath(__DIR__ . "/file_url_payload.txt");
+$url = "file://" . $path;
+echo file_get_contents($url, false, null, 7, 6);
+"#,
+        "tests/fixtures/milestone1631/file_url_wrapper_reads.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "stream");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_applies_offset_and_length_to_php_input_seed() {
     let program = php_compiler::parse(
         r#"<?php
@@ -315,7 +331,7 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
     assert_eq!(stream.column, 1);
     assert_eq!(
         stream.message,
-        "unsupported call file_get_contents(): only php://input is supported in the current stream-wrapper subset"
+        "unsupported call file_get_contents(): only php://input, local file:// URLs, and local file paths are supported in the current stream-wrapper subset"
     );
 
     let bad_use_include_path =

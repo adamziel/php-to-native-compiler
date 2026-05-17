@@ -162,6 +162,30 @@ echo "|not-reached";
 }
 
 #[test]
+fn include_and_require_once_accept_bounded_local_file_urls() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$include_url = "file://" . realpath(__DIR__ . "/file_url_include.inc");
+$include_result = include $include_url;
+echo "include=" . $include_result . ":" . $included_from_url;
+$require_url = "file://" . realpath(__DIR__ . "/file_url_required.inc");
+$require_result = require_once $require_url;
+echo "|require=" . $require_result . ":" . $required_from_url;
+$again = require_once $require_url;
+echo "|again=" . ($again === true ? "true" : "other");
+"#,
+        "tests/fixtures/milestone1631/file_url_wrapper_reads.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "include=include-return:file-url-include|require=require-return:file-url-require|again=true"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn include_path_builtins_reject_forms_outside_current_subset() {
     let get_too_many = runtime_error("<?php\necho get_include_path('extra');\n");
     assert_eq!(get_too_many.line, 2);

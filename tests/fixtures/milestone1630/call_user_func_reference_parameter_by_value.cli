@@ -1,0 +1,7 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1630/call_user_func_reference_parameter_by_value.php
+warning:2:ref
+autoload:direct|autoload
+warning:2:ref
+start:slot|start
+warning:2:ref
+autoload:closure:1|autoload|1

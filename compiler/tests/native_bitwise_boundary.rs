@@ -683,7 +683,7 @@ echo $flipped + 20;
     assert!(ir.contains("%tmp6 = add i64 %tmp4, 10"), "{ir}");
     assert!(ir.contains(" = add i64 %tmp5, 20"), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp11)"), "{ir}");
+    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp13)"), "{ir}");
 }
 
 #[test]

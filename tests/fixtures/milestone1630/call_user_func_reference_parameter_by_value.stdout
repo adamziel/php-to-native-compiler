@@ -1,0 +1,6 @@
+warning:2:ref
+autoload:direct|autoload
+warning:2:ref
+start:slot|start
+warning:2:ref
+autoload:closure:1|autoload|1

@@ -1,0 +1,6 @@
+phpc run reflection_static_trait_self_static_calls.php
+stdout:
+HookTools:HookTools::label:init|HookTools:HookTools::label:init
+HookTools:HookTools::label:save_post|HookTools:HookTools::label:save_post
+stderr:
+exit: 0

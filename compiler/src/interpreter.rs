@@ -667,6 +667,29 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
     repo_root_relative_candidate(&path).unwrap_or(path)
 }
 
+fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
+    let rest = path.strip_prefix("file://")?;
+    let path_part = if let Some(localhost_path) = rest.strip_prefix("localhost/") {
+        format!("/{localhost_path}")
+    } else if rest.starts_with('/') {
+        rest.to_string()
+    } else {
+        return Some(Err(
+            "only file:// URLs with an empty or localhost host and an absolute local path are supported in the current subset"
+                .to_string(),
+        ));
+    };
+
+    let path = PathBuf::from(path_part);
+    if path.is_absolute() {
+        Some(Ok(path))
+    } else {
+        Some(Err(
+            "file:// URL path must be absolute in the current subset".to_string(),
+        ))
+    }
+}
+
 const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
 
 fn include_path_candidates(
@@ -5630,12 +5653,22 @@ impl Interpreter {
         construct: &'static str,
         span: Span,
     ) -> CompileResult<ResolvedRequirePath> {
+        if let Some(file_url_path) = bounded_local_file_url_path(path) {
+            let read_path = file_url_path.map_err(|message| {
+                runtime_error(span, RuntimeError::unsupported_call(construct, message))
+            })?;
+            return Ok(ResolvedRequirePath {
+                read_path: read_path.clone(),
+                source_file: read_path,
+            });
+        }
+
         if path.contains("://") {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     construct,
-                    "stream and URL require paths are not implemented",
+                    "stream and URL require paths other than bounded local file:// URLs are not implemented",
                 ),
             ));
         }
@@ -18936,6 +18969,76 @@ impl Interpreter {
         result
     }
 
+    fn call_trait_reflection_static_method(
+        &mut self,
+        trait_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let method = self.trait_reflection_method_decl(trait_name, method_name, span)?;
+        if !method.is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{trait_name}::{method_name}()"),
+                    format!(
+                        "non-static trait method dispatch through {context} is not implemented"
+                    ),
+                ),
+            ));
+        }
+        if method.is_abstract {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{trait_name}::{method_name}()"),
+                    "abstract trait methods are not executable in the current subset",
+                ),
+            ));
+        }
+
+        let function = method.function;
+        ensure_user_function_arity(&function, args.len(), span)?;
+        ensure_supported_function_signature(&function, args.len(), span)?;
+        self.ensure_user_function_call_depth(&function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        self.invoke_static_trait_reflection_method(trait_name, &function.name, values, span)
+    }
+
+    fn trait_reflection_method_decl(
+        &self,
+        trait_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<ClassMethodDecl> {
+        let trait_decl = self
+            .trait_lookup
+            .get(&trait_name.to_ascii_lowercase())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class(format!("{trait_name} trait")),
+                )
+            })?;
+        self.reflection_trait_methods(trait_decl)?
+            .into_iter()
+            .find(|method| method.function.name.eq_ignore_ascii_case(method_name))
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!("{trait_name}::{method_name}()")),
+                )
+            })
+    }
+
     fn invoke_closure_value_direct(
         &mut self,
         closure: PhpClosure,
@@ -21300,6 +21403,16 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let Some(current_class_id) = self.class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_class_context.last().cloned() {
+                return self.call_trait_reflection_static_method(
+                    &trait_name,
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                    "self::",
+                );
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -21430,6 +21543,16 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let Some(called_class_id) = self.called_class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_called_class_context.last().cloned() {
+                return self.call_trait_reflection_static_method(
+                    &trait_name,
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                    "static::",
+                );
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -21577,25 +21700,7 @@ impl Interpreter {
         method_name: &str,
         span: Span,
     ) -> CompileResult<Rc<FunctionDecl>> {
-        let trait_decl = self
-            .trait_lookup
-            .get(&trait_name.to_ascii_lowercase())
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::undefined_class(format!("{trait_name} trait")),
-                )
-            })?;
-        let methods = self.reflection_trait_methods(trait_decl)?;
-        let method = methods
-            .into_iter()
-            .find(|method| method.function.name.eq_ignore_ascii_case(method_name))
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::undefined_function(format!("{trait_name}::{method_name}()")),
-                )
-            })?;
+        let method = self.trait_reflection_method_decl(trait_name, method_name, span)?;
         if method.is_abstract {
             return Err(runtime_error(
                 span,
@@ -22321,14 +22426,11 @@ impl Interpreter {
                 ));
             }
             Value::Closure(closure) => {
-                let mut values = Vec::with_capacity(args.len().saturating_sub(1));
-                for arg in &args[1..] {
-                    values.push(self.evaluate(arg, caller_scope)?);
-                }
-                return self.invoke_closure_value(
+                return self.invoke_closure_value_from_call_user_func(
                     closure.clone(),
-                    values,
+                    &args[1..],
                     span,
+                    caller_scope,
                     "call_user_func()",
                 );
             }
@@ -22362,12 +22464,158 @@ impl Interpreter {
                 );
             }
         }
+        if let Callable::User(function) = callable {
+            return self.call_user_func_user_function(function, &args[1..], span, caller_scope);
+        }
 
         let mut values = Vec::with_capacity(args.len().saturating_sub(1));
         for arg in &args[1..] {
             values.push(self.evaluate(arg, caller_scope)?);
         }
         self.call_callable_with_values(callable, values, span)
+    }
+
+    fn call_user_func_user_function(
+        &mut self,
+        function: Rc<FunctionDecl>,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+        } else {
+            ensure_supported_function_metadata(function, span)?;
+        }
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let values =
+            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+        if function.returns_by_reference {
+            return self.call_reference_return_function_value_with_checked_values(
+                function,
+                values,
+                None,
+                None,
+                None,
+                Vec::new(),
+                caller_scope,
+            );
+        }
+
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        )
+    }
+
+    fn invoke_closure_value_from_call_user_func(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let values =
+            self.evaluate_call_user_func_value_arguments(function, args, span, caller_scope)?;
+        let prebound_locals = Self::closure_prebound_locals(&closure);
+        self.call_user_function_with_checked_values_and_locals(
+            function,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+            prebound_locals,
+        )
+    }
+
+    fn evaluate_call_user_func_value_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        if function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && param.is_variadic && index < args.len())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "call_user_func() variadic reference parameter invocation is not implemented",
+                ),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
+        Ok(values)
+    }
+
+    fn emit_call_user_func_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (index, param) in function.params.iter().enumerate() {
+            if !param.by_reference || index >= actual {
+                continue;
+            }
+            self.emit_warning(
+                &callable_name(&function.name),
+                format!(
+                    "Argument #{} (${}) must be passed by reference, value given",
+                    index + 1,
+                    param.name
+                ),
+                span,
+            )?;
+        }
+        Ok(())
     }
 
     fn call_user_func_array_direct(
@@ -28187,14 +28435,25 @@ impl Interpreter {
             self.expect_optional_stream_context_resource("fopen", context, span)?;
         }
 
+        let file_url_path = match bounded_local_file_url_path(path) {
+            Some(Ok(path)) => Some(path),
+            Some(Err(message)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call("fopen()", message),
+                ));
+            }
+            None => None,
+        };
+
         let is_memory_stream = match path {
             "php://memory" | "php://temp" | "php://input" => true,
-            other if other.contains("://") => {
+            other if other.contains("://") && file_url_path.is_none() => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "fopen()",
-                        "only php://memory, php://temp, php://input, and local file paths are supported in the current stream subset",
+                        "only php://memory, php://temp, php://input, local file:// URLs, and local file paths are supported in the current stream subset",
                     ),
                 ));
             }
@@ -28253,7 +28512,8 @@ impl Interpreter {
                 }),
             );
         } else {
-            let filesystem_path = self.resolve_file_get_contents_path(path, use_include_path);
+            let filesystem_path = file_url_path
+                .unwrap_or_else(|| self.resolve_file_get_contents_path(path, use_include_path));
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
             let file = match fs::OpenOptions::new()
                 .read(stream_mode.readable)
@@ -32219,16 +32479,27 @@ impl Interpreter {
                             }
                         }
                     }
-                    Value::String(path) if path.contains("://") => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "file_get_contents()",
-                            "only php://input is supported in the current stream-wrapper subset",
-                        ),
-                    )),
                     Value::String(path) => {
-                        let filesystem_path =
-                            self.resolve_file_get_contents_path(path, use_include_path);
+                        let filesystem_path = if let Some(file_url_path) =
+                            bounded_local_file_url_path(path)
+                        {
+                            file_url_path.map_err(|message| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call("file_get_contents()", message),
+                                )
+                            })?
+                        } else if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "file_get_contents()",
+                                    "only php://input, local file:// URLs, and local file paths are supported in the current stream-wrapper subset",
+                                ),
+                            ));
+                        } else {
+                            self.resolve_file_get_contents_path(path, use_include_path)
+                        };
                         let contents = match fs::read_to_string(&filesystem_path) {
                             Ok(contents) => contents,
                             Err(error) => {
@@ -40358,44 +40629,63 @@ fn parse_dynamic_prepared_schema_show_columns_query(
     else {
         return Ok(None);
     };
-    let (table_name, rest) = match parse_schema_identifier_with_optional_suffix(rest.trim()) {
-        Some(parsed) => parsed,
-        None => return Ok(None),
-    };
+    let (table_name, rest, next_param) =
+        match parse_prepared_schema_identifier_with_optional_suffix(
+            rest.trim(),
+            params,
+            function,
+            span,
+        )? {
+            Some(parsed) => parsed,
+            None => return Ok(None),
+        };
     let rest = rest.trim();
     let column_filter = if let Some(like) = rest.strip_prefix("LIKE ") {
-        parse_prepared_schema_like_placeholder_filter(
+        if !like.trim().starts_with('?') {
+            return Ok(None);
+        }
+        Some(parse_prepared_schema_like_placeholder_filter_at(
             like,
             params,
+            next_param,
             no_backslash_escapes,
             function,
             span,
-        )?
+        )?)
     } else if let Some(field) = rest
         .strip_prefix("WHERE Field = ")
         .or_else(|| rest.strip_prefix("WHERE `Field` = "))
     {
-        parse_prepared_schema_exact_placeholder_filter(field, params, function, span)?
+        if !field.trim().starts_with('?') {
+            return Ok(None);
+        }
+        Some(parse_prepared_schema_exact_placeholder_filter_at(
+            field, params, next_param, function, span,
+        )?)
     } else if let Some(field) = rest
         .strip_prefix("WHERE Field LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `Field` LIKE "))
     {
-        parse_prepared_schema_like_placeholder_filter(
+        if !field.trim().starts_with('?') {
+            return Ok(None);
+        }
+        Some(parse_prepared_schema_like_placeholder_filter_at(
             field,
             params,
+            next_param,
             no_backslash_escapes,
             function,
             span,
-        )?
+        )?)
+    } else if rest.is_empty() {
+        None
     } else {
         return Ok(None);
     };
-    Ok(
-        column_filter.map(|column_filter| WordPressSchemaColumnQuery {
-            table_name,
-            column_filter: Some(column_filter),
-        }),
-    )
+    Ok(Some(WordPressSchemaColumnQuery {
+        table_name,
+        column_filter,
+    }))
 }
 
 fn parse_dynamic_prepared_schema_show_index_query(
@@ -40412,33 +40702,50 @@ fn parse_dynamic_prepared_schema_show_index_query(
     else {
         return Ok(None);
     };
-    let (table_name, rest) = match parse_schema_identifier_with_optional_suffix(rest.trim()) {
-        Some(parsed) => parsed,
-        None => return Ok(None),
-    };
+    let (table_name, rest, next_param) =
+        match parse_prepared_schema_identifier_with_optional_suffix(
+            rest.trim(),
+            params,
+            function,
+            span,
+        )? {
+            Some(parsed) => parsed,
+            None => return Ok(None),
+        };
     let rest = rest.trim();
     let key_filter = if let Some(key_name) = rest
         .strip_prefix("WHERE Key_name = ")
         .or_else(|| rest.strip_prefix("WHERE `Key_name` = "))
     {
-        parse_prepared_schema_exact_placeholder_filter(key_name, params, function, span)?
+        if !key_name.trim().starts_with('?') {
+            return Ok(None);
+        }
+        Some(parse_prepared_schema_exact_placeholder_filter_at(
+            key_name, params, next_param, function, span,
+        )?)
     } else if let Some(key_name) = rest
         .strip_prefix("WHERE Key_name LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `Key_name` LIKE "))
     {
-        parse_prepared_schema_like_placeholder_filter(
+        if !key_name.trim().starts_with('?') {
+            return Ok(None);
+        }
+        Some(parse_prepared_schema_like_placeholder_filter_at(
             key_name,
             params,
+            next_param,
             no_backslash_escapes,
             function,
             span,
-        )?
+        )?)
+    } else if rest.is_empty() {
+        None
     } else {
         return Ok(None);
     };
-    Ok(key_filter.map(|key_filter| WordPressSchemaIndexQuery {
+    Ok(Some(WordPressSchemaIndexQuery {
         table_name,
-        key_filter: Some(key_filter),
+        key_filter,
     }))
 }
 
@@ -40662,32 +40969,89 @@ fn parse_prepared_schema_like_placeholder_filter(
     function: &str,
     span: Span,
 ) -> CompileResult<Option<WordPressSchemaNameFilter>> {
-    let Some(mut rest) = input.trim().strip_prefix('?') else {
+    if !input.trim().starts_with('?') {
         return Ok(None);
+    }
+    Ok(Some(parse_prepared_schema_like_placeholder_filter_at(
+        input,
+        params,
+        0,
+        no_backslash_escapes,
+        function,
+        span,
+    )?))
+}
+
+fn parse_prepared_schema_like_placeholder_filter_at(
+    input: &str,
+    params: &[Value],
+    param_index: usize,
+    no_backslash_escapes: bool,
+    function: &str,
+    span: Span,
+) -> CompileResult<WordPressSchemaNameFilter> {
+    let Some(mut rest) = input.trim().strip_prefix('?') else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata filter placeholder is required in the current subset",
+            ),
+        ));
     };
     rest = rest.trim_start();
     let escape_char = if let Some(escape) = rest.strip_prefix("ESCAPE ") {
         let Some((escape, next)) = parse_sql_single_quoted_value(escape.trim_start()) else {
-            return Ok(None);
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata ESCAPE clause must use one single-quoted character in the current subset",
+                ),
+            ));
         };
         if !next.trim().is_empty() {
-            return Ok(None);
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata ESCAPE clause must end the filter in the current subset",
+                ),
+            ));
         }
         let mut escape_chars = escape.chars();
         let Some(escape_char) = escape_chars.next() else {
-            return Ok(None);
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata ESCAPE clause requires one character in the current subset",
+                ),
+            ));
         };
         if escape_chars.next().is_some() {
-            return Ok(None);
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata ESCAPE clause requires one character in the current subset",
+                ),
+            ));
         }
         escape_char
     } else if rest.is_empty() {
         '\\'
     } else {
-        return Ok(None);
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata LIKE filter supports only a placeholder with an optional ESCAPE clause in the current subset",
+            ),
+        ));
     };
 
-    let pattern = prepared_schema_string_filter_param(function, params, span)?;
+    let pattern = prepared_schema_string_filter_param_at(function, params, param_index, span)?;
     let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
         return Err(runtime_error(
             span,
@@ -40697,7 +41061,7 @@ fn parse_prepared_schema_like_placeholder_filter(
             ),
         ));
     };
-    Ok(Some(filter))
+    Ok(filter)
 }
 
 fn parse_prepared_schema_exact_placeholder_filter(
@@ -40706,13 +41070,40 @@ fn parse_prepared_schema_exact_placeholder_filter(
     function: &str,
     span: Span,
 ) -> CompileResult<Option<WordPressSchemaNameFilter>> {
-    let Some(rest) = input.trim().strip_prefix('?') else {
-        return Ok(None);
-    };
-    if !rest.trim().is_empty() {
+    if !input.trim().starts_with('?') {
         return Ok(None);
     }
-    let value = prepared_schema_string_filter_param(function, params, span)?;
+    Ok(Some(parse_prepared_schema_exact_placeholder_filter_at(
+        input, params, 0, function, span,
+    )?))
+}
+
+fn parse_prepared_schema_exact_placeholder_filter_at(
+    input: &str,
+    params: &[Value],
+    param_index: usize,
+    function: &str,
+    span: Span,
+) -> CompileResult<WordPressSchemaNameFilter> {
+    let Some(rest) = input.trim().strip_prefix('?') else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata exact filter placeholder is required in the current subset",
+            ),
+        ));
+    };
+    if !rest.trim().is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata exact filter supports only a placeholder in the current subset",
+            ),
+        ));
+    }
+    let value = prepared_schema_string_filter_param_at(function, params, param_index, span)?;
     let Some(identifier) = parse_schema_table_identifier(value) else {
         return Err(runtime_error(
             span,
@@ -40722,7 +41113,7 @@ fn parse_prepared_schema_exact_placeholder_filter(
             ),
         ));
     };
-    Ok(Some(WordPressSchemaNameFilter::Exact(identifier)))
+    Ok(WordPressSchemaNameFilter::Exact(identifier))
 }
 
 fn parse_prepared_schema_exact_placeholder_list(
@@ -40773,17 +41164,27 @@ fn parse_prepared_schema_exact_placeholder_list(
     Ok(Some(names))
 }
 
-fn prepared_schema_string_filter_param<'a>(
+fn prepared_schema_string_filter_param_at<'a>(
     function: &str,
     params: &'a [Value],
+    param_index: usize,
     span: Span,
 ) -> CompileResult<&'a str> {
-    let [Value::String(pattern)] = params else {
+    let Some(value) = params.get(param_index) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared schema metadata filters require exactly one string parameter in the current subset",
+                "prepared schema metadata filter is missing a string parameter in the current subset",
+            ),
+        ));
+    };
+    let Value::String(pattern) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata filters require string parameters in the current subset",
             ),
         ));
     };
@@ -40930,6 +41331,31 @@ fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, 
         parse_schema_table_identifier(&input[..split_at])?,
         input[split_at..].trim_start(),
     ))
+}
+
+fn parse_prepared_schema_identifier_with_optional_suffix<'a>(
+    input: &'a str,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<(String, &'a str, usize)>> {
+    let input = input.trim_start();
+    if let Some(rest) = input.strip_prefix('?') {
+        let value = prepared_schema_string_filter_param_at(function, params, 0, span)?;
+        let Some(identifier) = parse_schema_table_identifier(value) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata identifier placeholders require identifier-shaped string parameters in the current subset",
+                ),
+            ));
+        };
+        return Ok(Some((identifier, rest.trim_start(), 1)));
+    }
+
+    Ok(parse_schema_identifier_with_optional_suffix(input)
+        .map(|(identifier, rest)| (identifier, rest, 0)))
 }
 
 fn parse_dynamic_schema_show_table_status_query(

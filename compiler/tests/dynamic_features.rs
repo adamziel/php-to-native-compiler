@@ -564,7 +564,7 @@ fn require_reports_current_boundaries() {
     let stream = runtime_error("<?php\nrequire 'https://example.com/file.php';\n");
     assert_eq!(
         stream.message,
-        "unsupported call require: stream and URL require paths are not implemented"
+        "unsupported call require: stream and URL require paths other than bounded local file:// URLs are not implemented"
     );
 }
 

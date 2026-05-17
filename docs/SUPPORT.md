@@ -2308,7 +2308,11 @@
   `SHOW INDEX`/`SHOW KEYS ... WHERE Key_name = ?` or `LIKE ?` forms,
   including explicit `LIKE ? ESCAPE '<char>'` for the covered metadata
   filters and bounded prepared `SHOW TABLE STATUS WHERE Name IN (?, ...)`
-  lists. Literal and prepared table-status `IN` lists validate
+  lists. Bounded table-identifier placeholders are also accepted for
+  `SHOW [FULL] COLUMNS FROM ?` and `SHOW INDEX`/`SHOW INDEXES`/
+  `SHOW KEYS FROM ?`, with the optional documented `Field`/`Key_name`
+  equality or `LIKE` filter placeholder consuming the next parameter. Literal
+  and prepared table-status `IN` lists validate
   identifier-shaped table names, skip missing names, and return rows in
   deterministic table-name order. Table/status rows remain deterministically
   sorted, and patterns without unescaped wildcard characters keep exact
@@ -2339,7 +2343,8 @@
   `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
   documented `Key_name` equality and `Key_name LIKE` forms,
   prepared schema metadata placeholders beyond the documented single string
-  filter parameter,
+  filter parameter, table-identifier metadata probes, and table-status `IN`
+  lists,
   dbDelta diff generation, real DDL execution, real transactional DDL
   semantics beyond the bounded in-memory snapshot/restore path, host database
   inspection, or native database lowering. For an
@@ -2540,7 +2545,10 @@
   `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW
   KEYS` equality/`LIKE` filter shapes, including prepared
   `SHOW TABLE STATUS WHERE Name LIKE ?` predicates, plus bounded prepared
-  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists. This state island is not broad SQL
+  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists, and bounded
+  table-identifier placeholders for `SHOW [FULL] COLUMNS FROM ?` and
+  `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS FROM ?` with optional documented
+  field/key filters. This state island is not broad SQL
   parsing, SQL-mode-aware escaping beyond the bounded schema metadata and
   direct option-name literal slices,
   character-set/collation fidelity, arbitrary column alteration beyond the
@@ -2869,8 +2877,9 @@
   optional bool include-path flag, one optional bounded stream-context
   resource, and bounded integer offset/length arguments. The special
   `php://input` path returns the current bounded request body seeded from
-  `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths are read
-  from the host filesystem as UTF-8 text and share the same current
+  `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths and local
+  absolute `file://` URLs with an empty host or `localhost` are read from the
+  host filesystem as UTF-8 text. Non-URL local paths share the same current
   relative path policy as `file_exists`; when the second argument is `true`
   for a relative local path, lookup also follows the current bounded
   `include_path`-then-source-relative candidate order used by
@@ -2889,7 +2898,8 @@
   bounded WordPress bootstrap compatibility slice, not full PHP filesystem
   support: binary string byte fidelity, exact PHP warning text or handler
   `errstr` text,
-  other stream wrappers, context option effects, wrapper-specific context
+  `file://` URL percent-decoding, non-local `file://` hosts, other stream
+  wrappers, context option effects, wrapper-specific context
   behavior, exact byte offsets through non-UTF-8 data, negative offsets before
   the start for stream/resource types outside the current local/`php://input`
   payload paths, real request-body state outside the explicit CLI seed, `open_basedir`,
@@ -2900,8 +2910,10 @@
   function-table introspection can still see the known builtin name.
   Bounded stream resources are supported for `phpc run` only:
   `fopen("php://memory", $mode)`, `fopen("php://temp", $mode)`,
-  `fopen("php://input", $mode)`, and `fopen($localPath, $mode,
-  $use_include_path = false, $context = null)` for local filesystem paths
+  `fopen("php://input", $mode)`, `fopen("file:///absolute/path", $mode)`,
+  `fopen("file://localhost/absolute/path", $mode)`, and
+  `fopen($localPath, $mode, $use_include_path = false, $context = null)` for
+  local filesystem paths
   create interpreter-owned stream resources for simple `r`, `w`, `a`, or `c`
   modes with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the
   same bounded include-path-then-source-relative lookup flag as
@@ -3762,7 +3774,10 @@
   current `include_path` string from `get_include_path()`/`set_include_path()`
   before falling back to the source file directory containing the construct;
   the default include path is `"."`, empty entries are treated as `.`, and
-  `PATH_SEPARATOR` is exposed for the host path-list separator. Included files
+  `PATH_SEPARATOR` is exposed for the host path-list separator. Bounded local
+  absolute `file://` URLs with an empty host or `localhost` resolve to the
+  referenced local path for `include`, `include_once`, `require`, and
+  `require_once`. Included files
   are parsed with `<?php`, register
   top-level functions/classes, and run in the caller symbol table. Statement
   forms ignore top-level include return values.
@@ -3780,7 +3795,8 @@
   local file, including files loaded first through non-once `require`/`include`.
   Failed-include realpath-cache side effects, process-current-working-directory
   edge cases beyond the default `"."` entry and no-source-file fallback,
-  stream wrappers, URL includes, `phar://`, opcache behavior, autoload
+  `file://` URL percent-decoding, non-local `file://` hosts, URL includes,
+  `phar://`, opcache behavior, autoload
   interaction, declaration-order edge cases, source mapping for
   functions/classes after include, PHP's exact warning-vs-fatal text, fatal
   `Error` object/stack trace shape, shutdown/destructor ordering after fatal,
@@ -5588,7 +5604,14 @@
   variable cell and closure invocation prebinds that cell into the closure
   local scope. Ordinary untyped closure values can be invoked directly with
   `$closure(...)` and through `call_user_func()` or positional-array
-  `call_user_func_array()` over the current by-value argument subset. Direct
+  `call_user_func_array()` over the current by-value argument subset.
+  `call_user_func($closure, ...)` also matches PHP's reached
+  by-reference-parameter behavior for ordinary closures in the current
+  non-variadic parameter subset: supplied arguments are evaluated by value, a
+  bounded `E_WARNING` is emitted for each reached by-reference parameter
+  through the current error-handler stack or stderr fallback, closure-local
+  mutations do not write back to those caller arguments, and direct-variable
+  by-reference captures still share the captured cell. Direct
   `$closure(...)` invocation also accepts covered by-reference parameters for
   direct-variable arguments and direct nested array-offset arguments such as
   `$closure($value)` and `$closure($items["payload"]["slot"])`, using the
@@ -5600,8 +5623,9 @@
   snapshot stored when the closure was created. Arrow implicit capture binding
   and execution, `$this` binding, by-reference capture of array-offset,
   object-property, magic-property, or `ArrayAccess` alias roots, closure
-  reference returns, direct `call_user_func()` reference-parameter parity,
-  typed parameter/return enforcement, copy-on-write, static closure binding
+  reference returns, array-callable `call_user_func()` callbacks, variadic
+  reference parameters through `call_user_func()`, typed parameter/return
+  enforcement, copy-on-write, static closure binding
   semantics, named closure callback arguments, exact PHP `Closure` object
   behavior, and native lowering are unsupported. Non-static
   arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
@@ -6152,10 +6176,12 @@
   direct-variable count-output subset as the builtin section above; direct
   native `str_replace(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
-  `call_user_func` accepts the same current string-callable subset as the
-  builtin section above; direct native `call_user_func(...)` calls still reject
-  under the function-call boundary, while native function-table introspection
-  recognizes the name.
+  `call_user_func` accepts the same current string-callable and closure
+  callback subset as the builtin section above, including PHP-matching
+  by-value invocation plus bounded `E_WARNING` recovery for reached
+  non-variadic by-reference parameters; direct native `call_user_func(...)`
+  calls still reject under the function-call boundary, while native
+  function-table introspection recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, literal direct-variable or direct
   visible named object-property array-offset by-reference argument, and direct stored
@@ -6402,8 +6428,9 @@
   the trait itself also execute through the same by-value argument subset when
   the target is `null` or an object, with the reflected trait bound for
   `__CLASS__`, `__METHOD__`, `self::class`, `static::class`, and
-  `get_called_class()`. Interface methods, non-static trait methods, abstract
-  trait methods, trait `self::method()`/`static::method()` calls, trait class
+  `get_called_class()`, and with static `self::method()`/`static::method()`
+  calls resolved against executable methods on that reflected trait. Interface
+  methods, non-static trait methods, abstract trait methods, trait class
   constants, `parent` context behavior, `new self`/`new static` from reflected
   traits, internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
@@ -7245,14 +7272,14 @@
   diagnostic-handle path for null string-handle and non-UTF-8 string-byte
   failures from `phpc_native_value_from_string_with_diagnostic`. The
   deterministic native runtime probe now includes one branch on a nullable
-  value-handle return and clones/frees the diagnostic message only on the
-  failure path. Production `--emit-ir` currently uses the string/value stdout
-  helper path only for the documented direct and selected string output slices
-  and still does not report helper diagnostics. Linked native execution,
-  binary PHP string value handles, diagnostics for stdout writes or arbitrary
-  runtime failures, request-state handles, array/object/resource/reference
-  storage beyond null-only ABI shapes, WordPress host-state ABI, and C fallback
-  assembly helper calls remain unsupported.
+  value-handle return and clones/reports/frees the diagnostic message on the
+  failure path. Production `--emit-ir` uses the same nullable-value branch and
+  stderr diagnostic-reporting helper for the documented direct and selected
+  string output slices. Linked native execution, binary PHP string value
+  handles, diagnostics for stdout writes or arbitrary runtime failures,
+  request-state handles, array/object/resource/reference storage beyond
+  null-only ABI shapes, WordPress host-state ABI, and C fallback assembly helper
+  calls remain unsupported.
 - Array gaps: array spread elements, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
   non-variable destructuring targets are rejected with stable parse diagnostics.

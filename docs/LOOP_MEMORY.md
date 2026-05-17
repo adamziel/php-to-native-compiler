@@ -26,6 +26,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-18T01:32:38+02:00
+
+- Checkpoint before this task:
+  `f90bbbde runtime: advance WordPress trait context closure refs require fatal schema literals and native diagnostics`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1629-1634, focused on large WordPress/PHP
+  blockers with five disjoint implementation/native lanes plus one serialized
+  integration/full-gate slot.
+- Files changed so far: reflected static trait methods can call nested static
+  `self::method()` and `static::method()` methods on the reflected trait while
+  preserving trait context; direct `call_user_func()` string user-function and
+  ordinary closure callbacks with reached by-reference parameters now use
+  PHP-shaped by-value arguments with bounded warnings and no caller writeback;
+  bounded local absolute `file://` URLs work for `file_get_contents()`,
+  `fopen()`, `include`, and `require_once`; deterministic MySQLi schema
+  metadata accepts prepared identifier placeholders for `SHOW [FULL] COLUMNS`
+  and `SHOW INDEX`/`INDEXES`/`KEYS`; generated native string output now reports
+  nullable value-conversion diagnostics to stderr before cleanup; affected
+  native `--emit-ir` CLI snapshots, docs, queue, progress, lane-worker,
+  object-model, MySQLi, and native ABI docs were refreshed.
+- Tests run and result: focused integrated checks passed for `object_model`,
+  `call_user_func_builtin`, `include_path_builtin`, `mysqli_extension`,
+  `wordpress_inventory_cli`, `native_runtime_abi`, `php_runtime
+  native_diagnostic`, `native_arithmetic_boundary`,
+  `native_bitwise_boundary`, `native_comparison_boundary`,
+  `native_assembly_cli`, milestone fixture directories 1629-1632, PHP
+  comparisons where applicable, `cargo fmt --check`, `cargo check -p phpc`,
+  `git diff --check`, and conflict-marker scanning. Manual full gate passed
+  before checkpoint: `CARGO_TARGET_DIR=/tmp/phpc-target-full-1629-1634
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test`
+  completed successfully, `phpc test` reported `1675` fixture tests passed
+  with `0` failures, and `phpc test --compare-php` reported `1675` fixture
+  tests passed with `0` failures, `988` system PHP comparisons, and `687`
+  `phpc-only` skipped fixtures.
+- Remaining semantic gaps: interface method invocation, non-static/abstract
+  trait execution, trait constants and broader trait context behavior,
+  constructor/destructor/autoload/class-alias fidelity, exact reflection
+  exception objects/text, array-callable `call_user_func()` reference behavior,
+  closure reference returns, real reference containers, broad copy-on-write,
+  alias destruction ordering, broader URL/phar streams, exact warning/fatal
+  object text and shutdown/destructor ordering, joined metadata queries,
+  dbDelta execution, host database inspection, persistent object cache/
+  transients, full WordPress plugin/theme/admin/REST/front-controller flows,
+  linked native execution, binary PHP string handles, request-state handles,
+  WordPress host-state ABI, and real array/object/resource/reference native
+  handles remain explicit blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1629-1633 lane worktrees and target directories, then
+  start the next blocker-focused lanes from Milestones 1635-1639 with one
+  integration owner and one serialized full gate per checkpoint batch.
+
 ## Loop Event 2026-05-18T00:57:58+02:00
 
 - Checkpoint before this task:

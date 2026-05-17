@@ -216,6 +216,33 @@ fclose($append);
 }
 
 #[test]
+fn local_file_url_stream_resources_read_utf8_contents() {
+    let path = temp_stream_path("phpc-file-url-stream-resource.txt");
+    fs::write(&path, "file-url-stream").expect("temporary stream file can be seeded");
+    let source = format!(
+        r#"<?php
+$url = "file://{}";
+$stream = fopen($url, "r");
+$meta = stream_get_meta_data($stream);
+echo $meta["wrapper_type"];
+echo ":";
+echo $meta["stream_type"];
+echo ":";
+echo $meta["uri"] === $url ? "same-uri" : "other-uri";
+echo ":";
+echo fread($stream, 8);
+fclose($stream);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "plainfile:STDIO:same-uri:file-url");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn local_fopen_missing_file_emits_warning_returns_false_and_continues() {
     let path = temp_stream_path("phpc-stream-resource-missing-read.txt");
     let source = format!(
@@ -577,7 +604,7 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
     assert_eq!(wrapper.column, 1);
     assert_eq!(
         wrapper.message,
-        "unsupported call fopen(): only php://memory, php://temp, php://input, and local file paths are supported in the current stream subset"
+        "unsupported call fopen(): only php://memory, php://temp, php://input, local file:// URLs, and local file paths are supported in the current stream subset"
     );
 
     let bad_mode = run_source("<?php\nfopen('php://memory', 'x');\n").unwrap_err();

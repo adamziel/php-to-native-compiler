@@ -589,6 +589,26 @@ pub unsafe extern "C" fn phpc_native_diagnostic_message_clone_bytes(
 /// # Safety
 ///
 /// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed. The helper writes the stable diagnostic
+/// message bytes to stderr and returns the number of bytes written. Null
+/// handles and host write failures return zero.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_message_stderr(
+    handle: NativeDiagnosticHandle,
+) -> usize {
+    let Some(diagnostic) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+
+    match io::stderr().write_all(diagnostic.message.as_bytes()) {
+        Ok(()) => diagnostic.message.len(),
+        Err(_) => 0,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
 /// runtime ABI and not yet freed. Passing any other pointer is undefined
 /// behavior.
 #[no_mangle]
@@ -5290,9 +5310,31 @@ mod tests {
         assert!(message.ptr().is_null());
         assert_eq!(message.len(), 0);
         assert_eq!(message.cap(), 0);
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_message_stderr(diagnostic) },
+            0
+        );
 
         unsafe { phpc_native_byte_buffer_free(message) };
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+    }
+
+    #[test]
+    fn native_diagnostic_message_stderr_reports_message_length() {
+        let string = unsafe { phpc_native_string_from_bytes(ptr::null(), 4) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value =
+            unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
+
+        assert!(value.is_null());
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_message_stderr(diagnostic) },
+            "native value conversion failed: string handle is null".len()
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(string) };
     }
 
     #[test]

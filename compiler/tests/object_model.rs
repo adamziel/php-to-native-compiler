@@ -6029,6 +6029,38 @@ echo $method->invokeArgs(new Plugin(), array("save_post"));
 }
 
 #[test]
+fn reflection_static_trait_methods_call_self_and_static_trait_methods() {
+    let execution = run_source(
+        r#"<?php
+trait HookTools {
+    public static function label($hook) {
+        return static::class . ":" . __METHOD__ . ":" . $hook;
+    }
+
+    public static function relay($hook) {
+        return self::label($hook) . "|" . static::label($hook);
+    }
+}
+
+class Plugin {
+    use HookTools;
+}
+
+$method = new ReflectionMethod(HookTools::class, "relay");
+echo $method->invoke(null, "init"), "\n";
+echo $method->invokeArgs(new Plugin(), array("save_post"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "HookTools:HookTools::label:init|HookTools:HookTools::label:init\nHookTools:HookTools::label:save_post|HookTools:HookTools::label:save_post"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_invokes_non_public_user_class_methods() {
     let execution = run_source(
         r#"<?php
