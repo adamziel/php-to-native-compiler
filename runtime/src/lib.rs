@@ -3333,12 +3333,50 @@ pub fn coerce_property_value(
         ));
     }
 
+    let coerced = match normalized.as_str() {
+        "int" => match &value {
+            Value::Int(_) => Some(value.clone()),
+            Value::Bool(value) => Some(Value::Int(if *value { 1 } else { 0 })),
+            Value::Float(value) => Some(Value::Int(*value as i64)),
+            Value::String(value) => parse_numeric_string(value).map(|number| match number {
+                Number::Int(value) => Value::Int(value),
+                Number::Float(value) => Value::Int(value as i64),
+            }),
+            _ => None,
+        },
+        "float" => match &value {
+            Value::Int(value) => Some(Value::Float(*value as f64)),
+            Value::Float(_) => Some(value.clone()),
+            Value::Bool(value) => Some(Value::Float(if *value { 1.0 } else { 0.0 })),
+            Value::String(value) => parse_numeric_string(value).map(|number| match number {
+                Number::Int(value) => Value::Float(value as f64),
+                Number::Float(value) => Value::Float(value),
+            }),
+            _ => None,
+        },
+        "bool" => match &value {
+            Value::Bool(_) => Some(value.clone()),
+            Value::Int(value) => Some(Value::Bool(*value != 0)),
+            Value::Float(value) => Some(Value::Bool(*value != 0.0)),
+            Value::String(value) => Some(Value::Bool(!value.is_empty() && value != "0")),
+            _ => None,
+        },
+        "string" => match &value {
+            Value::String(_) => Some(value.clone()),
+            Value::Bool(false) => Some(Value::String(String::new())),
+            Value::Bool(true) => Some(Value::String("1".to_string())),
+            Value::Int(value) => Some(Value::String(value.to_string())),
+            Value::Float(value) => Some(Value::String(format_php_float(*value))),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(value) = coerced {
+        return Ok(value);
+    }
+
     let compatible = match (&value, normalized.as_str()) {
         (_, "mixed") => true,
-        (Value::String(_), "string") => true,
-        (Value::Int(_), "int") => true,
-        (Value::Int(_), "float") => true,
-        (Value::Float(_), "float") => true,
         (Value::Bool(true), "bool" | "true") => true,
         (Value::Bool(false), "bool" | "false") => true,
         (Value::Array(_), "array") => true,
@@ -3354,12 +3392,6 @@ pub fn coerce_property_value(
             type_decl,
             value.type_name(),
         ));
-    }
-
-    if normalized == "float" {
-        if let Value::Int(value) = value {
-            return Ok(Value::Float(value as f64));
-        }
     }
 
     Ok(value)

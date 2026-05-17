@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T12:26:51Z
+
+- Checkpoint before this task:
+  `2832a04a runtime: advance WordPress typed unset refs session notices and indexes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1451-1455, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: weak scalar coercions for declared typed-property
+  writes; bounded stored reference array literals for direct variables, direct
+  array offsets, and visible object-property array offsets; request-local
+  session snapshot reload after `session_write_close()` and
+  `read_and_close`; deterministic MySQLi schema state for bounded `ALTER
+  TABLE` rename/modify/drop operations; milestone fixtures 1451-1454; support,
+  architecture, README, queue, progress, loop-memory, and goal docs.
+- Tests run and result: focused integration checks passed for typed-property
+  weak scalar coercions, stored reference array literals, closed-session
+  snapshot reloads, changed/dropped schema probes, milestone fixtures
+  1451-1454, and system PHP comparisons where applicable. Manual full gate
+  passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1451-1455 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1537` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1537` fixture tests
+  passed with `0` failures, `900` system PHP comparisons, and `637` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: inherited class-name assignment checks, compound
+  typed-property objects, readonly/property-hook behavior, real reference
+  containers, broad copy-on-write, dynamic `ArrayAccess` roots, exact
+  SAPI/session/upload/filesystem/stream behavior, real SQL/database/schema
+  execution, WordPress plugin/theme/admin/REST flows, and native runtime
+  integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers, then
+  start Milestones 1456-1459 in separate worktrees focused on the same four
+  large blocker lanes.
+
 ## Loop Event 2026-05-18T04:00:00Z
 
 - Checkpoint before this task:

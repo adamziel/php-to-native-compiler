@@ -8,7 +8,7 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
 }
 
 #[test]
-fn array_reference_elements_evaluate_current_values_without_aliasing() {
+fn array_reference_elements_stored_by_value_preserve_direct_variable_aliases() {
     let execution = run_source(
         r#"<?php
 $value = "Ada";
@@ -20,7 +20,43 @@ echo "|", $items[0], "|", $items["name"];
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "Ada|Ada|Ada|Ada");
+    assert_eq!(execution.stdout, "Ada|Ada|Grace|Grace");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_reference_elements_stored_by_value_feed_call_user_func_array() {
+    let execution = run_source(
+        r#"<?php
+function mark(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+$value = "seed";
+$args = array(&$value, "stored");
+call_user_func_array("mark", $args);
+echo $value, "|", $args[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:stored|seed:stored");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_reference_elements_stored_by_value_preserve_array_offset_aliases() {
+    let execution = run_source(
+        r#"<?php
+$items = ["slot" => "seed"];
+$args = array(&$items["slot"]);
+$copy = $args;
+$copy[0] = "copy";
+echo $items["slot"], "|", $args[0], "|", $copy[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "copy|copy|copy");
     assert_eq!(execution.exit_code, 0);
 }
 

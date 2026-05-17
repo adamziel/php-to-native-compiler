@@ -35,6 +35,20 @@ Use a lane-specific suffix for `CARGO_TARGET_DIR`, such as `ir`, `runtime`,
 
 ## Lane Ownership
 
+Current WordPress acceleration batches should use four independent
+implementation lanes when possible:
+
+- Object/interface lane for class metadata, properties, reflection, magic
+  hooks, inheritance, and diagnostics.
+- Reference/COW lane for aliasing, references, array/object copy-on-write,
+  by-reference call shapes, and lifetime behavior.
+- Request/SAPI/filesystem/stream lane for sessions, headers, cookies, uploads,
+  output/shutdown behavior, filesystem state, stream wrappers, and request
+  input.
+- WordPress DB/bootstrap lane for MySQLi/`wpdb`, schema/query behavior,
+  object-cache/options/transients, hooks, plugin/theme probes, and bootstrap
+  evidence.
+
 Parser lane:
 
 - Owns lexer, parser, AST shape, parse diagnostics, and syntax fixtures.

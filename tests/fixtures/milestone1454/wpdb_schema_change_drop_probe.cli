@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1454/wpdb_schema_change_drop_probe.php

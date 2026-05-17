@@ -4949,13 +4949,20 @@ $box->peer = new Peer();
 Box::$ready = true;
 Box::$label = null;
 echo "values|", $box->id, "|", ($box->name === null ? "null" : $box->name), "|", $box->ratio, "|", get_class($box->peer), "|", yn(Box::$ready), "|", (Box::$label === null ? "null" : Box::$label), "\n";
+
+$box->id = "42";
+$box->ratio = "4.5";
+$box->name = 123;
+Box::$ready = "0";
+Box::$label = false;
+echo "coerced|", gettype($box->id), ":", $box->id, "|", gettype($box->ratio), ":", $box->ratio, "|", gettype($box->name), ":", $box->name, "|", gettype(Box::$ready), ":", yn(Box::$ready), "|", gettype(Box::$label), ":", (Box::$label === "" ? "empty" : Box::$label), "\n";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "isset-empty|0101\nprop|0|1|null\nstatic|0|1|null\nvalues|42|null|2|Peer|1|null\n"
+        "isset-empty|0101\nprop|0|1|null\nstatic|0|1|null\nvalues|42|null|2|Peer|1|null\ncoerced|integer:42|double:4.5|string:123|boolean:0|string:empty\n"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -5003,14 +5010,14 @@ $box->id = "nope";
     let static_write_error = runtime_error(
         r#"<?php
 class Box { public static bool $ready; }
-Box::$ready = "yes";
+Box::$ready = array();
 "#,
     );
     assert_eq!(static_write_error.line, 3);
     assert_eq!(static_write_error.column, 4);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Box::$ready expects bool, got string"
+        "invalid property access: typed property Box::$ready expects bool, got array"
     );
 }
 

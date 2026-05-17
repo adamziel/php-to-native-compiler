@@ -231,9 +231,16 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Dynamic-property append-offset sources, `ArrayAccess` roots outside the
-  direct `offsetGet()` bridge, reference array
-  literals stored by value, direct stored arrays whose reached slots were not
+  Direct variable assignments from reference array literals now preserve
+  covered reference elements for later stored-array callback use, for example
+  `$args = array(&$value); call_user_func_array($callback, $args);` and
+  `$args = array("value" => &$object->items[$key]);`. The covered reference
+  element sources are direct variables, direct array offsets, and direct
+  visible named object-property array offsets. Dynamic-property append-offset
+  sources, `ArrayAccess` roots outside the direct `offsetGet()` bridge,
+  reference array literals assigned into non-variable or alias-backed variable
+  targets, reference
+  elements from arbitrary expressions, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
   non-append object-property array offsets without an intermediate alias variable,
@@ -362,7 +369,8 @@
   copied reference slots beyond the covered direct array-offset and literal
   copied-path slices,
   dynamic non-public clone mirroring, magic-property clone alias mirroring,
-  reference array literals, ArrayAccess reference containers, exact alias
+  reference array literals outside direct variable assignment targets,
+  ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct public
   object-property reference sources such as `$alias =& $object->property;`
@@ -872,18 +880,26 @@
   `$alias =& $_SESSION["payload"]["slot"]` observe direct function-scope
   `$_SESSION` writes through the same bounded alias metadata, including after
   `session_write_close()` leaves the in-memory array visible. The current slice
-  keeps session data in memory for one `phpc run` request only. Starting a
+  keeps session data in memory for one `phpc run` request only. When
+  `session_write_close()` closes an active bounded session, the runtime stores
+  a request-local snapshot keyed by the current session id. A later
+  `session_start()` for that id reloads the last closed snapshot, so mutations
+  made to visible `$_SESSION` while the session is closed do not become the
+  next active session data unless another active close persists them.
+  `session_start(["read_and_close" => true])` also reloads the current
+  request-local snapshot and immediately closes the status. Starting a
   session after unbuffered output returns `false` and emits a bounded
   `E_WARNING` through the current `set_error_handler()` stack or stderr
   fallback. Calling `session_start()` while the bounded session is already
   active emits a bounded `E_NOTICE` through that same handler stack or stderr
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
   keeps the session active even if `read_and_close` was requested. Session
-  persistence, session file locking, save handlers, session
-  module configuration, session cookies/cache headers, garbage collection,
-  strict id validation, trans-sid behavior, exact warning text, full PHP
-  reference containers, broader copy-on-write, exact alias destruction
-  ordering, and native lowering remain unsupported.
+  file persistence across `phpc run` processes, session file locking, save
+  handlers, session module configuration, session cookies/cache headers,
+  garbage collection, strict id validation, trans-sid behavior, exact warning
+  text, reference aliases that survive `_SESSION` root replacement on restart,
+  full PHP reference containers, broader copy-on-write, exact alias
+  destruction ordering, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -1593,9 +1609,13 @@
   `$args =& $object->store["args"]`. Writes through the callback parameter
   update the covered caller variable, request-bag/global alias group, stored
   array slot, or public object-property array slot through the bounded
-  alias/writeback metadata. Reference array literals stored by value, stored
-  direct arrays
-  whose reached slots were not assigned by reference, unknown or duplicate
+  alias/writeback metadata. Direct variable assignments from reference array
+  literals such as `$args = array(&$value)` and
+  `$args = array("value" => &$object->items[$key])` preserve those same
+  covered reference slots for later stored-array callback invocation and
+  reference-return alias binding. Stored direct arrays whose reached slots
+  were not assigned by reference or by a covered reference array literal,
+  unknown or duplicate
   string-keyed argument names, positional arguments after string-keyed named
   arguments, variadic named callback arguments, reference elements that are
   not direct variables or direct visible named object-property array offsets
@@ -2008,15 +2028,19 @@
   including ordered multi-column index parts and numeric prefix sub-parts such
   as `post_name(191)`, and
   exact `ALTER TABLE <table> ADD COLUMN ...`, `ADD KEY ...`, `ADD INDEX ...`,
-  `ADD UNIQUE KEY ...`, or `ADD PRIMARY KEY ...` entries mutate that recorded
-  table. Later exact `SHOW TABLES LIKE '<table>'`, `DESCRIBE`/`DESC <table>`,
+  `ADD UNIQUE KEY ...`, `ADD PRIMARY KEY ...`, `CHANGE COLUMN old new ...`,
+  `MODIFY COLUMN ...`, `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`,
+  or `DROP PRIMARY KEY` entries mutate that recorded table. Column drops also
+  remove recorded indexes that referenced the dropped column, and column
+  changes rename matching recorded index parts. Later exact `SHOW TABLES LIKE
+  '<table>'`, `DESCRIBE`/`DESC <table>`,
   `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
   `SHOW KEYS FROM <table>` probes read that recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, simple
   defaults, auto-increment extras, prefix sub-part lengths, and placeholder
   collation metadata for character/text columns. This does not add real SQL
-  parsing, dropped/renamed/changed columns, expression indexes, index
-  ordering/opclass/parser metadata, dbDelta diff generation, real DDL
+  parsing, arbitrary DDL beyond those exact `ALTER TABLE` shapes, expression
+  indexes, index ordering/opclass/parser metadata, dbDelta diff generation, real DDL
   execution, transactions for schema state, host database inspection, or
   native database lowering. For an
   exact current synthetic WordPress option write,
@@ -2179,12 +2203,14 @@
   exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` definitions with direct
   columns and primary/unique/non-unique indexes, including ordered
   multi-column parts and numeric prefix sub-parts, plus exact
-  `ALTER TABLE <table> ADD ...` column/index mutations, then exposes that
-  recorded shape through the same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
+  `ALTER TABLE <table> ADD ...`, `CHANGE COLUMN ...`, `MODIFY COLUMN ...`,
+  `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
+  `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
+  same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
   `SHOW [FULL] COLUMNS`, and `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` probes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
-  character-set/collation fidelity, dropped/renamed/changed columns,
-  expression indexes, index ordering/opclass/parser metadata, dbDelta diff
+  character-set/collation fidelity, arbitrary column alteration beyond the
+  exact direct shapes listed above, expression indexes, index ordering/opclass/parser metadata, dbDelta diff
   generation, schema transaction rollback, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
@@ -2869,12 +2895,16 @@
   While active, `session_id($id)` returns `false` without changing the id.
   `session_write_close()` accepts no arguments, closes the active bounded
   session status back to `PHP_SESSION_NONE`, keeps the in-memory `$_SESSION`
-  data visible for the rest of the request, and returns `true`. Session
-  persistence, session file locking, save handlers, `session_name()`,
-  `session_destroy()`, `session_abort()`, `session_reset()`, `session_unset()`,
+  data visible for the rest of the request, stores a request-local snapshot
+  under the current session id, and returns `true`. A later
+  `session_start()` for the same id reloads that snapshot instead of keeping
+  closed-session edits. Session file persistence across `phpc run` processes,
+  session file locking, save handlers, `session_name()`, `session_destroy()`,
+  `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, option effects beyond
   `read_and_close`, session cookies/cache headers, garbage collection, exact
-  warning text, and native lowering remain unsupported.
+  warning text, reference aliases that survive `_SESSION` root replacement on
+  restart, and native lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3325,15 +3355,18 @@
   instance and static properties enforce the current simple named type subset
   for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
   nullable `?T`, literal `true`/`false`, and exact class-name object values;
-  integer writes to `float` are stored as floats. Direct
+  weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
+  `string`, including numeric strings and bool/int/float/string conversions in
+  the current scalar value model. Integer writes to `float` are stored as
+  floats. Direct
   `unset($object->typedProperty)` over a visible declared instance typed
   property restores the slot to the same uninitialized state: later direct
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
   `get_object_vars()` excludes the slot, and a later direct write may
-  initialize it again. Weak PHP scalar coercions such as string-to-int,
-  inherited class-name assignment checks, references, property writes through
-  complex alias paths, readonly properties, property hooks, static typed
-  property unset, and native lowering remain unsupported. Compound
+  initialize it again. Exact PHP deprecation/warning emission for lossy scalar
+  coercions, inherited class-name assignment checks, references, property
+  writes through complex alias paths, readonly properties, property hooks,
+  static typed property unset, and native lowering remain unsupported. Compound
   union/intersection/DNF property type objects remain unsupported until
   `ReflectionUnionType`/`ReflectionIntersectionType` exist.
   Methods

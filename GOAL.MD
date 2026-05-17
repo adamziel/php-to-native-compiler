@@ -175,11 +175,11 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded `ReflectionNamedType`
-metadata for method parameters, direct `ArrayAccess` reference roots, LIFO
-`set_error_handler()` stack behavior for recoverable filesystem warnings, and
-prepared-statement insert-ID metadata over the placeholder MySQLi state
-island. Those are useful compatibility steps, but they do not change the
+The latest WordPress-focused batch closed weak scalar coercions for declared
+typed-property writes, bounded stored reference array literals, request-local
+session snapshot reload after `session_write_close()`, and deterministic
+MySQLi schema-state changes for bounded `ALTER TABLE` rename/modify/drop
+operations. Those are useful compatibility steps, but they do not change the
 larger project shape: the next lanes should keep attacking broad
 object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress
@@ -2067,15 +2067,17 @@ unchecked work. Current state:
   `$holder->bag[$key] =& $value;` now report a specific structured fatal
   boundary matching PHP's prohibition on assigning by reference to object array
   dimensions.
-- Milestones 1446 through 1450 are the active checkpoint candidate:
-  typed-property uninitialization via `unset($object->prop)`, append-offset
-  `ArrayAccess` reference sources, active-session `session_start()` restart
-  notices, deterministic MySQLi multi-column index/sub-part schema probes, and
-  the queue/documentation refresh are implemented and verified. Weak
-  typed-property scalar coercions, inherited class-name assignment checks,
-  compound type objects, real reference containers, broader copy-on-write,
-  exact SAPI/session/upload behavior, real database/schema execution,
-  arbitrary SQL, and native lowering remain open.
+- Milestones 1451 through 1455 are the active checkpoint candidate: weak
+  scalar coercions for declared typed-property writes, bounded stored
+  reference array literals, request-local session snapshot reload after
+  `session_write_close()`, deterministic MySQLi schema-state changes for
+  bounded `ALTER TABLE` rename/modify/drop operations, and the
+  queue/documentation refresh are implemented and verified. Inherited
+  class-name assignment checks, compound type objects, readonly/property-hook
+  behavior, real reference containers, broader copy-on-write, exact
+  SAPI/session/upload/filesystem behavior, real database/schema execution,
+  arbitrary SQL, full WordPress request flows, and native lowering remain
+  open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

@@ -5129,6 +5129,36 @@ while ($column = mysqli_fetch_assoc($columns)) {
 }
 
 #[test]
+fn mysqli_query_tracks_bounded_wordpress_schema_column_and_index_changes() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_terms (term_id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', payload longtext NOT NULL, checksum varchar(64) NOT NULL default '', PRIMARY KEY  (term_id), KEY slug (slug), KEY checksum (checksum)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_terms CHANGE COLUMN slug name varchar(200) NOT NULL default '', MODIFY COLUMN payload longtext NULL, DROP COLUMN checksum, DROP KEY slug, ADD KEY name (name(191))");
+echo "affected=", mysqli_affected_rows($handle);
+$columns = mysqli_query($handle, "DESCRIBE wp_probe_terms");
+echo "|columns=";
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ":", $column["Type"], ":", $column["Null"], ":", $column["Key"], ";";
+}
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_probe_terms");
+echo "|indexes=", mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ":", $index["Sub_part"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "affected=0|columns=term_id:bigint(20) unsigned:NO:PRI;name:varchar(200):NO:MUL;payload:longtext:YES:;|indexes=2:PRIMARY:term_id:;name:name:191;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

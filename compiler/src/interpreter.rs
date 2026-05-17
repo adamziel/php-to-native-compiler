@@ -160,6 +160,7 @@ struct Interpreter {
     output_start: Option<OutputStart>,
     session_status: i64,
     session_id: String,
+    session_store: HashMap<String, PhpArray>,
     stdout: String,
     stderr: String,
     exit_signal: Option<i32>,
@@ -2836,6 +2837,19 @@ enum ReferenceReturnLocalBinding {
     },
 }
 
+#[derive(Debug, Clone)]
+enum ArrayLiteralReferenceElement {
+    Variable {
+        key: ArrayKey,
+        source_name: String,
+    },
+    Alias {
+        key: ArrayKey,
+        source_alias: ArrayOffsetAlias,
+        value: Value,
+    },
+}
+
 #[derive(Debug, Clone, Default)]
 struct ConstantTable {
     values: HashMap<String, Value>,
@@ -3078,6 +3092,7 @@ impl Interpreter {
             output_start: None,
             session_status: PHP_SESSION_NONE,
             session_id: String::new(),
+            session_store: HashMap::new(),
             stdout: String::new(),
             stderr: String::new(),
             exit_signal: None,
@@ -7834,8 +7849,24 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match target {
             AssignTarget::Variable { name, .. } => {
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
+                if target_is_alias && !array_literal_references.is_empty() {
+                    return Err(runtime_error(
+                        expr.span(),
+                        RuntimeError::unsupported_call(
+                            "array literal",
+                            "reference array literals assigned through an alias-backed variable target are not implemented in the current subset",
+                        ),
+                    ));
+                }
                 if !target_is_alias {
                     let object_alias_fallbacks = scope.public_object_roots_alias_fallbacks(name);
                     scope.remove_static_root_from_array_offset_aliases(name);
@@ -7911,6 +7942,36 @@ impl Interpreter {
                             }
                         }
                         _ => {}
+                    }
+                }
+                for reference in array_literal_references {
+                    match reference {
+                        ArrayLiteralReferenceElement::Variable { key, source_name } => {
+                            scope.bind_array_offset_to_static_source(
+                                name,
+                                key,
+                                &source_name,
+                                expr.span(),
+                            )?;
+                        }
+                        ArrayLiteralReferenceElement::Alias {
+                            key,
+                            source_alias,
+                            value,
+                        } => {
+                            let target_alias = ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::StaticArray {
+                                    name: name.to_string(),
+                                },
+                                keys: vec![key],
+                            };
+                            scope.bind_array_offset_alias_to_reference_alias(
+                                target_alias,
+                                source_alias,
+                                value,
+                                expr.span(),
+                            )?;
+                        }
                     }
                 }
                 if !target_is_alias && matches!(value, Value::Object(_)) {
@@ -9535,6 +9596,119 @@ impl Interpreter {
         }
 
         Ok(Value::Array(array))
+    }
+
+    fn evaluate_array_for_direct_assignment(
+        &mut self,
+        items: &[ArrayItem],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Vec<ArrayLiteralReferenceElement>)> {
+        let mut array = PhpArray::new();
+        let mut references = Vec::new();
+
+        for item in items {
+            let key = match &item.key {
+                Some(expr) => Some(self.evaluate_array_key(expr, scope)?),
+                None => None,
+            };
+
+            if item.by_reference {
+                let (value, reference) =
+                    self.evaluate_array_literal_reference_element(&item.value, scope)?;
+                let key = match key {
+                    Some(key) => {
+                        array.insert(key.clone(), value);
+                        key
+                    }
+                    None => array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?,
+                };
+                references.push(match reference {
+                    ArrayLiteralReferenceElement::Variable { source_name, .. } => {
+                        ArrayLiteralReferenceElement::Variable { key, source_name }
+                    }
+                    ArrayLiteralReferenceElement::Alias {
+                        source_alias,
+                        value,
+                        ..
+                    } => ArrayLiteralReferenceElement::Alias {
+                        key,
+                        source_alias,
+                        value,
+                    },
+                });
+                continue;
+            }
+
+            let value = self.evaluate(&item.value, scope)?;
+            match key {
+                Some(key) => {
+                    array.insert(key, value);
+                }
+                None => {
+                    array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+            }
+        }
+
+        Ok((Value::Array(array), references))
+    }
+
+    fn evaluate_array_literal_reference_element(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, ArrayLiteralReferenceElement)> {
+        if let Expr::Variable(source_name, span) = expr {
+            let value = scope.read_named(source_name).ok_or_else(|| {
+                runtime_error(*span, RuntimeError::undefined_variable(source_name))
+            })?;
+            return Ok((
+                value,
+                ArrayLiteralReferenceElement::Variable {
+                    key: ArrayKey::Int(0),
+                    source_name: source_name.clone(),
+                },
+            ));
+        }
+
+        if let Some((source_alias, value)) =
+            self.evaluate_direct_array_reference_argument(expr, scope)?
+        {
+            return Ok((
+                value.clone(),
+                ArrayLiteralReferenceElement::Alias {
+                    key: ArrayKey::Int(0),
+                    source_alias,
+                    value,
+                },
+            ));
+        }
+
+        if let Some((source_alias, value)) =
+            self.evaluate_visible_object_property_array_reference_argument(expr, scope)?
+        {
+            return Ok((
+                value.clone(),
+                ArrayLiteralReferenceElement::Alias {
+                    key: ArrayKey::Int(0),
+                    source_alias,
+                    value,
+                },
+            ));
+        }
+
+        Err(runtime_error(
+            expr.span(),
+            RuntimeError::unsupported_call(
+                "array literal",
+                "stored reference elements are only implemented for direct variables, direct array offsets, and direct visible object-property array offsets in the current subset",
+            ),
+        ))
     }
 
     fn magic_dir_value(&self) -> String {
@@ -25494,16 +25668,40 @@ impl Interpreter {
         if self.session_id.is_empty() {
             self.session_id = "phpc-session".to_string();
         }
-        self.global_symbols
-            .borrow_mut()
-            .entry("_SESSION".to_string())
-            .or_insert_with(|| value_cell(Value::Array(PhpArray::new())));
+        let session_data = self
+            .session_store
+            .get(&self.session_id)
+            .cloned()
+            .unwrap_or_else(PhpArray::new);
+        self.global_symbols.borrow_mut().insert(
+            "_SESSION".to_string(),
+            value_cell(Value::Array(session_data)),
+        );
 
         if read_and_close {
+            self.persist_current_session();
             self.session_status = PHP_SESSION_NONE;
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn current_session_array(&self) -> PhpArray {
+        self.global_symbols
+            .borrow()
+            .get("_SESSION")
+            .and_then(|cell| match &*cell.borrow() {
+                Value::Array(array) => Some(array.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(PhpArray::new)
+    }
+
+    fn persist_current_session(&mut self) {
+        if !self.session_id.is_empty() {
+            self.session_store
+                .insert(self.session_id.clone(), self.current_session_array());
+        }
     }
 
     fn call_session_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -25551,6 +25749,7 @@ impl Interpreter {
     fn call_session_write_close(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("session_write_close", args, 0, span)?;
         if self.session_status == PHP_SESSION_ACTIVE {
+            self.persist_current_session();
             self.session_status = PHP_SESSION_NONE;
         }
         Ok(Value::Bool(true))
@@ -34095,8 +34294,20 @@ struct WordPressTransientPairDeleteFilter {
 
 struct WordPressSchemaAlter {
     table_name: String,
-    columns: Vec<WordPressSchemaColumnState>,
-    indexes: Vec<WordPressSchemaIndexState>,
+    operations: Vec<WordPressSchemaAlterOperation>,
+}
+
+enum WordPressSchemaAlterOperation {
+    AddColumn(WordPressSchemaColumnState),
+    AddIndex(WordPressSchemaIndexState),
+    DropColumn(String),
+    DropIndex(String),
+    DropPrimaryKey,
+    ChangeColumn {
+        old_name: String,
+        column: WordPressSchemaColumnState,
+    },
+    ModifyColumn(WordPressSchemaColumnState),
 }
 
 fn wordpress_dynamic_schema_result_for_query(
@@ -34244,27 +34455,15 @@ fn parse_wordpress_schema_alter_table_query(query: &str) -> Option<WordPressSche
     let mut pieces = rest.splitn(2, char::is_whitespace);
     let table_name = parse_schema_table_identifier(pieces.next()?.trim())?;
     let operations = pieces.next()?.trim();
-    let mut scratch = WordPressSchemaTableState {
-        name: table_name.clone(),
-        columns: Vec::new(),
-        indexes: Vec::new(),
-        collation: "utf8mb4_unicode_ci".to_string(),
-    };
+    let mut parsed_operations = Vec::new();
 
     for part in split_sql_top_level_commas(operations) {
-        let part = part.trim();
-        let definition = part
-            .strip_prefix("ADD COLUMN ")
-            .or_else(|| part.strip_prefix("ADD "))
-            .unwrap_or(part)
-            .trim();
-        parse_schema_definition_part(definition, &mut scratch)?;
+        parsed_operations.extend(parse_schema_alter_operation(part.trim())?);
     }
 
     Some(WordPressSchemaAlter {
         table_name,
-        columns: scratch.columns,
-        indexes: scratch.indexes,
+        operations: parsed_operations,
     })
 }
 
@@ -34272,23 +34471,140 @@ fn apply_wordpress_schema_alter(
     table: &mut WordPressSchemaTableState,
     alter: WordPressSchemaAlter,
 ) {
-    for column in alter.columns {
-        if let Some(existing) = table
-            .columns
-            .iter_mut()
-            .find(|existing| existing.name == column.name)
-        {
-            *existing = column;
-        } else {
-            table.columns.push(column);
+    for operation in alter.operations {
+        match operation {
+            WordPressSchemaAlterOperation::AddColumn(column)
+            | WordPressSchemaAlterOperation::ModifyColumn(column) => {
+                upsert_wordpress_schema_column(table, column);
+            }
+            WordPressSchemaAlterOperation::AddIndex(index) => {
+                table
+                    .indexes
+                    .retain(|existing| existing.key_name != index.key_name);
+                table.indexes.push(index);
+            }
+            WordPressSchemaAlterOperation::DropColumn(column_name) => {
+                table.columns.retain(|column| column.name != column_name);
+                table.indexes.retain(|index| {
+                    !index
+                        .parts
+                        .iter()
+                        .any(|part| part.column_name == column_name)
+                });
+            }
+            WordPressSchemaAlterOperation::DropIndex(key_name) => {
+                table.indexes.retain(|index| index.key_name != key_name);
+            }
+            WordPressSchemaAlterOperation::DropPrimaryKey => {
+                table.indexes.retain(|index| index.key_name != "PRIMARY");
+            }
+            WordPressSchemaAlterOperation::ChangeColumn { old_name, column } => {
+                let new_name = column.name.clone();
+                if let Some(existing) = table
+                    .columns
+                    .iter_mut()
+                    .find(|existing| existing.name == old_name)
+                {
+                    *existing = column;
+                } else {
+                    table.columns.push(column);
+                }
+                for index in &mut table.indexes {
+                    for part in &mut index.parts {
+                        if part.column_name == old_name {
+                            part.column_name = new_name.clone();
+                        }
+                    }
+                }
+            }
         }
     }
-    for index in alter.indexes {
-        table
-            .indexes
-            .retain(|existing| existing.key_name != index.key_name);
-        table.indexes.push(index);
+}
+
+fn upsert_wordpress_schema_column(
+    table: &mut WordPressSchemaTableState,
+    column: WordPressSchemaColumnState,
+) {
+    if let Some(existing) = table
+        .columns
+        .iter_mut()
+        .find(|existing| existing.name == column.name)
+    {
+        *existing = column;
+    } else {
+        table.columns.push(column);
     }
+}
+
+fn parse_schema_alter_operation(part: &str) -> Option<Vec<WordPressSchemaAlterOperation>> {
+    if let Some(definition) = part
+        .strip_prefix("ADD COLUMN ")
+        .or_else(|| part.strip_prefix("ADD "))
+    {
+        let mut scratch = WordPressSchemaTableState {
+            name: String::new(),
+            columns: Vec::new(),
+            indexes: Vec::new(),
+            collation: "utf8mb4_unicode_ci".to_string(),
+        };
+        parse_schema_definition_part(definition.trim(), &mut scratch)?;
+        let mut operations = Vec::new();
+        operations.extend(
+            scratch
+                .columns
+                .into_iter()
+                .map(WordPressSchemaAlterOperation::AddColumn),
+        );
+        operations.extend(
+            scratch
+                .indexes
+                .into_iter()
+                .map(WordPressSchemaAlterOperation::AddIndex),
+        );
+        return Some(operations);
+    }
+
+    if let Some(column_name) = part
+        .strip_prefix("DROP COLUMN ")
+        .or_else(|| part.strip_prefix("DROP "))
+        .and_then(|rest| parse_schema_table_identifier(rest.trim()))
+    {
+        return Some(vec![WordPressSchemaAlterOperation::DropColumn(column_name)]);
+    }
+
+    if let Some(key_name) = part
+        .strip_prefix("DROP KEY ")
+        .or_else(|| part.strip_prefix("DROP INDEX "))
+        .and_then(|rest| parse_schema_table_identifier(rest.trim()))
+    {
+        return Some(vec![WordPressSchemaAlterOperation::DropIndex(key_name)]);
+    }
+
+    if part == "DROP PRIMARY KEY" {
+        return Some(vec![WordPressSchemaAlterOperation::DropPrimaryKey]);
+    }
+
+    if let Some(definition) = part
+        .strip_prefix("MODIFY COLUMN ")
+        .or_else(|| part.strip_prefix("MODIFY "))
+    {
+        return Some(vec![WordPressSchemaAlterOperation::ModifyColumn(
+            parse_schema_column_definition(definition.trim())?,
+        )]);
+    }
+
+    if let Some(definition) = part
+        .strip_prefix("CHANGE COLUMN ")
+        .or_else(|| part.strip_prefix("CHANGE "))
+    {
+        let (old_name, new_definition) = parse_leading_schema_identifier(definition.trim())?;
+        return Some(vec![WordPressSchemaAlterOperation::ChangeColumn {
+            old_name,
+            column: parse_schema_column_definition(new_definition.trim())?,
+        }]);
+    }
+
+    None
 }
 
 fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableState) -> Option<()> {
@@ -34410,6 +34726,25 @@ fn parse_schema_index_part(part: &str) -> Option<WordPressSchemaIndexPart> {
         column_name,
         sub_part,
     })
+}
+
+fn parse_leading_schema_identifier(input: &str) -> Option<(String, &str)> {
+    let input = input.trim_start();
+    if let Some(after_tick) = input.strip_prefix('`') {
+        let (identifier, rest) = after_tick.split_once('`')?;
+        return Some((
+            parse_schema_table_identifier(identifier)?,
+            rest.trim_start(),
+        ));
+    }
+
+    let split_at = input
+        .char_indices()
+        .find_map(|(idx, ch)| ch.is_whitespace().then_some(idx))?;
+    Some((
+        parse_schema_table_identifier(&input[..split_at])?,
+        input[split_at..].trim_start(),
+    ))
 }
 
 fn parse_schema_table_identifier(identifier: &str) -> Option<String> {

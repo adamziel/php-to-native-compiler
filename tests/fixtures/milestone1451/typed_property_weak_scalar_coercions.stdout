@@ -1,0 +1,2 @@
+instance|integer:42|double:4.5|boolean:0|string:123
+static|integer:1|double:8.25|boolean:1|string:empty

@@ -1,0 +1,2 @@
+$ cargo run -q -p phpc -- run tests/fixtures/milestone1453/session_closed_snapshot_reload.php
+closed-edit:guest|saved:admin|closed|second|second

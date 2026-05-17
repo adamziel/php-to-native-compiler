@@ -69,8 +69,11 @@ returns `false` and emits a bounded `E_WARNING` through the current
 `set_error_handler()` stack or stderr fallback. Starting an already active
 session emits a bounded `E_NOTICE`, returns `true`, preserves the active
 session and data, and ignores `read_and_close` for that restart attempt.
-Session persistence, locking, save handlers, option effects beyond
-`read_and_close`, and cookie emission remain unsupported. `fopen()` can create bounded
+`session_write_close()` stores a request-local snapshot for the current
+session id, so a later `session_start()` reloads the last closed data instead
+of preserving mutations made to visible `$_SESSION` while the bounded session
+was closed. Cross-process session persistence, locking, save handlers, option
+effects beyond `read_and_close`, and cookie emission remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -260,8 +263,11 @@ incorrect native code.
   timeout pair delete shape, plus deterministic `SHOW TABLES LIKE
   'wp_options'`, `DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM
   wp_options`, and `SHOW INDEX`/`SHOW KEYS FROM wp_options` schema probe rows
-  for the current option table;
-  this is not real MySQL connectivity, arbitrary SQL, mutable schema, real
+  for the current option table, plus a bounded per-handle dynamic schema island
+  for exact `CREATE TABLE`, `ALTER TABLE` add/change/modify/drop column and
+  add/drop index probes, and later `DESCRIBE`/`SHOW COLUMNS`/`SHOW INDEX`
+  inspection;
+  this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, persistent object cache, full `wpdb`, or native database
   support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -579,11 +585,19 @@ direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
-Reference array literals stored by value, executing unknown or duplicate
-string-keyed argument names beyond the stable diagnostic path, positional
-arguments after string-keyed named arguments, variadic named callback
-arguments, stored arrays whose reached slots were not
-assigned by reference, non-direct stored array expressions beyond direct
+Direct variable assignments from reference array literals, such as
+`$args = array(&$value)` and
+`$args = array("value" => &$object->items[$key])`, preserve covered direct
+variable, direct array-offset, and direct visible object-property array-offset
+reference elements for later stored-array callback invocation and
+reference-return alias binding. Reference array literals assigned into
+non-variable or alias-backed variable targets, reference elements from
+arbitrary expressions, executing
+unknown or duplicate string-keyed argument names beyond the stable diagnostic
+path, positional arguments after string-keyed named arguments, variadic named
+callback arguments, stored arrays whose reached slots were not assigned by
+reference or by a covered reference array literal, non-direct stored array
+expressions beyond direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback

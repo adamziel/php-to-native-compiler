@@ -1,0 +1,1 @@
+Uses phpc's deterministic MySQLi schema-state island for bounded CREATE TABLE plus ALTER TABLE CHANGE/MODIFY/DROP column and DROP/ADD index probes without a real MySQL server; system PHP needs an actual mysqli connection and database.

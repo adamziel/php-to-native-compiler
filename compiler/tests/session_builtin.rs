@@ -87,6 +87,42 @@ echo implode("|", $out);
 }
 
 #[test]
+fn session_restart_reloads_last_closed_snapshot() {
+    let execution = run_source(
+        r#"<?php
+session_id("phpcpersist");
+$out = array();
+session_start();
+$_SESSION["token"] = "saved";
+$_SESSION["nested"]["role"] = "admin";
+session_write_close();
+$_SESSION["token"] = "closed-edit";
+$_SESSION["nested"]["role"] = "guest";
+$out[] = $_SESSION["token"] . ":" . $_SESSION["nested"]["role"];
+session_start();
+$out[] = $_SESSION["token"] . ":" . $_SESSION["nested"]["role"];
+$_SESSION["token"] = "second";
+session_write_close();
+$_SESSION["token"] = "third";
+session_start(["read_and_close" => true]);
+$out[] = session_status() === PHP_SESSION_NONE ? "closed" : "active";
+$out[] = $_SESSION["token"];
+$_SESSION["token"] = "after-read-close";
+session_start();
+$out[] = $_SESSION["token"];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "closed-edit:guest|saved:admin|closed|second|second"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_start_while_active_emits_notice_and_keeps_session_open() {
     let execution = run_source(
         r#"<?php
