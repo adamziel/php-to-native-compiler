@@ -511,6 +511,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
         let mut trait_uses = Vec::new();
         let mut constants = Vec::new();
+        let mut properties = Vec::new();
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("trait member");
@@ -524,6 +525,8 @@ impl Parser {
                 trait_uses.extend(self.parse_trait_body_use()?);
             } else if self.check_trait_constant_declaration() {
                 constants.push(self.parse_trait_constant()?);
+            } else if self.check_trait_property_declaration() {
+                properties.push(self.parse_trait_property()?);
             } else {
                 methods.push(self.parse_trait_method()?);
             }
@@ -534,6 +537,7 @@ impl Parser {
             name,
             trait_uses,
             constants,
+            properties,
             methods,
             end_line,
             doc_comment,
@@ -629,6 +633,67 @@ impl Parser {
             visibility: ClassVisibility::Public,
             value,
             span: name_span,
+        })
+    }
+
+    fn parse_trait_property(&mut self) -> CompileResult<ClassPropertyDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        let doc_comment = self.pending_doc_comment.take();
+        if modifiers.is_abstract || modifiers.is_final {
+            return Err(self.error_at(
+                modifiers
+                    .abstract_or_final_span()
+                    .unwrap_or_else(|| self.peek().span),
+                unsupported_abstract_final_property_message(),
+            ));
+        }
+
+        let type_decl = if self.check_unsupported_property_type_declaration() {
+            let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
+            if type_decl.text.contains('|') && type_decl.text.contains('&') {
+                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
+            }
+            Some(type_decl)
+        } else {
+            None
+        };
+
+        let (name, span) = self.consume_variable_with_span("expected trait property name")?;
+        let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            let expr = self.parse_expression()?;
+            if modifiers.is_static {
+                self.ensure_supported_static_property_default_expr(&expr)?;
+            } else {
+                self.ensure_supported_instance_property_default_expr(&expr)?;
+            }
+            if let Some(type_decl) = &type_decl {
+                self.ensure_supported_typed_property_default_expr(type_decl, &expr)?;
+            }
+            Some(expr)
+        } else {
+            None
+        };
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_multiple_properties_message(),
+            ));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after trait property declaration",
+        )?;
+        Ok(ClassPropertyDecl {
+            name,
+            visibility: modifiers.visibility,
+            is_static: modifiers.is_static,
+            type_decl,
+            default,
+            doc_comment,
+            span,
         })
     }
 
@@ -6814,7 +6879,7 @@ fn unsupported_nested_trait_declaration_message() -> &'static str {
 }
 
 fn unsupported_trait_member_declaration_message() -> &'static str {
-    "unsupported trait member declaration: trait properties and nested trait use are not implemented"
+    "unsupported trait member declaration: nested trait use adaptations and unsupported trait members are not implemented"
 }
 
 fn unsupported_trait_method_message() -> &'static str {
@@ -6944,6 +7009,21 @@ impl Parser {
 
     fn check_trait_constant_declaration(&self) -> bool {
         self.check_class_like_constant_declaration()
+    }
+
+    fn check_trait_property_declaration(&self) -> bool {
+        for token in self.tokens[self.current..]
+            .iter()
+            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
+        {
+            match &token.kind {
+                TokenKind::Variable(_) => return true,
+                TokenKind::Function => return false,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     fn check_interface_constant_declaration(&self) -> bool {

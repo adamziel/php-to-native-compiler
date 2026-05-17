@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1529/wpdb_stmt_bind_result_object_property_probe.php
+bound|1:Hello world placeholder|done|stable

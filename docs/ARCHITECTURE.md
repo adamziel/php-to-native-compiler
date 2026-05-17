@@ -128,10 +128,14 @@ slots shared across a fresh object handle for the covered `clone $object`
 assignment shape.
 Prepared MySQLi result bindings use a separate deterministic statement-target
 list rather than PHP reference containers: direct variables write to the caller
-symbol table, and direct variable array-offset bindings store their evaluated
-key path at bind time before `mysqli_stmt_fetch()` copies buffered placeholder
-row values into those slots. Object-property targets, unbuffered mysqlnd
-cursors, and arbitrary host database rows remain outside this binding model.
+symbol table, and direct variable or direct object-property array-offset
+bindings store their evaluated key path at bind time before
+`mysqli_stmt_fetch()` copies buffered placeholder row values into those slots.
+Direct object-property bindings write through the same visible property path
+used by ordinary property assignment, with dynamic public-property creation
+limited to the current `stdClass`/`wpdb` object slice. Dynamic property target
+expressions, unbuffered mysqlnd cursors, and arbitrary host database rows
+remain outside this binding model.
 Direct variable `unset($name)` removes the root symbol and, for covered direct
 array roots plus direct object roots with public/context property array-slot
 aliases, detaches aliases below that removed root by storing their last
@@ -181,7 +185,12 @@ evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
-including bounded direct caller-cell and direct static-local cell cases.
+including bounded direct caller-cell and direct static-local cell cases. When
+the reference-return call maps a returned child array such as
+`return $param[$key];` to multiple covered aliases for direct names sharing a
+caller cell, by-reference `foreach` binds each visited element through all of
+those aliases so loop writes and the lingering post-loop reference keep the
+current bounded alias group coherent.
 Non-direct property holders outside that object-result foreach slice,
 invisible selected properties,
 magic-property containers, property-return, array-offset-return beyond that
@@ -294,16 +303,16 @@ Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
 a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
 enforcement.
-Top-level trait declarations are parsed as metadata for empty traits and
-simple public instance methods. A class body may use already-declared traits
+Top-level trait declarations are parsed as metadata for empty traits,
+supported properties, and simple public instance methods. A class body may use already-declared traits
 with `use TraitName;`, repeated simple trait-use declarations, or one simple
 comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
-composes those trait public instance methods onto the consuming class metadata
+composes those trait properties and public instance methods onto the consuming class metadata
 and stores the executable method bodies under the consuming class id, so
 ordinary instance method dispatch works through `phpc run`. A narrow trait
 body slice also accepts simple `use TraitName;` and `use TraitA, TraitB;`
 declarations inside traits; classes consuming the outer trait receive the
-nested traits' supported public methods and constants, while direct
+nested traits' supported properties, public methods, and constants, while direct
 class-trait metadata remains non-recursive. A narrow trait
 method alias adaptation such as `use TraitName { method as alias; }` clones
 the composed public instance method under the alias name while leaving the
@@ -339,8 +348,11 @@ method metadata.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
-`ClassName::CONST`, `self::CONST`, and `static::CONST` paths. Trait
-properties, non-public/typed/abstract/final/static trait constants,
+`ClassName::CONST`, `self::CONST`, and `static::CONST` paths. Supported trait
+properties reuse the current class-property metadata/default subset and are
+composed as consuming-class properties for object storage and reflection;
+identical duplicate definitions are deduped, while incompatible duplicate
+definitions stop with a stable trait-use diagnostic. Non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 broad executable conflict resolution beyond class-method precedence and the
@@ -1795,8 +1807,10 @@ domain text for replacement only; the emitted header preserves the
 caller-provided domain text.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
 string value. Options-array calls match the bounded PHP option-key set
-ASCII-case-insensitively, and reject numeric keys and unknown string keys
-before changing the deterministic header log. After unbuffered output starts
+ASCII-case-insensitively, use the last inserted value when duplicate
+differently cased documented keys are present, and reject numeric keys and
+unknown string keys before changing the deterministic header log. After
+unbuffered output starts
 these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,

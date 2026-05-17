@@ -1,0 +1,3 @@
+2
+Set-Cookie: wordpress_logged_in=user%20token; path=/second; domain=lower.test; secure; HttpOnly; SameSite=Strict
+Set-Cookie: wordpress_sec=raw token; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/new

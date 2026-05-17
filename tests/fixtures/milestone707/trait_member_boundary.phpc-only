@@ -1,1 +1,1 @@
-phpc intentionally rejects trait properties/constants before trait storage and composition semantics exist.
+phpc intentionally rejects trait-body use adaptations inside traits until nested adaptation composition semantics exist.

@@ -98,7 +98,8 @@ deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
 path/domain-aware replacement with ASCII-case-insensitive domain identity
 matching; options-array calls match the documented option keys
-case-insensitively and reject numeric keys or unknown string option keys before
+case-insensitively, use the last inserted value for duplicate differently cased
+documented keys, and reject numeric keys or unknown string option keys before
 changing that header log. Exact `ValueError` objects/text, cookie name
 validation/encoding, full domain policy, real SAPI emission, and native
 lowering remain unsupported. `fopen()` can create bounded
@@ -229,7 +230,10 @@ incorrect native code.
   instance-method, direct named-static-method, method-context
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
   `call_user_func_array()` reference-return iterable roots when the returned
-  direct variable is backed by a caller variable cell, plus bounded
+  direct variable is backed by a caller variable cell, plus the bounded
+  multi-alias child-array shape where a reference-returning function returns
+  `return $param[$key];` from a direct caller variable that shares a cell with
+  another direct name, plus bounded
   direct array-offset by-reference parameter writeback with `unset($param)`
   detachment for ordinary arrays and request bags, plus bounded alias cleanup
   when direct array/object roots with covered child aliases are removed through
@@ -469,10 +473,11 @@ incorrect native code.
   properties without explicit defaults, with runtime typed-property writes
   accepting inherited class-name objects and declared user-interface
   implementors in the current object metadata model, declared trait
-  metadata for empty traits, public trait constants, simple public instance
-  trait methods, simple class-body `use TraitName;` and `use TraitA, TraitB;`
-  composition for already-declared traits, simple trait-body `use` declarations
-  that compose public methods and constants into classes consuming the outer
+  metadata for empty traits, public trait constants, supported trait
+  properties, simple public instance trait methods, simple class-body
+  `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
+  traits, simple trait-body `use` declarations
+  that compose supported properties, public methods, and constants into classes consuming the outer
   trait, plus simple public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }`, protected/private
@@ -514,7 +519,7 @@ typed/non-public/abstract/final or multi-constant interface
 declarations, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs
 beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
-checks, trait properties, non-public/typed/abstract/final/static trait
+checks, non-public/typed/abstract/final/static trait
 constants, multi-constant trait declarations, trait constant adaptations,
 conflicting trait/class constants, static/abstract/final or non-public trait
 methods, executing conflicting trait composition outside class-method

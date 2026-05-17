@@ -175,10 +175,10 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed unresolved public trait method
-conflict diagnostics, by-reference `foreach` over non-direct named-property
-holder roots, case-insensitive documented cookie options-array keys, and MySQLi
-prepared-statement result binding into direct row-array slots.
+The latest WordPress-focused batch closed bounded trait property composition,
+by-reference `foreach` over multi-slot reference-return child-array aliases,
+duplicate differently cased cookie options-array key parity, and MySQLi
+prepared-statement result binding into direct object-property targets.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream

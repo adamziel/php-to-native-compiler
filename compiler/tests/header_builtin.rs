@@ -355,6 +355,31 @@ echo implode("|", $out);
 }
 
 #[test]
+fn setcookie_duplicate_case_insensitive_options_use_last_value() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+$first = setcookie("wordpress_logged_in", "user token", ["Path" => "/first", "path" => "/second", "Domain" => "Example.TEST", "domain" => "lower.test", "Secure" => false, "secure" => true, "HttpOnly" => false, "httponly" => true, "SameSite" => "Lax", "samesite" => "Strict"]);
+$second = setrawcookie("wordpress_sec", "raw token", ["expires" => 2000000000, "Expires" => 1, "PATH" => "/old", "Path" => "/new"]);
+$headers = headers_list();
+$out[] = $first ? "first" : "first-failed";
+$out[] = $second ? "second" : "second-failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|second|2|Set-Cookie: wordpress_logged_in=user%20token; path=/second; domain=lower.test; secure; HttpOnly; SameSite=Strict|Set-Cookie: wordpress_sec=raw token; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/new"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
     let execution = run_source(
         r#"<?php

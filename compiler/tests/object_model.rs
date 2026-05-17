@@ -3679,6 +3679,72 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_composes_compatible_public_instance_properties() {
+    let source = r#"<?php
+trait HasOptions {
+    public $options = array("autoload" => "yes");
+}
+
+trait HasSameOptions {
+    public $options = array("autoload" => "yes");
+}
+
+class Plugin {
+    use HasOptions, HasSameOptions;
+}
+
+$plugin = new Plugin();
+echo $plugin->options["autoload"], "\n";
+$plugin->options["autoload"] = "no";
+echo $plugin->options["autoload"], "\n";
+
+$class = new ReflectionClass("Plugin");
+echo $class->hasProperty("options") ? "has-options\n" : "missing\n";
+$property = $class->getProperty("options");
+echo $property->getDeclaringClass()->getName(), "\n";
+echo $property->hasDefaultValue() ? "default\n" : "no-default\n";
+print_r($property->getDefaultValue());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "yes\nno\nhas-options\nPlugin\ndefault\nArray\n(\n    [autoload] => yes\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.property("options").is_some());
+}
+
+#[test]
+fn class_trait_use_rejects_incompatible_public_instance_properties() {
+    let error = runtime_error(
+        r#"<?php
+trait PrimaryOptions {
+    public $options = array("autoload" => "yes");
+}
+
+trait FallbackOptions {
+    public $options = array("autoload" => "no");
+}
+
+class Plugin {
+    use PrimaryOptions, FallbackOptions;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported trait use: trait property FallbackOptions::$options conflicts with another composed trait property; incompatible trait property definitions are not implemented"
+    );
+}
+
+#[test]
 fn class_trait_use_alias_requires_existing_trait_method() {
     let error = runtime_error(
         r#"<?php

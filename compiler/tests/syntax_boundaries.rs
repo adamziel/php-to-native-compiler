@@ -1511,10 +1511,10 @@ fn unsupported_trait_declaration_has_stable_parse_errors() {
             "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
-            "<?php\ntrait Reusable {\n    public $value;\n}\n",
+            "<?php\ntrait Reusable {\n    use Other { Other::render as alias; }\n}\n",
             3,
-            5,
-            "unsupported trait member declaration: trait properties and nested trait use are not implemented",
+            15,
+            "unsupported trait-body use adaptation: aliases, visibility adaptations, and insteadof conflict resolution inside traits are not implemented",
         ),
         (
             "<?php\nif (true) {\n    trait Nested {}\n}\n",

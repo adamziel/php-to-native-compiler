@@ -624,6 +624,37 @@ echo $items["c"];
 }
 
 #[test]
+fn foreach_by_reference_binds_multi_slot_reference_return_iterable_alias() {
+    let execution = run_source(
+        r#"<?php
+function &pick_child(&$items, $key) {
+    return $items[$key];
+}
+
+$items = ["outer" => ["a" => "one", "b" => "two"]];
+$mirror =& $items;
+
+foreach (pick_child($mirror, "outer") as $key => &$value) {
+    $value = $value . ":" . $key;
+    if ($key === "a") {
+        $items["outer"]["c"] = "three";
+    }
+}
+
+echo $items["outer"]["a"], "|", $mirror["outer"]["b"], "|", $value, "\n";
+$items["outer"]["c"] = "direct";
+echo $value, "|";
+$value = "tail";
+echo $mirror["outer"]["c"], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "one:a|two:b|three:c\ndirect|tail|tail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_method_reference_return_iterables_to_caller_cell() {
     let execution = run_source(
         r#"<?php

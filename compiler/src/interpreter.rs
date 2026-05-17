@@ -236,6 +236,9 @@ enum ForeachArrayRoot {
         root: ArrayOffsetAliasRoot,
         keys: Vec<ArrayKey>,
     },
+    Aliases {
+        aliases: Vec<ArrayOffsetAlias>,
+    },
 }
 
 #[derive(Clone)]
@@ -511,7 +514,15 @@ struct MysqliStatementState {
 #[derive(Debug, Clone)]
 enum MysqliResultBindingTarget {
     Variable(String),
-    ArrayOffset { name: String, keys: Vec<ArrayKey> },
+    ArrayOffset {
+        name: String,
+        keys: Vec<ArrayKey>,
+    },
+    ObjectProperty {
+        object: String,
+        property: String,
+        keys: Vec<ArrayKey>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1329,6 +1340,19 @@ impl SymbolTable {
         let alias = ArrayOffsetAlias { root, keys };
         self.materialize_array_offset_alias(&alias, span)?;
         self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
+    fn bind_static_to_existing_array_offset_aliases(
+        &mut self,
+        target: &str,
+        aliases: Vec<ArrayOffsetAlias>,
+        span: Span,
+    ) -> CompileResult<()> {
+        for alias in &aliases {
+            self.materialize_array_offset_alias(alias, span)?;
+        }
+        self.bind_static_to_array_offset_aliases(target, aliases);
         Ok(())
     }
 
@@ -2987,6 +3011,17 @@ fn bind_foreach_lingering_reference(
                     span,
                 )?;
             }
+            ForeachArrayRoot::Aliases { aliases } => {
+                let aliases = aliases
+                    .iter()
+                    .map(|alias| {
+                        let mut alias = alias.clone();
+                        alias.keys.push(key.clone());
+                        alias
+                    })
+                    .collect();
+                scope.bind_static_to_existing_array_offset_aliases(value, aliases, span)?;
+            }
         }
     }
     Ok(())
@@ -3371,13 +3406,9 @@ impl Interpreter {
                 root: alias.root,
                 keys: alias.keys,
             }),
-            ReferenceReturnBinding::ArrayOffsets(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "foreach",
-                    "by-reference iteration over copied multi-slot reference-return aliases is not implemented",
-                ),
-            )),
+            ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                Ok(ForeachArrayRoot::Aliases { aliases })
+            }
         }
     }
 
@@ -3651,6 +3682,24 @@ impl Interpreter {
                     .read_alias_root_value(&alias, span)?
                     .unwrap_or(Value::Null);
                 ("", keys.as_slice(), value)
+            }
+            ForeachArrayRoot::Aliases { aliases } => {
+                let Some(alias) = aliases.first() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_foreach(
+                            "can only iterate arrays in the current subset, got null".to_string(),
+                        ),
+                    ));
+                };
+                let root_alias = ArrayOffsetAlias {
+                    root: alias.root.clone(),
+                    keys: Vec::new(),
+                };
+                let value = scope
+                    .read_alias_root_value(&root_alias, span)?
+                    .unwrap_or(Value::Null);
+                ("", alias.keys.as_slice(), value)
             }
         };
 
@@ -4080,6 +4129,21 @@ impl Interpreter {
         class_id: ClassId,
         class: &ClassDecl,
     ) -> CompileResult<()> {
+        let class_properties = declared_class_properties(class);
+        for property in composed_trait_properties(class, &self.trait_lookup)? {
+            if class_properties.contains_key(&property.name) || !property.is_static {
+                continue;
+            }
+            let Some(default) = &property.default else {
+                continue;
+            };
+
+            let mut default_scope = SymbolTable::new();
+            let value = self.evaluate(default, &mut default_scope)?;
+            self.static_properties
+                .insert((class_id, property.name.clone()), value);
+        }
+
         for member in &class.members {
             let ClassMember::Property(property) = member else {
                 continue;
@@ -4107,6 +4171,21 @@ impl Interpreter {
     ) -> CompileResult<()> {
         self.instance_property_defaults
             .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+
+        let class_properties = declared_class_properties(class);
+        for property in composed_trait_properties(class, &self.trait_lookup)? {
+            if class_properties.contains_key(&property.name) || property.is_static {
+                continue;
+            }
+            let Some(default) = &property.default else {
+                continue;
+            };
+
+            let mut default_scope = SymbolTable::new();
+            let value = self.evaluate(default, &mut default_scope)?;
+            self.instance_property_defaults
+                .insert((class_id, property.name.clone()), value);
+        }
 
         for member in &class.members {
             let ClassMember::Property(property) = member else {
@@ -4747,6 +4826,19 @@ impl Interpreter {
                                     *span,
                                 )?;
                             }
+                            ForeachArrayRoot::Aliases { aliases } => {
+                                let aliases = aliases
+                                    .iter()
+                                    .map(|alias| {
+                                        let mut alias = alias.clone();
+                                        alias.keys.push(entry_key.clone());
+                                        alias
+                                    })
+                                    .collect();
+                                scope.bind_static_to_existing_array_offset_aliases(
+                                    value, aliases, *span,
+                                )?;
+                            }
                         }
                         self.active_foreach_references.push(ActiveForeachReference {
                             root: root.clone(),
@@ -4780,6 +4872,19 @@ impl Interpreter {
                                     root,
                                     &alias_keys,
                                 )
+                            }
+                            ForeachArrayRoot::Aliases { aliases } => {
+                                let expected_aliases: Vec<_> = aliases
+                                    .iter()
+                                    .map(|alias| {
+                                        let mut alias = alias.clone();
+                                        alias.keys.push(entry_key.clone());
+                                        alias
+                                    })
+                                    .collect();
+                                scope
+                                    .array_offset_aliases_for_name(value)
+                                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
                             }
                         };
                         let array = Self::read_foreach_root_array(&root, scope, *span)?;
@@ -23100,24 +23205,56 @@ impl Interpreter {
             let target = match arg {
                 Expr::Variable(name, _) => MysqliResultBindingTarget::Variable(name.clone()),
                 Expr::Index { target, index, .. } => {
-                    let Some((name, indices)) =
-                        Self::collect_direct_variable_array_index_path(target, index)
-                    else {
+                    if let Some((object, property, indices)) =
+                        Self::direct_object_property_output_path(arg)
+                    {
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, caller_scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        MysqliResultBindingTarget::ObjectProperty {
+                            object: object.to_string(),
+                            property: property.to_string(),
+                            keys,
+                        }
+                    } else {
+                        let Some((name, indices)) =
+                            Self::collect_direct_variable_array_index_path(target, index)
+                        else {
+                            return Err(runtime_error(
+                                arg.span(),
+                                RuntimeError::unsupported_call(
+                                    "mysqli_stmt_bind_result()",
+                                    "result bindings must be direct variables, direct variable array offsets, or direct object-property targets in the current subset",
+                                ),
+                            ));
+                        };
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, caller_scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        MysqliResultBindingTarget::ArrayOffset {
+                            name: name.to_string(),
+                            keys,
+                        }
+                    }
+                }
+                Expr::Property {
+                    target, property, ..
+                } => {
+                    let Expr::Variable(object, _) = target.as_ref() else {
                         return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
                                 "mysqli_stmt_bind_result()",
-                                "result bindings must be direct variables or direct variable array offsets in the current subset",
+                                "result bindings must be direct variables, direct variable array offsets, or direct object-property targets in the current subset",
                             ),
                         ));
                     };
-                    let keys = indices
-                        .iter()
-                        .map(|index| self.evaluate_array_key(index, caller_scope))
-                        .collect::<CompileResult<Vec<_>>>()?;
-                    MysqliResultBindingTarget::ArrayOffset {
-                        name: name.to_string(),
-                        keys,
+                    MysqliResultBindingTarget::ObjectProperty {
+                        object: object.clone(),
+                        property: property.clone(),
+                        keys: Vec::new(),
                     }
                 }
                 _ => {
@@ -23125,7 +23262,7 @@ impl Interpreter {
                         arg.span(),
                         RuntimeError::unsupported_call(
                             "mysqli_stmt_bind_result()",
-                            "result bindings must be direct variables or direct variable array offsets in the current subset",
+                            "result bindings must be direct variables, direct variable array offsets, or direct object-property targets in the current subset",
                         ),
                     ));
                 }
@@ -23255,6 +23392,68 @@ impl Interpreter {
                     Self::write_nested_array_assignment(name, keys, value, span, caller_scope)
                 }
             }
+            MysqliResultBindingTarget::ObjectProperty {
+                object,
+                property,
+                keys,
+            } => self.write_mysqli_result_object_property_target(
+                object,
+                property,
+                keys,
+                value,
+                span,
+                caller_scope,
+            ),
+        }
+    }
+
+    fn write_mysqli_result_object_property_target(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if keys.is_empty() {
+            let (current_class_id, protected_class_ids) = self.current_property_access_context();
+            let object = match caller_scope.read_static(object_name, span)? {
+                Value::Object(object) => object,
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    ));
+                }
+            };
+
+            match object.write_property_from_context(
+                property,
+                value.clone(),
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(()) => Ok(()),
+                Err(error) if Self::is_undefined_property_error(&error) => object
+                    .write_dynamic_public_property(property, value)
+                    .map_err(|error| runtime_error(span, error)),
+                Err(error) => Err(runtime_error(span, error)),
+            }
+        } else {
+            self.write_object_property_nested_array_assignment(
+                object_name,
+                property,
+                keys,
+                value,
+                span,
+                caller_scope,
+            )?;
+            caller_scope.sync_array_offset_aliases_for_object_property_root(object_name, property);
+            Ok(())
         }
     }
 
@@ -33574,6 +33773,16 @@ fn register_class_member_runtime_tables(
         class_constants.insert((class_id, constant.name.clone()), constant);
     }
 
+    for property in composed_trait_properties(class, trait_lookup)? {
+        property_source_metadata.insert(
+            (class_id, property.name.clone()),
+            property_source_metadata_from_decl(&property),
+        );
+        if property.is_static && (property.type_decl.is_none() || property.default.is_some()) {
+            static_properties.insert((class_id, property.name.clone()), Value::Null);
+        }
+    }
+
     for method in composed_trait_methods(class, trait_lookup)? {
         let key = (class_id, method.function.name.to_ascii_lowercase());
         method_signatures.insert(
@@ -33781,6 +33990,38 @@ fn register_class_members(
             .map_err(|error| runtime_error(constant.span, error))?;
     }
 
+    let class_properties = declared_class_properties(class);
+    for property in composed_trait_properties(class, trait_lookup)? {
+        if let Some(class_property) = class_properties.get(&property.name) {
+            if trait_properties_are_compatible(&property, class_property) {
+                continue;
+            }
+            return Err(runtime_error(
+                property.span,
+                RuntimeError::unsupported_trait_use(format!(
+                    "class {} and trait define incompatible property ${}",
+                    class.name, property.name
+                )),
+            ));
+        }
+
+        let visibility = runtime_visibility(property.visibility);
+        validate_inherited_property_compatibility(classes, id, &class.name, &property)
+            .map_err(|error| runtime_error(property.span, error))?;
+
+        let metadata_property = if property.is_static {
+            PhpPropertyMetadata::static_property(&property.name, visibility)
+        } else {
+            PhpPropertyMetadata::instance(&property.name, visibility)
+        }
+        .with_type_decl(property.type_decl.as_ref().map(|decl| decl.text.clone()));
+        classes
+            .get_mut(id)
+            .expect("declared class id should resolve to class metadata")
+            .add_property(metadata_property)
+            .map_err(|error| runtime_error(property.span, error))?;
+    }
+
     for method in composed_trait_methods(class, trait_lookup)? {
         let visibility = runtime_visibility(method.visibility);
         validate_destructor_method_shape(&class.name, &method, visibility)
@@ -33939,6 +34180,37 @@ fn composed_trait_constants(
     Ok(constants)
 }
 
+fn composed_trait_properties(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<Vec<ClassPropertyDecl>> {
+    let mut properties = Vec::new();
+    let mut composed: HashMap<String, ClassPropertyDecl> = HashMap::new();
+    for trait_use in &class.trait_uses {
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for property in
+            composed_trait_properties_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?
+        {
+            let key = property.name.clone();
+            if let Some(existing) = composed.get(&key) {
+                if !trait_properties_are_compatible(existing, &property) {
+                    return Err(runtime_error(
+                        property.span,
+                        RuntimeError::unsupported_trait_use(format!(
+                            "trait property {}::${} conflicts with another composed trait property; incompatible trait property definitions are not implemented",
+                            trait_decl.name, property.name
+                        )),
+                    ));
+                }
+                continue;
+            }
+            composed.insert(key, property.clone());
+            properties.push(property);
+        }
+    }
+    Ok(properties)
+}
+
 fn composed_trait_methods(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
@@ -34078,6 +34350,39 @@ fn composed_trait_constants_for_trait(
     Ok(constants)
 }
 
+fn composed_trait_properties_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> CompileResult<Vec<ClassPropertyDecl>> {
+    let key = trait_decl.name.to_ascii_lowercase();
+    if !path.insert(key.clone()) {
+        return Err(runtime_error(
+            trait_decl.span,
+            RuntimeError::unsupported_trait_use(format!(
+                "recursive trait-body use involving {} is not implemented",
+                trait_decl.name
+            )),
+        ));
+    }
+
+    let mut properties = Vec::new();
+    let direct_properties = declared_trait_properties(trait_decl);
+    for trait_use in &trait_decl.trait_uses {
+        ensure_simple_trait_body_use(trait_use)?;
+        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for property in composed_trait_properties_for_trait(nested, trait_lookup, path)? {
+            if !direct_properties.contains_key(&property.name) {
+                properties.push(property);
+            }
+        }
+    }
+    properties.extend(trait_decl.properties.iter().cloned());
+
+    path.remove(&key);
+    Ok(properties)
+}
+
 fn composed_trait_methods_for_trait(
     trait_decl: &TraitDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
@@ -34153,12 +34458,78 @@ fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
         .collect()
 }
 
+fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassPropertyDecl> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| {
+            let ClassMember::Property(property) = member else {
+                return None;
+            };
+            Some((property.name.clone(), property.clone()))
+        })
+        .collect()
+}
+
 fn declared_trait_method_names(trait_decl: &TraitDecl) -> HashSet<String> {
     trait_decl
         .methods
         .iter()
         .map(|method| method.function.name.to_ascii_lowercase())
         .collect()
+}
+
+fn declared_trait_properties(trait_decl: &TraitDecl) -> HashMap<String, ClassPropertyDecl> {
+    trait_decl
+        .properties
+        .iter()
+        .map(|property| (property.name.clone(), property.clone()))
+        .collect()
+}
+
+fn trait_properties_are_compatible(left: &ClassPropertyDecl, right: &ClassPropertyDecl) -> bool {
+    left.visibility == right.visibility
+        && left.is_static == right.is_static
+        && left.type_decl.as_ref().map(|decl| decl.text.as_str())
+            == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
+}
+
+fn optional_default_exprs_are_compatible(left: Option<&Expr>, right: Option<&Expr>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => default_exprs_are_compatible(left, right),
+        _ => false,
+    }
+}
+
+fn default_exprs_are_compatible(left: &Expr, right: &Expr) -> bool {
+    match (left, right) {
+        (Expr::Null(_), Expr::Null(_)) => true,
+        (Expr::Bool(left, _), Expr::Bool(right, _)) => left == right,
+        (Expr::Int(left, _), Expr::Int(right, _)) => left == right,
+        (Expr::Float(left, _), Expr::Float(right, _)) => left == right,
+        (Expr::String(left, _), Expr::String(right, _)) => left == right,
+        (
+            Expr::Array {
+                items: left_items, ..
+            },
+            Expr::Array {
+                items: right_items, ..
+            },
+        ) => {
+            left_items.len() == right_items.len()
+                && left_items.iter().zip(right_items).all(|(left, right)| {
+                    left.by_reference == right.by_reference
+                        && optional_default_exprs_are_compatible(
+                            left.key.as_ref(),
+                            right.key.as_ref(),
+                        )
+                        && default_exprs_are_compatible(&left.value, &right.value)
+                })
+        }
+        _ => left == right,
+    }
 }
 
 fn direct_class_trait_names(
@@ -43066,7 +43437,7 @@ fn validate_setcookie_option_keys(
 }
 
 fn cookie_option_case_insensitive<'a>(options: &'a PhpArray, name: &str) -> Option<&'a Value> {
-    options.entries().iter().find_map(|entry| {
+    options.entries().iter().rev().find_map(|entry| {
         let ArrayKey::String(key) = &entry.key else {
             return None;
         };

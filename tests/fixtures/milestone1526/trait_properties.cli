@@ -1,0 +1,12 @@
+$ phpc run tests/fixtures/milestone1526/trait_properties.php
+stdout:
+yes
+no
+wp-hook
+has-options
+has-label
+Plugin
+default
+yes
+stderr:
+exit: 0

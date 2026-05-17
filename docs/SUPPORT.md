@@ -315,9 +315,15 @@
   method-call sources are executable only for the bounded direct-variable
   reference-return shapes documented above. Magic `__callStatic`
   reference-return method sources report the explicit runtime boundary
-  documented above. By-reference `foreach` forms beyond the documented
-  direct array, direct object-property, direct dynamic-property, and bounded
-  reference-return iterable roots, broader reference returns,
+  documented above. By-reference `foreach` also consumes the narrow
+  multi-alias reference-return child-array shape where a direct variable
+  shares a cell with another direct name, a by-reference function returns
+  `return $param[$key];`, and the returned child array is iterated by
+  reference; loop writes and the post-loop lingering reference are bound
+  through the covered aliases for those direct names. By-reference `foreach`
+  forms beyond the documented direct array, direct object-property, direct
+  dynamic-property, and bounded reference-return iterable roots, broader
+  reference returns,
   reference-parameter forms beyond direct variable arguments, source/target
   rebinding beyond direct names and the documented array-offset slices, PHP
   reference-container edge cases, copy-on-write, and native lowering remain
@@ -1987,13 +1993,14 @@
   fidelity, real MySQL, full `wpdb`, references/copy-on-write, or native
   database support.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
-  names and direct variable array-offset targets for the current known
+  names, direct variable array-offset targets, direct object-property targets,
+  and direct object-property array-offset targets for the current known
   placeholder statement result shape, and `mysqli_stmt_fetch($statement)`
   copies buffered placeholder row values into those targets while advancing
   the placeholder cursor. Array-offset keys are evaluated at bind time. This
-  is not true by-reference aliasing, object-property result targets,
-  unbuffered statement fetching, broad prepared SQL, real mysqlnd cursor
-  behavior, host database state, PHP warning/error fidelity, or native
+  is not true by-reference aliasing, dynamic object-property target
+  expressions, unbuffered statement fetching, broad prepared SQL, real mysqlnd
+  cursor behavior, host database state, PHP warning/error fidelity, or native
   statement lowering.
   `mysqli_stmt_send_long_data($statement, $param_num, $data)` validates active
   statements, non-negative in-range parameter indexes, and string chunk data,
@@ -3060,9 +3067,10 @@
   cookies for different path/domain identities. Past expirations emit
   `Max-Age=0`, and the emitted header preserves the caller-provided domain
   text. Options-array calls match those documented option keys
-  ASCII-case-insensitively, and reject numeric keys and string keys outside
-  `expires`, `path`, `domain`, `secure`, `httponly`, and `samesite` before
-  changing the deterministic header log. Once
+  ASCII-case-insensitively, use the last inserted value when differently cased
+  spellings of the same documented key are present, and reject numeric keys
+  and string keys outside `expires`, `path`, `domain`, `secure`, `httponly`,
+  and `samesite` before changing the deterministic header log. Once
   unbuffered output has started, it returns `false`, does not append a cookie
   header, and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback. `setrawcookie()`
@@ -3387,7 +3395,7 @@
   nested class declarations, broader inheritance forms beyond declared
   single-parent class `extends` and already-declared interface parent lists,
   typed/non-public/abstract/final or multi-constant interface
-  declarations, non-public interface methods, trait properties,
+  declarations, non-public interface methods,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
   static/abstract/final or non-public trait methods, adaptation blocks beyond
@@ -3678,7 +3686,7 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants and public instance methods, and are available through
+  supported public constants, supported properties, and public instance methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and invokes currently registered bounded autoload
   callbacks on misses.
@@ -3730,7 +3738,7 @@
   property keys are emitted as the declared name, protected property keys are
   emitted as `\0*\0name`, and private property keys are emitted with the
   declaring class name as `\0ClassName\0name`; static properties are omitted.
-  Dynamic properties, trait/interface properties, and
+  Dynamic properties, interface properties, and
   non-public visibility-context behavior beyond the current declaring-class
   method context are not represented yet. It is available through
   string-valued dynamic function calls.
@@ -5558,9 +5566,10 @@
   true by-reference aliasing, cross-scope reference cells, mutation SQL, broad
   SQL execution, or host database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
-  variable and direct variable array-offset placeholder result binding plus
-  buffered row copying for current known statement result shapes without true
-  by-reference aliasing, object-property result targets, unbuffered statement
+  variable, direct variable array-offset, direct object-property, and direct
+  object-property array-offset placeholder result binding plus buffered row
+  copying for current known statement result shapes without true by-reference
+  aliasing, dynamic object-property target expressions, unbuffered statement
   fetching, broad prepared SQL, real mysqlnd cursor behavior, or host
   database rows,
   `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
@@ -5954,7 +5963,7 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants and public instance methods; the autoload flag
+  supported public constants, supported properties, and public instance methods; the autoload flag
   accepts current bool-like scalar values and invokes currently registered
   bounded autoload callbacks on misses. Included class declarations use the
   same callback path for missing direct trait `use` names before trait
@@ -6121,19 +6130,29 @@
   interface entries are not represented.
   `get_declared_traits()` returns a zero-indexed array containing only the
   current parsed program's top-level trait names in declaration order,
-  including traits with supported public constants and public instance methods.
+  including traits with supported public constants, supported properties, and
+  public instance methods.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
-  public instance trait methods onto the consuming class metadata. Simple
+  supported trait properties plus public instance trait methods onto the
+  consuming class metadata. Simple
   trait-body declarations such as `trait A { use B; }` and `use B, C;`
-  compose public methods and constants from the used traits into classes that
-  consume the outer trait; the class's direct trait metadata remains the outer
-  trait, matching PHP's non-recursive direct-class trait reflection for the
-  covered slice. Trait
+  compose supported properties, public methods, and constants from the used
+  traits into classes that consume the outer trait; the class's direct trait
+  metadata remains the outer trait, matching PHP's non-recursive direct-class
+  trait reflection for the covered slice. Trait
   constants declared as `const NAME = ...` or `public const NAME = ...` use the
   current class-constant expression subset and resolve as ordinary public class
   constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
-  late-bound `static::CONST`. Simple method alias adaptation shapes such
+  late-bound `static::CONST`. Trait properties reuse the current class-property
+  subset for visibility, static markers, type metadata, and supported defaults.
+  They are composed as properties declared by the consuming class for object
+  storage, direct property reads/writes, `ReflectionClass::hasProperty()`,
+  `ReflectionClass::getProperty()`, `ReflectionClass::getProperties()`, and
+  `ReflectionProperty` default/type/visibility metadata. Identical duplicate
+  trait/class property definitions in the supported metadata/default subset
+  are deduped; incompatible duplicate definitions stop with a stable
+  trait-use diagnostic before class registration. Simple method alias adaptation shapes such
   as `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
   for public instance trait methods; the original method remains available,
@@ -8086,7 +8105,8 @@
   headers by cookie name plus normalized non-empty path/domain identity with
   ASCII-case-insensitive domain matching, returning `false` after unbuffered
   output starts with a bounded `E_WARNING`, matching documented options-array
-  keys ASCII-case-insensitively, rejecting numeric options-array keys and
+  keys ASCII-case-insensitively, using the last inserted value for duplicate
+  differently cased documented keys, rejecting numeric options-array keys and
   unknown string option keys, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:

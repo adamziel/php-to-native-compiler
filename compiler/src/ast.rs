@@ -566,6 +566,7 @@ pub struct TraitDecl {
     pub name: String,
     pub trait_uses: Vec<TraitUseDecl>,
     pub constants: Vec<ClassConstantDecl>,
+    pub properties: Vec<ClassPropertyDecl>,
     pub methods: Vec<ClassMethodDecl>,
     pub end_line: usize,
     pub doc_comment: Option<String>,

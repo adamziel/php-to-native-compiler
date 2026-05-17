@@ -1,4 +1,8 @@
 <?php
+trait Base {
+    public function render() {}
+}
+
 trait Reusable {
-    public $value;
+    use Base { Base::render as alias; }
 }
