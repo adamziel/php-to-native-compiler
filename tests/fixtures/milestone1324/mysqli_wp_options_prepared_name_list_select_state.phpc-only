@@ -1,0 +1,1 @@
+Relies on deterministic placeholder mysqli/wp_options state-island behavior that system PHP does not mirror.

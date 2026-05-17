@@ -1,0 +1,7 @@
+run clone_magic_method_dispatch.php
+--- stdout begin ---
+seed|seed:cloned
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

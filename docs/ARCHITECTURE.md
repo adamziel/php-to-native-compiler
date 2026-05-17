@@ -22,7 +22,10 @@ The interpreter runs top-level statements in a global symbol table and creates a
 fresh local symbol table for each user-function call. Local scopes can import
 direct root variables through `global $name, ...;`; imported names route direct
 reads and writes through the shared root symbol table, while `unset($name)`
-drops the local import without deleting the root value. Top-level `global`
+drops the local import without deleting the root value. If the same local name
+was previously bound to a local direct array-offset alias, importing the global
+name clears that stale local alias binding so later reads/writes use the root
+symbol slot. Top-level `global`
 declarations preserve existing root values and materialize missing listed names
 as `null`, matching the reached WordPress bootstrap initialization shape.
 Direct string-keyed `$GLOBALS['name']` reads and writes are a bounded
@@ -348,8 +351,9 @@ Implemented now:
   through the current class table for `new $class(...)`,
   bounded dynamic property-name reads/writes for existing public slots,
   `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
-  class's dynamic table-name slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
-  current property slots when no `__clone` method is declared
+  class's dynamic table-name slots, and bounded `clone` expressions that
+  allocate fresh handles, shallow-copy current property slots, and dispatch
+  visible non-static `__clone()` methods on cloned objects
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -1648,10 +1652,13 @@ reject under the function-call boundary.
 `php://input` to the same explicit `PHPC_REQUEST_BODY` request seed used by
 the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
 read using the same process-path-then-repo-root relative path policy as the
-filesystem metadata builtins. It does not model PHP binary strings,
-warning-plus-`false` recovery, stream contexts, offsets, lengths, include
-paths, `open_basedir`, stat caching, host SAPI body streams, or native
-filesystem lowering. Direct native `file_get_contents(...)` calls stop at a
+filesystem metadata builtins. The current bounded second argument accepts only
+a bool include-path flag; when true for relative local paths, lookup follows
+the same include-path candidate order used by current `include`/`require`
+resolution. It does not model PHP binary strings, warning-plus-`false`
+recovery, stream contexts, offsets, lengths beyond this bool flag,
+`open_basedir`, stat caching, host SAPI body streams, or native filesystem
+lowering. Direct native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.

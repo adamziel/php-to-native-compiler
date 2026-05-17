@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/unsupported_object_features/unsupported_clone_expression.php:8:9: unsupported call clone: __clone dispatch is not implemented
---- stderr end ---

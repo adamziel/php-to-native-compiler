@@ -5064,7 +5064,7 @@ alias-protected|alias-protected|alias-protected"
 }
 
 #[test]
-fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
+fn clone_expression_rejects_non_objects_and_dispatches_declared_clone_methods() {
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 
     assert_eq!(type_error.line, 2);
@@ -5074,24 +5074,27 @@ fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
         "unsupported call clone: clone operand must be object in the current subset, got int"
     );
 
-    let clone_method_error = runtime_error(
+    let clone_execution = run_source(
         r#"<?php
 class Box {
+    public $label;
+
+    public function __construct($label) {
+        $this->label = $label;
+    }
+
     public function __clone() {
-        echo "clone";
+        $this->label = $this->label . "-cloned";
     }
 }
-$box = new Box();
+$box = new Box("seed");
 $copy = clone $box;
+echo $box->label, "|", $copy->label;
 "#,
-    );
-
-    assert_eq!(clone_method_error.line, 8);
-    assert_eq!(clone_method_error.column, 9);
-    assert_eq!(
-        clone_method_error.message,
-        "unsupported call clone: __clone dispatch is not implemented"
-    );
+    )
+    .unwrap();
+    assert_eq!(clone_execution.stdout, "seed|seed-cloned");
+    assert_eq!(clone_execution.exit_code, 0);
 }
 
 #[test]

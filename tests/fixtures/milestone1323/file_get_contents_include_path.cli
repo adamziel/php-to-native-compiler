@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+from-include-path
+--- stdout end ---
+stderr:
+--- stderr end ---

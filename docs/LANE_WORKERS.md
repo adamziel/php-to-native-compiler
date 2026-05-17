@@ -194,40 +194,40 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 1320 closes the 1316-1319 WordPress-focused
+- Tests/docs lane: Milestone 1325 closes the 1321-1324 WordPress-focused
   implementation-batch queue refresh and keeps the next split anchored in the
   `GOAL.MD` compatibility ledger.
-- Parser/runtime lane: Milestone 1321 targets a larger object/interface
-  blocker, such as constructor parameter/default fidelity, autoloadable
-  class/interface lookup, magic object hooks, reflection metadata reached by
-  WordPress, trait/interface edge cases, `__clone` dispatch, or destructor
-  shutdown ordering beyond the current declaration-shape slice.
-- Runtime lane: Milestone 1322 targets a larger reference/COW blocker, such as
+- Parser/runtime lane: Milestone 1326 targets a larger object/interface
+  blocker, such as interface declaration/implements validation, constructor
+  parameter/default fidelity, autoloadable class/interface lookup, magic object
+  hooks, reflection metadata reached by WordPress, trait/interface edge cases,
+  or destructor/clone lifecycle ordering beyond the current slices.
+- Runtime lane: Milestone 1327 targets a larger reference/COW blocker, such as
   real reference containers, ArrayAccess by-reference iteration roots,
-  reference-return iterable aliases, stored/reference-return alias lifetime
-  cleanup, alias propagation across included files, broader array/object
-  copy-on-write, or `$_SESSION`/request-state alias behavior.
-- Runtime or IR/lowering lane: Milestone 1323 targets request/SAPI,
+  reference-return iterable aliases, alias lifetime cleanup across
+  function/include boundaries, broader array/object copy-on-write, or
+  `$_SESSION`/request-state alias behavior.
+- Runtime or IR/lowering lane: Milestone 1328 targets request/SAPI,
   filesystem, and stream behavior that blocks real WordPress requests, such as
-  `php://temp`, stream resources, session persistence or cookies,
-  header/output state, shutdown-time visibility, include-path metadata
-  follow-up, host filesystem fidelity, or multipart/upload handling.
-- Compatibility/runtime lane: Milestone 1324 targets executable WordPress
+  `php://temp`, `php://memory`, stream resources, session persistence or
+  cookies, header/output state, shutdown-time visibility, host filesystem
+  fidelity, multipart/upload handling, or `php://input` follow-up behavior.
+- Compatibility/runtime lane: Milestone 1329 targets executable WordPress
   database/bootstrap evidence: broader `wpdb`/MySQLi result or mutation
   behavior, object-cache/transient persistence, option API state, hooks under
-  realistic callback shapes, or a deterministic bootstrap/request probe that
-  moves past its next real blocker.
-- Tests/docs lane: Milestone 1325 is the next tests/docs slot after the next
+  realistic callback shapes, deterministic plugin/theme loading probes, or a
+  bootstrap/request probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1330 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
-592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, 1236, 1241, 1246, 1251, 1256, 1261, 1266, 1271, 1276, 1281, 1286, 1291, 1301, 1306, 1311, and 1316 closed recent parser slots, Milestones 565, 568,
+592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, 1236, 1241, 1246, 1251, 1256, 1261, 1266, 1271, 1276, 1281, 1286, 1291, 1301, 1306, 1311, 1316, and 1321 closed recent parser slots, Milestones 565, 568,
 572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, 615, 1204, 1209, 1214, and 1219 closed recent
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
-593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, 1233, 1237, 1238, 1242, 1243, 1247, 1248, 1252, 1253, 1257, 1258, 1262, 1263, 1267, 1268, 1272, 1273, 1277, 1278, 1282, 1283, 1287, 1288, 1292, 1293, 1302, 1303, 1307, 1308, 1312, 1313, 1317, and 1318 closed recent runtime slots, and Milestones 569,
+593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, 1233, 1237, 1238, 1242, 1243, 1247, 1248, 1252, 1253, 1257, 1258, 1262, 1263, 1267, 1268, 1272, 1273, 1277, 1278, 1282, 1283, 1287, 1288, 1292, 1293, 1302, 1303, 1307, 1308, 1312, 1313, 1317, 1318, 1322, and 1323 closed recent runtime slots, and Milestones 569,
 573, 588, 591, 596, 601, 606, 611, 616, 1203, 1208, 1213, and 1218 closed recent IR/lowering slots.
-Milestones 1224, 1229, 1234, 1239, 1244, 1249, 1254, 1259, 1264, 1269, 1274, 1279, 1284, 1289, 1294, 1304, 1309, 1314, and 1319 closed recent WordPress compatibility evidence work. Milestones
-604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, 1235, 1240, 1245, 1250, 1255, 1260, 1265, 1270, 1275, 1280, 1285, 1290, 1295, 1300, 1305, 1310, 1315, and 1320 closed recent tests/docs
+Milestones 1224, 1229, 1234, 1239, 1244, 1249, 1254, 1259, 1264, 1269, 1274, 1279, 1284, 1289, 1294, 1304, 1309, 1314, 1319, and 1324 closed recent WordPress compatibility evidence work. Milestones
+604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, 1235, 1240, 1245, 1250, 1255, 1260, 1265, 1270, 1275, 1280, 1285, 1290, 1295, 1300, 1305, 1310, 1315, 1320, and 1325 closed recent tests/docs
 queue refreshes.
 Milestones 1156 through 1159 closed the latest parser/runtime/IR/compiler-output
 implementation batch, and Milestone 1160 refreshed the next-lane queue.

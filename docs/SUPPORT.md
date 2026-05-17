@@ -603,7 +603,10 @@
   from the root global symbol table, materializes missing globals as `null`,
   routes direct reads and writes through the shared root slot, and treats
   `unset($name)` after import as removing the local import without deleting the
-  root global value. Direct string-keyed `$GLOBALS['name']` reads and writes
+  root global value. If a function-scope name was previously bound to a local
+  direct array-offset alias, `global $name;` now drops that stale local alias
+  binding so `$name` rebinds to the root global symbol slot for later reads and
+  writes in the function. Direct string-keyed `$GLOBALS['name']` reads and writes
   route to the same root global symbol table from top-level and function scope.
   Direct string-keyed `$GLOBALS['name'] =& $value`,
   `$GLOBALS['bag']['slot'] =& $value`, and `$GLOBALS['list'][] =& $value`
@@ -1867,6 +1870,17 @@
   query also returns a recorded option-name/option-value row for string
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
+  `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`
+  and
+  `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
+  prepared shapes also return deterministic row sets for string option-name
+  parameter lists on the same handle through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array(...))`; explicit name-list reads
+  preserve parameter order, skip missing names, and return empty zero-field
+  placeholder results when every requested name is missing.
+  Backticked table/column spellings are accepted for this prepared name-list
+  slice. The exact
   `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns a recorded option-name row for string option-name parameters on the
   same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -2064,17 +2078,20 @@
   fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
-  `file_get_contents($path)` accepts exactly one string path. The special
+  `file_get_contents($path, $use_include_path = false)` accepts one required
+  string path and one optional bool include-path flag. The special
   `php://input` path returns the current bounded request body seeded from
   `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths are read
   from the host filesystem as UTF-8 text and share the same current
-  relative path policy as `file_exists`. This is a bounded WordPress bootstrap
-  compatibility slice, not full PHP filesystem support: binary string byte
-  fidelity, missing-file warning/`false` recovery, other stream wrappers,
-  stream contexts, offsets/lengths, include-path lookup, real request-body
-  state outside the explicit CLI seed, `open_basedir`, stat-cache behavior,
-  partial-output behavior, and
-  native lowering remain unsupported. Direct native
+  relative path policy as `file_exists`; when the second argument is `true`
+  for a relative local path, lookup also follows the current bounded
+  `include_path` candidate order used by `include`/`require`. This is a
+  bounded WordPress bootstrap compatibility slice, not full PHP filesystem
+  support: binary string byte fidelity, missing-file warning/`false` recovery,
+  other stream wrappers, stream contexts, offsets/lengths beyond this bool
+  flag, real request-body state outside the explicit CLI seed, `open_basedir`,
+  stat-cache behavior, partial-output behavior, and native lowering remain
+  unsupported. Direct native
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
   boundary before argument lowering or backend selection, while native
   function-table introspection can still see the known builtin name.
@@ -2579,7 +2596,8 @@
   Top-level `global $name, ...;` declarations preserve existing values and
   materialize missing listed names as `null`; function-scope `global`
   declarations import from the root symbol table through the existing
-  function/global sharing path.
+  function/global sharing path, including rebinding over a same-name local
+  direct array-offset alias.
   Direct `unset($name)` removes the current-scope symbol and treats missing
   names as no-ops; later plain reads use the existing undefined-variable
   diagnostic. Multiple supported `unset(...)` operands run left to right.
@@ -2904,14 +2922,17 @@
   arguments. `clone $object` expressions evaluate the operand, require a
   current object value,
   allocate a fresh process-local object handle, shallow-copy the object's
-  current property slots, mirror the current bounded public-property and
+  current property slots, dispatch a visible non-static `__clone()` method on
+  the cloned object when one is declared or inherited, mirror the current
+  bounded public-property and
   context-aware non-public property reference-slot metadata for direct-variable
   `clone $object` assignments, and return the cloned object. Object-valued
   properties keep their existing handles under the current no-copy-on-write
-  model. Classes that declare `__clone`, non-object operands, clone
+  model. Non-object operands, static `__clone` methods, clone
   expressions outside direct-variable assignments for reference-slot mirroring,
   non-public property-offset clone alias mirroring, private/protected
-  clone-method visibility behavior, destructor/reuse behavior, exact PHP
+  clone-method visibility behavior beyond current method-context checks,
+  destructor/reuse behavior, exact PHP
   `Error` objects, partial-output behavior, full references, copy-on-write,
   and native lowering remain unsupported. Native lowering rejects `clone`
   expressions with a clone-specific codegen diagnostic before lowering the
@@ -4909,11 +4930,12 @@
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
   `file_get_contents` accepts the same current deterministic `php://input`
-  placeholder and local UTF-8 text-file read subset as the builtin section
-  above; direct native `file_get_contents(...)` calls reject under a dedicated
-  filesystem-read boundary until native PHP stream-wrapper handling, local file
-  I/O, binary string byte fidelity, warning plus `false` recovery, stream
-  contexts, offsets/lengths, include-path lookup, `open_basedir` and stat-cache
+  placeholder, local UTF-8 text-file read subset, and optional bool
+  include-path lookup flag as the builtin section above; direct native
+  `file_get_contents(...)` calls reject under a dedicated filesystem-read
+  boundary until native PHP stream-wrapper handling, local file I/O, binary
+  string byte fidelity, warning plus `false` recovery, stream contexts,
+  offsets/lengths, include-path lookup, `open_basedir` and stat-cache
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `filesize` accepts the same current one-string local regular-file metadata

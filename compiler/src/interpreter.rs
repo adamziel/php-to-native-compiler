@@ -720,6 +720,10 @@ impl SymbolTable {
 
     fn import_global(&mut self, name: &str) {
         if let Some(global_symbols) = &self.global_symbols {
+            // A function-scope `global $name;` rebinding should route `$name` to the
+            // root/global symbol even if the local scope previously bound `$name`
+            // as a direct array-offset alias.
+            self.array_offset_aliases.remove(name);
             if global_symbols.borrow().get(name).is_none() {
                 global_symbols
                     .borrow_mut()
@@ -3982,6 +3986,27 @@ impl Interpreter {
         }
     }
 
+    fn resolve_file_get_contents_path(&self, path: &str, use_include_path: bool) -> PathBuf {
+        let path = PathBuf::from(path);
+        if path.is_absolute() || !use_include_path {
+            return local_filesystem_metadata_path(path.to_string_lossy().as_ref());
+        }
+
+        let source_base = self
+            .source_file
+            .as_deref()
+            .and_then(|source_file| Path::new(source_file).parent())
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let source_relative_path = source_base.join(&path);
+        if let Some(candidate) = self.first_existing_include_candidate(&source_relative_path, &path)
+        {
+            return candidate.read_path;
+        }
+
+        local_filesystem_metadata_path(path.to_string_lossy().as_ref())
+    }
+
     fn resolve_required_path(
         &self,
         path: &str,
@@ -5081,18 +5106,45 @@ impl Interpreter {
             ));
         };
 
-        if self
-            .resolve_instance_method(object.class_id(), "__clone")
-            .is_some()
-        {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call("clone", "__clone dispatch is not implemented"),
-            ));
-        }
-
         let object_id = self.allocate_object_id();
         let clone = object.shallow_clone_with_id(object_id);
+
+        if let Some((class_id, class_name, method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__clone")
+        {
+            if is_static {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::{method_name}()"),
+                        "static clone methods are not implemented",
+                    ),
+                ));
+            }
+
+            self.ensure_instance_method_visible(
+                class_id,
+                &class_name,
+                "__clone",
+                visibility,
+                span,
+            )?;
+            let function = self.method_function(class_id, &class_name, &method_name, span)?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, 0, span)?;
+            ensure_supported_function_signature(function, 0, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            self.call_user_function_with_checked_values(
+                function,
+                Vec::new(),
+                Some(clone.clone()),
+                Some(class_id),
+                Some(clone.class_id()),
+                Vec::new(),
+                None,
+            )?;
+        }
+
         self.track_allocated_object(&clone);
         Ok(Value::Object(clone))
     }
@@ -9292,6 +9344,56 @@ impl Interpreter {
                         ("option_value".to_string(), Value::String(option_value)),
                         ("autoload".to_string(), Value::String(autoload)),
                     ]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_value_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_value_autoload_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
                 }));
             }
             return Ok(Some(MysqliPendingResultState {
@@ -19358,7 +19460,32 @@ impl Interpreter {
                 }
             }
             "file_get_contents" => {
-                expect_arity(name, &args, 1, span)?;
+                if args.is_empty() || args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "file_get_contents()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let use_include_path = match args.get(1) {
+                    Some(Value::Bool(flag)) => *flag,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "file_get_contents()",
+                                format!(
+                                    "use_include_path argument must be bool in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => false,
+                };
                 match &args[0] {
                     Value::String(path) if path == "php://input" => {
                         Ok(Value::String(self.request_body.clone()))
@@ -19371,7 +19498,8 @@ impl Interpreter {
                         ),
                     )),
                     Value::String(path) => {
-                        let filesystem_path = local_filesystem_metadata_path(path);
+                        let filesystem_path =
+                            self.resolve_file_get_contents_path(path, use_include_path);
                         let contents = fs::read_to_string(&filesystem_path).map_err(|error| {
                             runtime_error(
                                 span,
@@ -25814,22 +25942,72 @@ fn is_wordpress_option_prepared_delete_query(query: &str) -> bool {
 }
 
 fn is_wordpress_option_prepared_delete_names_query(query: &str) -> bool {
-    let query = query.trim();
-    let Some(values) = query
-        .strip_prefix("DELETE FROM wp_options WHERE option_name IN (")
-        .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` IN ("))
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "DELETE FROM wp_options WHERE option_name IN (",
+        "DELETE FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_name_value_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, option_value FROM wp_options WHERE option_name IN (",
+        "SELECT `option_name`, `option_value` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (",
+        "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn parse_wordpress_option_prepared_placeholder_names<'a>(
+    query: &'a str,
+    plain_prefix: &str,
+    quoted_prefix: &str,
+) -> Option<&'a str> {
+    query
+        .strip_prefix(plain_prefix)
+        .or_else(|| query.strip_prefix(quoted_prefix))
         .and_then(|rest| rest.strip_suffix(')'))
-    else {
-        return false;
-    };
-    let mut saw_placeholder = false;
-    for value in values.split(',') {
-        if value.trim() != "?" {
-            return false;
-        }
-        saw_placeholder = true;
+        .and_then(|values| {
+            let mut saw_placeholder = false;
+            for value in values.split(',') {
+                if value.trim() != "?" {
+                    return None;
+                }
+                saw_placeholder = true;
+            }
+            saw_placeholder.then_some(values)
+        })
+}
+
+fn wordpress_option_names_from_prepared_params(
+    function: &str,
+    params: &[Value],
+    span: Span,
+) -> CompileResult<Vec<String>> {
+    let mut option_names = Vec::with_capacity(params.len());
+    for parameter in params {
+        let Value::String(option_name) = parameter else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared wp_options option-name-list select requires string option name parameters in the current subset",
+                ),
+            ));
+        };
+        option_names.push(option_name.clone());
     }
-    saw_placeholder
+    Ok(option_names)
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {

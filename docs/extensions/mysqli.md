@@ -399,6 +399,17 @@ empty placeholder result. The exact
 also returns a recorded option-name/option-value row for string option-name
 parameters on the same handle through the same prepared result paths; missing
 names return an empty zero-field placeholder result. The exact
+`SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`
+and
+`SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
+prepared shapes also return deterministic row sets for string option-name
+parameter lists on the same handle through
+`mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array(...))`; explicit name-list reads
+preserve parameter order, skip missing names, and return empty zero-field
+placeholder results when every requested name is missing. Backticked
+table/column spellings are accepted for this prepared name-list slice. The
+exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

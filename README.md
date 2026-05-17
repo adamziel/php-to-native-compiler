@@ -258,8 +258,9 @@ incorrect native code.
   `$className::method()` for visible static methods,
   dynamic property-name reads/writes for existing public slots and `stdClass`
   public dynamic slots when property-name values are strings or integers,
-  `clone $object` for current object values without declared `__clone`
-  methods, using fresh object handles, shallow-copied property slots, and
+  `clone $object` for current object values with fresh object handles,
+  shallow-copied property slots, bounded visible non-static `__clone()`
+  dispatch on the cloned object, and
   bounded public-property plus context-aware non-public property reference-slot
   mirroring for direct-variable clone assignments, shutdown execution of
   public inherited or declared no-argument `__destruct` methods for allocated
@@ -362,7 +363,8 @@ compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
 method-shape checks,
 resources, and
-`__clone` dispatch, clone visibility/destructor behavior, resources, and native
+clone visibility/destructor behavior beyond the current bounded clone-method
+dispatch slice, resources, and native
 extension integration.
 
 By-reference assignment syntax has bounded value-model slices for direct

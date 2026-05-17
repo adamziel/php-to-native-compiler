@@ -136,6 +136,32 @@ echo reader();
 }
 
 #[test]
+fn global_import_rebinds_name_after_local_array_offset_alias() {
+    let execution = run_source(
+        r#"<?php
+$value = "root";
+
+function rebind() {
+    $local = ["slot" => "local"];
+    $value =& $local["slot"];
+    $value = "local-mutated";
+    echo $value, "|";
+    global $value;
+    echo $value, "|";
+    $value = "updated-root";
+}
+
+rebind();
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "local-mutated|root|updated-root");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_imported_global_drops_local_import_without_removing_global_value() {
     let execution = run_source(
         r#"<?php

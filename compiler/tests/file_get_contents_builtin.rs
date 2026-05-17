@@ -71,6 +71,21 @@ echo $call($path) === $contents ? "repeat" : "different";
 }
 
 #[test]
+fn file_get_contents_supports_bounded_use_include_path_lookup() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+set_include_path(__DIR__ . "/include_path_lib");
+echo file_get_contents("wp_loader.inc", true);
+"#,
+        "tests/fixtures/milestone1323/file_get_contents_include_path.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "from-include-path\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);
@@ -104,13 +119,24 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
         missing_local_file.message
     );
 
-    let too_many = run_source("<?php\nfile_get_contents('php://input', false);\n").unwrap_err();
+    let bad_use_include_path =
+        run_source("<?php\nfile_get_contents('php://input', 1);\n").unwrap_err();
+    assert_eq!(bad_use_include_path.phase, Phase::Runtime);
+    assert_eq!(bad_use_include_path.line, 2);
+    assert_eq!(bad_use_include_path.column, 1);
+    assert_eq!(
+        bad_use_include_path.message,
+        "unsupported call file_get_contents(): use_include_path argument must be bool in the current subset, got int"
+    );
+
+    let too_many =
+        run_source("<?php\nfile_get_contents('php://input', false, false);\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);
     assert_eq!(too_many.line, 2);
     assert_eq!(too_many.column, 1);
     assert_eq!(
         too_many.message,
-        "arity mismatch for file_get_contents(): expected 1 argument(s), got 2"
+        "arity mismatch for file_get_contents(): expected 1 to 2 argument(s), got 3"
     );
 }
 

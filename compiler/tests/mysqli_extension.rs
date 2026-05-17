@@ -1048,6 +1048,74 @@ echo $direct_row["option_name"], "=", $direct_row["option_value"];
 }
 
 #[test]
+fn mysqli_statement_reads_current_wordpress_option_name_lists_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('theme_mods', 'theme-db', 'on')");
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ?, ?)");
+$first = "theme_mods";
+$second = "missing";
+$third = "siteurl";
+mysqli_stmt_bind_param($stmt, "sss", $first, $second, $third);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+echo "|";
+$result = mysqli_stmt_get_result($stmt);
+echo mysqli_num_rows($result), ":", mysqli_num_fields($result);
+echo "|";
+$one = mysqli_fetch_assoc($result);
+$two = mysqli_fetch_assoc($result);
+echo $one["option_name"], "=", $one["option_value"];
+echo "|";
+echo $two["option_name"], "=", $two["option_value"];
+echo "|";
+$direct = mysqli_execute_query($handle, "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` IN (?, ?, ?)", array("home", "missing", "theme_mods"));
+echo mysqli_num_rows($direct), ":", mysqli_num_fields($direct);
+echo "|";
+$direct_one = mysqli_fetch_assoc($direct);
+$direct_two = mysqli_fetch_assoc($direct);
+echo $direct_one["option_name"], ":", $direct_one["autoload"];
+echo "|";
+echo $direct_two["option_name"], ":", $direct_two["autoload"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "executed|2:2|theme_mods=theme-db|siteurl=https://example.test|2:3|home:no|theme_mods:on"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_statement_rejects_non_string_wordpress_option_name_list_parameters() {
+    let error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ?)");
+$one = "siteurl";
+$two = 123;
+mysqli_stmt_bind_param($stmt, "ss", $one, $two);
+mysqli_stmt_execute($stmt);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_stmt_execute(): prepared wp_options option-name-list select requires string option name parameters in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_name_from_state() {
     let execution = run_source(
         r#"<?php

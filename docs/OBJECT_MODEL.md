@@ -456,7 +456,8 @@ binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
-cloning beyond the current shallow clone/no-`__clone` slice, serialization hooks, broader visibility enforcement,
+cloning beyond the current shallow clone plus bounded visible non-static
+`__clone` dispatch slice, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call,
 class-constant, and static-property slices, constructor behavior beyond public/inherited public
 instance `__construct` and explicit parent calls, constructor arguments for classes without constructors,
