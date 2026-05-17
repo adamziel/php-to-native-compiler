@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1522/non_direct_named_property_foreach_reference.php

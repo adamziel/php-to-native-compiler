@@ -757,9 +757,13 @@
   `foreach ($holders["bag"]->{$name}["child"] as &$value)` and method-context
   object-returning expressions such as
   `foreach ($this->holder()->{$name} as &$value)` are also covered for
-  by-reference iteration: the holder is evaluated once, must produce an
-  object, and the selected public or context-visible non-public property is
-  routed through the same internal object-property alias root. Direct
+  by-reference iteration. The same object-result holder slice also covers
+  named properties such as
+  `foreach ($holders["bag"]->items["child"] as &$value)` and
+  `foreach ($this->holder()->items as &$value)`. In those cases, the holder
+  is evaluated once, must produce an object, and the selected public or
+  context-visible non-public property is routed through the same internal
+  object-property alias root. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -778,8 +782,8 @@
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
-  ArrayAccess iterables, non-direct dynamic-property holder expressions outside
-  the documented object-result dynamic-property foreach slice,
+  ArrayAccess iterables, non-direct property holder expressions outside
+  the documented object-result named/dynamic property foreach slice,
   invisible selected dynamic properties, magic-property reference containers,
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
   properties, array offsets, expressions, or nested-control-flow returns,
@@ -1983,12 +1987,14 @@
   fidelity, real MySQL, full `wpdb`, references/copy-on-write, or native
   database support.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
-  names for the current known placeholder statement result shape, and
-  `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
-  those variables while advancing the placeholder cursor. This is not true
-  by-reference aliasing, unbuffered statement fetching, bound-parameter
-  execution, real mysqlnd cursor behavior, host database state, PHP
-  warning/error fidelity, or native statement lowering.
+  names and direct variable array-offset targets for the current known
+  placeholder statement result shape, and `mysqli_stmt_fetch($statement)`
+  copies buffered placeholder row values into those targets while advancing
+  the placeholder cursor. Array-offset keys are evaluated at bind time. This
+  is not true by-reference aliasing, object-property result targets,
+  unbuffered statement fetching, broad prepared SQL, real mysqlnd cursor
+  behavior, host database state, PHP warning/error fidelity, or native
+  statement lowering.
   `mysqli_stmt_send_long_data($statement, $param_num, $data)` validates active
   statements, non-negative in-range parameter indexes, and string chunk data,
   then records deterministic placeholder chunk state that is cleared by
@@ -3053,7 +3059,8 @@
   matching the domain identity ASCII-case-insensitively and keeping same-name
   cookies for different path/domain identities. Past expirations emit
   `Max-Age=0`, and the emitted header preserves the caller-provided domain
-  text. Options-array calls reject numeric keys and string keys outside
+  text. Options-array calls match those documented option keys
+  ASCII-case-insensitively, and reject numeric keys and string keys outside
   `expires`, `path`, `domain`, `secure`, `httponly`, and `samesite` before
   changing the deterministic header log. Once
   unbuffered output has started, it returns `false`, does not append a cookie
@@ -3062,8 +3069,7 @@
   accepts the same bounded signature and attributes, but writes the string
   value unchanged instead of percent-encoding it. Cookie name
   validation/encoding, exact request-time/Date-header parity for future
-  `Max-Age` values, case-insensitive option-key matching, exact
-  `ValueError` objects/text for invalid options,
+  `Max-Age` values, exact `ValueError` objects/text for invalid options,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
   exact warning text, and native lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
@@ -5552,10 +5558,11 @@
   true by-reference aliasing, cross-scope reference cells, mutation SQL, broad
   SQL execution, or host database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
-  variable placeholder result binding and buffered row copying for current
-  known statement result shapes without true by-reference aliasing, unbuffered
-  statement fetching, bound-parameter execution, real mysqlnd cursor behavior,
-  or host database rows,
+  variable and direct variable array-offset placeholder result binding plus
+  buffered row copying for current known statement result shapes without true
+  by-reference aliasing, object-property result targets, unbuffered statement
+  fetching, broad prepared SQL, real mysqlnd cursor behavior, or host
+  database rows,
   `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
   `mysqli_stmt_free_result(...)` expose only deterministic placeholder field
   metadata and cleanup for current known statement SELECT shapes without
@@ -6159,6 +6166,10 @@
   method with the same name as a composed public trait method or alias, the
   class method takes precedence and the trait method is skipped in the
   effective class method table, including for current interface method checks.
+  If two different composed traits provide the same public instance method and
+  no class method or bounded `insteadof` adaptation resolves the conflict,
+  `phpc run` stops with a stable trait-conflict diagnostic before registering
+  the class.
   Built-in/internal trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
@@ -6686,8 +6697,8 @@
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
   trait/class constants, static/abstract/final and non-public trait methods,
-  conflicting trait composition outside class-method precedence and the
-  bounded `insteadof` shape,
+  executing unresolved same-name trait method conflicts, exact PHP fatal-error
+  text for trait conflicts,
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
   unqualified visibility-only adaptations across multiple used traits,
@@ -8074,13 +8085,13 @@
   clock and pinned to `0` for past expirations, replacing deterministic cookie
   headers by cookie name plus normalized non-empty path/domain identity with
   ASCII-case-insensitive domain matching, returning `false` after unbuffered
-  output starts with a bounded `E_WARNING`, rejecting numeric options-array
-  keys and unknown string option keys, and
+  output starts with a bounded `E_WARNING`, matching documented options-array
+  keys ASCII-case-insensitively, rejecting numeric options-array keys and
+  unknown string option keys, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
   cookie name validation/encoding, exact request-time/Date-header parity for
-  future `Max-Age` values, case-insensitive option-key matching, exact
-  `ValueError` objects/text for invalid options,
+  future `Max-Age` values, exact `ValueError` objects/text for invalid options,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server
   emission, exact warning text, and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and

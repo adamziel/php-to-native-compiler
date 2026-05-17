@@ -593,13 +593,16 @@ broad SQL execution, real mysqlnd blob behavior, host database state, PHP
 warning/error fidelity, or native lowering.
 
 `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable names
-for the current known placeholder statement result shapes.
+and direct variable array-offset targets for the current known placeholder
+statement result shapes. Array-offset keys are evaluated when binding is
+registered, so later key-variable changes do not retarget the fetched row.
 `mysqli_stmt_fetch($statement)` then copies buffered placeholder row values
-into those variables and advances the placeholder cursor. The current bounded
+into those targets and advances the placeholder cursor. The current bounded
 path requires the deterministic statement execution result to be buffered with
 `mysqli_stmt_store_result()` first. This is not true by-reference aliasing,
-unbuffered statement fetching, bound-parameter execution, real mysqlnd cursor
-behavior, host database state, PHP warning/error fidelity, or native lowering.
+object-property result targets, unbuffered statement fetching, broad prepared
+SQL, real mysqlnd cursor behavior, host database state, PHP warning/error
+fidelity, or native lowering.
 
 `mysqli_stmt_field_count($statement)` reports deterministic field counts for
 the current placeholder statement result metadata shapes, including the

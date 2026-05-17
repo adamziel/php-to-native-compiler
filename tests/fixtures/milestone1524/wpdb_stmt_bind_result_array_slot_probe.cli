@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1524/wpdb_stmt_bind_result_array_slot_probe.php
+bound|1:Hello world placeholder|done|stable

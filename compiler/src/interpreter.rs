@@ -503,9 +503,15 @@ struct MysqliStatementState {
     insert_id: i64,
     buffered_result: Option<MysqliPendingResultState>,
     buffered_result_cursor: usize,
-    bound_result_variables: Vec<String>,
+    bound_result_targets: Vec<MysqliResultBindingTarget>,
     attributes: HashMap<i64, Value>,
     long_data: HashMap<usize, String>,
+}
+
+#[derive(Debug, Clone)]
+enum MysqliResultBindingTarget {
+    Variable(String),
+    ArrayOffset { name: String, keys: Vec<ArrayKey> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3506,6 +3512,19 @@ impl Interpreter {
                 }
 
                 if let Some((holder, property, indices)) =
+                    Self::collect_object_property_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+                    let root = self.non_direct_foreach_object_property_alias_root(
+                        holder, property, scope, span,
+                    )?;
+                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                }
+
+                if let Some((holder, property, indices)) =
                     Self::collect_dynamic_object_property_array_index_path(target, index)
                 {
                     let property = self.evaluate_dynamic_property_name(property, span, scope)?;
@@ -3530,17 +3549,13 @@ impl Interpreter {
             Expr::Property {
                 target, property, ..
             } => {
-                let Expr::Variable(object_name, _) = target.as_ref() else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "foreach",
-                            "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
-                        ),
-                    ));
+                let root = if let Expr::Variable(object_name, _) = target.as_ref() {
+                    self.foreach_object_property_alias_root(object_name, property, scope, span)?
+                } else {
+                    self.non_direct_foreach_object_property_alias_root(
+                        target, property, scope, span,
+                    )?
                 };
-                let root =
-                    self.foreach_object_property_alias_root(object_name, property, scope, span)?;
                 Ok(ForeachArrayRoot::Alias {
                     root,
                     keys: Vec::new(),
@@ -10689,7 +10704,7 @@ impl Interpreter {
                 insert_id: 0,
                 buffered_result: None,
                 buffered_result_cursor: 0,
-                bound_result_variables: Vec::new(),
+                bound_result_targets: Vec::new(),
                 attributes: HashMap::new(),
                 long_data: HashMap::new(),
             },
@@ -12222,7 +12237,7 @@ impl Interpreter {
         state.insert_id = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
-        state.bound_result_variables.clear();
+        state.bound_result_targets.clear();
         state.long_data.clear();
         Ok(Value::Bool(true))
     }
@@ -14010,7 +14025,7 @@ impl Interpreter {
         state.insert_id = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
-        state.bound_result_variables.clear();
+        state.bound_result_targets.clear();
         state.attributes.clear();
         state.long_data.clear();
         Ok(Value::Bool(true))
@@ -23080,18 +23095,42 @@ impl Interpreter {
 
         let statement = self.evaluate(&args[0], caller_scope)?;
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_bind_result()", &statement, span)?;
-        let mut variable_names = Vec::with_capacity(args.len() - 1);
+        let mut binding_targets = Vec::with_capacity(args.len() - 1);
         for arg in &args[1..] {
-            let Expr::Variable(name, _) = arg else {
-                return Err(runtime_error(
-                    arg.span(),
-                    RuntimeError::unsupported_call(
-                        "mysqli_stmt_bind_result()",
-                        "result bindings must be direct variables in the current subset",
-                    ),
-                ));
+            let target = match arg {
+                Expr::Variable(name, _) => MysqliResultBindingTarget::Variable(name.clone()),
+                Expr::Index { target, index, .. } => {
+                    let Some((name, indices)) =
+                        Self::collect_direct_variable_array_index_path(target, index)
+                    else {
+                        return Err(runtime_error(
+                            arg.span(),
+                            RuntimeError::unsupported_call(
+                                "mysqli_stmt_bind_result()",
+                                "result bindings must be direct variables or direct variable array offsets in the current subset",
+                            ),
+                        ));
+                    };
+                    let keys = indices
+                        .iter()
+                        .map(|index| self.evaluate_array_key(index, caller_scope))
+                        .collect::<CompileResult<Vec<_>>>()?;
+                    MysqliResultBindingTarget::ArrayOffset {
+                        name: name.to_string(),
+                        keys,
+                    }
+                }
+                _ => {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            "mysqli_stmt_bind_result()",
+                            "result bindings must be direct variables or direct variable array offsets in the current subset",
+                        ),
+                    ));
+                }
             };
-            variable_names.push(name.clone());
+            binding_targets.push(target);
         }
 
         let field_count = {
@@ -23119,21 +23158,21 @@ impl Interpreter {
             result.fields.len()
         };
 
-        if variable_names.len() != field_count {
+        if binding_targets.len() != field_count {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "mysqli_stmt_bind_result()",
                     format!(
                         "bound result variable count must match current placeholder field count {field_count}, got {}",
-                        variable_names.len()
+                        binding_targets.len()
                     ),
                 ),
             ));
         }
 
         let state = self.mysqli_statement_state_mut("mysqli_stmt_bind_result()", stmt_id, span)?;
-        state.bound_result_variables = variable_names;
+        state.bound_result_targets = binding_targets;
         Ok(Value::Bool(true))
     }
 
@@ -23157,7 +23196,7 @@ impl Interpreter {
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_fetch()", &statement, span)?;
         let (bindings, row) = {
             let state = self.mysqli_statement_state_mut("mysqli_stmt_fetch()", stmt_id, span)?;
-            if state.bound_result_variables.is_empty() {
+            if state.bound_result_targets.is_empty() {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -23178,16 +23217,45 @@ impl Interpreter {
             if state.buffered_result_cursor >= result.rows.len() {
                 return Ok(Value::Null);
             }
-            let bindings = state.bound_result_variables.clone();
+            let bindings = state.bound_result_targets.clone();
             let row = result.rows[state.buffered_result_cursor].clone();
             state.buffered_result_cursor += 1;
             (bindings, row)
         };
 
-        for (name, (_, value)) in bindings.iter().zip(row.into_iter()) {
-            caller_scope.write_static(name, value);
+        for (target, (_, value)) in bindings.iter().zip(row.into_iter()) {
+            self.write_mysqli_result_binding_target(target, value, span, caller_scope)?;
         }
         Ok(Value::Bool(true))
+    }
+
+    fn write_mysqli_result_binding_target(
+        &mut self,
+        target: &MysqliResultBindingTarget,
+        value: Value,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match target {
+            MysqliResultBindingTarget::Variable(name) => {
+                caller_scope.write_static(name, value);
+                Ok(())
+            }
+            MysqliResultBindingTarget::ArrayOffset { name, keys } => {
+                if name == "GLOBALS" {
+                    Self::write_global_nested_array_assignment(keys, value, span, caller_scope)
+                } else if caller_scope.write_alias_backed_array_offset(
+                    name,
+                    keys,
+                    value.clone(),
+                    span,
+                )? {
+                    Ok(())
+                } else {
+                    Self::write_nested_array_assignment(name, keys, value, span, caller_scope)
+                }
+            }
+        }
     }
 
     fn call_compact(
@@ -32041,6 +32109,33 @@ impl Interpreter {
         }
     }
 
+    fn collect_object_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a Expr, &'a str, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::Property {
+                    target, property, ..
+                } => {
+                    if matches!(target.as_ref(), Expr::Variable(_, _)) {
+                        return None;
+                    }
+                    indices.reverse();
+                    return Some((target, property, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
     fn collect_dynamic_object_property_array_index_path<'a>(
         target: &'a Expr,
         index: &'a Expr,
@@ -33849,6 +33944,7 @@ fn composed_trait_methods(
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassMethodDecl>> {
     let mut methods = Vec::new();
+    let mut composed_names: HashMap<String, String> = HashMap::new();
     let class_method_names = declared_class_method_names(class);
     let precedence_exclusions = trait_precedence_exclusions(class, trait_lookup)?;
     for trait_use in &class.trait_uses {
@@ -33866,11 +33962,32 @@ fn composed_trait_methods(
                 continue;
             }
             let mut composed = method.clone();
+            if let Some(existing_trait) =
+                composed_names.get(&composed.function.name.to_ascii_lowercase())
+            {
+                if existing_trait.eq_ignore_ascii_case(&trait_decl.name) {
+                    continue;
+                }
+                return Err(runtime_error(
+                    composed.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
+                        trait_decl.name,
+                        composed.function.name,
+                        existing_trait,
+                        composed.function.name
+                    )),
+                ));
+            }
             if let Some(visibility) =
                 visibility_adaptations.get(&composed.function.name.to_ascii_lowercase())
             {
                 composed.visibility = visibility.clone();
             }
+            composed_names.insert(
+                composed.function.name.to_ascii_lowercase(),
+                trait_decl.name.clone(),
+            );
             methods.push(composed);
         }
         for alias in &trait_use.aliases {
@@ -42887,12 +43004,10 @@ fn parse_setcookie_options(
         options.expires = optional_cookie_int_option(array, "expires", function_name, span)?;
         options.path = optional_cookie_string_option(array, "path", function_name, span)?;
         options.domain = optional_cookie_string_option(array, "domain", function_name, span)?;
-        options.secure = array
-            .get(ArrayKey::String("secure".into()))
-            .is_some_and(Value::is_truthy);
-        options.httponly = array
-            .get(ArrayKey::String("httponly".into()))
-            .is_some_and(Value::is_truthy);
+        options.secure =
+            cookie_option_case_insensitive(array, "secure").is_some_and(Value::is_truthy);
+        options.httponly =
+            cookie_option_case_insensitive(array, "httponly").is_some_and(Value::is_truthy);
         options.samesite = optional_cookie_string_option(array, "samesite", function_name, span)?;
         return Ok(options);
     }
@@ -42935,7 +43050,7 @@ fn validate_setcookie_option_keys(
             ));
         };
         if !matches!(
-            key.as_str(),
+            key.to_ascii_lowercase().as_str(),
             "expires" | "path" | "domain" | "secure" | "httponly" | "samesite"
         ) {
             return Err(runtime_error(
@@ -42948,6 +43063,15 @@ fn validate_setcookie_option_keys(
         }
     }
     Ok(())
+}
+
+fn cookie_option_case_insensitive<'a>(options: &'a PhpArray, name: &str) -> Option<&'a Value> {
+    options.entries().iter().find_map(|entry| {
+        let ArrayKey::String(key) = &entry.key else {
+            return None;
+        };
+        key.eq_ignore_ascii_case(name).then_some(entry.value())
+    })
 }
 
 fn optional_cookie_positional_string(
@@ -42979,7 +43103,7 @@ fn optional_cookie_int_option(
     function_name: &'static str,
     span: Span,
 ) -> CompileResult<Option<i64>> {
-    match options.get(ArrayKey::String(name.into())) {
+    match cookie_option_case_insensitive(options, name) {
         Some(Value::Int(value)) => Ok(Some(*value)),
         Some(other) => Err(runtime_error(
             span,
@@ -43001,7 +43125,7 @@ fn optional_cookie_string_option(
     function_name: &'static str,
     span: Span,
 ) -> CompileResult<Option<String>> {
-    match options.get(ArrayKey::String(name.into())) {
+    match cookie_option_case_insensitive(options, name) {
         Some(Value::String(value)) => Ok(Some(value.clone())),
         Some(other) => Err(runtime_error(
             span,

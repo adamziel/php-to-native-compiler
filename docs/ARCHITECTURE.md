@@ -43,11 +43,12 @@ object-property array roots such as `$object->items` and
 `$object->{$name}` and `$object->{$name}["child"]` when the evaluated property
 is visible in the current public/private/protected context, using the existing
 public/context property alias root instead of a general PHP reference
-container. Bounded non-direct dynamic-property holder expressions in
-by-reference `foreach`, such as `$holders["bag"]->{$name}["child"]` or
-method-context `$this->holder()->{$name}`, evaluate the holder once into a
-private temporary object root and then use that same public/context property
-alias machinery when the selected property is visible. Direct free-function calls
+container. Bounded non-direct named and dynamic property holder expressions in
+by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
+`$holders["bag"]->{$name}["child"]`, method-context
+`$this->holder()->items`, or `$this->holder()->{$name}`, evaluate the holder
+once into a private temporary object root and then use that same public/context
+property alias machinery when the selected property is visible. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
@@ -125,6 +126,12 @@ object-property alias metadata from the cloned source variable to the target
 variable, so the current bounded reference-slot model can keep covered property
 slots shared across a fresh object handle for the covered `clone $object`
 assignment shape.
+Prepared MySQLi result bindings use a separate deterministic statement-target
+list rather than PHP reference containers: direct variables write to the caller
+symbol table, and direct variable array-offset bindings store their evaluated
+key path at bind time before `mysqli_stmt_fetch()` copies buffered placeholder
+row values into those slots. Object-property targets, unbuffered mysqlnd
+cursors, and arbitrary host database rows remain outside this binding model.
 Direct variable `unset($name)` removes the root symbol and, for covered direct
 array roots plus direct object roots with public/context property array-slot
 aliases, detaches aliases below that removed root by storing their last
@@ -169,13 +176,13 @@ magic-property references, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct visible named and dynamic object-property
-array roots, bounded non-direct dynamic-property holder expressions that
+array roots, bounded non-direct named and dynamic property holder expressions that
 evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
 including bounded direct caller-cell and direct static-local cell cases.
-Non-direct dynamic-property holders outside that object-result foreach slice,
+Non-direct property holders outside that object-result foreach slice,
 invisible selected properties,
 magic-property containers, property-return, array-offset-return beyond that
 assignment-only covered parent-slot suffix shape, expression-return, magic
@@ -324,7 +331,11 @@ When a consuming class declares a public instance method with the same name as
 a composed public trait method or alias, the class method takes precedence and
 the trait method is skipped in the effective class method table. This lets a
 concrete class override trait fallback methods while still satisfying current
-interface method checks.
+interface method checks. When two different composed traits still provide the
+same public instance method after class-method precedence and bounded
+`insteadof` exclusions are applied, class registration stops with a stable
+trait-conflict diagnostic instead of falling through to generic duplicate
+method metadata.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
@@ -332,8 +343,9 @@ composed into consuming classes and resolve through the existing
 properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
-broad conflict resolution beyond class-method precedence and the current
-bounded `insteadof` slice, unqualified visibility-only adaptations across
+broad executable conflict resolution beyond class-method precedence and the
+current bounded `insteadof` slice, exact PHP fatal-error text for unresolved
+trait conflicts, unqualified visibility-only adaptations across
 multiple used traits, trait-body aliases/visibility adaptations/`insteadof`,
 unqualified `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
@@ -1782,14 +1794,15 @@ path/domain identities. Domain identity matching lowercases non-empty ASCII
 domain text for replacement only; the emitted header preserves the
 caller-provided domain text.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
-string value. Options-array calls reject numeric keys and unknown string keys
-outside the bounded PHP option-key set before changing the deterministic header
-log. After unbuffered output starts these calls return `false`, leave
+string value. Options-array calls match the bounded PHP option-key set
+ASCII-case-insensitively, and reject numeric keys and unknown string keys
+before changing the deterministic header log. After unbuffered output starts
+these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,
 exact request-time/Date-header parity for future `Max-Age` values,
-case-insensitive option-key matching, exact `ValueError` objects/text for
-invalid options, IDNA/trailing-dot/domain-policy
+exact `ValueError` objects/text for invalid options,
+IDNA/trailing-dot/domain-policy
 canonicalization, exact warning text, SAPI emission, and native lowering
 remain outside the model.
 `session_start()` uses the same request-local output-started state for the

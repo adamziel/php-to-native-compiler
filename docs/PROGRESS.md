@@ -4,6 +4,172 @@
 
 Implemented:
 
+- Added Milestone 1525, the WordPress-focused queue refresh for the
+  1521-1524 implementation batch. The batch closed unresolved public trait
+  method conflict diagnostics, by-reference `foreach` over non-direct
+  named-property holder roots, case-insensitive documented cookie options-array
+  keys, and MySQLi prepared-statement result binding into direct row-array
+  slots. Focused integrated checks passed for the named object/reflection,
+  reference/foreach, header, and MySQLi tests; milestone fixtures 1521-1524;
+  a system PHP comparison for 1522 with `1` comparison and `0` skips; and
+  documented `phpc-only` comparison skips for 1521, 1523, and 1524. Manual
+  full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1521-1525 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1593` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1593` fixture tests
+  passed with `0` failures, `930` system PHP comparisons, and `663`
+  `phpc-only` skipped fixtures.
+
+- Added Milestone 1521, a bounded object/interface slice for unresolved trait
+  method conflict diagnostics. Class registration now detects when two
+  different composed traits provide the same public instance method after
+  class-method precedence and bounded `insteadof` exclusions are applied, and
+  stops with a trait-specific stable runtime diagnostic instead of falling
+  through to generic duplicate-method metadata. The new `milestone1521`
+  fixture proves the `phpc run` CLI path and is marked `phpc-only` because
+  system PHP reports an engine-specific fatal error for the same unresolved
+  conflict. This does not add exact PHP fatal-error text, executing unresolved
+  conflicts, trait-body adaptations, trait properties,
+  non-public/static/abstract/final trait methods, broader conflict
+  resolution, references/COW, autoload lifecycle parity, or native trait
+  lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1521 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  class_trait_use_reports_unresolved_public_method_conflicts --
+  --test-threads=1`; full affected `cargo test -p phpc --test object_model
+  -- --test-threads=1` passed with `266` tests; direct `cargo run -q -p phpc
+  -- run tests/fixtures/milestone1521/trait_conflict_diagnostic.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1521`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1521`; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1521`; `cargo run -q -p phpc
+  -- test --list-fixtures tests/fixtures/milestone1521`; `cargo run -q -p
+  phpc -- compile
+  tests/fixtures/milestone1521/trait_conflict_diagnostic.php --emit-ir` and
+  `--emit-asm` both rejected at the existing explicit native trait-lowering
+  boundary; `cargo fmt --check`; `cargo check -p phpc`; and scoped `git diff
+  --check` passed. Full expensive `tools/run-tests.sh`, checkpoint, commit,
+  and push were deferred per lane instructions.
+
+- Added Milestone 1524, a bounded WordPress DB/bootstrap evidence slice for
+  prepared-statement result binding into direct row-array slots. The MySQLi
+  statement state now stores result binding targets instead of only variable
+  names, and `mysqli_stmt_bind_result()` accepts direct variable array-offset
+  targets such as `$row[$key]` for current deterministic buffered placeholder
+  result shapes. `mysqli_stmt_fetch()` writes fetched seed-post row values
+  back into those slots, with offset keys evaluated at bind time. The new
+  `milestone1524` fixture proves a `wpdb`-style row-array probe through
+  `phpc run` and is marked `phpc-only` because it depends on phpc's
+  deterministic in-memory MySQLi/mysqlnd placeholder island rather than a real
+  MySQL server. This does not add true by-reference result aliases,
+  object-property result targets, unbuffered statement fetching, arbitrary
+  prepared SQL, host database state, exact mysqlnd cursor or warning/error
+  fidelity, persistent cache/transients, broader bootstrap progress, or native
+  database lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1524 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_statement_bind_result_writes_direct_array_offset_targets --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1524/wpdb_stmt_bind_result_array_slot_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1524`; `cargo run -q
+  -p phpc -- test --compare-php tests/fixtures/milestone1524`; `cargo run -q
+  -p phpc -- test --compare-php-json tests/fixtures/milestone1524`; `cargo
+  run -q -p phpc -- test --list-fixtures tests/fixtures/milestone1524`;
+  `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1524/wpdb_stmt_bind_result_array_slot_probe.php
+  --emit-ir` and `--emit-asm` both rejected native lowering at the existing
+  function-call/native-runtime boundary; regression `cargo test -p phpc --test
+  mysqli_extension mysqli_statement_bind_result_has_direct_variable_placeholder_state
+  -- --test-threads=1`; full affected `cargo test -p phpc --test
+  mysqli_extension -- --test-threads=1` passed with `177` tests; `cargo fmt
+  --check`; and `cargo check -p phpc` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1523, a bounded request/SAPI cookie-header slice for
+  PHP-compatible case-insensitive `setcookie()`/`setrawcookie()` options-array
+  keys. The documented option set (`expires`, `path`, `domain`, `secure`,
+  `httponly`, and `samesite`) now matches ASCII-case-insensitively for
+  validation and value extraction, so WordPress-shaped mixed-case option arrays
+  such as `Expires`, `Path`, `Secure`, and `SameSite` produce the same
+  deterministic CLI `Set-Cookie` headers as the lowercase form. Numeric keys
+  and unknown string keys still reject before header mutation. The new
+  `milestone1523` fixture proves the `phpc run` CLI path and is marked
+  `phpc-only` because system PHP CLI does not expose phpc's deterministic
+  in-process header log through `headers_list()`. This does not add cookie
+  name validation/encoding, exact request-time/Date-header parity for future
+  `Max-Age` values, exact `ValueError` objects/text, duplicate differently
+  cased option-key parity, session cookie replacement parity, cache headers,
+  session locking/save handlers/garbage collection, binary stream reads,
+  shutdown/fatal/destructor ordering, include-path/stat-cache behavior,
+  broader stream wrapper/context effects, request-body lifetime, upload edge
+  cases, host filesystem edge cases, IDNA/trailing-dot/domain-policy
+  canonicalization, real SAPI emission, or native lowering. Focused
+  verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1523 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: system PHP probes with `php -r` confirmed mixed-case
+  documented option keys are accepted and unknown `Priority` is rejected;
+  `cargo test -p phpc --test header_builtin
+  setcookie_options_array_keys_are_case_insensitive_for_documented_keys --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  header_builtin -- --test-threads=1` passed with `40` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1523/setcookie_case_insensitive_options.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1523`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1523` passed with `0` comparisons and `1`
+  documented `phpc-only` skip; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1523` reported `1` passed
+  fixture, `0` comparisons, and `1` `phpc-only` skip; `cargo run -q -p phpc
+  -- test --list-fixtures tests/fixtures/milestone1523` reported `1`
+  fixture, `1` CLI exercise, and `0` `.phpc-only` reason gaps; `cargo run
+  -q -p phpc -- compile
+  tests/fixtures/milestone1523/setcookie_case_insensitive_options.php
+  --emit-ir` and `--emit-asm` rejected through the existing explicit native
+  header-state boundary; `cargo fmt --check`; and `cargo check -p phpc`.
+  Full expensive `tools/run-tests.sh`, checkpoint, commit, and push were
+  deferred per lane instructions.
+
+- Added Milestone 1522, a bounded reference/COW alias-lifetime slice for
+  by-reference `foreach` over non-direct named-property holder expressions
+  that evaluate to objects. Named-property roots such as
+  `$holders["bag"]->items["outer"]` and method-context
+  `$this->holder()->items` now evaluate the holder once into a temporary
+  object root and reuse the existing public/context-aware object-property
+  alias machinery, so loop writes and post-loop lingering references update
+  the selected property array slot for the covered public and private-context
+  shapes. The new `milestone1522` fixture proves the `phpc run` CLI path and
+  matches system PHP. This does not add real reference containers, arbitrary
+  reference expressions, invisible selected properties, magic-property
+  reference containers, mixed nested `ArrayAccess` chains, broader
+  array/object copy-on-write, exact alias destruction ordering,
+  object/Traversable by-reference iteration, superglobal reference lifetime
+  beyond existing covered roots, or native reference/COW lowering. Focused
+  verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1522 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test foreach
+  foreach_by_reference_mutates_non_direct_named_property_holder_roots --
+  --test-threads=1`; full affected `cargo test -p phpc --test foreach --
+  --test-threads=1` passed with `25` tests; direct `cargo run -q -p phpc --
+  run
+  tests/fixtures/milestone1522/non_direct_named_property_foreach_reference.php`;
+  direct `php
+  tests/fixtures/milestone1522/non_direct_named_property_foreach_reference.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1522`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1522` passed with `1` comparison and `0` skips;
+  `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1522` reported `1` passed fixture, `1`
+  comparison, and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1522` reported `1` fixture, `1` CLI exercise, and
+  `0` `.phpc-only` reason gaps; `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1522/non_direct_named_property_foreach_reference.php
+  --emit-ir` and `--emit-asm` both rejected native lowering at the existing
+  object/class boundary; `cargo fmt --check`; and `cargo check -p phpc`.
+  Full expensive `tools/run-tests.sh`, checkpoint, commit, and push were
+  deferred per lane instructions.
+
 - Added Milestone 1520, the WordPress-focused queue refresh for the
   1516-1519 implementation batch. The batch closed simple trait-body `use`
   composition, by-reference `foreach` over non-direct dynamic-property holder

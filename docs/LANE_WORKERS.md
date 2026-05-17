@@ -208,35 +208,40 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1521 targets trait conflict diagnostics and
-  adaptation syntax, trait properties, inherited interface compatibility,
-  constructor/destructor fidelity, magic hooks reached by WordPress, class
-  alias/autoload lifecycle, parameter/source reflection metadata,
-  closure/internal reflection targets, attributes/docblock association, exact
-  reflection exceptions, invocation/value mutation, readonly/property hooks,
-  or broader class/object semantics.
-- Reference/COW lane: Milestone 1522 targets general reference containers,
+- Object/interface lane: Milestone 1526 targets exact trait
+  conflict/adaptation behavior, trait properties, inherited interface
+  compatibility, constructor/destructor fidelity, magic hooks reached by
+  WordPress, class alias/autoload lifecycle, parameter/source reflection
+  metadata, closure/internal reflection targets, attributes/docblock
+  association, exact reflection exceptions, invocation/value mutation,
+  readonly/property hooks, or broader class/object semantics.
+- Reference/COW lane: Milestone 1527 targets general reference containers,
   by-reference parameters and returns, reference assignment, magic-property
   reference containers, arbitrary reference expressions, invisible selected
   dynamic properties, mixed nested `ArrayAccess` chains, broader array/object
   copy-on-write, exact alias destruction ordering, object/Traversable
   by-reference iteration, superglobal reference lifetime, or native lowering
   diagnostics.
-- Request/SAPI/filesystem/stream lane: Milestone 1523 targets cookie
-  validation and request-time parity, session/cache/header behavior, output
-  buffering, shutdown/fatal/destructor ordering, include-path/stat-cache
-  behavior, stream wrappers/context effects, request-body lifetime, uploads,
-  host filesystem edge cases, real SAPI emission, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1524 targets broader SQL-mode and
-  MySQL wildcard parity, dbDelta-relevant schema diffing, real SQL parsing
-  slices, host database inspection, arbitrary query/result behavior, prepared
-  statement result binding, charset/collation/error fidelity, persistent
+- Request/SAPI/filesystem/stream lane: Milestone 1528 targets cookie
+  validation and request-time parity, duplicate differently cased option-key
+  parity, session/cache/header behavior, output buffering,
+  shutdown/fatal/destructor ordering, include-path/stat-cache behavior, stream
+  wrappers/context effects, request-body lifetime, uploads, host filesystem
+  edge cases, real SAPI emission, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1529 targets true by-reference result
+  aliases, object-property result targets, unbuffered statement fetching,
+  arbitrary prepared SQL, broader SQL-mode and MySQL wildcard parity,
+  dbDelta-relevant schema diffing, host database inspection, arbitrary
+  query/result behavior, charset/collation/error fidelity, persistent
   object-cache/transients, hook callback shapes, plugin/theme probes, or
   REST/admin/front-controller bootstrap progress.
-- Tests/docs lane: Milestone 1525 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1530 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1516 through 1519 closed the latest four WordPress-focused
+Milestones 1521 through 1524 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1525 refreshed the queue and recorded the
+full-gate result.
+Milestones 1516 through 1519 closed the previous four WordPress-focused
 implementation lanes, and Milestone 1520 refreshed the queue and recorded the
 full-gate result.
 Milestones 1511 through 1514 closed the previous four WordPress-focused

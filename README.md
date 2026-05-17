@@ -97,11 +97,11 @@ unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
 path/domain-aware replacement with ASCII-case-insensitive domain identity
-matching; options-array calls reject numeric keys and unknown string option
-keys before changing that header log. Exact `ValueError` objects/text,
-case-insensitive option-key matching,
-cookie name validation/encoding, full domain policy, real SAPI emission, and
-native lowering remain unsupported. `fopen()` can create bounded
+matching; options-array calls match the documented option keys
+case-insensitively and reject numeric keys or unknown string option keys before
+changing that header log. Exact `ValueError` objects/text, cookie name
+validation/encoding, full domain policy, real SAPI emission, and native
+lowering remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -223,7 +223,7 @@ incorrect native code.
   removal, nested object-property array offset removal, array iteration
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
-  named, direct dynamic, and bounded object-result non-direct dynamic
+  named, direct dynamic, and bounded object-result non-direct named/dynamic
   object-property array roots, plus direct
   free-function, direct visible
   instance-method, direct named-static-method, method-context
@@ -485,7 +485,9 @@ incorrect native code.
   comma-separated loser lists in that same public instance method shape, the
   same-block winning-method public alias interaction, and class-declared public
   instance methods taking precedence over same-named composed trait methods or
-  aliases,
+  aliases. Unresolved same-name public methods from different composed traits
+  stop with a stable `phpc run` trait-conflict diagnostic before class
+  registration,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -515,8 +517,9 @@ beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
 checks, trait properties, non-public/typed/abstract/final/static trait
 constants, multi-constant trait declarations, trait constant adaptations,
 conflicting trait/class constants, static/abstract/final or non-public trait
-methods, conflicting trait composition outside class-method precedence and the
-bounded `insteadof` shape, aliases
+methods, executing conflicting trait composition outside class-method
+precedence and the bounded `insteadof` shape, exact PHP fatal-error text for
+unresolved trait conflicts, aliases
 beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
 unqualified visibility-only adaptations across multiple used traits,

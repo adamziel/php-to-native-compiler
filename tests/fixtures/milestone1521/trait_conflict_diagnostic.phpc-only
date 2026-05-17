@@ -1,0 +1,1 @@
+phpc exposes a bounded stable trait-conflict diagnostic; system PHP reports a native fatal error with engine-specific text.

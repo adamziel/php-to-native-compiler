@@ -3331,6 +3331,36 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_reports_unresolved_public_method_conflicts() {
+    let error = runtime_error(
+        r#"<?php
+trait PrimaryLabel {
+    public function label() {
+        return "primary";
+    }
+}
+
+trait FallbackLabel {
+    public function label() {
+        return "fallback";
+    }
+}
+
+class Plugin {
+    use PrimaryLabel, FallbackLabel;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported trait use: trait method FallbackLabel::label conflicts with PrimaryLabel::label; add an insteadof adaptation or class override"
+    );
+}
+
+#[test]
 fn class_trait_use_insteadof_selects_winner_over_multiple_losers() {
     let source = r#"<?php
 interface NamedPlugin {

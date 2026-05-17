@@ -2011,7 +2011,7 @@ mysqli_stmt_bind_result($stmt, $id, "title");
     assert_eq!(variable_error.column, 37);
     assert_eq!(
         variable_error.message,
-        "unsupported call mysqli_stmt_bind_result(): result bindings must be direct variables in the current subset"
+        "unsupported call mysqli_stmt_bind_result(): result bindings must be direct variables or direct variable array offsets in the current subset"
     );
 
     let count_error = run_source(
@@ -2029,6 +2029,34 @@ mysqli_stmt_bind_result($stmt, $id);
         count_error.message,
         "unsupported call mysqli_stmt_bind_result(): bound result variable count must match current placeholder field count 2, got 1"
     );
+}
+
+#[test]
+fn mysqli_statement_bind_result_writes_direct_array_offset_targets() {
+    let execution = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_execute($stmt, array(1));
+mysqli_stmt_store_result($stmt);
+$row = array();
+$id_key = "ID";
+echo mysqli_stmt_bind_result($stmt, $row[$id_key], $row["post_title"]) ? "bound" : "failed";
+echo "|";
+echo mysqli_stmt_fetch($stmt) ? $row["ID"] . ":" . $row["post_title"] : "no-row";
+echo "|";
+$id_key = "changed";
+echo mysqli_stmt_fetch($stmt) === null ? "done" : "again";
+echo "|";
+echo array_key_exists("changed", $row) ? "changed" : "stable";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bound|1:Hello world placeholder|done|stable"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

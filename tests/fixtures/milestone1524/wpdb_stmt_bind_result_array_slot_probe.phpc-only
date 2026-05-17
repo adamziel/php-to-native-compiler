@@ -1,0 +1,7 @@
+This fixture exercises phpc's deterministic buffered prepared-statement
+result-binding island. System PHP needs a real initialized MySQLi/mysqlnd
+connection and host database row source, while phpc binds direct array-offset
+targets to the current deterministic seed-post row. It does not implement true
+by-reference result aliases, unbuffered statement fetching, arbitrary prepared
+SQL, host database state, PHP warning/error fidelity, or native database
+lowering.

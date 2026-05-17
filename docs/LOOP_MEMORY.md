@@ -26,6 +26,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T18:15:18+02:00
+
+- Checkpoint before this task:
+  `8dbbc302 runtime: advance WordPress trait uses refs cookies and prepared schema`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1521-1525, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: unresolved public trait method conflict diagnostics;
+  by-reference `foreach` over non-direct named-property holder roots;
+  case-insensitive documented `setcookie()`/`setrawcookie()` options-array
+  keys; MySQLi prepared-statement result binding into direct row-array slots;
+  milestone fixtures 1521-1524; MySQLi extension docs; support,
+  architecture, README, queue, progress, loop-memory, goal, and lane-worker
+  docs.
+- Tests run and result: focused integration checks passed for unresolved trait
+  conflict diagnostics, non-direct named-property by-reference foreach,
+  case-insensitive cookie options, prepared-statement row-array result
+  binding, and milestone fixtures 1521-1524 with system PHP comparisons where
+  applicable. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1521-1525 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1593` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1593` fixture tests
+  passed with `0` failures, `930` system PHP comparisons, and `663` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: exact PHP fatal-error text and broad trait
+  adaptations/properties, constructor/destructor and magic-hook fidelity,
+  autoload/class-alias lifecycle, reflection edge cases, real reference
+  containers, by-reference parameters/returns and assignment, broad
+  copy-on-write, magic-property and superglobal reference lifetime, exact
+  SAPI/session/upload/filesystem/stream behavior, exact cookie parity, true
+  MySQLi by-reference result aliases and unbuffered fetching, real
+  SQL/database/schema execution, dbDelta, persistent cache/transients,
+  WordPress plugin/theme/admin/REST/front-controller flows, and native runtime
+  integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers, then
+  start Milestones 1526-1529 in separate worktrees focused on the same four
+  large blocker lanes.
+
 ## Loop Event 2026-05-17T17:59:23+02:00
 
 - Checkpoint before this task:

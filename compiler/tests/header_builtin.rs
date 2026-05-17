@@ -330,6 +330,31 @@ echo implode("|", $out);
 }
 
 #[test]
+fn setcookie_options_array_keys_are_case_insensitive_for_documented_keys() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+$first = setcookie("wordpress_logged_in", "user token", ["Expires" => 1, "Path" => "/wp-admin", "Domain" => "Example.TEST", "Secure" => true, "HttpOnly" => true, "SameSite" => "Lax"]);
+$second = setrawcookie("wordpress_sec", "raw token", ["PATH" => "/", "DOMAIN" => "EXAMPLE.test", "SECURE" => true, "HTTPONLY" => true, "SAMESITE" => "Strict"]);
+$headers = headers_list();
+$out[] = $first ? "first" : "first-failed";
+$out[] = $second ? "second" : "second-failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|second|2|Set-Cookie: wordpress_logged_in=user%20token; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/wp-admin; domain=Example.TEST; secure; HttpOnly; SameSite=Lax|Set-Cookie: wordpress_sec=raw token; path=/; domain=EXAMPLE.test; secure; HttpOnly; SameSite=Strict"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
     let execution = run_source(
         r#"<?php

@@ -537,6 +537,59 @@ $private->mutate("privateItems");
 }
 
 #[test]
+fn foreach_by_reference_mutates_non_direct_named_property_holder_roots() {
+    let source = r#"<?php
+class Bag {
+    public $items = ["outer" => ["a" => "one", "b" => "two"]];
+}
+
+class PrivateBag {
+    private $items = ["x" => "ex", "y" => "why"];
+
+    private function holder() {
+        return $this;
+    }
+
+    public function mutate() {
+        foreach ($this->holder()->items as $key => &$value) {
+            $value = "private:" . $key;
+            if ($key === "x") {
+                $this->items["z"] = "zed";
+            }
+        }
+        echo $this->items["x"], "|", $this->items["y"], "|", $this->items["z"], "|", $value, "\n";
+        $this->items["z"] = "direct-private";
+        echo $value, "|";
+        $value = "tail-private";
+        echo $this->items["z"], "|", $value;
+    }
+}
+
+$holders = ["bag" => new Bag()];
+foreach ($holders["bag"]->items["outer"] as $key => &$value) {
+    $value = "public:" . $key;
+}
+echo $holders["bag"]->items["outer"]["a"], "|", $holders["bag"]->items["outer"]["b"], "|", $value, "\n";
+$bag = $holders["bag"];
+$bag->items["outer"]["b"] = "direct-public";
+echo $value, "|";
+$value = "tail-public";
+echo $holders["bag"]->items["outer"]["b"], "|", $value, "\n";
+unset($value);
+
+$private = new PrivateBag();
+$private->mutate();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "public:a|public:b|public:b\ndirect-public|tail-public|tail-public\nprivate:x|private:y|private:z|private:z\ndirect-private|tail-private|tail-private"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_binds_reference_return_iterable_to_caller_cell() {
     let execution = run_source(
         r#"<?php

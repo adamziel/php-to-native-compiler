@@ -1,0 +1,5 @@
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1521/trait_conflict_diagnostic.php:9:12: unsupported trait use: trait method FallbackLabel::label conflicts with PrimaryLabel::label; add an insteadof adaptation or class override
+--- stderr end ---
