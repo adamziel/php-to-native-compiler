@@ -5835,14 +5835,16 @@ impl Interpreter {
 
         let inherited_properties = self.inherited_instance_properties(class_id);
         let ancestor_class_names = self.inherited_class_names(class_id);
+        let interface_names = self.class_implements_interface_names(class_id);
         let class = self
             .classes
             .get(class_id)
             .expect("class id should resolve to class metadata");
-        let object = PhpObject::from_class_with_inherited_metadata_with_id(
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
             class,
             &inherited_properties,
             ancestor_class_names,
+            interface_names,
             object_id,
         );
         self.apply_instance_property_defaults(&object, class_id)?;
@@ -8166,7 +8168,14 @@ impl Interpreter {
                 property,
                 span,
             } => {
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
                 match scope.read_static(object, *span)? {
@@ -8188,6 +8197,19 @@ impl Interpreter {
                                 scope.sync_array_offset_aliases_for_object_property_root(
                                     object, property,
                                 );
+                                if matches!(value, Value::Array(_))
+                                    && !array_literal_references.is_empty()
+                                {
+                                    let root = self.context_object_property_alias_root(
+                                        object, property, *span, scope,
+                                    )?;
+                                    self.bind_array_literal_references_to_alias_root(
+                                        root,
+                                        array_literal_references,
+                                        expr.span(),
+                                        scope,
+                                    )?;
+                                }
                                 Ok(value)
                             }
                             Err(error) if Self::is_undefined_property_error(&error) => {
@@ -9711,6 +9733,44 @@ impl Interpreter {
         }
 
         Ok((Value::Array(array), references))
+    }
+
+    fn bind_array_literal_references_to_alias_root(
+        &mut self,
+        root: ArrayOffsetAliasRoot,
+        references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        for reference in references {
+            match reference {
+                ArrayLiteralReferenceElement::Variable { key, source_name } => {
+                    scope.bind_object_property_array_offset_alias_root_to_static_source(
+                        root.clone(),
+                        vec![key],
+                        &source_name,
+                        span,
+                    )?;
+                }
+                ArrayLiteralReferenceElement::Alias {
+                    key,
+                    source_alias,
+                    value,
+                } => {
+                    let target_alias = ArrayOffsetAlias {
+                        root: root.clone(),
+                        keys: vec![key],
+                    };
+                    scope.bind_array_offset_alias_to_reference_alias(
+                        target_alias,
+                        source_alias,
+                        value,
+                        span,
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn evaluate_array_literal_reference_element(
@@ -25727,13 +25787,31 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
+        let cookie_lifetime =
+            Self::session_int_option(args, "cookie_lifetime", "session_start()", span)?;
+        let cookie_path =
+            Self::session_string_option(args, "cookie_path", "session_start()", span)?;
+        let cookie_domain =
+            Self::session_string_option(args, "cookie_domain", "session_start()", span)?;
+        let cookie_secure = Self::session_bool_option(args, "cookie_secure");
+        let cookie_httponly = Self::session_bool_option(args, "cookie_httponly");
+        let cookie_samesite =
+            Self::session_string_option(args, "cookie_samesite", "session_start()", span)?;
+
         self.session_status = PHP_SESSION_ACTIVE;
         if self.session_id.is_empty() {
             self.session_id = "phpc-session".to_string();
         }
         if use_cookies {
-            self.response_headers
-                .push(format!("Set-Cookie: PHPSESSID={}", self.session_id));
+            self.response_headers.push(format_session_cookie_header(
+                &self.session_id,
+                cookie_lifetime,
+                cookie_path.as_deref(),
+                cookie_domain.as_deref(),
+                cookie_secure,
+                cookie_httponly,
+                cookie_samesite.as_deref(),
+            ));
         }
         let session_data = self
             .session_store
@@ -25769,6 +25847,65 @@ impl Interpreter {
             self.session_store
                 .insert(self.session_id.clone(), self.current_session_array());
         }
+    }
+
+    fn session_option<'a>(args: &'a [Value], name: &str) -> Option<&'a Value> {
+        args.first().and_then(|value| match value {
+            Value::Array(options) => options.get(ArrayKey::String(name.into())),
+            _ => None,
+        })
+    }
+
+    fn session_string_option(
+        args: &[Value],
+        name: &str,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let Some(value) = Self::session_option(args, name) else {
+            return Ok(None);
+        };
+        let Value::String(value) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "{name} option must be string in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Some(value.clone()))
+    }
+
+    fn session_int_option(
+        args: &[Value],
+        name: &str,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Option<i64>> {
+        let Some(value) = Self::session_option(args, name) else {
+            return Ok(None);
+        };
+        let Value::Int(value) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "{name} option must be int in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Some(*value))
+    }
+
+    fn session_bool_option(args: &[Value], name: &str) -> bool {
+        Self::session_option(args, name).is_some_and(Value::is_truthy)
     }
 
     fn call_session_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -34400,6 +34537,17 @@ fn wordpress_dynamic_schema_result_for_query(
         return None;
     }
 
+    if let Some(table_name) = parse_dynamic_schema_show_table_status_query(query) {
+        let rows = tables
+            .get(&table_name)
+            .map(|table| vec![dynamic_schema_table_status_row(table)])
+            .unwrap_or_default();
+        return Some(MysqliPendingResultState {
+            fields: dynamic_schema_table_status_fields(),
+            rows,
+        });
+    }
+
     let show_create_table = query
         .strip_prefix("SHOW CREATE TABLE ")
         .and_then(parse_schema_table_identifier);
@@ -34504,6 +34652,25 @@ fn wordpress_dynamic_schema_result_for_query(
     }
 
     None
+}
+
+fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<String> {
+    if let Some(table_name) = query
+        .strip_prefix("SHOW TABLE STATUS LIKE ")
+        .and_then(parse_sql_single_quoted_list)
+        .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
+        .and_then(|value| parse_schema_table_identifier(&value))
+    {
+        return Some(table_name);
+    }
+
+    let where_clause = query.strip_prefix("SHOW TABLE STATUS WHERE ")?;
+    let table_name = where_clause
+        .strip_prefix("Name = ")
+        .or_else(|| where_clause.strip_prefix("`Name` = "))
+        .and_then(parse_sql_single_quoted_list)
+        .and_then(|values| (values.len() == 1).then(|| values[0].clone()))?;
+    parse_schema_table_identifier(&table_name)
 }
 
 fn parse_wordpress_schema_create_table_query(query: &str) -> Option<WordPressSchemaTableState> {
@@ -35038,6 +35205,61 @@ fn dynamic_schema_index_row(
         ("Index_comment".to_string(), Value::String(String::new())),
         ("Visible".to_string(), Value::String("YES".to_string())),
         ("Expression".to_string(), Value::Null),
+    ]
+}
+
+fn dynamic_schema_table_status_fields() -> Vec<String> {
+    [
+        "Name",
+        "Engine",
+        "Version",
+        "Row_format",
+        "Rows",
+        "Avg_row_length",
+        "Data_length",
+        "Max_data_length",
+        "Index_length",
+        "Data_free",
+        "Auto_increment",
+        "Create_time",
+        "Update_time",
+        "Check_time",
+        "Collation",
+        "Checksum",
+        "Create_options",
+        "Comment",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn dynamic_schema_table_status_row(table: &WordPressSchemaTableState) -> Vec<(String, Value)> {
+    vec![
+        ("Name".to_string(), Value::String(table.name.clone())),
+        ("Engine".to_string(), Value::String("InnoDB".to_string())),
+        ("Version".to_string(), Value::Int(10)),
+        (
+            "Row_format".to_string(),
+            Value::String("Dynamic".to_string()),
+        ),
+        ("Rows".to_string(), Value::Int(0)),
+        ("Avg_row_length".to_string(), Value::Int(0)),
+        ("Data_length".to_string(), Value::Int(0)),
+        ("Max_data_length".to_string(), Value::Int(0)),
+        ("Index_length".to_string(), Value::Int(0)),
+        ("Data_free".to_string(), Value::Int(0)),
+        ("Auto_increment".to_string(), Value::Null),
+        ("Create_time".to_string(), Value::Null),
+        ("Update_time".to_string(), Value::Null),
+        ("Check_time".to_string(), Value::Null),
+        (
+            "Collation".to_string(),
+            Value::String(table.collation.clone()),
+        ),
+        ("Checksum".to_string(), Value::Null),
+        ("Create_options".to_string(), Value::String(String::new())),
+        ("Comment".to_string(), Value::String(String::new())),
     ]
 }
 
@@ -39347,6 +39569,40 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::String(parts.join(separator)))
+}
+
+fn format_session_cookie_header(
+    session_id: &str,
+    lifetime: Option<i64>,
+    path: Option<&str>,
+    domain: Option<&str>,
+    secure: bool,
+    httponly: bool,
+    samesite: Option<&str>,
+) -> String {
+    let mut header = format!("Set-Cookie: PHPSESSID={session_id}");
+    if let Some(lifetime) = lifetime.filter(|value| *value > 0) {
+        header.push_str(&format!("; Max-Age={lifetime}"));
+    }
+    if let Some(path) = path.filter(|value| !value.is_empty()) {
+        header.push_str("; path=");
+        header.push_str(path);
+    }
+    if let Some(domain) = domain.filter(|value| !value.is_empty()) {
+        header.push_str("; domain=");
+        header.push_str(domain);
+    }
+    if secure {
+        header.push_str("; secure");
+    }
+    if httponly {
+        header.push_str("; HttpOnly");
+    }
+    if let Some(samesite) = samesite.filter(|value| !value.is_empty()) {
+        header.push_str("; SameSite=");
+        header.push_str(samesite);
+    }
+    header
 }
 
 fn header_name(header: &str) -> Option<&str> {

@@ -5183,6 +5183,34 @@ echo $row["Create Table"];
 }
 
 #[test]
+fn mysqli_query_exposes_bounded_wordpress_schema_table_status() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_meta (meta_id bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(255) NOT NULL default '', meta_value longtext NULL, PRIMARY KEY  (meta_id), KEY meta_key (meta_key(191))) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+$status = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp_probe_meta'");
+echo mysqli_num_fields($status), ":";
+$row = mysqli_fetch_assoc($status);
+echo $row["Name"], "|", $row["Engine"], "|", $row["Rows"], "|", $row["Collation"], "|", $row["Create_options"];
+echo "|";
+$where = mysqli_query($handle, "SHOW TABLE STATUS WHERE Name = 'wp_probe_meta'");
+echo mysqli_num_rows($where);
+echo "|";
+$missing = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp_missing_meta'");
+echo mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "18:wp_probe_meta|InnoDB|0|utf8mb4_unicode_520_ci||1|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

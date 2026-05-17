@@ -231,17 +231,19 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Direct variable assignments from reference array literals now preserve
+  Direct variable and direct visible object-property assignments from
+  reference array literals now preserve
   covered reference elements for later stored-array callback use, for example
   `$args = array(&$value); call_user_func_array($callback, $args);` and
-  `$args = array("value" => &$object->items[$key]);`. The covered reference
-  element sources are direct variables, direct array offsets, and direct
-  visible named object-property array offsets. The assignment target may also
-  be a direct variable already backed by covered array-offset alias metadata,
-  such as `$args =& $registry["args"]; $args = array(&$value);`.
+  `$store->args = array("value" => &$object->items[$key]);`. The covered
+  reference element sources are direct variables, direct array offsets, and
+  direct visible named object-property array offsets. Direct variable
+  assignment targets may also already be backed by covered array-offset alias
+  metadata, such as
+  `$args =& $registry["args"]; $args = array(&$value);`.
   Dynamic-property append-offset sources, `ArrayAccess` roots outside the
   direct `offsetGet()` bridge, reference array literals assigned into
-  non-variable targets, reference
+  array offsets, dynamic properties, or other non-variable targets, reference
   elements from arbitrary expressions, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
@@ -371,7 +373,8 @@
   copied reference slots beyond the covered direct array-offset and literal
   copied-path slices,
   dynamic non-public clone mirroring, magic-property clone alias mirroring,
-  reference array literals outside direct variable assignment targets,
+  reference array literals outside direct variable and direct visible
+  object-property assignment targets,
   ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct public
@@ -892,7 +895,12 @@
   request-local snapshot and immediately closes the status. A fresh successful
   start appends a deterministic `Set-Cookie: PHPSESSID=<id>` line to the same
   CLI header log exposed by `headers_list()`, unless the bounded
-  `use_cookies` option is falsey for that start. Starting a
+  `use_cookies` option is falsey for that start. The bounded
+  `cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
+  `cookie_httponly`, and `cookie_samesite` options append deterministic
+  `Max-Age`, `path`, `domain`, `secure`, `HttpOnly`, and `SameSite`
+  attributes to that session cookie header when supplied with supported value
+  types. Starting a
   session after unbuffered output returns `false` and emits a bounded
   `E_WARNING` through the current `set_error_handler()` stack or stderr
   fallback. Calling `session_start()` while the bounded session is already
@@ -900,8 +908,9 @@
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
   keeps the session active even if `read_and_close` was requested. Session
   file persistence across `phpc run` processes, session file locking, save
-  handlers, session module configuration, full session cookie attributes and
-  encoding, cache headers, garbage collection, strict id validation, trans-sid
+  handlers, session module configuration, session cookie encoding,
+  expiration-date formatting, cookie replacement, cache headers, garbage
+  collection, strict id validation, trans-sid
   behavior, exact warning text, reference aliases that survive `_SESSION` root
   replacement on restart, full PHP reference containers, broader
   copy-on-write, exact alias destruction ordering, and native lowering remain
@@ -2041,17 +2050,23 @@
   or `DROP PRIMARY KEY` entries mutate that recorded table. Column drops also
   remove recorded indexes that referenced the dropped column, and column
   changes rename matching recorded index parts. Later exact `SHOW TABLES LIKE
-  '<table>'`, `DESCRIBE`/`DESC <table>`,
+  '<table>'`, `SHOW TABLE STATUS LIKE '<table>'`,
+  `SHOW TABLE STATUS WHERE Name = '<table>'`, `DESCRIBE`/`DESC <table>`,
   `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
   `SHOW KEYS FROM <table>` probes read that recorded shape, and
   `SHOW CREATE TABLE <table>` returns a deterministic MySQL-shaped create
   statement for the same recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, simple
   defaults, auto-increment extras, prefix sub-part lengths, and placeholder
-  collation metadata for character/text columns. This does not add real SQL
+  collation metadata for character/text columns. `SHOW TABLE STATUS` returns
+  one deterministic MySQL-shaped row for the recorded table with placeholder
+  `InnoDB`, zero row/storage counters, the recorded table collation, empty
+  create options/comment, and an empty result for a missing exact table name.
+  This does not add real SQL
   parsing, arbitrary DDL beyond those exact `ALTER TABLE` shapes, expression
   indexes, index ordering/opclass/parser metadata, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
+  exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
   dbDelta diff generation, real DDL execution, transactions for schema state,
   host database inspection, or native database lowering. For an
   exact current synthetic WordPress option write,
@@ -2219,12 +2234,16 @@
   `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
   same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
   `SHOW [FULL] COLUMNS`, `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS`, and
-  deterministic `SHOW CREATE TABLE` probes.
+  deterministic `SHOW CREATE TABLE` probes, plus exact
+  `SHOW TABLE STATUS LIKE '<table>'` and
+  `SHOW TABLE STATUS WHERE Name = '<table>'` probes that expose the recorded
+  table collation with deterministic placeholder engine/storage metadata.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, arbitrary column alteration beyond the
   exact direct shapes listed above, expression indexes, index
   ordering/opclass/parser metadata, exact MySQL `SHOW CREATE TABLE`
-  formatting for every column attribute, dbDelta diff generation, schema
+  formatting for every column attribute, exact MySQL `SHOW TABLE STATUS`
+  counters/timestamps/options, dbDelta diff generation, schema
   transaction rollback, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
@@ -2899,6 +2918,11 @@
   `PHP_SESSION_NONE` while leaving `$_SESSION` visible for the rest of the
   request. The `use_cookies` option is recognized with PHP truthiness: when
   falsey, the bounded session cookie header is not appended for that start.
+  The `cookie_lifetime` option accepts an int and appends a deterministic
+  positive `Max-Age` attribute. `cookie_path`, `cookie_domain`, and
+  `cookie_samesite` accept strings and append non-empty `path`, `domain`, and
+  `SameSite` attributes. `cookie_secure` and `cookie_httponly` use PHP
+  truthiness to append `secure` and `HttpOnly` attributes.
   If unbuffered output has already started, `session_start()` returns
   `false` and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback before applying options.
@@ -2920,8 +2944,9 @@
   session file locking, save handlers, `session_name()`, `session_destroy()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, option effects beyond
-  `read_and_close` and `use_cookies`, full session cookie attributes and
-  encoding, cache headers, garbage collection, exact warning text, reference
+  the documented session-start options, session cookie encoding,
+  expiration-date formatting, cookie replacement, cache headers, garbage
+  collection, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
   lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
@@ -3374,7 +3399,9 @@
   instance and static properties enforce the current simple named type subset
   for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
   nullable `?T`, literal `true`/`false`, and class-name object values,
-  including objects whose runtime class extends the declared property type;
+  including objects whose runtime class extends the declared property type and
+  objects whose runtime class or inherited parent class implements a declared
+  user-interface property type;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
   the current scalar value model. Integer writes to `float` are stored as
@@ -3384,8 +3411,9 @@
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
   `get_object_vars()` excludes the slot, and a later direct write may
   initialize it again. Exact PHP deprecation/warning emission for lossy scalar
-  coercions, interface-name typed-property compatibility, class aliases in
-  typed-property compatibility checks, references, property writes through
+  coercions, interface aliases and broader built-in/internal interface catalog
+  behavior beyond the current metadata in typed-property compatibility checks,
+  class aliases in typed-property compatibility checks, references, property writes through
   complex alias paths, readonly properties, property hooks, static typed
   property unset, and native lowering remain unsupported. Compound
   union/intersection/DNF property type objects remain unsupported until
@@ -7460,7 +7488,8 @@
   state for properties without explicit defaults. Runtime typed-property
   enforcement is limited to the simple named type subset documented in the
   object/class model section, including weak scalar coercions and inherited
-  class-name object assignment checks; interface-name compatibility,
+  class-name plus declared user-interface object assignment checks;
+  interface aliases, broader built-in/internal interface catalog behavior,
   union/intersection type objects, complex reference/COW interactions, and
   native lowering remain unsupported. Attributes,
   file/line/doc-comment metadata,

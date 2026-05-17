@@ -67,6 +67,36 @@ echo implode("|", $out);
 }
 
 #[test]
+fn session_start_emits_bounded_cookie_attributes_from_options() {
+    let execution = run_source(
+        r#"<?php
+session_id("phpcattrs");
+$out = array();
+$started = session_start([
+    "cookie_lifetime" => 3600,
+    "cookie_path" => "/wp-admin",
+    "cookie_domain" => "example.test",
+    "cookie_secure" => true,
+    "cookie_httponly" => true,
+    "cookie_samesite" => "Lax",
+]);
+$headers = headers_list();
+$out[] = $started ? "started" : "failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "started|1|Set-Cookie: PHPSESSID=phpcattrs; Max-Age=3600; path=/wp-admin; domain=example.test; secure; HttpOnly; SameSite=Lax"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_write_close_keeps_session_data_visible_but_closes_status() {
     let execution = run_source(
         r#"<?php
@@ -300,6 +330,16 @@ fn session_builtins_reject_forms_outside_current_subset() {
     assert_eq!(
         bad_options.message,
         "unsupported call session_start(): options argument must be array in the current subset, got string"
+    );
+
+    let bad_cookie_path =
+        run_source("<?php\nsession_start(['cookie_path' => 123]);\n").unwrap_err();
+    assert_eq!(bad_cookie_path.phase, Phase::Runtime);
+    assert_eq!(bad_cookie_path.line, 2);
+    assert_eq!(bad_cookie_path.column, 1);
+    assert_eq!(
+        bad_cookie_path.message,
+        "unsupported call session_start(): cookie_path option must be string in the current subset, got int"
     );
 
     let bad_id = run_source("<?php\nsession_id(42);\n").unwrap_err();

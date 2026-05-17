@@ -5079,6 +5079,64 @@ Registry::$shared = new OtherHook();
 }
 
 #[test]
+fn typed_properties_accept_interface_name_assignments() {
+    let execution = run_source(
+        r#"<?php
+interface HookContract {}
+interface ChildHookContract extends HookContract {}
+class ActionHook implements ChildHookContract {}
+class FilterHook extends ActionHook {}
+class OtherHook {}
+
+class Registry {
+    public HookContract $instance;
+    public static ChildHookContract $shared;
+}
+
+$registry = new Registry();
+$registry->instance = new ActionHook();
+Registry::$shared = new FilterHook();
+echo get_class($registry->instance), "|", get_class(Registry::$shared);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ActionHook|FilterHook");
+    assert_eq!(execution.exit_code, 0);
+
+    let write_error = runtime_error(
+        r#"<?php
+interface HookContract {}
+class OtherHook {}
+class Registry { public HookContract $instance; }
+$registry = new Registry();
+$registry->instance = new OtherHook();
+"#,
+    );
+    assert_eq!(write_error.line, 6);
+    assert_eq!(write_error.column, 1);
+    assert_eq!(
+        write_error.message,
+        "invalid property access: typed property Registry::$instance expects HookContract, got object"
+    );
+
+    let static_write_error = runtime_error(
+        r#"<?php
+interface HookContract {}
+class OtherHook {}
+class Registry { public static HookContract $shared; }
+Registry::$shared = new OtherHook();
+"#,
+    );
+    assert_eq!(static_write_error.line, 5);
+    assert_eq!(static_write_error.column, 9);
+    assert_eq!(
+        static_write_error.message,
+        "invalid property access: typed property Registry::$shared expects HookContract, got object"
+    );
+}
+
+#[test]
 fn typed_property_unset_restores_uninitialized_instance_slots() {
     let execution = run_source(
         r#"<?php

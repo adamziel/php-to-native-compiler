@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1462/reference_array_literals_object_property_target.php
+exit: 0
+stdout:
+seed:property|seed:property
+seed:property:property:alias|seed:property:property:alias|seed:property:property:alias
+copy|copy|copy
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1464/wpdb_table_status_probe.php

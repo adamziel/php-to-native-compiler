@@ -2703,6 +2703,7 @@ pub struct PhpObject {
     class_id: ClassId,
     class_name: String,
     ancestor_class_names: Vec<String>,
+    interface_names: Vec<String>,
     properties: Rc<RefCell<Vec<ObjectProperty>>>,
 }
 
@@ -2727,10 +2728,27 @@ impl PhpObject {
         ancestor_class_names: Vec<String>,
         id: i64,
     ) -> Self {
-        Self::from_class_with_inherited_properties_and_ancestors_with_id(
+        Self::from_class_with_inherited_metadata_and_id(
             class,
             inherited_properties,
             ancestor_class_names,
+            Vec::new(),
+            id,
+        )
+    }
+
+    pub fn from_class_with_relationship_metadata_with_id(
+        class: &PhpClassMetadata,
+        inherited_properties: &[PhpObjectPropertyInitializer],
+        ancestor_class_names: Vec<String>,
+        interface_names: Vec<String>,
+        id: i64,
+    ) -> Self {
+        Self::from_class_with_inherited_metadata_and_id(
+            class,
+            inherited_properties,
+            ancestor_class_names,
+            interface_names,
             id,
         )
     }
@@ -2752,6 +2770,22 @@ impl PhpObject {
         class: &PhpClassMetadata,
         inherited_properties: &[PhpObjectPropertyInitializer],
         ancestor_class_names: Vec<String>,
+        id: i64,
+    ) -> Self {
+        Self::from_class_with_inherited_metadata_and_id(
+            class,
+            inherited_properties,
+            ancestor_class_names,
+            Vec::new(),
+            id,
+        )
+    }
+
+    fn from_class_with_inherited_metadata_and_id(
+        class: &PhpClassMetadata,
+        inherited_properties: &[PhpObjectPropertyInitializer],
+        ancestor_class_names: Vec<String>,
+        interface_names: Vec<String>,
         id: i64,
     ) -> Self {
         let mut properties = Vec::new();
@@ -2789,6 +2823,7 @@ impl PhpObject {
             class_id: class.id(),
             class_name: class.name().to_string(),
             ancestor_class_names,
+            interface_names,
             properties: Rc::new(RefCell::new(properties)),
         }
     }
@@ -2849,6 +2884,7 @@ impl PhpObject {
             class_id: self.class_id,
             class_name: self.class_name.clone(),
             ancestor_class_names: self.ancestor_class_names.clone(),
+            interface_names: self.interface_names.clone(),
             properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
         }
     }
@@ -2859,6 +2895,10 @@ impl PhpObject {
                 .ancestor_class_names
                 .iter()
                 .any(|ancestor| ancestor.eq_ignore_ascii_case(class_name))
+            || self
+                .interface_names
+                .iter()
+                .any(|interface| interface.eq_ignore_ascii_case(class_name))
     }
 
     pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {

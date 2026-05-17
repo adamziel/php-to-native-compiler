@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1463/session_cookie_attributes.php

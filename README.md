@@ -72,13 +72,17 @@ session and data, and ignores `read_and_close` for that restart attempt.
 Successful fresh starts append a deterministic `Set-Cookie: PHPSESSID=<id>`
 header to the same CLI header log exposed by `headers_list()`;
 `session_start(["use_cookies" => false])` suppresses that bounded cookie
-header for the start.
+header for the start. Bounded session cookie attributes from
+`cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
+`cookie_httponly`, and `cookie_samesite` options are appended to that
+deterministic header.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
 was closed. Cross-process session persistence, locking, save handlers, option
-effects beyond `read_and_close` and `use_cookies`, full cookie attributes, and
-cache-header emission remain unsupported. `fopen()` can create bounded
+effects beyond the documented session-start options, cookie encoding,
+expiration-date formatting, cookie replacement, and cache-header emission
+remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -271,10 +275,11 @@ incorrect native code.
   for the current option table, plus a bounded per-handle dynamic schema island
   for exact `CREATE TABLE`, `ALTER TABLE` add/change/modify/drop column and
   add/drop index probes, and later `DESCRIBE`/`SHOW COLUMNS`/`SHOW INDEX`/
-  `SHOW CREATE TABLE` inspection;
+  `SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
-  index inspection, dbDelta diffing, schema rollback, persistent object cache,
-  full `wpdb`, or native database support
+  index inspection, exact table-status counters or timestamps, dbDelta diffing,
+  schema rollback, persistent object cache, full `wpdb`, or native database
+  support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -418,7 +423,9 @@ incorrect native code.
   user-class properties with declaring-class, visibility/static modifier,
   default-value, simple named typed-property inspection through
   `ReflectionNamedType`, and bounded uninitialized typed-property slots for
-  properties without explicit defaults, declared trait
+  properties without explicit defaults, with runtime typed-property writes
+  accepting inherited class-name objects and declared user-interface
+  implementors in the current object metadata model, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -507,8 +514,8 @@ beyond the current public and same-declaring-class private-property, protected-p
 protected-method, constructor, method inheritance
 visibility/staticness/signature-count/type-text, and class-constant slice,
 typed property compatibility beyond exact same-text inherited metadata, weak
-scalar coercions, and inherited class-name typed-property write checks,
-interface-name typed-property compatibility, compound/DNF-shaped typed property
+scalar coercions, inherited class-name typed-property write checks, and
+declared user-interface typed-property write checks, compound/DNF-shaped typed property
 declarations, readonly property metadata and write-once enforcement, promoted
 constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
@@ -591,17 +598,18 @@ direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
-Direct variable assignments from reference array literals, such as
+Direct variable and direct visible object-property assignments from reference
+array literals, such as
 `$args = array(&$value)` and
-`$args = array("value" => &$object->items[$key])`, preserve covered direct
-variable, direct array-offset, and direct visible object-property array-offset
-reference elements for later stored-array callback invocation and
+`$store->args = array("value" => &$object->items[$key])`, preserve covered
+direct variable, direct array-offset, and direct visible object-property
+array-offset reference elements for later stored-array callback invocation and
 reference-return alias binding. The same covered reference elements are
 preserved when the assigned direct variable is already backed by covered
 array-offset alias metadata, such as
 `$args =& $registry["args"]; $args = array(&$value)`. Reference array
-literals assigned into non-variable targets, reference elements from
-arbitrary expressions, executing
+literals assigned into array offsets, dynamic properties, or other
+non-variable targets, reference elements from arbitrary expressions, executing
 unknown or duplicate string-keyed argument names beyond the stable diagnostic
 path, positional arguments after string-keyed named arguments, variadic named
 callback arguments, stored arrays whose reached slots were not assigned by
