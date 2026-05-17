@@ -4,6 +4,136 @@
 
 Implemented:
 
+- Added Milestone 1246, a bounded executable trait precedence plus alias
+  interaction slice. Class-body adaptation blocks now have regression and
+  fixture coverage for the same-use shape
+  `use PrimaryLabel, FallbackLabel { PrimaryLabel::label insteadof
+  FallbackLabel; PrimaryLabel::label as public label_alias; }`. The winning
+  public instance trait method remains callable under its original name, the
+  same selected method is exposed through the explicit-public alias, the named
+  loser method remains skipped, and both public method names can satisfy the
+  current interface method-presence checks. This does not add
+  non-public/static/abstract/final trait methods, broad multi-loser conflict
+  resolution, protected/private visibility changes, visibility-only
+  adaptations, trait properties/constants, `__TRAIT__`, exact PHP diagnostics,
+  or native lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1246-traits CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  object_model class_trait_use_insteadof_winner_can_be_public_aliased -- --test-threads=1`
+  passed with `1` test; `cargo test -p phpc --test object_model trait --
+  --test-threads=1` passed with `14` tests; direct `cargo run -q -p phpc --
+  run tests/fixtures/milestone1246/trait_insteadof_public_alias_interaction.php`
+  printed `primary:Plugin|primary:Plugin|hooks:Plugin|alias-method|trait`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1246` passed with
+  `1` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1246` passed with `1` system PHP comparison and
+  `0` skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1246` reported `1` passed fixture, `1`
+  comparison, and `0` skips; `cargo fmt --check` passed; and
+  `git diff --check -- <lane-touched files>` passed. Full gate/checkpoint
+  deferred until integration.
+
+- Added Milestone 1247, a bounded WordPress-shaped reference/COW
+  object-property array parameter slice. Direct public object-property
+  array-offset arguments to user functions and public instance methods with
+  by-reference parameters now execute as a narrow output-parameter bridge:
+  the interpreter recognizes direct paths such as
+  `$cache->cache["options"]["alloptions"]`, materializes the selected public
+  property array slot, copies the value into the callee parameter, and writes
+  the final parameter value back to the same slot after normal completion or
+  `return`. The fixture uses a `WP_Object_Cache`-shaped cache array and proves
+  both a free-function and instance-method mutation path, producing
+  `cold:function:method`. This does not implement in-call PHP reference
+  container identity, non-public or dynamic property arguments, append-offset
+  arguments, `ArrayAccess`, callback-dispatched object-property array
+  reference arguments, reference-returning functions with object-property array
+  reference arguments, stored reference arrays, broad copy-on-write, exact PHP
+  warnings, or native lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1247-refcow CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  functions_and_scopes
+  reference_parameters_write_back_direct_object_property_array_arguments -- --test-threads=1`
+  passed with `1` test; `cargo test -p phpc --test functions_and_scopes
+  reference_parameter -- --test-threads=1` passed with `7` tests after
+  updating the expected unsupported-argument diagnostic; `cargo test -p phpc
+  --test functions_and_scopes reference_assignment_object_property_array --
+  --test-threads=1` passed with `13` tests; direct `cargo run -q -p phpc --
+  run tests/fixtures/milestone1247/object_property_array_reference_parameter.php`
+  printed `cold:function:method`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1247` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1247` passed with `1`
+  system PHP comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1247` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo fmt` and
+  `cargo fmt --check` passed; and `git diff --check -- <changed files>`
+  passed. Full gate/checkpoint/commit deferred until integration.
+
+- Added Milestone 1248, a bounded WordPress request/SAPI header-removal slice.
+  `header_remove()` now mutates the deterministic interpreter-owned CLI header
+  log introduced by Milestone 1243: no-argument calls clear all logged header
+  lines, and one string argument removes entries whose raw header line has
+  exactly that field name before the first colon. `headers_list()` reflects the
+  resulting log, string-valued dynamic calls use the same mutation path, and
+  direct native `header()`/`header_remove()`/`headers_list()`/`headers_sent()`
+  calls continue to reject through the existing explicit header-state lowering
+  diagnostic. This does not implement case folding, whitespace normalization,
+  status-header removal, duplicate/replacement policy, output-started
+  tracking, web-server/SAPI network emission, exact warning behavior, or
+  native header-state lowering. Focused request/SAPI verification passed:
+  `CARGO_TARGET_DIR=target/focused-1248-request CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test header_builtin header_remove -- --test-threads=1`
+  with `4` tests; `cargo test -p phpc --test header_builtin --
+  --test-threads=1` with `16` tests; `cargo test -p phpc --test header_cli
+  -- --test-threads=1` with `1` test; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1248/header_remove_mutates_header_log.php` printed
+  `1|Content-Type: text/html; charset=UTF-8|0`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1248` with `1` fixture; `cargo run -q -p phpc --
+  test --compare-php-json tests/fixtures/milestone1248` with `1` passed
+  fixture, `0` comparisons, and `1` `phpc-only` skip; `cargo run -q -p phpc
+  -- test --list-fixtures tests/fixtures/milestone1248` reported `1` fixture,
+  `1` CLI exercise, `0` unrecognized sidecars, and `0` phpc-only reason gaps;
+  `cargo fmt --check` passed; and `git diff --check --` passed. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1249, a later WordPress database/bootstrap evidence slice.
+  The WordPress inventory CLI test suite now includes a synthetic
+  `add_option()`-shaped option-cache smoke after the existing
+  `delete_option()` probe. The generated bootstrap shim and
+  `wp-blog-header.php` front-controller seed a non-autoloaded
+  `blogdescription` row through the current placeholder `mysqli_query()`
+  `wp_options` state island, read/update/delete it through the bounded
+  cache-backed option path, confirm the deleted value falls back to the
+  supplied default, then insert it again through the exact supported
+  `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+  shape and refresh the bounded in-memory cache with `wp_cache_set()`. The
+  probe emits `cache-db|updated|fresh-db|deleted|missing|added|added-db`
+  (`stdout_bytes: 56` in normalized inventory output). This improves
+  executable WordPress evidence without claiming persistent object-cache
+  behavior, duplicate-option rejection fidelity, real database connectivity,
+  arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
+  request/SAPI fidelity, references/copy-on-write, or native lowering.
+  Focused compatibility verification passed:
+  `CARGO_TARGET_DIR=target/focused-1249-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test wordpress_inventory_cli wordpress_inventory_wpdb_add_option_cache_bootstrap_smoke_matches_fixture -- --test-threads=1`
+  with `1` test;
+  `CARGO_TARGET_DIR=target/focused-1249-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  with `9` tests;
+  `CARGO_TARGET_DIR=target/focused-1249-wpdb CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo run -q -p phpc -- test --list-fixtures tests/fixtures | grep 'compat/wordpress\|compat target wordpress\|recognized orphan sidecar'`
+  showed the WordPress compatibility target with `8` probe expectations and
+  `0` unrecognized sidecars; `cargo fmt --check` and `git diff --check --`
+  the touched files passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1250, a WordPress-focused queue refresh and checkpoint for
+  the 1246-1249 implementation batch. `docs/NEXT_TASKS.md` now marks
+  Milestones 1246-1250 complete and opens Milestones 1251-1255 around the
+  same largest WordPress blockers: trait/interface semantics, reference/COW
+  fidelity, request/SAPI/filesystem behavior, and `wpdb`/bootstrap evidence.
+  `docs/LANE_WORKERS.md` records the next split. Full gate passed at
+  checkpoint: `1378` fixture tests, `788` system PHP comparisons, and `590`
+  skipped `phpc-only` fixtures. The first checkpoint attempt exposed a stale
+  unsupported-reference-parameter fixture diagnostic; the fixture was
+  normalized and focused `milestone1_fixtures_pass` plus
+  `tests/fixtures/unsupported_function_features` checks passed before the
+  checkpoint was rerun.
+
 - Added Milestone 1244, a later WordPress database/bootstrap evidence slice.
   The WordPress inventory CLI test suite now includes a synthetic
   `delete_option()`-shaped option-cache smoke after the existing

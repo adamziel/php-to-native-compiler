@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1246/trait_insteadof_public_alias_interaction.php
+primary:Plugin|primary:Plugin|hooks:Plugin|alias-method|trait

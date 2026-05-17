@@ -78,7 +78,12 @@ and may satisfy the current interface method-presence checks. Single-loser
 public instance conflict adaptations such as
 `TraitA::method insteadof TraitB` select the winner from traits listed in the
 same class-body `use` declaration and skip the loser method during
-composition.
+composition. That selected public instance winner can also be exposed through
+a same-block explicit-public alias, such as
+`TraitA::method insteadof TraitB; TraitA::method as public alias;`; the
+original method and alias are both ordinary public methods for dispatch,
+`method_exists()`, `get_class_methods()`, and current interface method-presence
+checks.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -392,8 +397,9 @@ The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface inheritance, interface enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded single-loser `insteadof` shape,
-trait aliases beyond the current simple public and qualified public-alias
-slices, protected/private visibility changes, visibility-only adaptations,
+trait aliases beyond the current simple public, qualified public-alias, and
+same-block winner public-alias slices, protected/private visibility changes,
+visibility-only adaptations,
 unqualified or multi-loser `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,

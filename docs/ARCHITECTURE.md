@@ -51,8 +51,14 @@ preserves that slot's reference identity across a copied direct array. When an
 array-offset or public object-property array-offset reference target is bound
 from a direct variable that already shares a direct variable-to-variable cell,
 the interpreter rewires every direct name in that small source cell group to
-the selected slot alias. Direct object-variable clone assignments also mirror
-public object-property alias metadata and context-aware non-public
+the selected slot alias. By-reference user-function and instance-method
+parameters can also accept a direct public object-property array-offset
+argument through a narrower output-parameter bridge: the caller slot is
+materialized and copied into the callee parameter, then the final parameter
+value is written back to the public property slot after normal return. That
+bridge intentionally does not provide in-call reference-container identity.
+Direct object-variable clone assignments also mirror public object-property
+alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
 variable, so the current bounded reference-slot model can keep covered property
 slots shared across a fresh object handle for the covered `clone $object`
@@ -161,10 +167,14 @@ the alias as an ordinary public method. A bounded trait conflict adaptation
 such as `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted
 for public instance methods from traits in the same class-body `use`
 declaration; composition registers the winner and skips the named loser method.
+The current executable interaction slice also allows that selected winning
+method to be exposed through a same-block explicit-public alias, such as
+`use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
 Trait properties/constants, static/abstract/final or non-public trait methods,
 broad conflict resolution, protected/private visibility changes,
 visibility-only adaptations, unqualified or multi-loser `insteadof`,
-qualified or multi-trait alias edge cases beyond the current slice,
+qualified or multi-trait alias edge cases beyond the current winner-alias
+slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
 
@@ -1370,15 +1380,16 @@ diagnostics have a lowered runtime model.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, appends the raw header line to deterministic in-process CLI request
-state, and returns `null`. `headers_list()` returns that append-only header log
-as an ordered array of strings. Native function-table introspection recognizes
-the names, while direct native calls reject through a header-state boundary
-until response storage, diagnostics, output-started tracking, status handling,
-and SAPI integration have a lowered runtime model.
-`header_remove()` is the matching interpreter-only no-op removal boundary. It
-accepts no argument or one string header name and returns `null`, but it does
-not mutate the current CLI header log, detect output-sent state, or model SAPI
-removal behavior.
+state, and returns `null`. `headers_list()` returns that header log as an
+ordered array of strings. Native function-table introspection recognizes the
+names, while direct native calls reject through a header-state boundary until
+response storage, diagnostics, output-started tracking, status handling, and
+SAPI integration have a lowered runtime model.
+`header_remove()` mutates that deterministic CLI header log for the current
+bounded subset: no arguments clear the log, and one string removes entries
+whose raw header line has exactly that field name before the first colon. It
+still does not detect output-sent state, model status headers, normalize header
+names, or model full SAPI removal behavior.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 no-argument slice returns `false` so reached WordPress guard branches can
 continue, but filename/line output arguments, output-started tracking, output

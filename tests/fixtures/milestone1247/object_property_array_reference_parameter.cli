@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1247/object_property_array_reference_parameter.php
+cold:function:method

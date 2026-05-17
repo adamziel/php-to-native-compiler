@@ -2667,6 +2667,63 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_insteadof_winner_can_be_public_aliased() {
+    let source = r#"<?php
+interface NamedPlugin {
+    public function label();
+    public function label_alias();
+}
+
+trait PrimaryLabel {
+    public function label() {
+        return "primary:" . get_class($this);
+    }
+}
+
+trait FallbackLabel {
+    public function label() {
+        return "fallback:" . get_class($this);
+    }
+}
+
+trait HasHooks {
+    public function hooks() {
+        return "hooks:" . get_class($this);
+    }
+}
+
+class Plugin implements NamedPlugin {
+    use PrimaryLabel, FallbackLabel, HasHooks {
+        PrimaryLabel::label insteadof FallbackLabel;
+        PrimaryLabel::label as public label_alias;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->label(), "\n";
+echo $plugin->label_alias(), "\n";
+echo $plugin->hooks(), "\n";
+echo method_exists($plugin, "label_alias") ? "alias-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n    [0] => label\n    [1] => label_alias\n    [2] => hooks\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert!(class.method("label").is_some());
+    assert!(class.method("label_alias").is_some());
+    assert!(class.method("hooks").is_some());
+}
+
+#[test]
 fn class_trait_use_alias_requires_existing_trait_method() {
     let error = runtime_error(
         r#"<?php

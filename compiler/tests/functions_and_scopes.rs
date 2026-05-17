@@ -556,7 +556,7 @@ mutate(1);
     assert_eq!(error.column, 8);
     assert_eq!(
         error.message,
-        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable arguments in the current subset"
+        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable and direct public object-property array-offset arguments in the current subset"
     );
 }
 
@@ -2036,6 +2036,35 @@ echo $catalog->entries[0], "|", $entry;
     .unwrap();
 
     assert_eq!(execution.stdout, "Grace|Hedy|Katherine|Katherine|detached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_parameters_write_back_direct_object_property_array_arguments() {
+    let execution = run_source(
+        r#"<?php
+class WP_Object_Cache {
+    public $cache = [];
+
+    public function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+    }
+}
+
+function cache_mark(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+cache_mark($cache->cache["options"]["alloptions"], "function");
+$cache->tag($cache->cache["options"]["alloptions"], "method");
+echo $cache->cache["options"]["alloptions"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "cold:function:method");
     assert_eq!(execution.exit_code, 0);
 }
 

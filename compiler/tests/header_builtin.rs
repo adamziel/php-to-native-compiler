@@ -75,19 +75,27 @@ echo $result === null ? "|null" : "|not-null";
 }
 
 #[test]
-fn header_remove_accepts_current_noop_signature() {
+fn header_remove_mutates_current_cli_header_log() {
     let execution = run_source(
         r#"<?php
 header("Last-Modified: today");
+header("Content-Type: text/plain");
+header("Last-Modified: tomorrow");
 $result = header_remove("Last-Modified");
 echo $result === null ? "null" : "not-null";
+echo "|";
+$headers = headers_list();
+echo count($headers);
+echo "|";
+echo $headers[0];
 header_remove();
-echo "|after";
+echo "|";
+echo count(headers_list());
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "null|after");
+    assert_eq!(execution.stdout, "null|1|Content-Type: text/plain|0");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -99,13 +107,16 @@ $call = "header_remove";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+header("Last-Modified: today");
 $result = $call("Last-Modified");
 echo $result === null ? "|null" : "|not-null";
+echo "|";
+echo count(headers_list());
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|null");
+    assert_eq!(execution.stdout, "yes|callable|null|0");
     assert_eq!(execution.exit_code, 0);
 }
 

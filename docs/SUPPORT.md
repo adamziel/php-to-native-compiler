@@ -67,15 +67,26 @@
   arguments in the current user-function, instance-method, and constructor
   dispatch paths: the callee local parameter shares the caller's variable cell
   during execution, so writes through the parameter are visible to other reads
-  of the caller variable before the call returns. The same direct-variable cell
+  of the caller variable before the call returns. Direct public
+  object-property array-offset arguments such as
+  `handler($object->items[$group][$key])` are supported for user functions and
+  instance methods as a bounded output-parameter path: the selected public
+  property array slot is materialized when needed, copied into the callee
+  parameter, and written back to the same slot when the callee returns
+  normally or with `return`. This object-property argument path does not expose
+  a general in-call PHP reference container. The same direct-variable cell
   binding is supported for string user-function callbacks and public
   `[object, method]` instance callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` when the argument array
   is an unkeyed literal and each reached by-reference callback parameter
   receives a by-reference direct variable element. `unset($param)` detaches
   only the callee's local parameter name; later local writes do not mutate the
-  caller variable. This is still a bounded direct-variable alias path, not full
-  PHP reference containers or copy-on-write.
+  caller variable or write back through the object-property argument path.
+  Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
+  array, callback-dispatched object-property array, and reference-returning
+  function forms remain unsupported. This is still a bounded direct-variable
+  alias and public object-property output path, not full PHP reference
+  containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -1913,16 +1924,18 @@
   response emission, exact diagnostics, partial-output behavior, and native
   lowering remain unsupported.
   `headers_list()` accepts no arguments and returns the current deterministic
-  CLI header log as an ordered array of strings in accepted `header()` call
-  order. It exposes only this project-local request-state scaffold; PHP CLI
-  parity, SAPI response state, duplicate replacement policy, status-code
-  headers, cookie formatting, header normalization, output buffers, exact
-  warnings, and native lowering remain unsupported.
+  CLI header log as an ordered array of strings in current log order. It
+  exposes only this project-local request-state scaffold; PHP CLI parity, SAPI
+  response state, duplicate replacement policy, status-code headers, cookie
+  formatting, header normalization, output buffers, exact warnings, and native
+  lowering remain unsupported.
   `header_remove($name = null)` accepts no argument or one string header name,
-  returns `null`, and does not mutate the current deterministic CLI header
-  log. Actual all-header removal, named-header storage/removal, output-sent
-  warnings, SAPI/web-server behavior, exact diagnostics, partial-output
-  behavior, and native lowering remain unsupported.
+  returns `null`, mutates the current deterministic CLI header log by clearing
+  it when no argument is provided, and removes entries whose raw header line
+  has exactly `$name` before the first colon. Case folding, whitespace
+  normalization, status-header removal, output-sent warnings, SAPI/web-server
+  behavior, exact diagnostics, partial-output behavior, and native lowering
+  remain unsupported.
   `headers_sent()` accepts no arguments and returns `false` in the current
   CLI runtime shim. Filename/line output arguments, output-started tracking,
   output buffers, SAPI differences, exact warnings, and native lowering remain
@@ -4629,8 +4642,13 @@
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
   public instance methods from traits in the same class-body `use`
   declaration; the winning method is registered as the ordinary public method
-  and the named loser trait's method is skipped. Built-in/internal trait
-  entries are not represented.
+  and the named loser trait's method is skipped. The selected winning method
+  can also be exposed through an explicit-public alias in the same adaptation
+  block, such as
+  `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`;
+  both the original method and alias are ordinary public methods for dispatch,
+  `method_exists()`, `get_class_methods()`, and current interface
+  method-presence checks. Built-in/internal trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -5154,8 +5172,9 @@
   trait properties/constants, static/abstract/final and non-public trait
   methods, conflicting trait composition outside the bounded single-loser
   `insteadof` shape,
-  trait aliases beyond the current simple public and qualified public-alias
-  slices, visibility changes other than explicit `public` on an alias,
+  trait aliases beyond the current simple public, qualified public-alias, and
+  same-block winner public-alias slices, visibility changes other than
+  explicit `public` on an alias,
   visibility-only adaptations, unqualified `insteadof`, multi-loser
   `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
@@ -6436,17 +6455,18 @@
   output-sent warnings, SAPI/web-server integration, network response
   emission, exact `ValueError`/`TypeError` diagnostics, partial-output
   behavior, and native lowering beyond function-table introspection
-- `headers_list()` behavior beyond returning the current deterministic
-  append-only CLI header log: PHP CLI parity, SAPI response state, duplicate
-  replacement policy, status-code headers, cookie formatting, header
-  normalization, output buffers, exact warnings, and native lowering beyond
-  function-table introspection
-- `header_remove()` behavior beyond accepting no argument or one string header
-  name as a no-op returning `null`: mutation of the current CLI header log,
-  actual all-header removal, named-header storage/removal, output-sent
-  warnings, SAPI/web-server behavior, exact diagnostics, partial-output
-  behavior, and native lowering beyond
-  function-table introspection
+- `headers_list()` behavior beyond returning the current deterministic CLI
+  header log after accepted `header()` appends and bounded `header_remove()`
+  mutations: PHP CLI parity, SAPI response state, duplicate replacement
+  policy, status-code headers, cookie formatting, header normalization, output
+  buffers, exact warnings, and native lowering beyond function-table
+  introspection
+- `header_remove()` behavior beyond clearing the current deterministic CLI
+  header log with no arguments or removing raw colon-delimited entries whose
+  field name exactly matches one string argument: case folding, whitespace
+  normalization, status-header removal, output-sent warnings, SAPI/web-server
+  behavior, exact diagnostics, partial-output behavior, and native lowering
+  beyond function-table introspection
 - `headers_sent()` behavior beyond the current no-argument always-`false`
   shim: filename/line output arguments, output-started tracking, output
   buffers, SAPI differences, exact warnings, and native lowering beyond

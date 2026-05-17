@@ -184,6 +184,23 @@ connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
 plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
 support.
 
+After Milestone 1249, the synthetic harness also includes an
+`add_option()`-shaped option-cache bootstrap smoke after the delete path. The
+generated bootstrap shim and `wp-blog-header.php` front-controller path seed a
+non-autoloaded `blogdescription` row, read/update/delete it through the
+bounded cache-backed option path, confirm the deleted value falls back to the
+supplied default, then insert it again through the exact supported direct
+`INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+shape, refresh the bounded in-memory cache with `wp_cache_set()`, and prove a
+later `get_option()` lookup returns the added value by emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db`
+(`stdout_bytes: 56` in normalized output). This is executable evidence for a
+later bounded option-cache/add point only; it does not claim persistent
+object-cache behavior, duplicate-option rejection fidelity, real database
+connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
+plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
+support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -216,6 +233,15 @@ duplicate/replacement policy, `header_remove()` mutation, status-code state,
 cookie formatting, output-started tracking, web-server/SAPI network emission,
 exact warnings, or native header-state lowering.
 
+After Milestone 1248, `header_remove()` mutates that deterministic CLI header
+log for a bounded subset: `header_remove()` clears the log, and
+`header_remove("Name")` removes entries whose raw header line has exactly
+`Name` before the first colon. This supports simple WordPress-shaped
+header-removal guards in the current CLI scaffold only. It does not implement
+case folding, whitespace normalization, status-header removal,
+duplicate/replacement policy, output-started tracking, web-server/SAPI network
+emission, exact warnings, or native header-state lowering.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
@@ -235,7 +261,10 @@ separately after exercising the exact direct `wp_options` UPDATE shape through
 a minimal wrapper and refreshing the bounded in-memory cache. The Milestone
 1244 delete-option smoke records a later option-cache delete byte count
 separately after exercising the exact direct `wp_options` DELETE shape through
-a minimal wrapper and clearing the bounded in-memory cache slot. Known
+a minimal wrapper and clearing the bounded in-memory cache slot. The Milestone
+1249 add-option smoke records a later option-cache add byte count separately
+after exercising the exact direct `wp_options` INSERT shape through a minimal
+wrapper and refreshing the bounded in-memory cache. Known
 historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local

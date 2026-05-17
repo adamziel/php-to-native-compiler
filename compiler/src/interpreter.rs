@@ -1843,7 +1843,13 @@ fn bind_foreach_lingering_reference(
 #[derive(Debug, Clone)]
 struct ReferenceBinding {
     param_name: String,
-    caller_cell: VariableCell,
+    target: ReferenceBindingTarget,
+}
+
+#[derive(Debug, Clone)]
+enum ReferenceBindingTarget {
+    CallerCell(VariableCell),
+    PublicObjectPropertyArrayOffset(ArrayOffsetAlias),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -12796,7 +12802,7 @@ impl Interpreter {
                 values.push(caller_cell.borrow().clone());
                 reference_bindings.push(ReferenceBinding {
                     param_name: param.name.clone(),
-                    caller_cell,
+                    target: ReferenceBindingTarget::CallerCell(caller_cell),
                 });
             } else {
                 values.push(self.evaluate(&item.value, caller_scope)?);
@@ -14395,7 +14401,9 @@ impl Interpreter {
                 .iter()
                 .find(|binding| binding.param_name == param.name)
             {
-                local_scope.bind_static_to_cell(&param.name, binding.caller_cell.clone());
+                if let ReferenceBindingTarget::CallerCell(caller_cell) = &binding.target {
+                    local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                }
                 continue;
             }
 
@@ -14554,23 +14562,41 @@ impl Interpreter {
             };
 
             if param.by_reference {
-                let Expr::Variable(caller_name, _) = arg else {
+                if let Expr::Variable(caller_name, _) = arg {
+                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                        runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
+                    })?;
+                    values.push(caller_cell.borrow().clone());
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::CallerCell(caller_cell),
+                    });
+                } else if let Some((alias, value)) = self
+                    .evaluate_public_object_property_array_reference_argument(arg, caller_scope)?
+                {
+                    if function.returns_by_reference {
+                        return Err(runtime_error(
+                            arg.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias),
+                    });
+                } else {
                     return Err(runtime_error(
                         arg.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "reference parameter invocation is only implemented for direct variable arguments in the current subset",
+                            "reference parameter invocation is only implemented for direct variable and direct public object-property array-offset arguments in the current subset",
                         ),
                     ));
-                };
-                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                    runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
-                })?;
-                values.push(caller_cell.borrow().clone());
-                reference_bindings.push(ReferenceBinding {
-                    param_name: param.name.clone(),
-                    caller_cell,
-                });
+                }
             } else {
                 values.push(self.evaluate(arg, caller_scope)?);
             }
@@ -14594,6 +14620,94 @@ impl Interpreter {
         Ok((values, reference_bindings))
     }
 
+    fn evaluate_public_object_property_array_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Some((object, property, indices)) =
+            Self::direct_object_property_array_argument_parts(arg)
+        else {
+            return Ok(None);
+        };
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, caller_scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::PublicObjectProperty { object, property },
+            keys,
+        };
+        caller_scope.materialize_array_offset_alias(&alias, arg.span())?;
+        let value = caller_scope
+            .read_array_offset_alias(&alias)
+            .ok_or_else(|| {
+                runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_array_access(
+                        "cannot bind missing object-property array offset".to_string(),
+                    ),
+                )
+            })?;
+        Ok(Some((alias, value)))
+    }
+
+    fn direct_object_property_array_argument_parts(
+        expr: &Expr,
+    ) -> Option<(String, String, Vec<&Expr>)> {
+        let mut indices = Vec::new();
+        let mut current = expr;
+        while let Expr::Index { target, index, .. } = current {
+            indices.push(index.as_ref());
+            current = target.as_ref();
+        }
+        if indices.is_empty() {
+            return None;
+        }
+        indices.reverse();
+
+        let Expr::Property {
+            target, property, ..
+        } = current
+        else {
+            return None;
+        };
+        let Expr::Variable(object, _) = target.as_ref() else {
+            return None;
+        };
+        Some((object.clone(), property.clone(), indices))
+    }
+
+    fn write_back_reference_bindings(
+        &mut self,
+        reference_bindings: &[ReferenceBinding],
+        local_scope: &SymbolTable,
+        caller_scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<()> {
+        for binding in reference_bindings {
+            let ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias) = &binding.target
+            else {
+                continue;
+            };
+            let Some(value) = local_scope.read_named(&binding.param_name) else {
+                continue;
+            };
+            if !caller_scope.write_array_offset_alias(alias, value) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(
+                        "cannot write object-property array reference argument".to_string(),
+                    ),
+                ));
+            }
+            if let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root {
+                caller_scope.sync_array_offset_aliases_for_object_property_root(object, property);
+            }
+        }
+        Ok(())
+    }
+
     fn call_user_function_with_checked_values(
         &mut self,
         function: &FunctionDecl,
@@ -14602,7 +14716,7 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
-        _reference_scope: Option<&mut SymbolTable>,
+        reference_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -14630,7 +14744,16 @@ impl Interpreter {
                 .iter()
                 .find(|binding| binding.param_name == param.name)
             {
-                local_scope.bind_static_to_cell(&param.name, binding.caller_cell.clone());
+                match &binding.target {
+                    ReferenceBindingTarget::CallerCell(caller_cell) => {
+                        local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                    }
+                    ReferenceBindingTarget::PublicObjectPropertyArrayOffset(_) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -14662,6 +14785,23 @@ impl Interpreter {
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         let flow = self.execute_statements(&function.body, &mut local_scope);
+        let writeback_result = if matches!(
+            &flow,
+            Ok(Flow::Normal) | Ok(Flow::Return(_)) | Ok(Flow::Exit(_))
+        ) {
+            if let Some(reference_scope) = reference_scope {
+                self.write_back_reference_bindings(
+                    &reference_bindings,
+                    &local_scope,
+                    reference_scope,
+                    function.span,
+                )
+            } else {
+                Ok(())
+            }
+        } else {
+            Ok(())
+        };
         let static_names = self.active_static_locals.pop().unwrap_or_default();
         let function_key = function.name.to_ascii_lowercase();
         for name in static_names {
@@ -14679,6 +14819,7 @@ impl Interpreter {
             self.called_class_context.pop();
         }
 
+        writeback_result?;
         let flow = flow?;
         match flow {
             Flow::Normal => Ok(Value::Null),
@@ -14886,6 +15027,41 @@ impl Interpreter {
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(Value::Array(headers))
+    }
+
+    fn call_header_remove(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "header_remove()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Some(name) = args.first() else {
+            self.response_headers.clear();
+            return Ok(Value::Null);
+        };
+
+        let Value::String(name) = name else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "header_remove()",
+                    format!(
+                        "header name argument must be string in the current subset, got {}",
+                        name.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        self.response_headers
+            .retain(|header| header_name(header) != Some(name.as_str()));
+        Ok(Value::Null)
     }
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -16748,7 +16924,7 @@ impl Interpreter {
             "set_error_handler" => self.call_set_error_handler(args, span),
             "restore_error_handler" => self.call_restore_error_handler(args, span),
             "header" => self.call_header(&args, span),
-            "header_remove" => call_header_remove(&args, span),
+            "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
             "assert" => {
@@ -24313,35 +24489,9 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(parts.join(separator)))
 }
 
-fn call_header_remove(args: &[Value], span: Span) -> CompileResult<Value> {
-    if args.len() > 1 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "header_remove()",
-                ArityExpectation::Between { min: 0, max: 1 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if let Some(other) = args
-        .first()
-        .filter(|value| !matches!(value, Value::String(_)))
-    {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "header_remove()",
-                format!(
-                    "header name argument must be string in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        ));
-    }
-
-    Ok(Value::Null)
+fn header_name(header: &str) -> Option<&str> {
+    let (name, _) = header.split_once(':')?;
+    Some(name)
 }
 
 fn call_headers_sent(args: &[Value], span: Span) -> CompileResult<Value> {

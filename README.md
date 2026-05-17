@@ -231,7 +231,8 @@ incorrect native code.
   `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }`, and bounded
   public instance conflict resolution such as
-  `use TraitA, TraitB { TraitA::method insteadof TraitB; }`,
+  `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including the
+  same-block winning-method public alias interaction,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -259,7 +260,8 @@ interface method enforcement/catalogs beyond the current `Countable`,
 `Iterator`, and `IteratorAggregate` shape checks, trait properties/constants,
 static/abstract/final or non-public trait methods, conflicting trait
 composition outside the bounded single-loser `insteadof` shape, aliases
-beyond the current simple public and qualified public-alias slices,
+beyond the current simple public, qualified public-alias, and same-block
+winner public-alias slices,
 protected/private visibility changes, visibility-only adaptations, unqualified
 or multi-loser `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
@@ -318,12 +320,14 @@ boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded copy-in/copy-back
-path for output-parameter style calls. `call_user_func_array()` also has a
-bounded string user-callback and public object-method callback slice for
-unkeyed literal argument arrays containing direct-variable reference elements
-such as `array(&$value)`. Stored reference arrays, keyed reference argument
-arrays, static method array-callable reference parameters, broader aliasing,
-and full copy-on-write remain unsupported.
+path for output-parameter style calls. Direct public object-property array
+offset arguments now have the same bounded output-parameter writeback for user
+functions and instance methods. `call_user_func_array()` also has a bounded
+string user-callback and public object-method callback slice for unkeyed
+literal argument arrays containing direct-variable reference elements such as
+`array(&$value)`. Stored reference arrays, keyed reference argument arrays,
+static method array-callable reference parameters, callback object-property
+array arguments, broader aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation
