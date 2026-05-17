@@ -138,13 +138,13 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded manual `spl_autoload_call()`
-dispatch, child-slot reference returns from covered by-reference parent
-array/property arguments, request-local `http_response_code()` and header status
-state, and alloptions-shaped autoload equality reads over the placeholder MySQLi
-state island. Those are useful compatibility steps, but they do not change the
-larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior,
+The latest WordPress-focused batch closed bounded `spl_autoload_extensions()`
+request state, direct-variable parent child-slot reference returns, explicit
+`PHPC_FILES` upload provenance for `is_uploaded_file()` and
+`move_uploaded_file()`, and prepared transient-shaped option-value `LIMIT 1`
+reads over the placeholder MySQLi state island. Those are useful compatibility
+steps, but they do not change the larger project shape: the next lanes should
+keep attacking broad object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress
 database/bootstrap evidence until those areas become coherent subsystems
 instead of reached slices.

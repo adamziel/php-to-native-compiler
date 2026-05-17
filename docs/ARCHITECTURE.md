@@ -68,7 +68,11 @@ is treated as an explicit semicolon-delimited cookie header seed for
 explicit URL-encoded upload metadata seed for `$_FILES` using PHP-shaped keys
 such as `async-upload[name]`, `async-upload[tmp_name]`,
 `async-upload[error]`, and `async-upload[size]`; `error` and `size` leaf
-values parse as decimal integers when possible. Repeated scalar keys use
+values parse as decimal integers when possible. The same initial seed records
+bounded upload provenance for `tmp_name` entries whose sibling `error` value
+is `0`; `is_uploaded_file()` checks that request-local provenance and
+`move_uploaded_file()` moves a registered local path once before clearing the
+source provenance. Repeated scalar keys use
 last-write-wins, `[]` bracket segments append in order, and keyed bracket
 segments materialize nested arrays under the current ordered-array model. Dots
 and spaces in top-level request names are normalized to underscores before
@@ -78,8 +82,9 @@ deterministic request-state scaffolding only: it does not import browser
 cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
 malformed or edge-case PHP request names with exact `parse_str()` behavior,
 parse multipart uploads, create temporary upload files, validate host upload
-state, persist sessions, lock session files, dispatch session save handlers,
-emit session cookies/cache headers, or model `variables_order`/`request_order`.
+state beyond the explicit seed, model failed-upload provenance, persist
+sessions, lock session files, dispatch session save handlers, emit session
+cookies/cache headers, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -119,11 +124,13 @@ is supplied by a direct array-offset or public object-property array-offset
 argument and the function or method returns that parameter directly. The same
 assignment-only path can bind a returned direct array-offset expression such
 as `return $param[$key];` when `$param` is one of those copied-in covered
-parent array-slot arguments; after the local parent array is written back, the
-returned key suffix is appended to the caller alias group. It does not make
-direct-variable parent arrays, callback argument arrays, non-public/dynamic
-object-property array bridges, ArrayAccess roots, or stored array-offset
-metadata into general runtime reference containers. By-reference
+parent array-slot arguments or a direct caller variable bound through a
+by-reference parameter. For copied-in slots, after the local parent array is
+written back, the returned key suffix is appended to the caller alias group.
+For direct caller variables, the returned suffix is mapped to that caller
+variable's child slot. It does not make callback argument arrays,
+non-public/dynamic object-property array bridges, ArrayAccess roots, or stored
+array-offset metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -1660,8 +1667,10 @@ full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
 direct/prepared autoload equality reads for alloptions-shaped probes, plus
-bounded direct `option_name LIKE '<prefix>%'` and prepared
-`option_name LIKE ?` result scans and deletes for transient-shaped option rows;
+prepared option-value equality reads with `LIMIT 1` for transient-shaped
+`wpdb::get_var()` probes, plus bounded direct
+`option_name LIKE '<prefix>%'` and prepared `option_name LIKE ?` result scans
+and deletes for transient-shaped option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1690,8 +1699,13 @@ bounded callback shapes as PHP values in dispatch order, and
 or returns false for valid unregistered callbacks. `spl_autoload_call($class)`
 manually dispatches the same bounded callback vector for a string
 class/interface/trait name and stops once any class-like metadata with that
-name exists. Native function-table introspection recognizes the names, while
-direct native calls reject under the function-call boundary.
+name exists. `spl_autoload_extensions()` is a separate request-local string
+slot initialized to PHP's `.inc,.php` default; string arguments replace the
+slot, `null` reads it without mutation, and the value is exposed for parity
+with autoload lifecycle introspection. The default `spl_autoload()` callback
+does not yet probe files through this extension list. Native function-table
+introspection recognizes the names, while direct native calls reject under the
+function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and

@@ -253,8 +253,12 @@ variable and direct `mysqli_stmt_execute()` re-reads its current scalar/null
 value from the caller scope. `call_user_func("mysqli_stmt_execute",
 $statement)` and positional `call_user_func_array("mysqli_stmt_execute",
 array($statement))` use the same refresh path. The exact
-`SELECT option_value FROM wp_options WHERE option_name = ?` shape currently
-returns an empty deterministic placeholder result. Positional
+`SELECT option_value FROM wp_options WHERE option_name = ?` shape, plus the
+same option-value equality shape with `LIMIT 1` and the current backticked
+WordPress table/column spelling, reads from the deterministic `wp_options`
+state island when a placeholder connection has recorded matching option
+state; otherwise it returns an empty deterministic placeholder result.
+Positional
 `mysqli_stmt_execute($statement, array(...))` params arrays are accepted only
 when the array is a PHP list in the current subset, for the exact known SQL
 shapes, including through `call_user_func()`. Named/string-keyed params arrays
@@ -410,8 +414,10 @@ native lowering. The current transaction and savepoint helpers can snapshot
 and restore this exact option state only.
 
 Prepared statement execution over the same state island supports the exact
-`SELECT option_value FROM wp_options WHERE option_name = ?` query for string
-option-name parameters on the same placeholder handle through
+`SELECT option_value FROM wp_options WHERE option_name = ?` query, plus the
+same exact option-value equality query with `LIMIT 1` and the current
+backticked WordPress table/column spelling, for string option-name parameters
+on the same placeholder handle through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array($name))`; missing names return an
 empty placeholder result. The exact

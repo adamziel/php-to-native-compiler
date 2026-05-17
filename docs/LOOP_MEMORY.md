@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T14:00:00Z
+
+- Checkpoint before this task:
+  `828b6a9c runtime: advance WordPress autoload refs headers and db lanes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1376-1380, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded `spl_autoload_extensions()` request-local
+  state; direct-variable parent child-slot reference-return assignment for
+  direct function/static/method calls; explicit `PHPC_FILES` upload provenance
+  for `is_uploaded_file()` and `move_uploaded_file()`; prepared
+  transient-shaped option-value `LIMIT 1` reads over the deterministic MySQLi
+  `wp_options` placeholder state island; milestone fixtures 1376-1379;
+  support, architecture, MySQLi extension, README, queue, progress,
+  lane-worker, loop-memory, and goal docs.
+- Tests run and result: focused integration checks passed for autoload
+  extension state, direct-parent child-slot reference returns, uploaded-file
+  provenance, MySQLi WordPress prepared option-value reads, milestone
+  fixtures, and system PHP comparisons where applicable. Manual full gate
+  passed before checkpoint:
+  `cargo test` completed successfully, `phpc test` reported `1479` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1479` fixture tests passed with `0` failures, `857` system PHP
+  comparisons, and `622` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, complete SAPI/request/session/upload/filesystem/stream behavior,
+  real database behavior, WordPress plugin/theme/admin/REST flows, and native
+  runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers,
+  then start Milestones 1381-1384 in separate worktrees.
+
 ## Loop Event 2026-05-17T13:00:00Z
 
 - Checkpoint before this task:

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1376/spl_autoload_extensions_state.php
+.inc,.php
+.php,.inc
+.php,.inc
+.php,.inc
+.class.php
+.class.php

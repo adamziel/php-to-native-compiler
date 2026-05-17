@@ -113,6 +113,7 @@ struct Interpreter {
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
     autoload_callbacks: Vec<AutoloadCallback>,
+    autoload_extensions: String,
     active_autoloads: HashSet<String>,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
@@ -139,6 +140,7 @@ struct Interpreter {
     stream_contexts: HashMap<i64, StreamContextResource>,
     default_stream_context_id: Option<i64>,
     directories: HashMap<i64, DirectoryResource>,
+    uploaded_file_paths: HashSet<PathBuf>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -484,6 +486,67 @@ fn parse_upload_file_metadata_pairs(input: &str) -> PhpArray {
         insert_request_value(&mut array, &key, value);
     }
     array
+}
+
+#[derive(Debug, Default)]
+struct UploadFileSeed {
+    tmp_name: Option<String>,
+    error: Option<i64>,
+}
+
+fn uploaded_file_paths_from_metadata_pairs(input: &str) -> HashSet<PathBuf> {
+    let mut seeds: HashMap<String, UploadFileSeed> = HashMap::new();
+    for pair in input.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_form_component(raw_key);
+        let Some((root, segments)) = parse_request_key_segments(&key) else {
+            continue;
+        };
+        let Some((RequestKeySegment::Key(leaf), parent_segments)) = segments.split_last() else {
+            continue;
+        };
+        if leaf != "tmp_name" && leaf != "error" {
+            continue;
+        }
+
+        let group = upload_file_seed_group_key(&root, parent_segments);
+        let seed = seeds.entry(group).or_default();
+        let decoded_value = percent_decode_form_component(raw_value);
+        if leaf == "tmp_name" {
+            seed.tmp_name = Some(decoded_value);
+        } else if let Ok(error) = decoded_value.trim().parse::<i64>() {
+            seed.error = Some(error);
+        }
+    }
+
+    seeds
+        .into_values()
+        .filter_map(|seed| {
+            (seed.error == Some(0))
+                .then_some(seed.tmp_name)
+                .flatten()
+                .filter(|path| !path.is_empty())
+        })
+        .map(|path| local_filesystem_metadata_path(&path))
+        .collect()
+}
+
+fn upload_file_seed_group_key(root: &str, segments: &[RequestKeySegment]) -> String {
+    let mut key = root.to_string();
+    for segment in segments {
+        match segment {
+            RequestKeySegment::Key(segment) => {
+                key.push('[');
+                key.push_str(segment);
+                key.push(']');
+            }
+            RequestKeySegment::Append => key.push_str("[]"),
+        }
+    }
+    key
 }
 
 fn upload_file_metadata_value(key: &str, decoded_value: String) -> Value {
@@ -2398,7 +2461,7 @@ struct ReferenceBinding {
 
 #[derive(Debug, Clone)]
 enum ReferenceBindingTarget {
-    CallerCell(VariableCell),
+    CallerCell { name: String, cell: VariableCell },
     ArrayOffset(ArrayOffsetAlias),
     ArrayOffsets(Vec<ArrayOffsetAlias>),
 }
@@ -2614,6 +2677,7 @@ impl Interpreter {
             error_handler: None,
             error_handler_mask: None,
             autoload_callbacks: Vec::new(),
+            autoload_extensions: ".inc,.php".to_string(),
             active_autoloads: HashSet::new(),
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
@@ -2640,6 +2704,7 @@ impl Interpreter {
             stream_contexts: HashMap::new(),
             default_stream_context_id: None,
             directories: HashMap::new(),
+            uploaded_file_paths: HashSet::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -2654,6 +2719,8 @@ impl Interpreter {
             stdout: String::new(),
             exit_signal: None,
         };
+        interpreter.uploaded_file_paths =
+            uploaded_file_paths_from_metadata_pairs(options.upload_files.as_deref().unwrap_or(""));
         interpreter.initialize_superglobals(
             options.query_string.as_deref().unwrap_or(""),
             options.cookie_header.as_deref().unwrap_or(""),
@@ -9437,7 +9504,12 @@ impl Interpreter {
         params: &[Value],
         span: Span,
     ) -> CompileResult<Option<MysqliPendingResultState>> {
-        if query == "SELECT option_value FROM wp_options WHERE option_name = ?" {
+        if matches!(
+            query,
+            "SELECT option_value FROM wp_options WHERE option_name = ?"
+                | "SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `option_value` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
             if let Some(option_value) = match (connection_handle_id, params) {
                 (Some(handle_id), [Value::String(option_name)]) => self
                     .mysqli_wp_options
@@ -15697,7 +15769,10 @@ impl Interpreter {
                 values.push(caller_cell.borrow().clone());
                 reference_bindings.push(ReferenceBinding {
                     param_name: param.name.clone(),
-                    target: ReferenceBindingTarget::CallerCell(caller_cell),
+                    target: ReferenceBindingTarget::CallerCell {
+                        name: caller_name.clone(),
+                        cell: caller_cell,
+                    },
                 });
             } else {
                 values.push(self.evaluate(&item.value, caller_scope)?);
@@ -16079,7 +16154,10 @@ impl Interpreter {
                     values.push(caller_cell.borrow().clone());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::CallerCell(caller_cell),
+                        target: ReferenceBindingTarget::CallerCell {
+                            name: caller_name.clone(),
+                            cell: caller_cell,
+                        },
                     });
                 } else if let Some((alias, value)) =
                     self.evaluate_direct_array_reference_argument(&item.value, caller_scope)?
@@ -16182,6 +16260,34 @@ impl Interpreter {
             );
         }
         Ok(Value::Array(callbacks))
+    }
+
+    fn call_spl_autoload_extensions(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        match args {
+            [] | [Value::Null] => Ok(Value::String(self.autoload_extensions.clone())),
+            [Value::String(extensions)] => {
+                self.autoload_extensions = extensions.clone();
+                Ok(Value::String(self.autoload_extensions.clone()))
+            }
+            [other] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "spl_autoload_extensions()",
+                    format!(
+                        "file_extensions argument must be string or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "spl_autoload_extensions()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            )),
+        }
     }
 
     fn call_spl_autoload_unregister(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -18238,6 +18344,7 @@ impl Interpreter {
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
+        let mut direct_parent_binding_cells = Vec::new();
         let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
@@ -18255,8 +18362,13 @@ impl Interpreter {
                 .find(|binding| binding.param_name == param.name)
             {
                 match &binding.target {
-                    ReferenceBindingTarget::CallerCell(caller_cell) => {
-                        local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                    ReferenceBindingTarget::CallerCell { name, cell } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                        direct_parent_binding_cells.push((
+                            param.name.clone(),
+                            name.clone(),
+                            cell.clone(),
+                        ));
                     }
                     ReferenceBindingTarget::ArrayOffset(alias) => {
                         if let Some(arg) = args.get(index) {
@@ -18326,8 +18438,9 @@ impl Interpreter {
                     }
                 }),
             ReferenceReturnLocalBinding::ArrayOffset { root_name, keys } => {
-                array_offset_binding_cells.iter().find_map(
-                    |(param_name, aliases, original_cell)| {
+                array_offset_binding_cells
+                    .iter()
+                    .find_map(|(param_name, aliases, original_cell)| {
                         if param_name != root_name {
                             return None;
                         }
@@ -18337,8 +18450,35 @@ impl Interpreter {
                         } else {
                             None
                         }
-                    },
-                )
+                    })
+                    .or_else(|| {
+                        direct_parent_binding_cells.iter().find_map(
+                            |(param_name, caller_name, original_cell)| {
+                                if param_name != root_name {
+                                    return None;
+                                }
+                                let local_cell = local_scope.read_cell(param_name)?;
+                                if Rc::ptr_eq(&local_cell, original_cell) {
+                                    let mut caller_names =
+                                        caller_scope.direct_names_sharing_cell(caller_name);
+                                    if caller_names.is_empty() {
+                                        caller_names.push(caller_name.clone());
+                                    }
+                                    Some(
+                                        caller_names
+                                            .into_iter()
+                                            .map(|name| ArrayOffsetAlias {
+                                                root: ArrayOffsetAliasRoot::StaticArray { name },
+                                                keys: keys.clone(),
+                                            })
+                                            .collect(),
+                                    )
+                                } else {
+                                    None
+                                }
+                            },
+                        )
+                    })
             }
         });
         let writeback_result = if result.is_ok() {
@@ -18463,8 +18603,8 @@ impl Interpreter {
                 .iter()
                 .find(|binding| binding.param_name == param.name)
             {
-                if let ReferenceBindingTarget::CallerCell(caller_cell) = &binding.target {
-                    local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                if let ReferenceBindingTarget::CallerCell { cell, .. } = &binding.target {
+                    local_scope.bind_static_to_cell(&param.name, cell.clone());
                 }
                 continue;
             }
@@ -18764,7 +18904,10 @@ impl Interpreter {
                     values.push(caller_cell.borrow().clone());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::CallerCell(caller_cell),
+                        target: ReferenceBindingTarget::CallerCell {
+                            name: caller_name.clone(),
+                            cell: caller_cell,
+                        },
                     });
                 } else if let Some((alias, value)) =
                     self.evaluate_direct_array_reference_argument(arg, caller_scope)?
@@ -19040,8 +19183,8 @@ impl Interpreter {
                 .find(|binding| binding.param_name == param.name)
             {
                 match &binding.target {
-                    ReferenceBindingTarget::CallerCell(caller_cell) => {
-                        local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
+                    ReferenceBindingTarget::CallerCell { cell, .. } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
                     ReferenceBindingTarget::ArrayOffset(_) => {
                         if let Some(arg) = args.get(index) {
@@ -19677,6 +19820,104 @@ impl Interpreter {
             _ => unreachable!(),
         }
         Ok(Value::Bool(true))
+    }
+
+    fn call_is_uploaded_file(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("is_uploaded_file", args, 1, span)?;
+        let path = match &args[0] {
+            Value::String(path) => path,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_uploaded_file()",
+                        format!(
+                            "path argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "is_uploaded_file()",
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+
+        let metadata_path = local_filesystem_metadata_path(path);
+        Ok(Value::Bool(
+            self.uploaded_file_paths.contains(&metadata_path)
+                && fs::metadata(&metadata_path)
+                    .map(|metadata| metadata.is_file())
+                    .unwrap_or(false),
+        ))
+    }
+
+    fn call_move_uploaded_file(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("move_uploaded_file", args, 2, span)?;
+        let from = match &args[0] {
+            Value::String(path) => path,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "move_uploaded_file()",
+                        format!(
+                            "from argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let to = match &args[1] {
+            Value::String(path) => path,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "move_uploaded_file()",
+                        format!(
+                            "to argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if from.contains("://") || to.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "move_uploaded_file()",
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+
+        let from_path = local_filesystem_metadata_path(from);
+        if !self.uploaded_file_paths.contains(&from_path)
+            || !fs::metadata(&from_path)
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false)
+        {
+            return Ok(Value::Bool(false));
+        }
+
+        let to_path = local_filesystem_metadata_path(to);
+        let moved = fs::rename(&from_path, &to_path).is_ok()
+            || fs::copy(&from_path, &to_path)
+                .and_then(|_| fs::remove_file(&from_path))
+                .is_ok();
+        if moved {
+            self.uploaded_file_paths.remove(&from_path);
+        }
+        Ok(Value::Bool(moved))
     }
 
     fn ensure_default_stream_context(&mut self) -> i64 {
@@ -22424,6 +22665,8 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 self.create_mysqli_placeholder(span)
             }
+            "is_uploaded_file" => self.call_is_uploaded_file(&args, span),
+            "move_uploaded_file" => self.call_move_uploaded_file(&args, span),
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -23515,6 +23758,7 @@ impl Interpreter {
                 )),
             },
             "spl_autoload_functions" => self.call_spl_autoload_functions(&args, span),
+            "spl_autoload_extensions" => self.call_spl_autoload_extensions(&args, span),
             "spl_autoload_unregister" => self.call_spl_autoload_unregister(&args, span),
             "spl_autoload_call" => self.call_spl_autoload_call(&args, span),
             "is_a" => match args.as_slice() {
@@ -28335,6 +28579,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_poll"
             | "mysqli_report"
             | "mysqli_init"
+            | "is_uploaded_file"
+            | "move_uploaded_file"
             | "file_exists"
             | "file_get_contents"
             | "fopen"
@@ -28403,6 +28649,7 @@ fn is_builtin(name: &str) -> bool {
             | "spl_object_hash"
             | "spl_autoload_register"
             | "spl_autoload_functions"
+            | "spl_autoload_extensions"
             | "spl_autoload_unregister"
             | "spl_autoload_call"
             | "property_exists"
@@ -30029,7 +30276,12 @@ fn mysqli_statement_result_for_query_with_params(
         }));
     }
 
-    if query == "SELECT option_value FROM wp_options WHERE option_name = ?" {
+    if matches!(
+        query,
+        "SELECT option_value FROM wp_options WHERE option_name = ?"
+            | "SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1"
+            | "SELECT `option_value` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+    ) {
         return Ok(Some(MysqliPendingResultState {
             fields: vec!["option_value".to_string()],
             rows: Vec::new(),

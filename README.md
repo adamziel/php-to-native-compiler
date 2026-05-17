@@ -56,7 +56,9 @@ header string and exposes the raw value through `$_SERVER["HTTP_COOKIE"]`;
 cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
 `$_FILES` upload metadata from URL-encoded keys such as
 `async-upload[name]=plugin.zip&async-upload[error]=0`; it does not parse
-multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
+multipart bodies or create temporary upload files. `is_uploaded_file()` and
+`move_uploaded_file()` use only the initial `PHPC_FILES` `tmp_name` entries
+with `error=0` as bounded local upload provenance. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 direct function-scope reads/writes route through that session root, including
@@ -76,10 +78,12 @@ contexts. Context resources may be passed to the current
 `file_get_contents()`/`fopen()` local and `php://input` paths without applying
 wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Unsupported wrappers,
-filters, context option effects, context params, broader wrapper metadata, binary byte
-fidelity, directory entry ordering fidelity, permissions/locking, stat-cache
-behavior, warning recovery, temp-file spillover, and native stream resources
-remain unsupported. Native lowering still rejects request/session/stream state
+filters, context option effects, context params, broader wrapper metadata,
+binary byte fidelity, directory entry ordering fidelity, multipart upload
+parsing, runtime temporary upload creation, host upload validation,
+permissions/locking, stat-cache behavior, warning recovery, temp-file
+spillover, and native stream resources remain unsupported. Native lowering
+still rejects request/session/stream state
 until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
@@ -175,7 +179,8 @@ incorrect native code.
   reference-return assignment that binds a returned by-reference parameter
   back to covered direct array-offset and public object-property array-offset
   arguments, including the narrow `return $param[$key]` child-slot shape when
-  `$param` was supplied by a covered parent array/property slot,
+  `$param` was supplied by a direct variable parent array or a covered parent
+  array/property slot,
   plus bounded
   direct array-offset reference elements in literal `call_user_func_array()`
   argument arrays for request bags, `$GLOBALS`, and nested arrays,
@@ -210,10 +215,11 @@ incorrect native code.
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
-  shapes and selected prepared option-value-only, option-name-only,
-  option-name-list, full-row, star-projection, name/autoload-list, and
-  autoload-list/equality result sets, plus bounded direct and prepared
-  transient-shaped option-name prefix result scans and deletes;
+  shapes and selected prepared option-value-only equality reads including
+  `LIMIT 1`, option-name-only, option-name-list, full-row, star-projection,
+  name/autoload-list, and autoload-list/equality result sets, plus bounded
+  direct and prepared transient-shaped option-name prefix result scans and
+  deletes;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -297,6 +303,9 @@ incorrect native code.
   current bounded callback list for class/interface/trait names,
   `spl_autoload_functions()` exposes the current bounded callback list, and
   `spl_autoload_unregister()` removes matching bounded callbacks,
+  `spl_autoload_extensions()` reads and replaces the request-local extension
+  string used by PHP's default SPL autoload surface, while the default
+  `spl_autoload()` file-probing callback itself remains unsupported,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -395,8 +404,9 @@ instantiation, and included
 class/interface/trait declaration dependencies and manual
 `spl_autoload_call()` loads; autoload lifecycle behavior beyond bounded
 `spl_autoload_functions()`, `spl_autoload_unregister()`, and
-`spl_autoload_call()`, including closure invocation, exact callable
-validation, and enum autoloading,
+`spl_autoload_call()`, including default `spl_autoload()` file probing,
+closure invocation, exact callable validation, scalar-to-string coercions for
+`spl_autoload_extensions()`, and enum autoloading,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -448,9 +458,10 @@ copy-on-write remain unsupported.
 By-reference function and method return declarations also parse and have
 bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
-`return $param[$key]` child-slot shape when `$param` was supplied by a covered
-parent array/property slot. Normal by-value invocation of reference-return
-functions and methods still reports a stable unsupported diagnostic.
+`return $param[$key]` child-slot shape when `$param` was supplied by a direct
+variable parent array or a covered parent array/property slot. Normal by-value
+invocation of reference-return functions and methods still reports a stable
+unsupported diagnostic.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including

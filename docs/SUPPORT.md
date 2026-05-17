@@ -70,14 +70,17 @@
   binds back to the same covered slot group after the call. The same direct
   reference-return assignment path also covers the narrow non-direct return
   expression shape `return $param[$key];` when `$param` is a by-reference
-  parameter supplied by one of those covered parent array-slot roots, such as
-  `$alias =& pick($_REQUEST["payload"], "slot");` or
+  parameter supplied by a direct variable parent array or by one of those
+  covered parent array-slot roots, such as
+  `$alias =& pick($items, "slot");`,
+  `$alias =& pick($_REQUEST["payload"], "slot");`, or
   `$alias =& $object->pick($object->items["group"], "slot");`; the returned
-  child path is appended to the covered caller alias group. Direct-variable
-  parent containers for this array-offset return shape, nested-control-flow
-  returns, non-public/dynamic object-property argument roots, `ArrayAccess`
-  argument roots, arbitrary return expressions, real PHP reference containers,
-  broader copy-on-write, and native lowering remain unsupported.
+  child path is bound back to the direct caller variable's child slot or
+  appended to the covered caller alias group. Nested-control-flow returns,
+  non-public/dynamic object-property argument roots, `ArrayAccess` argument
+  roots, callback argument-array parents, arbitrary return expressions, real
+  PHP reference containers, broader copy-on-write, and native lowering remain
+  unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -698,9 +701,10 @@
   through the root symbol table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
-  copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
-  session-related server key population, other superglobals, exact warning
-  behavior, and native lowering remain unsupported.
+  copy-on-write, mutation-ordering fidelity, `variables_order`, real uploads
+  beyond the explicit `PHPC_FILES` seed, session-related server key
+  population, other superglobals, exact warning behavior, and native lowering
+  remain unsupported.
 - `$_COOKIE` is seeded as a bounded root superglobal for `phpc run`. By
   default it is an empty ordered array. When `PHPC_COOKIE` is set, the runtime
   treats it as a semicolon-delimited cookie header seed, parses cookie pairs
@@ -745,14 +749,20 @@
   normalization policy as request bags; `error` and `size` leaf values parse
   as decimal integers when possible, while other metadata values remain
   strings. Direct function-scope reads and writes of `$_FILES` route through
-  the root symbol table without a `global $_FILES` declaration. Multipart/form
-  upload parsing, temporary uploaded files, host-upload validation,
-  malformed upload metadata diagnostics, nested multi-file upload arrays
-  beyond the current bracket insertion slice, `is_uploaded_file()`/
-  `move_uploaded_file()`, request method/content-type enforcement,
+  the root symbol table without a `global $_FILES` declaration. The initial
+  `PHPC_FILES` seed also records a bounded upload-provenance set: entries
+  with `tmp_name` and `error=0` make `is_uploaded_file($path)` return `true`
+  while that local path still exists as a regular file, and
+  `move_uploaded_file($from, $to)` moves such a registered local path once to
+  another local path and then clears the original upload provenance. Stream
+  wrappers are rejected for these upload builtins. Multipart/form upload
+  parsing, runtime creation of temporary upload files, host-upload validation
+  beyond the explicit seed, malformed upload metadata diagnostics, nested
+  multi-file upload arrays beyond the current bracket insertion/provenance
+  slice, failed upload provenance, request method/content-type enforcement,
   `variables_order`, host SAPI imports, `$GLOBALS` aliasing, references,
-  copy-on-write, exact warning behavior, and native lowering remain
-  unsupported.
+  copy-on-write, exact PHP warnings, permission/TOCTOU fidelity, and native
+  lowering remain unsupported.
 - `$_SESSION` is not seeded at startup, matching the current bounded session
   lifecycle. `session_start()` materializes it as an empty ordered array in the
   root symbol table when no unbuffered output has started, and direct
@@ -1087,7 +1097,7 @@
   `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
-  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
+  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
@@ -1971,8 +1981,10 @@
   transaction and savepoint helpers can snapshot and restore this exact option
   state only.
   Prepared statement execution over the same state island supports the exact
-  `SELECT option_value FROM wp_options WHERE option_name = ?` query for string
-  option-name parameters on the same placeholder handle through
+  `SELECT option_value FROM wp_options WHERE option_name = ?` query, plus the
+  same option-value equality query with `LIMIT 1` and the current backticked
+  WordPress table/column spelling, for string option-name parameters on the
+  same placeholder handle through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array($name))`; missing names return
   an empty placeholder result. The exact
@@ -2275,7 +2287,12 @@
   `null`, and `closedir($dir)` closes the directory resource and returns
   `null`. Directory entries are exposed as `.`, `..`, then sorted UTF-8 host
   names for deterministic fixtures; exact host iteration order remains
-  unsupported. This is a deterministic WordPress request/runtime
+  unsupported. `is_uploaded_file($path)` and
+  `move_uploaded_file($from, $to)` use only the request-local upload
+  provenance captured from initial `PHPC_FILES` metadata entries with
+  `error=0`; successful moves remove the source path from that provenance set
+  and do not mark the destination as uploaded. This is a deterministic
+  WordPress request/runtime
   compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
   wrappers, filters, context option behavior beyond persistence, context
   params, binary/non-UTF-8 byte fidelity, host SAPI body
@@ -2394,17 +2411,21 @@
   `spl_autoload_call($class)` accepts one string class/interface/trait name,
   invokes the same bounded non-closure callback list in registration order,
   stops once any class-like metadata with that name exists, and returns
-  `null`.
+  `null`. `spl_autoload_extensions()` returns the current request-local SPL
+  autoload extension string, defaulting to `.inc,.php`; a string argument
+  replaces that extension string and returns the new value, and `null` behaves
+  as a read without changing it.
   Closure callbacks remain a registration-only shape and report a stable
   unsupported autoload boundary if a lookup needs to invoke them. Nonexistent
   string callback validation for register/unregister, non-public `__invoke`,
   static `__invoke`, invokable-object dispatch outside autoloading, non-public
   methods, class-string non-static methods, object static methods,
   `self::`/`parent::`/`static::` callback strings, arbitrary callable arrays,
-  throwing/exact warning behavior, enum autoload
-  lookup, namespace/import canonicalization beyond current string lookup,
-  recursive loader edge cases beyond a same-name guard, references/COW, and
-  native lowering remain unsupported.
+  default `spl_autoload()` file probing through the extension registry,
+  scalar-to-string coercions for extension arguments, throwing/exact warning
+  behavior, enum autoload lookup, namespace/import canonicalization beyond
+  current string lookup, recursive loader edge cases beyond a same-name guard,
+  references/COW, and native lowering remain unsupported.
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
   string callable, object/static array callable, or closure plus optional
   already-evaluated extra arguments and returns `null`. The current slice
@@ -4127,7 +4148,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
@@ -4501,7 +4522,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
@@ -4681,7 +4702,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -5204,13 +5225,15 @@
   `stream_context_set_option`, `fwrite`,
   `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`,
   `fstat`, `stream_get_meta_data`, `fclose`, `opendir`,
-  `readdir`, `rewinddir`, and `closedir` accept the same current bounded
-  `php://memory`, `php://temp`, `php://input`, local UTF-8 file stream, and
-  local UTF-8 directory handle subset as the builtin section above; direct
-  native calls reject under a dedicated stream-resource boundary until native
-  PHP resource handles, stream wrapper state, stream context state, directory
-  handle state, binary byte strings, warning plus `false` recovery,
-  references/copy-on-write, and exact native diagnostics exist.
+  `readdir`, `rewinddir`, `closedir`, `is_uploaded_file`, and
+  `move_uploaded_file` accept the same current bounded `php://memory`,
+  `php://temp`, `php://input`, local UTF-8 file stream, local UTF-8 directory
+  handle, and `PHPC_FILES` upload-provenance subset as the builtin section
+  above; direct native calls reject under a dedicated stream-resource boundary
+  until native PHP resource handles, stream wrapper state, stream context
+  state, directory handle state, upload provenance state, binary byte strings,
+  warning plus `false` recovery, references/copy-on-write, and exact native
+  diagnostics exist.
   `filesize` accepts the same current one-string local regular-file metadata
   subset as the builtin section above; direct native `filesize(...)` calls
   still reject under the function-call boundary until native filesystem
@@ -7282,13 +7305,15 @@
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
 - `$_FILES` behavior beyond the current explicit `PHPC_FILES` upload metadata
-  seed and direct root-symbol routing: multipart/form upload parsing,
-  temporary upload file state, host-upload validation, broad malformed
-  metadata diagnostics, nested multi-file upload arrays beyond the current
-  bracket insertion slice, `is_uploaded_file()`/`move_uploaded_file()`,
+  seed, direct root-symbol routing, and bounded `tmp_name`/`error=0`
+  upload-provenance checks: multipart/form upload parsing, runtime temporary
+  upload file creation, host-upload validation beyond the explicit seed, broad
+  malformed metadata diagnostics, nested multi-file upload arrays beyond the
+  current bracket insertion/provenance slice, failed upload provenance,
   request method/content-type enforcement, `variables_order`, host SAPI
   imports, `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering
-  fidelity, exact warning behavior, and native lowering
+  fidelity, exact warning behavior, permission/TOCTOU fidelity, and native
+  lowering
 - other superglobals such as `$_ENV` and full PHP `$GLOBALS` materialization
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,

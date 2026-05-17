@@ -94,6 +94,47 @@ spl_autoload_register($loader);
         call_non_string.message,
         "unsupported call spl_autoload_call(): class name argument must be string in the current subset, got int"
     );
+
+    let extensions_arity =
+        run_source("<?php\nspl_autoload_extensions('.php', '.inc');\n").unwrap_err();
+    assert_eq!(extensions_arity.phase, Phase::Runtime);
+    assert_eq!(extensions_arity.line, 2);
+    assert_eq!(extensions_arity.column, 1);
+    assert_eq!(
+        extensions_arity.message,
+        "arity mismatch for spl_autoload_extensions(): expected 0 to 1 argument(s), got 2"
+    );
+
+    let extensions_non_string = run_source("<?php\nspl_autoload_extensions([]);\n").unwrap_err();
+    assert_eq!(extensions_non_string.phase, Phase::Runtime);
+    assert_eq!(extensions_non_string.line, 2);
+    assert_eq!(extensions_non_string.column, 1);
+    assert_eq!(
+        extensions_non_string.message,
+        "unsupported call spl_autoload_extensions(): file_extensions argument must be string or null in the current subset, got array"
+    );
+}
+
+#[test]
+fn spl_autoload_extensions_tracks_request_local_extension_string() {
+    let execution = run_source(
+        r#"<?php
+echo spl_autoload_extensions(), "\n";
+echo spl_autoload_extensions(".php,.inc"), "\n";
+echo spl_autoload_extensions(), "\n";
+echo spl_autoload_extensions(null), "\n";
+$call = "spl_autoload_extensions";
+echo $call(".class.php"), "\n";
+echo spl_autoload_extensions();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        ".inc,.php\n.php,.inc\n.php,.inc\n.php,.inc\n.class.php\n.class.php"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -798,6 +839,10 @@ fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists(
     let functions_error = emit_ir_source("<?php\nspl_autoload_functions();\n").unwrap_err();
     assert_eq!(functions_error.phase, Phase::Codegen);
     assert_eq!(functions_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let extensions_error = emit_ir_source("<?php\nspl_autoload_extensions();\n").unwrap_err();
+    assert_eq!(extensions_error.phase, Phase::Codegen);
+    assert_eq!(extensions_error.message, LLVM_FUNCTION_CALL_REJECTION);
 
     let unregister_error =
         emit_ir_source("<?php\nspl_autoload_unregister('MissingAutoloader');\n").unwrap_err();

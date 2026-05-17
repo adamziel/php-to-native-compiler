@@ -1045,6 +1045,59 @@ echo $picker->cache["options"]["alloptions"], "|", $cache_alias;
 }
 
 #[test]
+fn reference_return_assignment_binds_returned_array_offset_from_direct_variable_parent() {
+    let execution = run_source(
+        r#"<?php
+function &pick_slot_from_parent(&$items, $key, $suffix) {
+    $items[$key] = $items[$key] . ":" . $suffix;
+    return $items[$key];
+}
+
+class DirectParentSlotPicker {
+    public function &pick(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+
+    public static function &pickStatic(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+}
+
+$function_items = ["slot" => "function"];
+$function_alias =& pick_slot_from_parent($function_items, "slot", "direct");
+$function_alias = $function_alias . ":alias";
+echo $function_items["slot"], "|", $function_alias, "\n";
+
+$static_items = ["slot" => "static"];
+$static_alias =& DirectParentSlotPicker::pickStatic($static_items, "slot", "direct");
+$static_alias = $static_alias . ":alias";
+echo $static_items["slot"], "|", $static_alias, "\n";
+
+$method_items = ["slot" => "method"];
+$picker = new DirectParentSlotPicker();
+$method_alias =& $picker->pick($method_items, "slot", "direct");
+$method_alias = $method_alias . ":alias";
+echo $method_items["slot"], "|", $method_alias, "\n";
+
+$shared_items = ["slot" => "shared"];
+$shared_parent =& $shared_items;
+$shared_alias =& pick_slot_from_parent($shared_items, "slot", "direct");
+$shared_parent["slot"] = $shared_parent["slot"] . ":parent";
+echo $shared_items["slot"], "|", $shared_parent["slot"], "|", $shared_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function:direct:alias|function:direct:alias\nstatic:direct:alias|static:direct:alias\nmethod:direct:alias|method:direct:alias\nshared:direct:parent|shared:direct:parent|shared:direct:parent"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_return_assignment_binds_array_offset_arguments() {
     let execution = run_source(
         r#"<?php

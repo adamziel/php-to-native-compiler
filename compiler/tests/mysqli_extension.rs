@@ -4140,6 +4140,41 @@ echo $stmt_row["option_name"], "=", $stmt_row["option_value"];
 }
 
 #[test]
+fn mysqli_reads_current_wordpress_prepared_option_value_limit_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '12345', 'no')");
+$direct = mysqli_execute_query($handle, "SELECT `option_value` FROM `wp_options` WHERE `option_name` = ? LIMIT 1", array("_transient_update_plugins"));
+$direct_row = mysqli_fetch_assoc($direct);
+echo mysqli_num_rows($direct);
+echo ":";
+echo $direct_row["option_value"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1");
+$name = "_transient_update_plugins";
+mysqli_stmt_bind_param($stmt, "s", $name);
+$name = "_transient_timeout_update_plugins";
+mysqli_stmt_execute($stmt);
+$rows = mysqli_stmt_get_result($stmt);
+$row = mysqli_fetch_assoc($rows);
+echo mysqli_num_rows($rows);
+echo ":";
+echo $row["option_value"];
+echo "|";
+$missing = mysqli_execute_query($handle, "SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1", array("_transient_missing"));
+echo mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1:plugin-payload|1:12345|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_id_from_state() {
     let execution = run_source(
         r#"<?php

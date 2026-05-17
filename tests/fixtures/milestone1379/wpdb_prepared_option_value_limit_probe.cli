@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1379/wpdb_prepared_option_value_limit_probe.php

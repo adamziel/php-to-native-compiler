@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and exact prepared option_value equality reads with LIMIT 1 for a transient-shaped wpdb get_var probe rather than a real MySQL database, arbitrary SQL, persistent object cache, full WordPress option APIs, or native DB lowering.

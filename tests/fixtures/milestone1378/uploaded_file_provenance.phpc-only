@@ -1,0 +1,1 @@
+Uses PHPC_FILES upload provenance for the meaningful CLI exercise; system PHP cannot reproduce phpc's seeded upload registry in CLI mode.

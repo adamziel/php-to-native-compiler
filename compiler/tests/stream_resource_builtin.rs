@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, and local directory handles";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, local directory handles, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -88,6 +88,66 @@ fclose($input);
         "resource|PHP:Input:rb:php://input|action=:7:save&token=abc:eof|action:0:n=abc"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn uploaded_file_builtins_use_seeded_phpc_files_provenance() {
+    let source_path = temp_stream_path("phpc-upload-source.txt");
+    let destination_path = temp_stream_path("phpc-upload-destination.txt");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&destination_path);
+    fs::write(&source_path, "payload").expect("upload source can be seeded");
+    let source = format!(
+        r#"<?php
+$tmp = "{}";
+$dest = "{}";
+echo function_exists("is_uploaded_file") ? "exists" : "missing";
+echo "|";
+echo is_callable("move_uploaded_file") ? "callable" : "not-callable";
+echo "|";
+echo is_uploaded_file($tmp) ? "uploaded" : "plain";
+echo "|";
+echo move_uploaded_file($tmp, $dest) ? "moved" : "stayed";
+echo "|";
+echo is_uploaded_file($tmp) ? "old-upload" : "old-clear";
+echo "|";
+echo file_exists($tmp) ? "old-exists" : "old-missing";
+echo "|";
+echo file_get_contents($dest);
+"#,
+        source_path.display(),
+        destination_path.display()
+    );
+    let upload_files = format!(
+        "async-upload[tmp_name]={}&async-upload[error]=0&async-upload[size]=7",
+        form_encode_path(&source_path)
+    );
+    let program = parse(&source).unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            upload_files: Some(upload_files),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exists|callable|uploaded|moved|old-clear|old-missing|payload"
+    );
+    assert_eq!(execution.exit_code, 0);
+    assert!(
+        !source_path.exists(),
+        "move_uploaded_file removes the source"
+    );
+    assert_eq!(
+        fs::read_to_string(&destination_path).expect("destination is readable"),
+        "payload"
+    );
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(destination_path);
 }
 
 #[test]
@@ -516,6 +576,25 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
         bad_readdir.message,
         "unsupported call readdir(): directory argument must be resource in the current subset, got string"
     );
+
+    let bad_upload_path = run_source("<?php\nis_uploaded_file(42);\n").unwrap_err();
+    assert_eq!(bad_upload_path.phase, Phase::Runtime);
+    assert_eq!(bad_upload_path.line, 2);
+    assert_eq!(bad_upload_path.column, 1);
+    assert_eq!(
+        bad_upload_path.message,
+        "unsupported call is_uploaded_file(): path argument must be string in the current subset, got int"
+    );
+
+    let bad_upload_wrapper =
+        run_source("<?php\nmove_uploaded_file('php://input', '/tmp/file');\n").unwrap_err();
+    assert_eq!(bad_upload_wrapper.phase, Phase::Runtime);
+    assert_eq!(bad_upload_wrapper.line, 2);
+    assert_eq!(bad_upload_wrapper.column, 1);
+    assert_eq!(
+        bad_upload_wrapper.message,
+        "unsupported call move_uploaded_file(): stream wrappers are not supported in the current subset"
+    );
 }
 
 #[test]
@@ -534,13 +613,15 @@ echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
 echo function_exists("opendir") ? "1" : "0";
 echo is_callable("readdir") ? "1" : "0";
+echo function_exists("is_uploaded_file") ? "1" : "0";
+echo is_callable("move_uploaded_file") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 14, "{ir}");
 
-    let error = emit_ir_source("<?php\nstream_context_create();\n").unwrap_err();
+    let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
@@ -552,6 +633,19 @@ fn temp_stream_path(name: &str) -> PathBuf {
     path.push(format!("{}-{}-{name}", std::process::id(), line!()));
     let _ = fs::remove_file(&path);
     path
+}
+
+fn form_encode_path(path: &PathBuf) -> String {
+    path.to_string_lossy()
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => {
+                vec![byte as char]
+            }
+            b' ' => vec!['+'],
+            other => format!("%{other:02X}").chars().collect(),
+        })
+        .collect()
 }
 
 #[test]
