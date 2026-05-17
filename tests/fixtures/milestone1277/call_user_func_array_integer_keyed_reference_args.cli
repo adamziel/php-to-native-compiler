@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1277/call_user_func_array_integer_keyed_reference_args.php

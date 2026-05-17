@@ -338,14 +338,18 @@ Exact option-row reads for
 `SELECT option_name, option_value FROM wp_options`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
 'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
-return recorded option-name/option-value rows. All and autoload-filtered row
-reads use deterministic option-name ordering; explicit `IN (...)` reads
-preserve the requested name order and skip missing names. Missing option names
-still return an empty placeholder result. The exact single-quoted literal
-parser for those direct option shapes accepts the current MySQL-style
-backslash escapes used by `mysqli_real_escape_string()` for quotes, double
-quotes, backslashes, newlines, and carriage returns, plus doubled single
-quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
+return recorded option-name/option-value rows. The same all-row,
+autoload-filtered, and explicit-name-list shapes are also supported for the
+exact
+`SELECT option_name, option_value, autoload FROM wp_options ...` projection,
+returning recorded option-name, value, and autoload columns. All and
+autoload-filtered row reads use deterministic option-name ordering; explicit
+`IN (...)` reads preserve the requested name order and skip missing names.
+Missing option names still return an empty placeholder result. The exact
+single-quoted literal parser for those direct option shapes accepts the
+current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
+for quotes, double quotes, backslashes, newlines, and carriage returns, plus
+doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
 projection beyond exact option id/name/value/autoload/name-value/full-row shapes,

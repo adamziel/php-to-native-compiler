@@ -85,14 +85,17 @@
   `["ClassName", "method"]` static callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` also support
   by-reference direct variable elements through the same direct-variable cell
-  binding. The callback path additionally accepts by-reference direct public
-  object-property array-offset elements such as
-  `array(&$object->items[$group][$key], ...)` as a bounded
+  binding. Those literal callback argument arrays may be unkeyed or explicitly
+  integer-keyed; integer keys are treated as positional in insertion order for
+  this reference path. The callback path additionally accepts by-reference
+  direct public object-property array-offset elements such as
+  `array(&$object->items[$group][$key], ...)` and
+  `array(10 => &$object->items[$group][$key], ...)` as a bounded
   copy-in/writeback path. `unset($param)` detaches only the callee's local
   parameter name; later local writes do not mutate the caller variable or write
   back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, dynamic static receiver, keyed callback argument arrays,
+  array, dynamic static receiver, string-keyed named callback argument arrays,
   and reference-returning function or method forms remain unsupported for
   object-property array reference arguments. This is still a bounded
   direct-variable alias and public object-property output path, not full PHP
@@ -580,9 +583,11 @@
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
-  `QUERY_STRING`. Direct function-scope reads and writes of `$_SERVER` route
-  through the root symbol
-  table without a
+  `QUERY_STRING`. `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`,
+  `PHPC_CONTENT_TYPE`, and `PHPC_REQUEST_BODY` can seed bounded CLI request
+  values for `QUERY_STRING`, `REQUEST_METHOD`, `CONTENT_TYPE`, and
+  `CONTENT_LENGTH`. Direct function-scope reads and writes of `$_SERVER` route
+  through the root symbol table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
   copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
@@ -596,13 +601,20 @@
   references, copy-on-write, exact warning behavior, and native lowering remain
   unsupported.
 - `$_GET`, `$_POST`, and `$_REQUEST` are seeded as bounded root superglobals
-  for `phpc run` with empty ordered arrays. Direct function-scope reads and
-  writes route through the root symbol table without `global` declarations,
-  matching the current deterministic CLI request scaffold. Query-string/body
-  parsing, request method handling, file uploads, `variables_order`,
-  automatic `$_REQUEST` merging from GET/POST/COOKIE data, host environment
-  imports, `$GLOBALS` aliasing, references, copy-on-write, exact warning
-  behavior, and native lowering remain unsupported.
+  for `phpc run`. By default they are empty ordered arrays. When
+  `PHPC_QUERY_STRING` is set, the runtime parses flat
+  `application/x-www-form-urlencoded` query pairs into `$_GET`; when
+  `PHPC_REQUEST_METHOD=POST`, `PHPC_CONTENT_TYPE` is
+  `application/x-www-form-urlencoded` (parameters such as `; charset=UTF-8`
+  are accepted), and `PHPC_REQUEST_BODY` is set, it parses flat form pairs into
+  `$_POST`. `$_REQUEST` is initialized by merging the parsed GET values and
+  then parsed POST values, with later POST keys replacing earlier GET keys.
+  Direct function-scope reads and writes route through the root symbol table
+  without `global` declarations. Nested/bracketed request names, duplicate-key
+  array collection, cookie merging, multipart uploads, `variables_order`,
+  `request_order`, host SAPI imports, `$GLOBALS` aliasing,
+  references, copy-on-write, exact warning behavior, and native lowering remain
+  unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run` with an
   empty ordered array. Direct function-scope reads and writes of `$_FILES`
   route through the root symbol table without a `global $_FILES` declaration,
@@ -669,9 +681,12 @@
   interface parameter to a different type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
-  the same return type text case-insensitively. Public interface constants
-  declared as `const NAME = ...` or `public const NAME = ...` with the current
-  class-constant expression subset resolve through `InterfaceName::CONST`,
+  the same return type text case-insensitively. Child interfaces that redeclare
+  inherited methods and simple multi-parent inherited method conflicts are
+  checked with those same bounded required-parameter, parameter-type, and
+  return-type metadata rules before class registration. Public interface
+  constants declared as `const NAME = ...` or `public const NAME = ...` with
+  the current class-constant expression subset resolve through `InterfaceName::CONST`,
   inherited parent-interface lookup, `ClassName::CONST` on implementing
   classes, `self::CONST`/`static::CONST` in implementing class methods, and
   `defined()`/`constant()` string lookups. Missing or cyclic parent interface
@@ -1673,13 +1688,17 @@
   `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
   'on', 'auto-on', 'auto' )`, and exact
   `WHERE option_name IN (...)` shapes return recorded name/value rows through
-  the same placeholder result path. All and autoload-filtered row reads use
-  deterministic option-name ordering; explicit `IN (...)` reads preserve the
-  requested name order and skip missing names. Missing option names still
-  return an empty placeholder result. The exact single-quoted literal parser
-  for those direct option shapes accepts the current MySQL-style backslash
-  escapes used by `mysqli_real_escape_string()` for quotes, double quotes,
-  backslashes, newlines, and carriage returns, plus doubled single quotes.
+  the same placeholder result path. The same all-row, autoload-filtered, and
+  explicit-name-list shapes are also supported for the exact
+  `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
+  returning recorded option-name, value, and autoload columns. All and
+  autoload-filtered row reads use deterministic option-name ordering; explicit
+  `IN (...)` reads preserve the requested name order and skip missing names.
+  Missing option names still return an empty placeholder result. The exact
+  single-quoted literal parser for those direct option shapes accepts the
+  current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
+  for quotes, double quotes, backslashes, newlines, and carriage returns, plus
+  doubled single quotes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
@@ -1876,14 +1895,15 @@
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
   `file_get_contents($path)` accepts exactly one string path. The special
-  `php://input` path returns an empty string as a deterministic request-body
-  placeholder for the reached WordPress XML-RPC CLI probe. Local paths are
-  read from the host filesystem as UTF-8 text and share the same current
+  `php://input` path returns the current bounded request body seeded from
+  `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths are read
+  from the host filesystem as UTF-8 text and share the same current
   relative path policy as `file_exists`. This is a bounded WordPress bootstrap
   compatibility slice, not full PHP filesystem support: binary string byte
   fidelity, missing-file warning/`false` recovery, other stream wrappers,
   stream contexts, offsets/lengths, include-path lookup, real request-body
-  state, `open_basedir`, stat-cache behavior, partial-output behavior, and
+  state outside the explicit CLI seed, `open_basedir`, stat-cache behavior,
+  partial-output behavior, and
   native lowering remain unsupported. Direct native
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
   boundary before argument lowering or backend selection, while native
@@ -2602,11 +2622,12 @@
   requires the same return type text case-insensitively;
   abstract classes may defer that requirement until a concrete child is
   registered, and inherited public methods count. Public static methods do not
-  satisfy non-static interface method requirements. This is a bounded
-  public-method compatibility check only, not full parameter type
+  satisfy non-static interface method requirements. Child interfaces that
+  redeclare inherited methods and simple multi-parent inherited method
+  conflicts are validated with those same bounded metadata rules. This is a
+  bounded public-method compatibility check only, not full parameter type
   compatibility, broader return type covariance/contravariance, full signature
-  variance, class or interface type subtyping, forward parent-interface
-  resolution, type-alias/import resolution,
+  variance, class or interface type subtyping, type-alias/import resolution,
   union/intersection canonicalization, or exact PHP error-object behavior.
   Unresolved interface names remain relationship metadata only. Most
   built-in/internal interface names are still metadata-only, except for the
@@ -6658,12 +6679,12 @@
   `variables_order`, `$_REQUEST` merging, cookie emission through headers,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
-- `$_GET`, `$_POST`, and `$_REQUEST` behavior beyond the current deterministic
-  empty array seed and direct root-symbol routing: query-string/body parsing,
-  request method handling, file uploads, `variables_order`, automatic
-  `$_REQUEST` merging from GET/POST/COOKIE data, host environment imports,
-  `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
-  exact warning behavior, and native lowering
+- `$_GET`, `$_POST`, and `$_REQUEST` behavior beyond the current explicit
+  flat URL-encoded CLI seed and direct root-symbol routing: nested/bracketed
+  request names, duplicate-key array collection, multipart uploads,
+  `variables_order`, `request_order`, cookie merging into `$_REQUEST`, host
+  environment imports, `$GLOBALS` aliasing, references/copy-on-write,
+  mutation-ordering fidelity, exact warning behavior, and native lowering
 - `$_FILES` behavior beyond the current deterministic empty array seed and
   direct root-symbol routing: multipart/form upload parsing, temporary upload
   file state, upload error metadata population, `is_uploaded_file()`/

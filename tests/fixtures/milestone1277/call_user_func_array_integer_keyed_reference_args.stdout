@@ -1,0 +1,3 @@
+autoload:function
+autoload:function:method
+autoload:function:method|cold:static

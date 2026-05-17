@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T01:48:34Z
+
+- Checkpoint before this task:
+  `ce91190a runtime: advance WordPress object refs header and db slices`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1276-1280, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger.
+- Files changed so far: bounded inherited interface method compatibility;
+  bounded integer-keyed literal `call_user_func_array()` by-reference
+  arguments; explicit `phpc run` request seeds for flat URL-encoded
+  `$_GET`/`$_POST`/`$_REQUEST`, `$_SERVER` request metadata, and
+  `php://input`; exact multi-row `wp_options` placeholder reads for all rows,
+  autoload rows, and explicit name lists; milestone fixtures 1276-1279;
+  support, architecture, WordPress compatibility, MySQLi extension, README,
+  queue, progress, lane-worker, and goal docs.
+- Tests run and result: focused integration checks passed for object-model
+  interfaces, callback dispatch/reference arguments, request superglobals,
+  `file_get_contents`, MySQLi WordPress option reads, the updated WordPress
+  add-option inventory probe, milestone fixture runs/comparisons/manifests,
+  formatting, and diff hygiene. The serialized checkpoint gate passed:
+  `cargo test` completed successfully, `phpc test` reported `1400` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1400` fixture tests passed with `0` failures, `804` system PHP comparisons,
+  and `596` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, stream/resource handling, real web-server SAPI state, filesystem
+  fidelity, real database behavior, WordPress plugin/theme/admin/REST flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: push the latest checkpoint, clean dedicated target
+  directories, close completed workers, then start Milestones 1281-1284 in
+  separate worktrees.
+
 ## Loop Event 2026-05-17T01:34:49Z
 
 - Checkpoint before this task:

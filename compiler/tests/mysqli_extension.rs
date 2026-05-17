@@ -3258,6 +3258,57 @@ echo $prepared_row["option_name"], ":", $prepared_row["option_value"], ":", $pre
 }
 
 #[test]
+fn mysqli_query_reads_current_wordpress_option_full_rows_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('theme_mods', 'theme-db', 'on')");
+$all = mysqli_query($handle, "SELECT option_name, option_value, autoload FROM wp_options");
+echo mysqli_num_rows($all);
+echo ":";
+echo mysqli_num_fields($all);
+echo ":";
+$all_first = mysqli_fetch_assoc($all);
+$all_second = mysqli_fetch_assoc($all);
+$all_third = mysqli_fetch_assoc($all);
+echo $all_first["option_name"], ":", $all_first["option_value"], ":", $all_first["autoload"];
+echo ",";
+echo $all_second["option_name"], ":", $all_second["option_value"], ":", $all_second["autoload"];
+echo ",";
+echo $all_third["option_name"], ":", $all_third["option_value"], ":", $all_third["autoload"];
+echo "|";
+$autoload = mysqli_query($handle, "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )");
+echo mysqli_num_rows($autoload);
+echo ":";
+$autoload_first = mysqli_fetch_assoc($autoload);
+$autoload_second = mysqli_fetch_assoc($autoload);
+echo $autoload_first["option_name"], ":", $autoload_first["autoload"];
+echo ",";
+echo $autoload_second["option_name"], ":", $autoload_second["autoload"];
+echo "|";
+$named = mysqli_query($handle, "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN ('theme_mods','missing','home')");
+echo mysqli_num_rows($named);
+echo ":";
+$named_first = mysqli_fetch_assoc($named);
+$named_second = mysqli_fetch_assoc($named);
+echo $named_first["option_name"], ":", $named_first["autoload"];
+echo ",";
+echo $named_second["option_name"], ":", $named_second["autoload"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3:3:home:https://home.test:no,siteurl:https://example.test:yes,theme_mods:theme-db:on|2:siteurl:yes,theme_mods:on|2:theme_mods:on,home:no"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_id_from_state() {
     let execution = run_source(
         r#"<?php

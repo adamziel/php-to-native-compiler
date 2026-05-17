@@ -4,6 +4,181 @@
 
 Implemented:
 
+- Added Milestone 1280, the WordPress-focused queue refresh after the
+  integrated Milestones 1276-1279 batch. `GOAL.MD` now records the current
+  parallel focus after the latest interface method compatibility,
+  integer-keyed callback reference argument, request input seed, and
+  `wp_options` multi-row slices. `docs/NEXT_TASKS.md` opens the next four
+  implementation lanes as Milestones 1281-1284, and
+  `docs/LANE_WORKERS.md` points active workers at broader object/interface
+  semantics, deeper references/COW, request/SAPI/filesystem/stream behavior,
+  and executable WordPress database/bootstrap evidence. Focused integration
+  checks passed for the new interface, callback-reference, request input, and
+  option row-set slices. Full gate/checkpoint passed for the combined batch:
+  `cargo test` completed successfully, `phpc test` reported `1400` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1400` fixture tests passed with `0` failures, `804` system PHP comparisons,
+  and `596` skipped `phpc-only` fixtures.
+
+- Added Milestone 1279, a bounded WordPress database/bootstrap evidence slice.
+  The placeholder MySQLi `wp_options` state island now supports exact direct
+  multi-row
+  `SELECT option_name, option_value, autoload FROM wp_options` reads for all
+  recorded options, the current WordPress autoload filter
+  `WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )`, and explicit
+  `WHERE option_name IN (...)` name lists. All/autoload reads keep
+  deterministic option-name ordering, and name-list reads preserve the
+  requested order while skipping missing names. The synthetic WordPress
+  add-option inventory probe now seeds a second autoloaded option and prints
+  the deterministic full-row set after duplicate rejection, raising normalized
+  probe stdout bytes from `154` to `211`. This does not add real MySQL
+  connectivity, arbitrary SQL, broad projection support beyond the named exact
+  option id/name/value/autoload/name-value/full-row shapes, persistent object
+  cache, full WordPress option APIs, plugins/themes, request/SAPI fidelity,
+  references/copy-on-write, or native lowering. Focused verification passed
+  with `CARGO_TARGET_DIR=target/focused-1279-wpdb CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  mysqli_extension wordpress_option -- --test-threads=1` passed with `24`
+  tests; `cargo test -p phpc --test wordpress_inventory_cli
+  wordpress_inventory_wpdb_add_option_cache_bootstrap_smoke_matches_fixture
+  -- --test-threads=1` passed with `1` test; direct `cargo run -q -p phpc --
+  run
+  tests/fixtures/milestone1279/mysqli_wp_options_full_option_rows_state.php`
+  printed
+  `3:3:home:https://home.test:no,siteurl:https://example.test:yes,theme_mods:theme-db:on|2:siteurl:yes,theme_mods:on|2:theme_mods:on,home:no`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1279` passed with
+  `1` fixture; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1279` reported `1` passed fixture, `0` PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1279` reported `1` fixture, `1`
+  CLI exercise, `0` missing expectation sidecars, `0` unrecognized sidecars,
+  and `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; and
+  `git diff --check` passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1277, a bounded reference/COW callback argument-array slice
+  for WordPress-shaped mutable option/cache callbacks. `call_user_func_array()`
+  reference-parameter dispatch now accepts literal argument arrays with
+  explicit integer keys, such as `array(10 => &$value, 20 => "suffix")`, and
+  treats those entries as positional in insertion order. The covered path
+  applies to string user-function callbacks, public `[object, method]`
+  callbacks, and public `["ClassName", "method"]` static callbacks, using the
+  existing direct caller-cell binding for direct variables and the existing
+  copy-in/writeback bridge for direct public object-property array-offset
+  elements. This does not implement string-keyed named callback arguments,
+  stored reference arrays, non-literal argument arrays for reached
+  by-reference parameters, variables already routed through array-offset alias
+  metadata, non-public/dynamic/append/ArrayAccess object-property reference
+  elements, closure/`__invoke` callbacks, full PHP reference containers, broad
+  copy-on-write, exact warnings, or native lowering. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1277-refcow CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  call_user_func_builtin
+  call_user_func_array_accepts_integer_keyed_reference_argument_arrays -- --
+  test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  call_user_func_builtin call_user_func_rejects_forms_outside_current_subset
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  call_user_func_builtin -- --test-threads=1` passed with `11` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1277/call_user_func_array_integer_keyed_reference_args.php`
+  printed the expected three-line option/cache mutation output; `cargo run -q
+  -p phpc -- test tests/fixtures/milestone1277` passed with `1` fixture;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone1277`
+  passed with `1` system PHP comparison and `0` skips; `cargo run -q -p phpc
+  -- test --compare-php-json tests/fixtures/milestone1277` reported `1`
+  passed fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1277` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; callback-reference regression fixture
+  directories `tests/fixtures/milestone1237`, `tests/fixtures/milestone1242`,
+  `tests/fixtures/milestone1262`, and `tests/fixtures/milestone1267` each
+  passed direct fixture runs and `--compare-php` with `1` comparison and `0`
+  skips. A combined multi-directory fixture-runner attempt failed at CLI
+  argument validation because `phpc test` accepts a single fixture directory.
+  `cargo fmt --check` and `git diff --check` passed.
+  Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1276, a bounded WordPress object/interface compatibility
+  slice for inherited interface method signatures. Interface registration now
+  validates child interfaces that redeclare inherited methods before any
+  concrete class is registered: a redeclaration cannot require more parameters
+  than the inherited method, cannot add a parameter type where the inherited
+  parameter is untyped, must keep matching parameter type text when both sides
+  are typed, and must keep typed parent return declarations. Simple
+  multi-parent inherited method conflicts are rejected through the same stable
+  runtime boundary when no compatible inherited method set exists under the
+  current metadata rules. This composes with the existing class implements,
+  parent-interface relationship, trait method composition, and
+  `method_exists()`/`instanceof` metadata paths. This does not implement full
+  PHP variance, class/interface type subtyping, union/intersection
+  canonicalization, type-alias/import resolution, exact PHP fatal diagnostics,
+  executing typed methods with runtime type enforcement, built-in/internal
+  interface catalogs beyond the current bounded checks, autoloading, or native
+  lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1276-traits CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  object_model interface_inheritance_method_signature_compatibility_is_enforced
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  object_model interface -- --test-threads=1` passed with `22` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1276/interface_inheritance_signature_compatibility.php`
+  printed `base`, `contract`, `dispatch-method`, `summary-method`, and
+  `value:fallback`; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1276` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1276` passed with `1`
+  system PHP comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1276` reported `1` passed
+  fixture, `1` comparison, and `0` skips; and `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1276` reported `1` fixture, `1`
+  CLI exercise, `0` missing expectation sidecars, `0` unrecognized sidecars,
+  and `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; and `git
+  diff --check` passed. An initial focused test attempt called typed methods
+  directly and correctly hit the existing runtime type enforcement boundary;
+  the fixture now exercises typed method metadata through registration and
+  method metadata lookup without claiming typed-method execution. Full
+  gate/checkpoint deferred until integration.
+
+- Added Milestone 1278, a bounded request/SAPI input seed slice for the
+  WordPress request lane. `phpc run` now accepts explicit CLI environment
+  request seeds: `PHPC_QUERY_STRING` initializes flat URL-encoded `$_GET`,
+  `PHPC_REQUEST_METHOD=POST` plus
+  `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and
+  `PHPC_REQUEST_BODY` initializes flat URL-encoded `$_POST`, `$_REQUEST` starts
+  as parsed GET merged with parsed POST, and
+  `file_get_contents("php://input")` returns the same bounded request body
+  instead of the previous always-empty placeholder. `$_SERVER["QUERY_STRING"]`,
+  `$_SERVER["REQUEST_METHOD"]`, `$_SERVER["CONTENT_TYPE"]`, and
+  `$_SERVER["CONTENT_LENGTH"]` reflect those explicit seeds while default CLI
+  runs remain deterministic and empty. This does not implement nested/bracketed
+  request names, duplicate-key array collection, cookie merging into
+  `$_REQUEST`, multipart uploads, upload metadata, `variables_order` or
+  `request_order`, host web-server SAPI imports, exact warning behavior, or
+  native lowering. Existing request-superglobal and `file_get_contents`
+  native codegen rejection boundaries remain explicit. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1278-request CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  superglobals -- --test-threads=1` passed with `23` tests; `cargo test -p
+  phpc --test file_get_contents_builtin -- --test-threads=1` passed with `9`
+  tests; direct default `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1278/request_input_seed.php` printed
+  `GET||empty|empty|empty|empty|empty|empty|`; direct seeded
+  `PHPC_QUERY_STRING='preview=true&name=WordPress+Core'
+  PHPC_REQUEST_METHOD=POST
+  PHPC_CONTENT_TYPE='application/x-www-form-urlencoded'
+  PHPC_REQUEST_BODY='action=save&space=hello+world' cargo run -q -p phpc --
+  run tests/fixtures/milestone1278/request_input_seed.php` printed
+  `POST|preview=true&name=WordPress+Core|true|WordPress Core|save|hello world|true|save|action=save&space=hello+world`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1278` passed with
+  `1` fixture; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1278` reported `1` passed fixture, `0` PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1278` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; and `git diff
+  --check` passed. The two final Rust test commands were accidentally launched
+  in parallel against the same focused cargo target, causing the second to wait
+  for the artifact lock before completing successfully. Full gate/checkpoint
+  deferred until integration.
+
 - Added Milestone 1275, the WordPress-focused queue refresh after the
   integrated Milestones 1271-1274 batch. `GOAL.MD` now records the current
   parallel focus after the latest forward parent-interface, parent-call

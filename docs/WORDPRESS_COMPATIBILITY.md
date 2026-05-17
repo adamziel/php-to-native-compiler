@@ -265,6 +265,19 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1279, that synthetic add-option smoke also reads all recorded
+option rows with the exact
+`SELECT option_name, option_value, autoload FROM wp_options` shape after the
+duplicate add path. The generated bootstrap shim and front-controller path
+seed a second autoloaded option row and prove deterministic multi-row
+name/value/autoload output, emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db|added-db:no|id=2|name=blogdescription|row=blogdescription:added-db:no|rows=blogdescription:added-db:no,siteurl:autoload-db:yes`
+(`stdout_bytes: 211` in normalized output). This is executable evidence for
+bounded full option-row set reads only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line
@@ -275,6 +288,18 @@ headers sent when an outermost output buffer is flushed, and ignores late
 output-started guards only; it does not claim web-server SAPI emission, exact
 warning text, non-variable output arguments, cookie attributes, shutdown-time
 buffer visibility, or native support.
+
+After Milestone 1278, `phpc run` can seed a bounded request input state from
+explicit CLI environment variables. `PHPC_QUERY_STRING` populates flat
+URL-encoded `$_GET` values, `PHPC_REQUEST_METHOD=POST` with
+`PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and
+`PHPC_REQUEST_BODY` populates flat `$_POST` values, `$_REQUEST` starts as GET
+merged with POST, and `file_get_contents('php://input')` returns the same body
+seed. This supports deterministic WordPress-shaped request bootstrap probes
+without claiming real web-server SAPI fidelity. It does not implement
+nested/bracketed request names, duplicate-key array collection, cookie merging,
+multipart uploads, upload metadata, `variables_order`/`request_order`, host
+SAPI imports, exact warning behavior, or native support.
 
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
@@ -368,7 +393,10 @@ after exercising the exact direct `wp_options` INSERT shape through a minimal
 wrapper and refreshing the bounded in-memory cache. The Milestone 1254
 duplicate-add smoke records a later option-cache byte count after proving a
 second exact direct option insert is rejected without replacing the previously
-cached/database-backed value. Known
+cached/database-backed value. The Milestone 1279 add-option smoke records a
+later full-row-set byte count after exercising the exact
+`SELECT option_name, option_value, autoload FROM wp_options` shape through a
+minimal `wpdb::get_results()` wrapper. Known
 historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local

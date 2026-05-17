@@ -2594,6 +2594,130 @@ class Plugin implements PluginContract {
 }
 
 #[test]
+fn interface_inheritance_method_signature_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+interface BaseHook {
+    public function dispatch(string $hook): string;
+    public function summarize($context);
+    public function optional($value);
+}
+
+interface PluginHook extends BaseHook {
+    public function dispatch($hook, $priority = 10): string;
+    public function summarize($context): string;
+    public function optional($value, $fallback = null);
+}
+
+trait HookMethods {
+    public function dispatch($hook, $priority = 10): string {
+        return $hook . ":" . $priority;
+    }
+
+    public function summarize($context): string {
+        return "summary:" . $context;
+    }
+
+    public function optional($value, $fallback = null) {
+        return $value . ":" . $fallback;
+    }
+}
+
+class Plugin implements PluginHook {
+    use HookMethods;
+}
+
+$plugin = new Plugin();
+echo $plugin instanceof BaseHook ? "base\n" : "missing\n";
+echo method_exists($plugin, "dispatch") ? "dispatch-method\n" : "missing\n";
+echo method_exists($plugin, "summarize") ? "summary-method\n" : "missing\n";
+echo $plugin->optional("value", "fallback");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base\ndispatch-method\nsummary-method\nvalue:fallback"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let extra_required = runtime_error(
+        r#"<?php
+interface BaseHook {
+    public function dispatch($hook);
+}
+
+interface PluginHook extends BaseHook {
+    public function dispatch($hook, $priority);
+}
+"#,
+    );
+    assert_eq!(extra_required.line, 6);
+    assert_eq!(extra_required.column, 1);
+    assert_eq!(
+        extra_required.message,
+        "unsupported class inheritance for PluginHook: interface method PluginHook::dispatch() cannot require more parameters than parent interface method BaseHook::dispatch()"
+    );
+
+    let added_parameter_type = runtime_error(
+        r#"<?php
+interface BaseHook {
+    public function dispatch($hook);
+}
+
+interface PluginHook extends BaseHook {
+    public function dispatch(string $hook);
+}
+"#,
+    );
+    assert_eq!(added_parameter_type.line, 6);
+    assert_eq!(added_parameter_type.column, 1);
+    assert_eq!(
+        added_parameter_type.message,
+        "unsupported class inheritance for PluginHook: interface method PluginHook::dispatch() cannot add parameter type string for parameter $hook when parent interface method BaseHook::dispatch() has no parameter type"
+    );
+
+    let missing_return_type = runtime_error(
+        r#"<?php
+interface BaseHook {
+    public function dispatch(): string;
+}
+
+interface PluginHook extends BaseHook {
+    public function dispatch();
+}
+"#,
+    );
+    assert_eq!(missing_return_type.line, 6);
+    assert_eq!(missing_return_type.column, 1);
+    assert_eq!(
+        missing_return_type.message,
+        "unsupported class inheritance for PluginHook: interface method PluginHook::dispatch() must declare return type string to match parent interface method BaseHook::dispatch()"
+    );
+
+    let parent_conflict = runtime_error(
+        r#"<?php
+interface FirstHook {
+    public function dispatch($hook);
+}
+
+interface SecondHook {
+    public function dispatch($hook, $priority);
+}
+
+interface PluginHook extends FirstHook, SecondHook {}
+"#,
+    );
+    assert_eq!(parent_conflict.line, 10);
+    assert_eq!(parent_conflict.column, 1);
+    assert_eq!(
+        parent_conflict.message,
+        "unsupported class inheritance for PluginHook: interface method SecondHook::dispatch() cannot require more parameters than parent interface method FirstHook::dispatch()"
+    );
+}
+
+#[test]
 fn interface_constants_resolve_through_interfaces_and_implementing_classes() {
     let source = r#"<?php
 interface HookDefaults {

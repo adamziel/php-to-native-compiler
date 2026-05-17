@@ -34,13 +34,17 @@ observe the same value in the current top-level/root-symbol-table slice. This
 is still a materialized-symbol-table model, not PHP's full reference-backed
 alias, recursive `$GLOBALS` array, copy-on-write, dynamic global-name, or
 included-file scope model.
-`$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded as empty
-ordered arrays in the same root symbol table and route direct function-scope
-reads and writes through that root storage. This is deterministic request-state
-scaffolding only: it does not parse browser cookie headers, query strings, or
-request bodies, populate values from the host SAPI, automatically merge
-`$_REQUEST`, import file-upload metadata, emit cookies, or model
-`variables_order`.
+`$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
+same root symbol table and route direct function-scope reads and writes through
+that root storage. The default request bags are empty ordered arrays. For
+explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
+query pairs into `$_GET`, and `PHPC_REQUEST_METHOD=POST` plus
+`PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
+seeds flat URL-encoded body pairs into `$_POST`; `$_REQUEST` starts as GET
+merged with POST. This is deterministic request-state scaffolding only: it does
+not parse browser cookie headers, nested/bracketed request names, multipart
+uploads, or host SAPI state, import file-upload metadata, emit cookies, or
+model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -191,15 +195,21 @@ as `interface Child extends Parent, OtherParent`, and flattens those parent
 names into concrete class `implements` relationship metadata. Class registration
 enforces public method presence for child and parent interface methods,
 including methods supplied by the current public trait composition and alias
-subset. Public interface constants declared as `const NAME = ...` or
+subset. Interface registration also checks child-interface redeclarations of
+inherited methods and simple multi-parent method conflicts with the current
+bounded metadata rules: a redeclaration may not require more parameters than
+the inherited method, may not add a parameter type where the parent method is
+untyped, must keep matching parameter type text when both sides are typed, and
+must keep typed parent return declarations. Public interface constants declared
+as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and
 implementing-class class-constant lookup. Missing or cyclic parent interface
 inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
-declarations, full variance/signature enforcement, built-in/internal interface
-inheritance catalogs, exact PHP diagnostics, and native lowering remain
-explicit boundaries.
+declarations, full variance/signature enforcement, class/interface type
+subtyping, built-in/internal interface inheritance catalogs, exact PHP
+diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1397,14 +1407,16 @@ callables, closure invocation, `__invoke`, `call_user_func_array`, references,
 variadic unpacking, or native lowering.
 `call_user_func_array()` is a separate interpreter-only callable dispatcher for
 string callbacks, current public array-callable shapes, and integer-keyed
-positional argument arrays. String user-function callbacks and public
-`[object, method]` instance callbacks can bind reached by-reference parameters
-only from unkeyed literal argument-array elements such as `array(&$value)`,
-using the same direct caller cell as ordinary by-reference user-function and
-method calls. Stored reference arrays, keyed reference argument arrays, static
-method array-callable reference parameters, closure invocation, `__invoke`,
-named arguments, exact warning behavior, and native lowering remain
-unsupported.
+positional argument arrays. String user-function callbacks, public
+`[object, method]` instance callbacks, and public `["ClassName", "method"]`
+static callbacks can bind reached by-reference parameters from unkeyed or
+integer-keyed literal argument-array elements such as `array(&$value)` and
+`array(10 => &$value)`, using the same direct caller cell as ordinary
+by-reference user-function and method calls. Direct public object-property
+array-offset reference elements use the current copy-in/writeback bridge for
+that callback path. Stored reference arrays, string-keyed named reference
+argument arrays, closure invocation, `__invoke`, named arguments, exact warning
+behavior, and native lowering remain unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1500,9 +1512,9 @@ reached SQL-mode probe, `mysqli_select_db()`, and
 the placeholder handle. These calls are compatibility probes, not host DB
 integration. The interpreter has one narrow `wp_options` state island for exact
 WordPress-shaped option writes and reads, including direct option-value,
-autoload, and option-name/option-value result shapes; it is not a general SQL
-engine, schema model, host database connection, PDO layer, or native database
-runtime.
+autoload, option-name/option-value, and bounded full-row option-name/value/
+autoload result shapes; it is not a general SQL engine, schema model, host
+database connection, PDO layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.
@@ -1547,15 +1559,17 @@ include-path lookup, canonicalization, stream support, stat-cache semantics,
 open_basedir, exact warnings, or native filesystem lowering. Native
 function-table introspection recognizes the name, while direct native calls
 reject under the function-call boundary.
-`file_get_contents()` is also interpreter-only in the current runtime. It keeps
-the deterministic empty `php://input` request-body placeholder and adds a
-bounded local UTF-8 text file read using the same process-path-then-repo-root
-relative path policy as the filesystem metadata builtins. It does not model PHP
-binary strings, warning-plus-`false` recovery, stream contexts, offsets,
-lengths, include paths, `open_basedir`, stat caching, or native filesystem
-lowering. Direct native `file_get_contents(...)` calls stop at a dedicated
-filesystem-read codegen boundary before argument lowering or backend selection,
-while native function-table introspection can still see the known builtin name.
+`file_get_contents()` is also interpreter-only in the current runtime. It maps
+`php://input` to the same explicit `PHPC_REQUEST_BODY` request seed used by
+the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
+read using the same process-path-then-repo-root relative path policy as the
+filesystem metadata builtins. It does not model PHP binary strings,
+warning-plus-`false` recovery, stream contexts, offsets, lengths, include
+paths, `open_basedir`, stat caching, host SAPI body streams, or native
+filesystem lowering. Direct native `file_get_contents(...)` calls stop at a
+dedicated filesystem-read codegen boundary before argument lowering or backend
+selection, while native function-table introspection can still see the known
+builtin name.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns

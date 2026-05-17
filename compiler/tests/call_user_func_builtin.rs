@@ -162,6 +162,52 @@ echo $option, "|", $cache->cache["options"]["alloptions"];
 }
 
 #[test]
+fn call_user_func_array_accepts_integer_keyed_reference_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+class WP_Object_Cache {
+    public $cache = [];
+}
+
+class OptionFilter {
+    public function update(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class Cache_Marker {
+    public static function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+function update_option_like(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$option = "autoload";
+echo call_user_func_array("update_option_like", array(2 => &$option, 7 => "cache")), "\n";
+$filter = new OptionFilter();
+echo call_user_func_array(array($filter, "update"), array(10 => &$option, 20 => "object")), "\n";
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+call_user_func_array(array("Cache_Marker", "tag"), array(4 => &$cache->cache["options"]["alloptions"], 6 => "static"));
+echo $option, "|", $cache->cache["options"]["alloptions"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:cache\nautoload:cache:object\nautoload:cache:object|cold:static"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php
@@ -288,6 +334,22 @@ echo call_user_func_array("strlen", array("value" => "four"));
     assert_eq!(
         named_args.message,
         "unsupported call call_user_func_array(): string-keyed named arguments are not implemented in the current subset"
+    );
+
+    let named_reference_args = runtime_error(
+        r#"<?php
+function mutate(&$value) {
+    $value = "changed";
+}
+$option = "original";
+call_user_func_array("mutate", array("value" => &$option));
+"#,
+    );
+    assert_eq!(named_reference_args.line, 6);
+    assert_eq!(named_reference_args.column, 1);
+    assert_eq!(
+        named_reference_args.message,
+        "unsupported call mutate(): call_user_func_array() string-keyed named reference arguments are not implemented in the current subset"
     );
 
     let bad_array_callable = runtime_error(

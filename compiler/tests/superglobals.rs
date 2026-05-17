@@ -1,6 +1,10 @@
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
+use php_compiler::interpreter::{run_program_with_options, RunOptions};
+use php_compiler::parse;
 use php_compiler::run_source;
+use std::path::Path;
+use std::process::{Command, Output};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
@@ -196,6 +200,107 @@ echo $_REQUEST["name"];
 }
 
 #[test]
+fn request_bag_superglobals_parse_flat_query_and_form_body_options() {
+    let program = parse(
+        r#"<?php
+echo $_SERVER["REQUEST_METHOD"];
+echo "|";
+echo $_SERVER["QUERY_STRING"];
+echo "|";
+echo $_SERVER["CONTENT_TYPE"];
+echo "|";
+echo $_SERVER["CONTENT_LENGTH"];
+echo "|";
+echo $_GET["preview"];
+echo "|";
+echo $_GET["name"];
+echo "|";
+echo $_GET["encoded"];
+echo "|";
+echo $_POST["action"];
+echo "|";
+echo $_POST["space"];
+echo "|";
+echo $_REQUEST["preview"];
+echo "|";
+echo $_REQUEST["action"];
+echo "|";
+echo file_get_contents("php://input");
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            query_string: Some("preview=true&name=WordPress%20Core&encoded=a%2Bb".to_string()),
+            request_body: Some("action=save&space=hello+world".to_string()),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/x-www-form-urlencoded; charset=UTF-8".to_string()),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "POST|preview=true&name=WordPress%20Core&encoded=a%2Bb|application/x-www-form-urlencoded; charset=UTF-8|29|true|WordPress Core|a+b|save|hello world|true|save|action=save&space=hello+world"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn request_bag_superglobals_keep_body_out_of_post_without_form_content_type() {
+    let program = parse(
+        r#"<?php
+echo file_get_contents("php://input");
+echo "|";
+echo isset($_POST["action"]) ? "post" : "no-post";
+echo "|";
+echo isset($_REQUEST["action"]) ? "request" : "no-request";
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            request_body: Some("{\"action\":\"save\"}".to_string()),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/json".to_string()),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "{\"action\":\"save\"}|no-post|no-request");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = "tests/fixtures/milestone1278/request_input_seed.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PHPC_QUERY_STRING", "preview=true&name=WordPress+Core")
+        .env("PHPC_REQUEST_METHOD", "POST")
+        .env("PHPC_CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("PHPC_REQUEST_BODY", "action=save&space=hello+world")
+        .args(["run", fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture}: {error}"));
+
+    let actual = render_cli_snapshot(&output);
+    let expected = "exit: 0\nstdout:\nPOST|preview=true&name=WordPress+Core|true|WordPress Core|save|hello world|true|save|action=save&space=hello+world--- stdout end ---\nstderr:\n--- stderr end ---\n";
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn files_superglobal_is_materialized_as_empty_auto_global_array() {
     let execution = run_source(
         r#"<?php
@@ -218,6 +323,16 @@ echo $_FILES["async-upload"]["error"];
 
     assert_eq!(execution.stdout, "files-array|files-empty|plugin.zip:0");
     assert_eq!(execution.exit_code, 0);
+}
+
+fn render_cli_snapshot(output: &Output) -> String {
+    let exit_code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    format!(
+        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
+    )
 }
 
 #[test]

@@ -1,0 +1,1 @@
+phpc seeds request input from PHPC_QUERY_STRING/PHPC_REQUEST_BODY environment variables; system PHP CLI does not share that SAPI harness.

@@ -35,10 +35,14 @@ pub struct Execution {
     pub exit_code: i32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RunOptions {
     pub max_execution_steps: Option<usize>,
     pub trace_includes: bool,
+    pub query_string: Option<String>,
+    pub request_body: Option<String>,
+    pub request_method: Option<String>,
+    pub content_type: Option<String>,
 }
 
 pub fn run_program(program: &Program) -> CompileResult<Execution> {
@@ -118,6 +122,7 @@ struct Interpreter {
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
+    request_body: String,
     execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
@@ -296,6 +301,80 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
         return path;
     }
     repo_root_relative_candidate(&path).unwrap_or(path)
+}
+
+fn is_form_urlencoded_content_type(content_type: &str) -> bool {
+    content_type.split(';').next().is_some_and(|kind| {
+        kind.trim()
+            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+    })
+}
+
+fn parse_flat_urlencoded_pairs(input: &str) -> PhpArray {
+    let mut array = PhpArray::new();
+    for pair in input.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        if raw_key.is_empty() {
+            continue;
+        }
+        array.insert(
+            percent_decode_form_component(raw_key),
+            Value::String(percent_decode_form_component(raw_value)),
+        );
+    }
+    array
+}
+
+fn percent_decode_form_component(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                match (
+                    hex_digit_value(bytes[index + 1]),
+                    hex_digit_value(bytes[index + 2]),
+                ) {
+                    (Some(high), Some(low)) => {
+                        decoded.push((high << 4) | low);
+                        index += 3;
+                    }
+                    _ => {
+                        decoded.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn hex_digit_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn merge_request_array(target: &mut PhpArray, source: &PhpArray) {
+    for entry in source.entries() {
+        target.insert(entry.key.clone(), entry.value_cloned());
+    }
 }
 
 fn integral_float_to_i64(value: f64) -> Option<i64> {
@@ -2088,6 +2167,7 @@ impl Interpreter {
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
+            request_body: options.request_body.unwrap_or_default(),
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
@@ -2103,7 +2183,11 @@ impl Interpreter {
             stdout: String::new(),
             exit_signal: None,
         };
-        interpreter.initialize_superglobals();
+        interpreter.initialize_superglobals(
+            options.query_string.as_deref().unwrap_or(""),
+            options.request_method.as_deref().unwrap_or("GET"),
+            options.content_type.as_deref().unwrap_or(""),
+        );
         interpreter.initialize_static_property_defaults(program)?;
         interpreter.initialize_instance_property_defaults(program)?;
         Ok(interpreter)
@@ -2131,7 +2215,19 @@ impl Interpreter {
         }
     }
 
-    fn initialize_superglobals(&mut self) {
+    fn initialize_superglobals(
+        &mut self,
+        query_string: &str,
+        request_method: &str,
+        content_type: &str,
+    ) {
+        let method = if request_method.trim().is_empty() {
+            "GET".to_string()
+        } else {
+            request_method.trim().to_ascii_uppercase()
+        };
+        let content_length = self.request_body.len().to_string();
+
         let mut server = PhpArray::new();
         server.insert("SERVER_SOFTWARE", Value::String("phpc".to_string()));
         server.insert("REQUEST_URI", Value::String("/".to_string()));
@@ -2139,7 +2235,19 @@ impl Interpreter {
         server.insert("PHP_SELF", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_FILENAME", Value::String("/index.php".to_string()));
-        server.insert("QUERY_STRING", Value::String(String::new()));
+        server.insert("QUERY_STRING", Value::String(query_string.to_string()));
+        server.insert("REQUEST_METHOD", Value::String(method.clone()));
+        server.insert("CONTENT_TYPE", Value::String(content_type.to_string()));
+        server.insert("CONTENT_LENGTH", Value::String(content_length));
+
+        let get = parse_flat_urlencoded_pairs(query_string);
+        let post = if method == "POST" && is_form_urlencoded_content_type(content_type) {
+            parse_flat_urlencoded_pairs(&self.request_body)
+        } else {
+            PhpArray::new()
+        };
+        let mut request = get.clone();
+        merge_request_array(&mut request, &post);
 
         self.global_symbols
             .borrow_mut()
@@ -2148,18 +2256,15 @@ impl Interpreter {
             "_COOKIE".to_string(),
             value_cell(Value::Array(PhpArray::new())),
         );
-        self.global_symbols.borrow_mut().insert(
-            "_GET".to_string(),
-            value_cell(Value::Array(PhpArray::new())),
-        );
-        self.global_symbols.borrow_mut().insert(
-            "_POST".to_string(),
-            value_cell(Value::Array(PhpArray::new())),
-        );
-        self.global_symbols.borrow_mut().insert(
-            "_REQUEST".to_string(),
-            value_cell(Value::Array(PhpArray::new())),
-        );
+        self.global_symbols
+            .borrow_mut()
+            .insert("_GET".to_string(), value_cell(Value::Array(get)));
+        self.global_symbols
+            .borrow_mut()
+            .insert("_POST".to_string(), value_cell(Value::Array(post)));
+        self.global_symbols
+            .borrow_mut()
+            .insert("_REQUEST".to_string(), value_cell(Value::Array(request)));
         self.global_symbols.borrow_mut().insert(
             "_FILES".to_string(),
             value_cell(Value::Array(PhpArray::new())),
@@ -9323,6 +9428,25 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
+        if let Some(filter) = parse_wordpress_options_name_value_autoload_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows = wordpress_option_name_value_autoload_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec![
+                            "option_name".to_string(),
+                            "option_value".to_string(),
+                            "autoload".to_string(),
+                        ],
+                        rows,
+                    );
+                }
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
         if let Some(filter) = parse_wordpress_options_row_select_query(query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
@@ -13271,14 +13395,19 @@ impl Interpreter {
         let mut values = Vec::with_capacity(items.len());
         let mut reference_bindings = Vec::new();
         for (index, item) in items.iter().enumerate() {
-            if item.key.is_some() {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "call_user_func_array() reference parameter invocation is only implemented for unkeyed literal argument arrays in the current subset",
-                    ),
-                ));
+            if let Some(key_expr) = &item.key {
+                if matches!(
+                    self.evaluate_array_key(key_expr, caller_scope)?,
+                    ArrayKey::String(_)
+                ) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() string-keyed named reference arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
             }
 
             let Some(param) = function.params.get(index) else {
@@ -17341,7 +17470,9 @@ impl Interpreter {
             "file_get_contents" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::String(path) if path == "php://input" => Ok(Value::String(String::new())),
+                    Value::String(path) if path == "php://input" => {
+                        Ok(Value::String(self.request_body.clone()))
+                    }
                     Value::String(path) if path.contains("://") => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -20450,6 +20581,7 @@ fn validate_interface_parent_relationships(
     for interface in interfaces {
         let mut path = HashSet::new();
         validate_interface_parent_relationship(interface_lookup, interface, &mut path)?;
+        validate_interface_method_inheritance(interface_lookup, interface)?;
     }
     Ok(())
 }
@@ -20492,6 +20624,289 @@ fn validate_interface_parent_relationship(
 
     path.remove(&key);
     Ok(())
+}
+
+fn validate_interface_method_inheritance(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+) -> CompileResult<()> {
+    let mut inherited_methods: HashMap<String, Vec<(String, &InterfaceMethodDecl)>> =
+        HashMap::new();
+    for parent_name in &interface.parents {
+        let Some(parent) = interface_lookup.get(&parent_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        for (declaring_interface, method) in expanded_interface_methods(interface_lookup, parent) {
+            inherited_methods
+                .entry(method.function.name.to_ascii_lowercase())
+                .or_default()
+                .push((declaring_interface, method));
+        }
+    }
+
+    for methods in inherited_methods.values() {
+        validate_inherited_interface_method_conflicts(interface, methods)?;
+    }
+
+    for method in &interface.methods {
+        let lookup_name = method.function.name.to_ascii_lowercase();
+        let Some(parent_methods) = inherited_methods.get(&lookup_name) else {
+            continue;
+        };
+        for (parent_interface_name, parent_method) in parent_methods {
+            validate_child_interface_method_compatibility(
+                interface,
+                &interface.name,
+                method,
+                parent_interface_name,
+                parent_method,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_inherited_interface_method_conflicts(
+    interface: &InterfaceDecl,
+    methods: &[(String, &InterfaceMethodDecl)],
+) -> CompileResult<()> {
+    for (left_index, (left_interface, left_method)) in methods.iter().enumerate() {
+        for (right_interface, right_method) in methods.iter().skip(left_index + 1) {
+            if left_interface.eq_ignore_ascii_case(right_interface) {
+                continue;
+            }
+            validate_parent_interface_method_pair(
+                interface,
+                left_interface,
+                left_method,
+                right_interface,
+                right_method,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_parent_interface_method_pair(
+    interface: &InterfaceDecl,
+    left_interface: &str,
+    left_method: &InterfaceMethodDecl,
+    right_interface: &str,
+    right_method: &InterfaceMethodDecl,
+) -> CompileResult<()> {
+    let left_required = required_param_count(&left_method.function);
+    let right_required = required_param_count(&right_method.function);
+    if left_required > right_required {
+        return validate_child_interface_method_compatibility(
+            interface,
+            left_interface,
+            left_method,
+            right_interface,
+            right_method,
+        );
+    }
+    if right_required > left_required {
+        return validate_child_interface_method_compatibility(
+            interface,
+            right_interface,
+            right_method,
+            left_interface,
+            left_method,
+        );
+    }
+
+    for (index, left_param) in left_method.function.params.iter().enumerate() {
+        let Some(right_param) = right_method.function.params.get(index) else {
+            continue;
+        };
+        let left_type = left_param.type_decl.as_ref().map(|decl| decl.text.as_str());
+        let right_type = right_param
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str());
+        match (left_type, right_type) {
+            (Some(_), None) => {
+                return validate_child_interface_method_compatibility(
+                    interface,
+                    left_interface,
+                    left_method,
+                    right_interface,
+                    right_method,
+                );
+            }
+            (None, Some(_)) => {
+                return validate_child_interface_method_compatibility(
+                    interface,
+                    right_interface,
+                    right_method,
+                    left_interface,
+                    left_method,
+                );
+            }
+            (Some(left), Some(right)) if !left.eq_ignore_ascii_case(right) => {
+                return validate_child_interface_method_compatibility(
+                    interface,
+                    left_interface,
+                    left_method,
+                    right_interface,
+                    right_method,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let left_return = left_method
+        .function
+        .return_type
+        .as_ref()
+        .map(|decl| decl.text.as_str());
+    let right_return = right_method
+        .function
+        .return_type
+        .as_ref()
+        .map(|decl| decl.text.as_str());
+    if let (Some(left), Some(right)) = (left_return, right_return) {
+        if !left.eq_ignore_ascii_case(right) {
+            return validate_child_interface_method_compatibility(
+                interface,
+                left_interface,
+                left_method,
+                right_interface,
+                right_method,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_child_interface_method_compatibility(
+    interface: &InterfaceDecl,
+    child_interface_name: &str,
+    child_method: &InterfaceMethodDecl,
+    parent_interface_name: &str,
+    parent_method: &InterfaceMethodDecl,
+) -> CompileResult<()> {
+    let child_required = required_param_count(&child_method.function);
+    let parent_required = required_param_count(&parent_method.function);
+    if child_required > parent_required {
+        return Err(runtime_error(
+            interface.span,
+            RuntimeError::unsupported_class_inheritance(
+                &interface.name,
+                format!(
+                    "interface method {}::{}() cannot require more parameters than parent interface method {}::{}()",
+                    child_interface_name,
+                    child_method.function.name,
+                    parent_interface_name,
+                    parent_method.function.name
+                ),
+            ),
+        ));
+    }
+
+    for (index, parent_param) in parent_method.function.params.iter().enumerate() {
+        let Some(child_param) = child_method.function.params.get(index) else {
+            continue;
+        };
+        match (
+            parent_param
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str()),
+            child_param
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str()),
+        ) {
+            (None, Some(child_type)) => {
+                return Err(runtime_error(
+                    interface.span,
+                    RuntimeError::unsupported_class_inheritance(
+                        &interface.name,
+                        format!(
+                            "interface method {}::{}() cannot add parameter type {} for parameter ${} when parent interface method {}::{}() has no parameter type",
+                            child_interface_name,
+                            child_method.function.name,
+                            child_type,
+                            child_param.name,
+                            parent_interface_name,
+                            parent_method.function.name
+                        ),
+                    ),
+                ));
+            }
+            (Some(parent_type), Some(child_type))
+                if !child_type.eq_ignore_ascii_case(parent_type) =>
+            {
+                return Err(runtime_error(
+                    interface.span,
+                    RuntimeError::unsupported_class_inheritance(
+                        &interface.name,
+                        format!(
+                            "interface method {}::{}() parameter ${} type {} is incompatible with parent interface method {}::{}() parameter type {}",
+                            child_interface_name,
+                            child_method.function.name,
+                            child_param.name,
+                            child_type,
+                            parent_interface_name,
+                            parent_method.function.name,
+                            parent_type
+                        ),
+                    ),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    match (
+        parent_method
+            .function
+            .return_type
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+        child_method
+            .function
+            .return_type
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+    ) {
+        (Some(parent_type), None) => Err(runtime_error(
+            interface.span,
+            RuntimeError::unsupported_class_inheritance(
+                &interface.name,
+                format!(
+                    "interface method {}::{}() must declare return type {} to match parent interface method {}::{}()",
+                    child_interface_name,
+                    child_method.function.name,
+                    parent_type,
+                    parent_interface_name,
+                    parent_method.function.name
+                ),
+            ),
+        )),
+        (Some(parent_type), Some(child_type)) if !child_type.eq_ignore_ascii_case(parent_type) => {
+            Err(runtime_error(
+                interface.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &interface.name,
+                    format!(
+                        "interface method {}::{}() return type {} is incompatible with parent interface method {}::{}() return type {}",
+                        child_interface_name,
+                        child_method.function.name,
+                        child_type,
+                        parent_interface_name,
+                        parent_method.function.name,
+                        parent_type
+                    ),
+                ),
+            ))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn register_trait_name(
@@ -22976,6 +23391,32 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
+fn parse_wordpress_options_name_value_autoload_row_select_query(
+    query: &str,
+) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name, option_value, autoload FROM wp_options")
+        .or_else(|| {
+            query.strip_prefix("SELECT `option_name`, `option_value`, `autoload` FROM `wp_options`")
+        })?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
 fn wordpress_option_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
@@ -23008,6 +23449,49 @@ fn wordpress_option_rows_for_filter(
                     (
                         "option_value".to_string(),
                         Value::String(option.value.clone()),
+                    ),
+                ]
+            })
+        })
+        .collect()
+}
+
+fn wordpress_option_name_value_autoload_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![
+                    ("option_name".to_string(), Value::String(name)),
+                    (
+                        "option_value".to_string(),
+                        Value::String(option.value.clone()),
+                    ),
+                    (
+                        "autoload".to_string(),
+                        Value::String(option.autoload.clone()),
                     ),
                 ]
             })

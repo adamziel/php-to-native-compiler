@@ -46,6 +46,12 @@ PHP-style integer/string keys, supported object values use runtime class
 metadata, and unsupported dynamic behavior fails with stable diagnostics instead
 of silently pretending to work.
 
+For bounded request/SAPI exercises, `phpc run` accepts explicit environment
+seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`, and
+`PHPC_REQUEST_BODY`. These populate flat URL-encoded `$_GET`/`$_POST`/
+`$_REQUEST` data and `php://input` for the interpreter only; native lowering
+still rejects request state until a native runtime ABI exists.
+
 ### `phpc compile --emit-ir`
 
 `phpc compile <input.php> --emit-ir` emits LLVM IR text for a smaller
@@ -167,7 +173,10 @@ incorrect native code.
   public methods with the required names at class registration time, to avoid
   requiring more parameters than those interface methods, to pass the current
   bounded interface parameter-type metadata check, and to pass the current
-  bounded interface return-type metadata check; class `implements` clauses
+  bounded interface return-type metadata check; child interfaces that
+  redeclare inherited methods and simple multi-parent method conflicts are
+  checked against the same bounded required-parameter, parameter-type, and
+  return-type metadata rules; class `implements` clauses
   record comma-separated interface names and inherited parent interface names
   as relationship metadata for `is_a`, `is_subclass_of`, and `instanceof`,
   including unresolved built-in/internal interface names; public interface
@@ -177,7 +186,8 @@ incorrect native code.
   inheritance reports stable runtime boundaries;
   typed/static/non-public/abstract/final or
   multi-constant interface declarations, full variance/signature compatibility
-  beyond the current bounded checks, broad built-in/internal interface
+  beyond the current bounded checks, class/interface type subtyping,
+  broad built-in/internal interface
   inheritance catalogs, exact PHP diagnostics, and native lowering remain
   unsupported; the current internal-interface enforcement slice is limited to concrete
   `Countable` implementors exposing a public non-static `count()` method with
@@ -343,13 +353,14 @@ instance methods, named static method calls, `self::` static method calls, and
 method calls.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
-for unkeyed literal argument arrays containing direct-variable reference
-elements such as `array(&$value)`, plus direct public object-property
-array-offset elements such as `array(&$object->items[$key])` through
-copy-in/writeback. Stored reference arrays, keyed reference argument arrays,
-non-public or dynamic callback object-property array arguments, dynamic static
-receiver callback object-property array arguments, broader aliasing, and full
-copy-on-write remain unsupported.
+for unkeyed or integer-keyed literal argument arrays containing direct-variable
+reference elements such as `array(&$value)` and `array(10 => &$value)`, plus
+direct public object-property array-offset elements such as
+`array(&$object->items[$key])` through copy-in/writeback. Stored reference
+arrays, string-keyed named reference argument arrays, non-public or dynamic
+callback object-property array arguments, dynamic static receiver callback
+object-property array arguments, broader aliasing, and full copy-on-write
+remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation
