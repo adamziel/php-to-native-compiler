@@ -1262,14 +1262,14 @@ fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
         (
             "<?php\nclass Value {\n    public string $id;\n}\n",
             3,
-            12,
-            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+            19,
+            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
-            "<?php\nclass Value {\n    public static int $id;\n}\n",
+            "<?php\nclass Value {\n    public int|string $id = 1;\n}\n",
             3,
-            19,
-            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+            12,
+            "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support",
         ),
     ];
 

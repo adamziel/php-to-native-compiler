@@ -787,10 +787,13 @@ and generic empty metadata probes for non-state-island tables. Exact
 `SHOW [FULL] COLUMNS FROM wp_options` probes return fixed rows for the current
 deterministic option-table schema: `option_id`, `option_name`, `option_value`,
 and `autoload`, including primary/unique key markers, the `autoload` default,
-and placeholder utf8mb4 collation metadata. They do not read a host database,
-execute CREATE/ALTER TABLE, model dbDelta diffs, mutate schema, inspect real
-indexes/collations beyond those fixed markers, or model warning/error
-fidelity.
+and placeholder utf8mb4 collation metadata. Exact `SHOW INDEX FROM
+wp_options`, `SHOW INDEXES FROM wp_options`, and `SHOW KEYS FROM wp_options`
+probes, including backticked table spelling, return fixed MySQL-8-shaped index
+rows for the primary `option_id` index and unique `option_name` index. They do
+not read a host database, execute CREATE/ALTER TABLE, model dbDelta diffs,
+mutate schema, inspect real indexes/collations beyond those fixed markers, or
+model warning/error fidelity.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

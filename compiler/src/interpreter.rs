@@ -295,6 +295,7 @@ struct ReflectionPropertyState {
     name: String,
     visibility: Visibility,
     is_static: bool,
+    type_decl: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -4102,6 +4103,12 @@ impl Interpreter {
         })
     }
 
+    fn session_output_started_warning(&self) -> Option<String> {
+        self.output_start
+            .as_ref()
+            .map(|_| "Session cannot be started after headers have already been sent".to_string())
+    }
+
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
         self.tick(stmt.span())?;
         match stmt {
@@ -6283,6 +6290,18 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object,
+                            property,
+                            vec![key.clone()],
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -6305,6 +6324,18 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -7107,6 +7138,70 @@ impl Interpreter {
             return Ok(None);
         }
 
+        self.evaluate_array_access_reference_source_alias_for_object(
+            object,
+            object_name.to_string(),
+            keys,
+            span,
+            scope,
+        )
+        .map(Some)
+    }
+
+    fn evaluate_object_property_array_access_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(holder)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let value = match holder.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+        let Value::Object(object) = value else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let hidden_name = self.hidden_array_access_reference_object_name(&object);
+        scope.write_static(&hidden_name, Value::Object(object.clone()));
+        self.evaluate_array_access_reference_source_alias_for_object(
+            object,
+            hidden_name,
+            keys,
+            span,
+            scope,
+        )
+        .map(Some)
+    }
+
+    fn evaluate_array_access_reference_source_alias_for_object(
+        &mut self,
+        object: PhpObject,
+        object_name: String,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(ArrayOffsetAlias, Value)> {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "offsetGet")
         else {
@@ -7159,12 +7254,12 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
         let root = if property_visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.to_string(),
+                object: object_name.clone(),
                 property,
             }
         } else {
             ArrayOffsetAliasRoot::ContextObjectProperty {
-                object: object_name.to_string(),
+                object: object_name.clone(),
                 property,
                 current_class_id: Some(class_id),
                 protected_class_ids,
@@ -7180,7 +7275,11 @@ impl Interpreter {
                 ),
             )
         })?;
-        Ok(Some((alias, value)))
+        Ok((alias, value))
+    }
+
+    fn hidden_array_access_reference_object_name(&self, object: &PhpObject) -> String {
+        format!("\0phpc_array_access_ref_object_{}", object.id())
     }
 
     fn array_access_offset_get_reference_property(
@@ -15513,6 +15612,7 @@ impl Interpreter {
                         name: property.name().to_string(),
                         visibility: property.visibility(),
                         is_static: property.is_static(),
+                        type_decl: property.type_decl().map(str::to_string),
                     });
                 }
             }
@@ -15539,6 +15639,7 @@ impl Interpreter {
                     name: property.name().to_string(),
                     visibility: property.visibility(),
                     is_static: property.is_static(),
+                    type_decl: property.type_decl().map(str::to_string),
                 });
             }
             current = class.parent_id();
@@ -15891,11 +15992,17 @@ impl Interpreter {
             }
             "hastype" => {
                 expect_expr_arity("ReflectionProperty::hasType", args.len(), 0, span)?;
-                Ok(Value::Bool(false))
+                Ok(Value::Bool(state.type_decl.is_some()))
             }
             "gettype" => {
                 expect_expr_arity("ReflectionProperty::getType", args.len(), 0, span)?;
-                Ok(Value::Null)
+                let Some(type_decl) = state.type_decl.as_deref() else {
+                    return Ok(Value::Null);
+                };
+                let Some(type_state) = reflection_named_type_state_from_property(type_decl) else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_named_type_object(type_state, span)
             }
             _ => Err(runtime_error(
                 span,
@@ -22923,6 +23030,29 @@ impl Interpreter {
         let visibility = object_handle
             .property_visibility_from_context(&property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(arg.span(), error))?;
+        if let Ok(Value::Object(array_access_object)) = object_handle.read_property_from_context(
+            &property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            if self
+                .classes
+                .implements_interface(array_access_object.class_id(), "ArrayAccess")
+            {
+                let hidden_name =
+                    self.hidden_array_access_reference_object_name(&array_access_object);
+                caller_scope.write_static(&hidden_name, Value::Object(array_access_object.clone()));
+                return self
+                    .evaluate_array_access_reference_source_alias_for_object(
+                        array_access_object,
+                        hidden_name,
+                        keys,
+                        arg.span(),
+                        caller_scope,
+                    )
+                    .map(Some);
+            }
+        }
         let root = if visibility == Visibility::Public {
             ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
         } else {
@@ -25052,7 +25182,8 @@ impl Interpreter {
             ));
         }
 
-        if self.output_start.is_some() {
+        if let Some(message) = self.session_output_started_warning() {
+            self.emit_warning("session_start()", message, span)?;
             return Ok(Value::Bool(false));
         }
 
@@ -31043,7 +31174,8 @@ fn register_class_members(
                     PhpPropertyMetadata::static_property(&property.name, visibility)
                 } else {
                     PhpPropertyMetadata::instance(&property.name, visibility)
-                };
+                }
+                .with_type_decl(property.type_decl.as_ref().map(|decl| decl.text.clone()));
                 classes
                     .get_mut(id)
                     .expect("declared class id should resolve to class metadata")
@@ -31985,6 +32117,18 @@ fn reflection_named_type_state_from_parameter(
     })
 }
 
+fn reflection_named_type_state_from_property(type_decl: &str) -> Option<ReflectionNamedTypeState> {
+    if type_decl.contains('|') || type_decl.contains('&') {
+        return None;
+    }
+    let name = type_decl.strip_prefix('?').unwrap_or(type_decl).to_string();
+    Some(ReflectionNamedTypeState {
+        allows_null: reflection_property_allows_null(type_decl),
+        is_builtin: reflection_type_name_is_builtin(&name),
+        name,
+    })
+}
+
 fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Expr>) -> bool {
     let Some(type_decl) = type_decl else {
         return true;
@@ -31995,6 +32139,14 @@ fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Ex
             .any(|part| part.eq_ignore_ascii_case("null"))
         || type_decl.eq_ignore_ascii_case("mixed")
         || matches!(default, Some(Expr::Null(_)))
+}
+
+fn reflection_property_allows_null(type_decl: &str) -> bool {
+    type_decl.starts_with('?')
+        || type_decl
+            .split('|')
+            .any(|part| part.eq_ignore_ascii_case("null"))
+        || type_decl.eq_ignore_ascii_case("mixed")
 }
 
 fn reflection_type_name_is_builtin(name: &str) -> bool {
@@ -32692,6 +32844,20 @@ fn validate_inherited_property_compatibility(
                         parent.name(),
                         property.name,
                         class_name,
+                        property.name
+                    ),
+                ));
+            }
+
+            let child_type = property.type_decl.as_ref().map(|decl| decl.text.as_str());
+            if parent_property.type_decl() != child_type {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "property {}::${} type metadata must match inherited property {}::${}",
+                        class_name,
+                        property.name,
+                        parent.name(),
                         property.name
                     ),
                 ));
@@ -33658,6 +33824,37 @@ fn wordpress_options_schema_result_for_query(query: &str) -> Option<MysqliPendin
         });
     }
 
+    if matches!(
+        query,
+        "SHOW INDEX FROM wp_options"
+            | "SHOW INDEX FROM `wp_options`"
+            | "SHOW INDEXES FROM wp_options"
+            | "SHOW INDEXES FROM `wp_options`"
+            | "SHOW KEYS FROM wp_options"
+            | "SHOW KEYS FROM `wp_options`"
+    ) {
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Table".to_string(),
+                "Non_unique".to_string(),
+                "Key_name".to_string(),
+                "Seq_in_index".to_string(),
+                "Column_name".to_string(),
+                "Collation".to_string(),
+                "Cardinality".to_string(),
+                "Sub_part".to_string(),
+                "Packed".to_string(),
+                "Null".to_string(),
+                "Index_type".to_string(),
+                "Comment".to_string(),
+                "Index_comment".to_string(),
+                "Visible".to_string(),
+                "Expression".to_string(),
+            ],
+            rows: wordpress_options_index_rows(),
+        });
+    }
+
     let table_like = query
         .strip_prefix("SHOW TABLES LIKE ")
         .and_then(parse_sql_single_quoted_list)
@@ -33679,6 +33876,36 @@ fn wordpress_options_schema_result_for_query(query: &str) -> Option<MysqliPendin
     }
 
     None
+}
+
+fn wordpress_options_index_rows() -> Vec<Vec<(String, Value)>> {
+    vec![
+        wordpress_options_index_row("PRIMARY", "option_id"),
+        wordpress_options_index_row("option_name", "option_name"),
+    ]
+}
+
+fn wordpress_options_index_row(key_name: &str, column_name: &str) -> Vec<(String, Value)> {
+    vec![
+        ("Table".to_string(), Value::String("wp_options".to_string())),
+        ("Non_unique".to_string(), Value::Int(0)),
+        ("Key_name".to_string(), Value::String(key_name.to_string())),
+        ("Seq_in_index".to_string(), Value::Int(1)),
+        (
+            "Column_name".to_string(),
+            Value::String(column_name.to_string()),
+        ),
+        ("Collation".to_string(), Value::String("A".to_string())),
+        ("Cardinality".to_string(), Value::Int(0)),
+        ("Sub_part".to_string(), Value::Null),
+        ("Packed".to_string(), Value::Null),
+        ("Null".to_string(), Value::String(String::new())),
+        ("Index_type".to_string(), Value::String("BTREE".to_string())),
+        ("Comment".to_string(), Value::String(String::new())),
+        ("Index_comment".to_string(), Value::String(String::new())),
+        ("Visible".to_string(), Value::String("YES".to_string())),
+        ("Expression".to_string(), Value::Null),
+    ]
 }
 
 fn wordpress_options_describe_rows() -> Vec<Vec<(String, Value)>> {

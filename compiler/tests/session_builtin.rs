@@ -130,6 +130,34 @@ echo session_status() === PHP_SESSION_NONE ? "none" : "active";
 }
 
 #[test]
+fn session_start_after_unbuffered_output_emits_recoverable_warning() {
+    let execution = run_source(
+        r#"<?php
+function late_session_warning($errno, $errstr, $errfile, $errline) {
+    echo "|warn:" . $errno;
+    echo ":" . (str_contains($errstr, "Session cannot be started") ? "session" : "other");
+    echo ":" . (str_contains($errstr, "headers have already been sent") ? "headers" : "missing");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}
+set_error_handler("late_session_warning", E_WARNING);
+echo "body";
+$started = session_start();
+echo "|return:" . ($started ? "true" : "false");
+echo "|status:" . (session_status() === PHP_SESSION_NONE ? "none" : "active");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "body|warn:2:session:headers:Command line code:11|return:false|status:none"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_builtins_reject_forms_outside_current_subset() {
     let too_many = run_source("<?php\nsession_start(array(), array());\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);

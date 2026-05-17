@@ -1,0 +1,1 @@
+Uses phpc's deterministic MySQLi/wp_options state island for SHOW INDEX/SHOW KEYS schema probes instead of a host MySQL server.

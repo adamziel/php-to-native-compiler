@@ -1046,18 +1046,46 @@ impl Parser {
             if let Some(hook_span) = self.property_hook_span_before_member_end() {
                 return Err(self.error_at(hook_span, unsupported_property_hook_message()));
             }
-            if matches!(self.peek().kind, TokenKind::LParen)
-                || (matches!(self.peek().kind, TokenKind::Question)
-                    && matches!(self.peek_next().kind, TokenKind::LParen))
-            {
-                return Err(self.error_at(self.peek().span, unsupported_dnf_type_message()));
+            let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
+            if type_decl.text.contains('|') || type_decl.text.contains('&') {
+                return Err(
+                    self.error_at(type_decl.span, unsupported_compound_property_type_message())
+                );
             }
-            let message = if modifiers.is_static {
-                unsupported_static_property_type_message()
+            let (name, span) = self.consume_variable_with_span("expected property name")?;
+            let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                let expr = self.parse_expression()?;
+                if modifiers.is_static {
+                    self.ensure_supported_static_property_default_expr(&expr)?;
+                } else {
+                    self.ensure_supported_instance_property_default_expr(&expr)?;
+                }
+                self.ensure_supported_typed_property_default_expr(&type_decl, &expr)?;
+                Some(expr)
             } else {
-                unsupported_property_type_message()
+                return Err(self.error_at(span, unsupported_uninitialized_typed_property_message()));
             };
-            return Err(self.error_at(self.peek().span, message));
+            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_multiple_properties_message(),
+                ));
+            }
+            if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+                return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
+            }
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after property declaration",
+            )?;
+            return Ok(ClassMember::Property(ClassPropertyDecl {
+                name,
+                visibility: modifiers.visibility,
+                is_static: modifiers.is_static,
+                type_decl: Some(type_decl),
+                default,
+                span,
+            }));
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
@@ -1098,6 +1126,7 @@ impl Parser {
                 name,
                 visibility: modifiers.visibility,
                 is_static: modifiers.is_static,
+                type_decl: None,
                 default,
                 span,
             }));
@@ -5235,6 +5264,38 @@ impl Parser {
             })
     }
 
+    fn ensure_supported_typed_property_default_expr(
+        &self,
+        type_decl: &TypeDecl,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let without_nullable = type_decl.text.strip_prefix('?').unwrap_or(&type_decl.text);
+        let type_name = without_nullable
+            .strip_prefix('\\')
+            .unwrap_or(without_nullable)
+            .to_ascii_lowercase();
+        let allows_null =
+            type_decl.text.starts_with('?') || type_name == "mixed" || type_name == "null";
+        let compatible = match expr {
+            Expr::Null(_) => allows_null,
+            Expr::String(_, _) => matches!(type_name.as_str(), "string" | "mixed"),
+            Expr::Int(_, _) => matches!(type_name.as_str(), "int" | "float" | "mixed"),
+            Expr::Float(_, _) => matches!(type_name.as_str(), "float" | "mixed"),
+            Expr::Bool(true, _) => matches!(type_name.as_str(), "bool" | "true" | "mixed"),
+            Expr::Bool(false, _) => matches!(type_name.as_str(), "bool" | "false" | "mixed"),
+            Expr::Array { .. } => matches!(type_name.as_str(), "array" | "mixed"),
+            _ => true,
+        };
+        if compatible {
+            Ok(())
+        } else {
+            Err(self.error_at(
+                expr.span(),
+                "unsupported typed property default: literal defaults must match the declared property type in the current metadata subset",
+            ))
+        }
+    }
+
     fn expr_contains_assignment(expr: &Expr) -> bool {
         match expr {
             Expr::Assign { .. } | Expr::CompoundAssign { .. } | Expr::NullCoalesceAssign { .. } => {
@@ -6250,11 +6311,15 @@ fn unsupported_return_type_message() -> &'static str {
 }
 
 fn unsupported_property_type_message() -> &'static str {
-    "unsupported property type declaration: typed property storage and enforcement are not implemented"
+    "unsupported property type declaration: property type metadata supports only simple named property types in the current subset"
 }
 
-fn unsupported_static_property_type_message() -> &'static str {
-    "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented"
+fn unsupported_compound_property_type_message() -> &'static str {
+    "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support"
+}
+
+fn unsupported_uninitialized_typed_property_message() -> &'static str {
+    "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors"
 }
 
 fn unsupported_readonly_property_message() -> &'static str {
@@ -6735,7 +6800,10 @@ impl Parser {
             TokenKind::Identifier(_)
             | TokenKind::Question
             | TokenKind::LParen
-            | TokenKind::Backslash => {}
+            | TokenKind::Backslash
+            | TokenKind::Null
+            | TokenKind::True
+            | TokenKind::False => {}
             _ => return false,
         }
 

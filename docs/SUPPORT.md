@@ -151,13 +151,16 @@
   Literal callback argument arrays also accept direct `ArrayAccess` reference
   elements such as `array(&$bag[$key], ...)` and nested direct elements such
   as `array(&$bag["outer"]["slot"], ...)` when the direct object variable
-  implements `ArrayAccess`, public `offsetGet($offset)` returns by reference,
-  and its body is exactly the current bounded root shape
-  `return $this->property[$offset];`. The selected property array slot or
-  nested child slot is materialized when missing and writes back through the
-  same alias metadata as direct object-property array slots, including
-  private/protected backing properties reached through the declaring
-  `offsetGet()` context.
+  implements `ArrayAccess`, and property-held elements such as
+  `array(&$holder->bag[$key], ...)` and
+  `array(&$holder->bag["outer"]["slot"], ...)` when the visible named object
+  property holds such an `ArrayAccess` object. In both cases public
+  `offsetGet($offset)` must return by reference and its body must be exactly
+  the current bounded root shape `return $this->property[$offset];`. The
+  selected property array slot or nested child slot is materialized when
+  missing and writes back through the same alias metadata as direct
+  object-property array slots, including private/protected backing properties
+  reached through the declaring `offsetGet()` context.
   If a direct variable element is already routed
   through the covered direct array-offset alias metadata, such as
   `$payload =& $_REQUEST["payload"]; call_user_func_array($callback,
@@ -227,7 +230,7 @@
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
-  reference named-argument path, dynamic, append, property-held, or stored-array
+  reference named-argument path, dynamic, append, or stored-array
   `ArrayAccess` bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
@@ -378,19 +381,23 @@
   remain unsupported. Direct `ArrayAccess` reference sources
   such as `$alias =& $bag[$key];` and nested direct sources such as
   `$alias =& $bag["outer"]["slot"];` execute for direct object variables whose
-  class implements `ArrayAccess` when public `offsetGet($offset)` returns by
-  reference and its body is exactly `return $this->property[$offset];` in the
-  current subset. The bridge binds the alias to the backing property array
-  slot or nested child slot, materializes missing slots as `null`, and supports
-  public plus private/protected backing properties through the declaring
-  method context.
+  class implements `ArrayAccess`. Property-held sources such as
+  `$alias =& $holder->bag[$key];` and nested property-held sources such as
+  `$alias =& $holder->bag["outer"]["slot"];` execute when the visible named
+  object property holds an `ArrayAccess` object. In both cases public
+  `offsetGet($offset)` must return by reference and its body must be exactly
+  `return $this->property[$offset];` in the current subset. The bridge binds
+  the alias to the backing property array slot or nested child slot,
+  materializes missing slots as `null`, and supports public plus
+  private/protected backing properties through the declaring method context.
   Normal reads through that same bounded reference-returning `offsetGet()`
   return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
-  with side effects or broader return expressions, property-held sources such
-  as `$holder->bag[$key]`, append `ArrayAccess` sources, stored callback
-  argument arrays whose slots were assigned from `ArrayAccess` references,
-  mixed nested `ArrayAccess` chains, and real runtime reference containers
-  remain unsupported. Direct
+  with side effects or broader return expressions, dynamic property-held
+  sources, property-held alias lifetime after replacing the containing
+  property, append `ArrayAccess` sources, stored callback argument arrays
+  whose slots were assigned from `ArrayAccess` references, mixed nested
+  `ArrayAccess` chains, and real runtime reference containers remain
+  unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
@@ -850,12 +857,14 @@
   `$alias =& $_SESSION["payload"]["slot"]` observe direct function-scope
   `$_SESSION` writes through the same bounded alias metadata, including after
   `session_write_close()` leaves the in-memory array visible. The current slice
-  keeps session data in memory for one `phpc run` request only. Session
-  persistence, session file locking, save handlers, session module
-  configuration, session cookies/cache headers, garbage collection, strict id
-  validation, trans-sid behavior, exact warnings, full PHP reference
-  containers, broader copy-on-write, exact alias destruction ordering, and
-  native lowering remain unsupported.
+  keeps session data in memory for one `phpc run` request only. Starting a
+  session after unbuffered output returns `false` and emits a bounded
+  `E_WARNING` through the current `set_error_handler()` stack or stderr
+  fallback. Session persistence, session file locking, save handlers, session
+  module configuration, session cookies/cache headers, garbage collection,
+  strict id validation, trans-sid behavior, exact warning text, active-session
+  restart notices, full PHP reference containers, broader copy-on-write, exact
+  alias destruction ordering, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -2123,8 +2132,16 @@
   current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
   for quotes, double quotes, backslashes, newlines, and carriage returns, plus
   doubled single quotes.
+  Exact deterministic schema probes over the same `wp_options` state island
+  accept `SHOW TABLES LIKE 'wp_options'`, `DESCRIBE`/`DESC wp_options`,
+  `SHOW [FULL] COLUMNS FROM wp_options`, and `SHOW INDEX`/`SHOW INDEXES`/
+  `SHOW KEYS FROM wp_options` with the current backticked table-name variants.
+  The index probes return fixed MySQL-8-shaped rows for the `PRIMARY`
+  `option_id` index and unique `option_name` index so bounded install/update
+  and dbDelta inspection probes can read key names, sequence numbers, column
+  names, uniqueness markers, `BTREE` type, visibility, and null sub-parts.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
-  character-set/collation fidelity, schema or index behavior,
+  character-set/collation fidelity, mutable schema or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2790,7 +2807,8 @@
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
   root superglobal when no unbuffered output has started. If unbuffered output
-  has already started, it returns `false` without warning machinery. Option
+  has already started, it returns `false` and emits a bounded `E_WARNING`
+  through the current `set_error_handler()` stack or stderr fallback. Option
   values are currently accepted only as an array shape and are otherwise
   ignored. `session_status()` accepts no arguments and returns
   `PHP_SESSION_NONE` or `PHP_SESSION_ACTIVE` for the current request.
@@ -2803,7 +2821,8 @@
   persistence, session file locking, save handlers, `session_name()`,
   `session_destroy()`, `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, session cookies/cache headers,
-  garbage collection, exact warnings, and native lowering remain unsupported.
+  garbage collection, exact warning text, active-session restart notices, and
+  native lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3248,7 +3267,14 @@
   table and guarded declarations such as `if (!class_exists("Name")) { class
   Name {} }` can safely avoid repeated redeclaration in the current subset.
   The accepted member subset records untyped properties with optional
-  constant-expression defaults and methods
+  constant-expression defaults, plus bounded simple named typed properties
+  only when they declare explicit constant-expression defaults. Property type
+  declarations are metadata-only in this slice: reads, writes, constructor
+  initialization, and static property mutation do not enforce the declared
+  type. Typed properties without explicit defaults remain unsupported because
+  uninitialized property state and access errors are not modeled. Compound
+  union/intersection/DNF property type objects remain unsupported until
+  `ReflectionUnionType`/`ReflectionIntersectionType` exist. Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
   ClassName(...)` looks up declared classes case-insensitively, initializes
@@ -5683,9 +5709,11 @@
   child class. `ReflectionProperty` supports `getName()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
-  `hasType()`, and `getType()` for the current untyped property subset;
-  `getType()` returns `null` and `hasType()` returns `false` because typed
-  properties still stop at the existing parser boundary.
+  `hasType()`, and `getType()` for current untyped properties and bounded
+  simple named typed properties with explicit defaults. For those typed
+  properties, `getType()` returns a request-local `ReflectionNamedType` object
+  with `getName()`, `allowsNull()`, and `isBuiltin()` support; untyped
+  properties still return `null`.
   The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
@@ -7308,9 +7336,11 @@
   same metadata slice, scalar/array default expressions accepted by the parser,
   by-reference and variadic flags, and type-presence checks without materialized
   compound `ReflectionType` objects. `ReflectionProperty` currently supports
-  only declared user-class property metadata for the methods documented above;
-  typed properties are unavailable because property type declarations remain a
-  parser boundary. Attributes, file/line/doc-comment metadata,
+  only declared user-class property metadata for the methods documented above,
+  plus simple named typed property metadata when the property has an explicit
+  constant-expression default. It does not enforce typed property reads or
+  writes and does not model uninitialized typed property slots. Attributes,
+  file/line/doc-comment metadata,
   extension/internal method/property/parameter metadata, parameter and property
   attributes, `ReflectionUnionType`/
   `ReflectionIntersectionType`, default constant-name introspection, function/closure

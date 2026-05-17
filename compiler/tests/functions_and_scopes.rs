@@ -2732,11 +2732,11 @@ $alias =& $bag["name"];
 }
 
 #[test]
-fn reference_assignment_object_property_array_access_source_reports_stable_boundary() {
-    let error = runtime_error(
+fn reference_assignment_object_property_array_access_source_binds_bounded_offset_get_root() {
+    let execution = run_source(
         r#"<?php
 class Bag implements ArrayAccess {
-    public $items = [];
+    private $items = ["outer" => ["slot" => "seed"]];
     public function offsetExists($offset) { return false; }
     public function &offsetGet($offset) { return $this->items[$offset]; }
     public function offsetSet($offset, $value) { }
@@ -2747,16 +2747,18 @@ class Holder {
 }
 $holder = new Holder();
 $holder->bag = new Bag();
-$alias =& $holder->bag["name"];
+$alias =& $holder->bag["outer"]["slot"];
+$alias = $alias . ":alias";
+echo $holder->bag["outer"]["slot"], "|", $alias, "\n";
+$missing =& $holder->bag["created"]["leaf"];
+$missing = "made";
+echo $holder->bag["created"]["leaf"], "|", $missing;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 14);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented"
-    );
+    assert_eq!(execution.stdout, "seed:alias|seed:alias\nmade|made");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -1,0 +1,9 @@
+direct|name|1|ReflectionNamedType:string:111|1|null
+object|cache|1|ReflectionNamedType:string:111|1|null
+get|flag|1|ReflectionNamedType:bool:011|1|1
+list|name|1|ReflectionNamedType:string:111|1|null
+list|items|1|ReflectionNamedType:array:011|1|array:1
+list|flag|1|ReflectionNamedType:bool:011|1|1
+list|peer|1|ReflectionNamedType:Plugin:101|1|null
+list|id|1|ReflectionNamedType:string:011|1|base
+list|cache|1|ReflectionNamedType:string:111|1|null

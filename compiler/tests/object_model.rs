@@ -4850,6 +4850,71 @@ foreach ($rc->getProperties() as $property) {
 }
 
 #[test]
+fn reflection_property_reports_bounded_typed_property_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public string $id = "base";
+    protected static ?string $cache = null;
+}
+
+class Plugin extends Base {
+    public ?string $name = null;
+    protected array $items = array("a" => 1);
+    private static bool $flag = true;
+    public ?Plugin $peer = null;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function default_label($value) {
+    if (is_array($value)) {
+        return "array:" . count($value);
+    }
+    if (is_bool($value)) {
+        return yn($value);
+    }
+    if ($value === null) {
+        return "null";
+    }
+    return $value;
+}
+
+function type_label($property) {
+    $type = $property->getType();
+    if ($type === null) {
+        return "none";
+    }
+    return get_class($type) . ":" . $type->getName() . ":" . yn($type->allowsNull()) . yn($type->isBuiltin()) . yn($type instanceof ReflectionType);
+}
+
+function line($label, $property, $ending = "\n") {
+    echo $label, "|", $property->getName(), "|", yn($property->hasType()), "|", type_label($property), "|", yn($property->hasDefaultValue()), "|", default_label($property->getDefaultValue()), $ending;
+}
+
+$rc = new ReflectionClass(Plugin::class);
+line("direct", new ReflectionProperty(Plugin::class, "name"));
+line("object", new ReflectionProperty(new Plugin(), "cache"));
+line("get", $rc->getProperty("flag"));
+$properties = $rc->getProperties();
+$count = count($properties);
+foreach ($properties as $index => $property) {
+    line("list", $property, $index + 1 === $count ? "" : "\n");
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct|name|1|ReflectionNamedType:string:111|1|null\nobject|cache|1|ReflectionNamedType:string:111|1|null\nget|flag|1|ReflectionNamedType:bool:011|1|1\nlist|name|1|ReflectionNamedType:string:111|1|null\nlist|items|1|ReflectionNamedType:array:011|1|array:1\nlist|flag|1|ReflectionNamedType:bool:011|1|1\nlist|peer|1|ReflectionNamedType:Plugin:101|1|null\nlist|id|1|ReflectionNamedType:string:011|1|base\nlist|cache|1|ReflectionNamedType:string:111|1|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;
@@ -9055,8 +9120,8 @@ class Box {
 }
 "#,
             3,
-            12,
-            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+            19,
+            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
             r#"<?php
@@ -9065,8 +9130,8 @@ class Box {
 }
 "#,
             3,
-            12,
-            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+            20,
+            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
             r#"<?php
@@ -9076,7 +9141,7 @@ class Box {
 "#,
             3,
             12,
-            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+            "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support",
         ),
         (
             r#"<?php
@@ -9085,18 +9150,18 @@ class Box {
 }
 "#,
             3,
-            19,
-            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+            23,
+            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
             r#"<?php
 class Box {
-    private static ?string $name = null;
+    private static ?string $name;
 }
 "#,
             3,
-            20,
-            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+            28,
+            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
             r#"<?php

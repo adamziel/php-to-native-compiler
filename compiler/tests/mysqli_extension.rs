@@ -5044,13 +5044,23 @@ while ($column = mysqli_fetch_assoc($columns)) {
         echo $column["Type"], ":", $column["Default"], ":", $column["Collation"];
     }
 }
+echo "|";
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_options");
+echo mysqli_num_fields($indexes);
+echo ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ":", $index["Non_unique"], ":", $index["Index_type"], ";";
+}
+echo "|";
+$keys = mysqli_query($handle, "SHOW KEYS FROM `wp_options`");
+echo mysqli_num_rows($keys);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "1:wp_options|6:option_id:bigint(20) unsigned:PRI:auto_increment|4:varchar(20):yes:utf8mb4_unicode_ci"
+        "1:wp_options|6:option_id:bigint(20) unsigned:PRI:auto_increment|4:varchar(20):yes:utf8mb4_unicode_ci|15:PRIMARY:option_id:0:BTREE;option_name:option_name:0:BTREE;|2"
     );
     assert_eq!(execution.exit_code, 0);
 }

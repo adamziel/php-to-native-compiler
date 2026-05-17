@@ -1,2 +1,2 @@
-parse error at 3:19: unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented
+parse error at 3:23: unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors
 

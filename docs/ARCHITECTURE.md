@@ -137,15 +137,15 @@ variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
 symbol-table cell, so returned child-slot suffixes remain attached to the
 underlying request/global/array/property slot. Literal callback argument
-arrays can also bind a direct `ArrayAccess` object-variable element, including
-nested direct offset elements, when
-public by-reference `offsetGet($offset)` has the exact bounded
-`return $this->property[$offset];` shape; the interpreter maps that to the
-backing property array alias root plus any nested child-key suffix instead of
-creating a real reference container. It does not make callback argument arrays,
-non-public/dynamic object-property array bridges, property-held ArrayAccess
-roots, append ArrayAccess roots, or stored array-offset metadata into general
-runtime reference containers. By-reference
+arrays can also bind direct and property-held `ArrayAccess` elements,
+including nested offset elements, when public by-reference
+`offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
+shape; the interpreter maps that to the backing property array alias root plus
+any nested child-key suffix instead of creating a real reference container. It
+does not make callback argument arrays, non-public/dynamic object-property
+array bridges, dynamic or stored-array ArrayAccess roots, append ArrayAccess
+roots, or stored array-offset metadata into general runtime reference
+containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -160,10 +160,11 @@ to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
 object name. Arbitrary nested copied reference slots beyond the literal copied
-path slice, non-public
-property-offset or magic clone alias mirroring, broader ArrayAccess references,
-reference array literals, exact alias destruction ordering, and native lowering
-still require the future runtime reference/COW value model.
+path slice, non-public property-offset or magic clone alias mirroring, dynamic
+or stored-array ArrayAccess references, alias cleanup after replacing a
+property that held an ArrayAccess object, reference array literals, exact alias
+destruction ordering, and native lowering still require the future runtime
+reference/COW value model.
 
 ## Compiler Crate
 
@@ -582,16 +583,18 @@ dynamic-property sources on non-direct object expressions, dynamic
 non-public property sources, magic property sources, non-variable reference
 targets, full reference containers, copy-on-write, exact alias destruction
 ordering, and native lowering remain future work. Direct `ArrayAccess`
-reference sources now have a narrow root bridge for `$alias =& $bag[$key]`
-and literal callback elements such as `array(&$bag[$key])` when the direct
-object variable implements `ArrayAccess`, public `offsetGet($offset)` returns
-by reference, and the method body is exactly the current
-`return $this->property[$offset];` shape. The bridge stores alias metadata
-against the backing property array slot, including private/protected
-properties through the declaring method context. By-value `offsetGet()`,
-property-held ArrayAccess sources, side-effecting or broader `offsetGet()`
-bodies, nested chains, append sources, and real reference containers remain
-future work.
+reference sources now have a narrow root bridge for `$alias =& $bag[$key]`,
+property-held roots such as `$alias =& $holder->bag[$key]`, and literal
+callback elements such as `array(&$holder->bag[$key])` when the direct object
+variable or visible named property value implements `ArrayAccess`, public
+`offsetGet($offset)` returns by reference, and the method body is exactly the
+current `return $this->property[$offset];` shape. Property-held roots are
+parked in a hidden object-handle symbol and then reuse the same backing
+property array alias metadata, including private/protected properties through
+the declaring method context. By-value `offsetGet()`, dynamic property-held
+ArrayAccess sources, alias lifetime after replacing the containing property,
+side-effecting or broader `offsetGet()` bodies, mixed nested ArrayAccess
+chains, append sources, and real reference containers remain future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
@@ -711,7 +714,7 @@ execution past unknown or duplicate string-keyed callback argument names,
 positional arguments after a string-keyed named argument, variadic named
 callback arguments, dynamic key expressions in the literal reference
 named-argument path,
-dynamic, append, or ArrayAccess reference roots, non-public property roots outside the current valid
+dynamic, append, or stored-array ArrayAccess reference roots, non-public property roots outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
 by-reference `foreach`, or copy-on-write.
@@ -1704,6 +1707,14 @@ returns `false`, leaves the header log unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback; full
 cookie attributes, encoding, exact warning text, SAPI emission, and native
 lowering remain outside the model.
+`session_start()` uses the same request-local output-started state for the
+current bounded session lifecycle. Before unbuffered output it materializes the
+in-memory `$_SESSION` root and marks the session active; after unbuffered
+output it returns `false`, leaves session status/data unchanged, and routes a
+bounded `E_WARNING` through the current error-handler stack or stderr
+fallback. Session cookie/cache-header emission, persistence, locking, save
+handlers, exact warning text, active-session restart notices, and native
+lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
@@ -1793,15 +1804,17 @@ row whose decimal value is below the direct or prepared threshold. That slice
 deletes both reached payload and timeout rows and updates affected-row
 metadata. It also exposes deterministic `SHOW TABLES LIKE 'wp_options'`,
 `DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM wp_options`
-result rows for the current four-column option-table schema so bounded
-install/update probes can inspect table existence, primary/unique key markers,
-and autoload default/collation metadata. It does not model arbitrary
+result rows plus deterministic `SHOW INDEX`/`SHOW KEYS FROM wp_options` rows
+for the current four-column option-table schema so bounded install/update
+probes can inspect table existence, primary/unique key markers, fixed
+primary/unique index rows, and autoload default/collation metadata. It does
+not model arbitrary
 multi-table deletes, subqueries, mutable schema, dbDelta diffs, CREATE/ALTER
-TABLE execution, charset/collation negotiation, locks, indexes beyond those
-fixed markers, duplicate aliases, malformed `CONCAT`/`SUBSTRING` forms, exact
-MySQL affected-row or insert-ID edge cases, or WordPress cleanup against
-tables outside the deterministic `wp_options` state island; it is not a
-general SQL engine, schema model, host database connection, PDO layer, or
+TABLE execution, charset/collation negotiation, locks, real index inspection
+beyond those fixed markers, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
+forms, exact MySQL affected-row or insert-ID edge cases, or WordPress cleanup
+against tables outside the deterministic `wp_options` state island; it is not
+a general SQL engine, schema model, host database connection, PDO layer, or
 native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
 registration path: it accepts closure expressions, string user-function
@@ -2494,12 +2507,14 @@ attributes, files, line numbers, doc comments, extension/internal metadata,
 function or closure parameter targets, method invocation, exact exception
 objects, compound type objects, or native lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
-the selected declaring class id/name, property name, visibility, and static
-flag. The interpreter answers name, declaring class, modifier-mask,
-visibility/static predicates, default-value availability and value, and the
-current untyped `hasType()`/`getType()` result. Typed properties still stop at
-the parser boundary, so property type reflection always reports no type in the
-supported slice.
+the selected declaring class id/name, property name, visibility, static flag,
+and optional simple named property type metadata. The interpreter answers name,
+declaring class, modifier-mask, visibility/static predicates, default-value
+availability and value, and `hasType()`/`getType()`. Bounded typed properties
+must have explicit constant-expression defaults; their type metadata
+materializes the existing request-local `ReflectionNamedType` object. The
+runtime does not enforce property types and does not model uninitialized typed
+property slots, union/intersection property type objects, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

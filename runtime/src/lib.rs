@@ -2511,6 +2511,7 @@ pub struct PhpPropertyMetadata {
     name: String,
     visibility: Visibility,
     is_static: bool,
+    type_decl: Option<String>,
 }
 
 impl PhpPropertyMetadata {
@@ -2519,6 +2520,7 @@ impl PhpPropertyMetadata {
             name: name.into(),
             visibility,
             is_static: false,
+            type_decl: None,
         }
     }
 
@@ -2527,7 +2529,13 @@ impl PhpPropertyMetadata {
             name: name.into(),
             visibility,
             is_static: true,
+            type_decl: None,
         }
+    }
+
+    pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
+        self.type_decl = type_decl;
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -2540,6 +2548,10 @@ impl PhpPropertyMetadata {
 
     pub fn is_static(&self) -> bool {
         self.is_static
+    }
+
+    pub fn type_decl(&self) -> Option<&str> {
+        self.type_decl.as_deref()
     }
 }
 

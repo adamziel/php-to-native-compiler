@@ -62,8 +62,10 @@ with `error=0` as bounded local upload provenance. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 direct function-scope reads/writes route through that session root, including
-covered nested reference aliases. Session persistence, locking, save handlers,
-and cookie emission remain unsupported. `fopen()` can create bounded
+covered nested reference aliases. Starting a session after unbuffered output
+returns `false` and emits a bounded `E_WARNING` through the current
+`set_error_handler()` stack or stderr fallback. Session persistence, locking,
+save handlers, and cookie emission remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -252,9 +254,11 @@ incorrect native code.
   timeout-row delete shape, and exact WordPress-shaped transient payload plus
   timeout pair delete shape, plus deterministic `SHOW TABLES LIKE
   'wp_options'`, `DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM
-  wp_options` schema probe rows for the current option table;
-  this is not real MySQL connectivity, arbitrary SQL, mutable schema,
-  persistent object cache, full `wpdb`, or native database support
+  wp_options`, and `SHOW INDEX`/`SHOW KEYS FROM wp_options` schema probe rows
+  for the current option table;
+  this is not real MySQL connectivity, arbitrary SQL, mutable schema, real
+  index inspection, persistent object cache, full `wpdb`, or native database
+  support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -396,7 +400,8 @@ incorrect native code.
   metadata through `getType()`, `allowsNull()`, `getName()`, and
   `isBuiltin()`, bounded `ReflectionProperty` metadata for declared
   user-class properties with declaring-class, visibility/static modifier,
-  default-value, and untyped type-predicate inspection, declared trait
+  default-value, and simple named typed-property inspection through
+  `ReflectionNamedType` when an explicit constant default is present, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -484,10 +489,10 @@ required-parameter and same-text type metadata checks, visibility enforcement
 beyond the current public and same-declaring-class private-property, protected-property,
 protected-method, constructor, method inheritance
 visibility/staticness/signature-count/type-text, and class-constant slice, typed
-property compatibility and DNF-shaped typed property declarations plus
-property defaults beyond the current untyped
-constant-expression instance property slice, readonly property metadata and
-write-once enforcement, promoted constructor properties,
+property compatibility beyond exact same-text inherited metadata, typed
+property storage/enforcement, uninitialized typed properties,
+compound/DNF-shaped typed property declarations, readonly property metadata
+and write-once enforcement, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 nullsafe object access `?->`, PHP 8 `match` expressions,
@@ -576,14 +581,18 @@ assigned by reference, non-direct stored array expressions beyond direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
-object-property array arguments, property-held or dynamic ArrayAccess
-reference roots, append or stored-array ArrayAccess reference roots, broader
-aliasing, and full copy-on-write remain unsupported.
-The current interpreter does include a narrow direct ArrayAccess reference
+object-property array arguments, dynamic property-held ArrayAccess reference
+roots, append or stored-array ArrayAccess reference roots, broader aliasing,
+and full copy-on-write remain unsupported.
+The current interpreter does include a narrow direct and property-held
+ArrayAccess reference
 root bridge for `$alias =& $bag[$key]`, nested direct sources such as
-`$alias =& $bag["outer"]["slot"]`, and literal callback elements such as
-`array(&$bag["outer"]["slot"])` when public by-reference
-`offsetGet($offset)` is exactly `return $this->property[$offset];`.
+`$alias =& $bag["outer"]["slot"]`, property-held sources such as
+`$alias =& $holder->bag["outer"]["slot"]`, and literal callback elements such
+as `array(&$holder->bag["outer"]["slot"])` when public by-reference
+`offsetGet($offset)` is exactly `return $this->property[$offset];`. Alias
+lifetime after replacing the containing property remains outside that bounded
+slice.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as
