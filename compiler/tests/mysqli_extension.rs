@@ -5160,6 +5160,45 @@ echo implode(",", $parts);
 }
 
 #[test]
+fn mysqli_expired_transient_timeout_deletes_apply_wordpress_option_wildcards() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-timeout-feed_mod', '110', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_fresh', '900', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name LIKE '_transient_timeout_%' AND option_value < 300") ? "wild" : "failed";
+echo ":", mysqli_affected_rows($handle);
+echo "|";
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-timeout-feed_mod', '110', 'no')");
+$stmt = mysqli_prepare($handle, "DELETE FROM wp_options WHERE option_name LIKE ? AND option_value < ?");
+mysqli_stmt_execute($stmt, array("\\_transient\\_timeout\\_%", 300));
+echo "escape=", mysqli_stmt_affected_rows($stmt), ":", mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE ? AND `option_value` < ?", array("_transient_timeout_%", "300")) ? "execute" : "failed";
+echo ":", mysqli_affected_rows($handle);
+echo "|";
+$rows = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+$left = array();
+while ($row = mysqli_fetch_assoc($rows)) {
+    $left[] = $row["option_name"] . "=" . $row["option_value"];
+}
+echo implode(",", $left);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "wild:2|escape=1:1|execute:1|_transient_timeout_fresh=900,siteurl=https://example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_deletes_current_wordpress_expired_transient_payload_pairs_from_state() {
     let execution = run_source(
         r#"<?php

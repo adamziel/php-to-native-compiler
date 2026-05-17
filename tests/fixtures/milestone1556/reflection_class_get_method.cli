@@ -1,0 +1,12 @@
+run tests/fixtures/milestone1556/reflection_class_get_method.php
+exit: 0
+stdout:
+static|register|Plugin|17|1001
+private|hidden|Plugin|4|0010
+inherited|inherited|BasePlugin|2|0100
+trait-composed|helper|Plugin|1|1000
+interface|register|HookContract|81|1001
+trait|helper|HookTools|1|1000
+--- stdout end ---
+stderr:
+--- stderr end ---

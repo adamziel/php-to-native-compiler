@@ -5033,6 +5033,59 @@ echo "trait|", $trait->getName(), "|", $trait->getDeclaringClass()->getName(), "
 }
 
 #[test]
+fn reflection_class_get_method_returns_bounded_method_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface HookContract {
+    public static function register();
+}
+
+class BasePlugin {
+    protected function inherited() {}
+}
+
+trait HookTools {
+    public function helper() {}
+}
+
+class Plugin extends BasePlugin implements HookContract {
+    use HookTools;
+
+    public static function register() {}
+    private function hidden() {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($label, $method, $end = "\n") {
+    echo $label, "|", $method->getName(), "|", $method->getDeclaringClass()->getName(), "|", $method->getModifiers(), "|", yn($method->isPublic()), yn($method->isProtected()), yn($method->isPrivate()), yn($method->isStatic()), $end;
+}
+
+$plugin = new ReflectionClass(Plugin::class);
+line("static", $plugin->getMethod("register"));
+line("private", $plugin->getMethod("hidden"));
+line("inherited", $plugin->getMethod("inherited"));
+line("trait-composed", $plugin->getMethod("helper"));
+
+$contract = new ReflectionClass(HookContract::class);
+line("interface", $contract->getMethod("register"));
+
+$trait = new ReflectionClass(HookTools::class);
+line("trait", $trait->getMethod("helper"), "");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "static|register|Plugin|17|1001\nprivate|hidden|Plugin|4|0010\ninherited|inherited|BasePlugin|2|0100\ntrait-composed|helper|Plugin|1|1000\ninterface|register|HookContract|81|1001\ntrait|helper|HookTools|1|1000"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_reports_bounded_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php

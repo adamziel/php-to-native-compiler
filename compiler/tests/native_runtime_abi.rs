@@ -22,6 +22,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
 
     assert!(ir.contains("%phpc.NativeScalarValue = type"), "{ir}");
     assert!(
+        ir.contains("%phpc.NativeByteBuffer = type { ptr, i64, i64 }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare i64 @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)"),
         "{ir}"
     );
@@ -29,6 +33,20 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         ir.contains(
             "declare i64 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i64)"
         ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeByteBuffer @phpc_native_scalar_echo_bytes(%phpc.NativeScalarValue)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_scalar_echo_owned_bytes()"),
         "{ir}"
     );
     assert!(
@@ -61,6 +79,10 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeByteBuffer = type { ptr, i64, i64 }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains(
             "declare i64 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i64)"
         ),
@@ -68,6 +90,10 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_scalar_echo_len()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_scalar_echo_owned_bytes()"),
         "{ir}"
     );
 }

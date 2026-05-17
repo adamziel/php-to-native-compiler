@@ -349,9 +349,14 @@ LIKE deletes. An exact WordPress-shaped
 `DELETE a, b FROM wp_options a, wp_options b ...` transient cleanup shape
 also deletes payload rows and matching timeout rows when the supported
 payload prefix, timeout prefix, `CONCAT`/`SUBSTRING` timeout expression, and
-threshold match. This is not broad `DELETE` SQL, arbitrary multi-table
-deletes, subquery support, arbitrary predicates, SQL-mode-aware deletes,
-non-string option-name params, real index/lock behavior, or host database
+threshold match. Exact expired-timeout predicates shaped as
+`WHERE option_name LIKE ... AND option_value < ...` now use the same bounded
+MySQL-like option-name matcher for direct literal, `mysqli_stmt_execute()`,
+and `mysqli_execute_query()` paths, including `%`, `_`, and backslash-escaped
+wildcard literals in the current prepared parameter slice. This is not broad
+`DELETE` SQL, arbitrary multi-table deletes, subquery support, arbitrary
+predicates, SQL-mode-aware deletes, non-string option-name params, real
+index/lock behavior, or host database
 execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
@@ -497,8 +502,7 @@ order. This prepared path is still bounded to the documented option-row
 projections and does not support prepared `ESCAPE` clauses, SQL-mode-aware
 `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists, `DESC` ordering,
 arbitrary `ORDER BY` expressions, collation fidelity, or host database
-execution. Prepared LIKE deletes and expired-timeout predicates remain
-prefix-only. The exact
+execution. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

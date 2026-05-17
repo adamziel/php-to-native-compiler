@@ -1,0 +1,6 @@
+static|register|Plugin|17|1001
+private|hidden|Plugin|4|0010
+inherited|inherited|BasePlugin|2|0100
+trait-composed|helper|Plugin|1|1000
+interface|register|HookContract|81|1001
+trait|helper|HookTools|1|1000

@@ -34,6 +34,7 @@ const SESSION_NOCACHE_HEADERS: [&str; 3] = [
     "Cache-Control: no-store, no-cache, must-revalidate",
     "Pragma: no-cache",
 ];
+const SESSION_CACHE_REFERENCE_TIMESTAMP: i64 = 0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -17372,6 +17373,24 @@ impl Interpreter {
                     self.reflection_class_has_method(&state, &method),
                 ))
             }
+            "getmethod" => {
+                expect_expr_arity("ReflectionClass::getMethod", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(method) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::getMethod",
+                            format!(
+                                "method argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let method = self.resolve_reflection_method_target(&state, &method, span)?;
+                self.create_reflection_method_object(method, span)
+            }
             "hasproperty" => {
                 expect_expr_arity("ReflectionClass::hasProperty", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -25703,6 +25722,23 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
+                } else if let Some((alias, value)) =
+                    self.evaluate_magic_get_array_reference_argument(arg, caller_scope)?
+                {
+                    if function.returns_by_reference && !allow_reference_return_array_bindings {
+                        return Err(runtime_error(
+                            arg.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "magic __get array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
                 } else if let Some((alias, value)) = self
                     .evaluate_visible_object_property_array_reference_argument(arg, caller_scope)?
                 {
@@ -25830,6 +25866,89 @@ impl Interpreter {
             }
             _ => Ok(None),
         }
+    }
+
+    fn evaluate_magic_get_array_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Some((object_name, property, indices)) =
+            self.direct_or_dynamic_object_property_array_argument_parts(arg, caller_scope)?
+        else {
+            return Ok(None);
+        };
+
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, caller_scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let object = match caller_scope.read_static(&object_name, arg.span())? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_undefined_property_error(&error) => {
+                let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, &property, arg.span())?
+                else {
+                    return Ok(None);
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                caller_scope.bind_static_to_cell(&temp_name, cell);
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys,
+                };
+                caller_scope.materialize_array_offset_alias(&alias, arg.span())?;
+                let value = caller_scope
+                    .read_array_offset_alias(&alias)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            arg.span(),
+                            RuntimeError::invalid_array_access(
+                                "cannot bind missing magic __get array offset reference argument"
+                                    .to_string(),
+                            ),
+                        )
+                    })?;
+                Ok(Some((alias, value)))
+            }
+            Err(error) => Err(runtime_error(arg.span(), error)),
+        }
+    }
+
+    fn direct_or_dynamic_object_property_array_argument_parts<'a>(
+        &mut self,
+        arg: &'a Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(String, String, Vec<&'a Expr>)>> {
+        if let Some((object, property, indices)) =
+            Self::direct_object_property_array_argument_parts(arg)
+        {
+            return Ok(Some((object, property, indices)));
+        }
+
+        if let Some((object, property, indices)) =
+            Self::dynamic_object_property_array_argument_parts(arg)
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+            return Ok(Some((object, property, indices)));
+        }
+
+        Ok(None)
     }
 
     fn evaluate_direct_array_reference_argument(
@@ -28270,7 +28389,10 @@ impl Interpreter {
         let cookie_samesite =
             Self::session_string_option(args, "cookie_samesite", "session_start()", span)?;
 
-        if !matches!(self.session_cache_limiter.as_str(), "nocache" | "") {
+        if !matches!(
+            self.session_cache_limiter.as_str(),
+            "nocache" | "" | "private" | "private_no_expire" | "public"
+        ) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -28300,6 +28422,9 @@ impl Interpreter {
         }
         match self.session_cache_limiter.as_str() {
             "nocache" => self.append_session_cache_headers(),
+            "private" | "private_no_expire" | "public" => {
+                self.append_session_cache_limiter_headers()
+            }
             "" => {}
             _ => unreachable!("session cache limiter was validated before session state mutation"),
         }
@@ -28322,15 +28447,48 @@ impl Interpreter {
 
     fn append_session_cache_headers(&mut self) {
         for header in SESSION_NOCACHE_HEADERS {
-            if let Some(name) = header_name(header) {
-                self.response_headers.retain(|existing| {
-                    header_name(existing)
-                        .map(|existing_name| !header_names_equal(existing_name, name))
-                        .unwrap_or(true)
-                });
-            }
-            self.response_headers.push(header.to_string());
+            self.replace_response_header(header.to_string());
         }
+    }
+
+    fn append_session_cache_limiter_headers(&mut self) {
+        let max_age = self.session_cache_expire.saturating_mul(60).max(0);
+        let last_modified = format!(
+            "Last-Modified: {}",
+            format_cookie_expires(SESSION_CACHE_REFERENCE_TIMESTAMP)
+        );
+        match self.session_cache_limiter.as_str() {
+            "private" => {
+                self.replace_response_header(SESSION_NOCACHE_HEADERS[0].to_string());
+                self.replace_response_header(format!("Cache-Control: private, max-age={max_age}"));
+                self.replace_response_header(last_modified);
+            }
+            "private_no_expire" => {
+                self.replace_response_header(format!("Cache-Control: private, max-age={max_age}"));
+                self.replace_response_header(last_modified);
+            }
+            "public" => {
+                let expires_at = SESSION_CACHE_REFERENCE_TIMESTAMP.saturating_add(max_age);
+                self.replace_response_header(format!(
+                    "Expires: {}",
+                    format_cookie_expires(expires_at)
+                ));
+                self.replace_response_header(format!("Cache-Control: public, max-age={max_age}"));
+                self.replace_response_header(last_modified);
+            }
+            _ => unreachable!("session cache limiter variants are validated by caller"),
+        }
+    }
+
+    fn replace_response_header(&mut self, header: String) {
+        if let Some(name) = header_name(&header) {
+            self.response_headers.retain(|existing| {
+                header_name(existing)
+                    .map(|existing_name| !header_names_equal(existing_name, name))
+                    .unwrap_or(true)
+            });
+        }
+        self.response_headers.push(header);
     }
 
     fn current_session_array(&self) -> PhpArray {
@@ -37875,7 +38033,7 @@ enum WordPressOptionsRowFilter {
     Autoload,
     AutoloadValues(Vec<String>),
     OptionNameLike(WordPressSchemaNameFilter),
-    OptionNamePrefixValueLessThan(String, i64),
+    OptionNameLikeValueLessThan(WordPressSchemaNameFilter, i64),
     Names(Vec<String>),
 }
 
@@ -40650,19 +40808,18 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
             ),
         ));
     };
-    let pattern = pattern.replace("\\_", "_");
-    let prefix = parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
-        runtime_error(
+    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+        return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options expired timeout select supports only a trailing-percent prefix pattern in the current subset",
+                "prepared wp_options expired timeout select contains an unterminated escape sequence in the current subset",
             ),
-        )
-    })?;
+        ));
+    };
     let threshold = wordpress_option_timeout_threshold_from_value(function, threshold, span)?;
-    Ok(WordPressOptionsRowFilter::OptionNamePrefixValueLessThan(
-        prefix, threshold,
+    Ok(WordPressOptionsRowFilter::OptionNameLikeValueLessThan(
+        filter, threshold,
     ))
 }
 
@@ -40680,19 +40837,18 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
             ),
         ));
     };
-    let pattern = pattern.replace("\\_", "_");
-    let prefix = parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
-        runtime_error(
+    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+        return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options expired timeout delete supports only a trailing-percent prefix pattern in the current subset",
+                "prepared wp_options expired timeout delete contains an unterminated escape sequence in the current subset",
             ),
-        )
-    })?;
+        ));
+    };
     let threshold = wordpress_option_timeout_threshold_from_value(function, threshold, span)?;
-    Ok(WordPressOptionsRowFilter::OptionNamePrefixValueLessThan(
-        prefix, threshold,
+    Ok(WordPressOptionsRowFilter::OptionNameLikeValueLessThan(
+        filter, threshold,
     ))
 }
 
@@ -41089,14 +41245,10 @@ fn parse_wordpress_options_expired_timeout_filter_after_like(
     let (pattern_sql, threshold_sql) = rest
         .split_once(" AND option_value < ")
         .or_else(|| rest.split_once(" AND `option_value` < "))?;
-    let values = parse_sql_single_quoted_list(pattern_sql)?;
-    if values.len() != 1 {
-        return None;
-    }
-    let prefix = parse_wordpress_option_name_prefix_like_pattern(&values[0])?;
+    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, false)?;
     let threshold = parse_wordpress_option_timeout_threshold(threshold_sql)?;
-    Some(WordPressOptionsRowFilter::OptionNamePrefixValueLessThan(
-        prefix, threshold,
+    Some(WordPressOptionsRowFilter::OptionNameLikeValueLessThan(
+        filter, threshold,
     ))
 }
 
@@ -41390,11 +41542,11 @@ fn wordpress_option_names_for_filter(
             names.sort();
             names
         }
-        WordPressOptionsRowFilter::OptionNamePrefixValueLessThan(prefix, threshold) => {
+        WordPressOptionsRowFilter::OptionNameLikeValueLessThan(filter, threshold) => {
             let mut names: Vec<_> = options
                 .iter()
                 .filter_map(|(name, option)| {
-                    if !name.starts_with(prefix) {
+                    if !wordpress_schema_name_matches_filter(name, filter) {
                         return None;
                     }
                     let value = option.value.parse::<i64>().ok()?;

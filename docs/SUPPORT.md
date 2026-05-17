@@ -139,8 +139,13 @@
   `handler($object->missing)` and `handler($object->{$name})` when a visible
   public `__get($name)` method returns by reference and that method's bounded
   reference-return body returns a direct variable; the callee parameter binds
-  to the returned variable cell. This does not add array offsets below magic
-  properties, inaccessible declared-property magic fallback, mixed nested
+  to the returned variable cell. The same direct user-function path also
+  accepts array offsets below those magic properties, such as
+  `handler($object->missing["slot"])` and
+  `handler($object->{$name}["outer"]["slot"])`, as a bounded copy-in/writeback
+  bridge through the array cell returned by `__get()`. This does not add
+  reference-returning function or method calls with magic-property array-offset
+  arguments, inaccessible declared-property magic fallback, mixed nested
   `ArrayAccess` chains, general magic-property reference containers,
   arbitrary reference expressions, or a general in-call PHP reference
   container. String
@@ -2007,8 +2012,13 @@
   `DELETE FROM wp_options WHERE option_name LIKE '<pattern>'` queries use that
   same bounded matcher, including an exact trailing single-character
   `ESCAPE '<char>'` clause for the current plain and backticked table/column
-  spellings. This does not add SQL-mode-aware deletes, arbitrary predicates, or
-  host database execution. The same state island also
+  spellings. Expired-timeout predicates shaped as
+  `WHERE option_name LIKE ... AND option_value < ...` use the same bounded
+  matcher for direct literal queries, prepared statement execution, and
+  `mysqli_execute_query()` params-array execution, so `%`, `_`, and
+  backslash-escaped wildcard literals are distinguished instead of treating
+  the predicate as prefix-only. This does not add SQL-mode-aware deletes,
+  arbitrary predicates, or host database execution. The same state island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
   trailing-percent patterns plus a decimal threshold; it deletes each reached
@@ -3200,10 +3210,16 @@
   session state accepts one string argument and returns the previous limiter.
   The empty string suppresses session cache headers on the next fresh start;
   `nocache` emits the deterministic `Expires`, `Cache-Control`, and `Pragma`
-  trio. Changes after output or while a session is active route a bounded
-  warning and return `false`. Other limiter strings can be stored before
-  start but remain unsupported for header emission and make `session_start()`
-  fail with a stable unsupported-call diagnostic in the current subset.
+  trio. `private`, `private_no_expire`, and `public` emit bounded
+  deterministic variants using `session_cache_expire()` minutes for
+  `max-age`; `public` also uses that value for `Expires`. Those three
+  variants use a fixed synthetic `Thu, 01 Jan 1970 00:00:00 GMT`
+  `Last-Modified` baseline for deterministic CLI fixture output instead of
+  the host request time or current script mtime. Changes after output or
+  while a session is active route a bounded warning and return `false`. Other
+  limiter strings can be stored before start but remain unsupported for header
+  emission and make `session_start()` fail with a stable unsupported-call
+  diagnostic in the current subset.
   `session_cache_expire($value = null)` returns the current request-local
   expiration integer, defaults to `180`, and before output or active session
   state accepts one int argument and returns the previous expiration. The
@@ -3226,10 +3242,9 @@
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_regenerate_id()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
-  expiration-date formatting, cookie replacement, cache-limiter configuration
-  beyond the documented `session_cache_limiter()`/`session_cache_expire()`
-  storage slice and cache-header variants beyond empty suppression plus the
-  default no-cache trio, garbage
+  expiration-date formatting, cookie replacement, exact cache-header
+  request-time and script-mtime parity, cache-limiter variants beyond empty
+  suppression, `nocache`, `private`, `private_no_expire`, and `public`, garbage
   collection, integer top-level session keys, object/resource session
   serialization, exact malformed session-file recovery parity, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
@@ -6144,6 +6159,11 @@
   `getTraitNames()` returns a zero-indexed array of those direct trait names
   and `getTraits()` returns an associative array keyed by trait name whose
   values are bounded `ReflectionClass` metadata objects for the traits.
+  `getMethod($name)` returns the same bounded `ReflectionMethod` metadata
+  object as `new ReflectionMethod($class, $name)` for methods declared on
+  current user classes, inherited class methods, composed trait methods,
+  interface methods, and direct trait methods when the method-name argument is
+  a string.
   Interfaces and traits currently report empty trait metadata because
   interface trait use is not a PHP construct and trait-body `use` declarations
   are composed for consuming classes but are not exposed as trait reflection
@@ -7937,13 +7957,14 @@
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation beyond declared
-  user functions and public non-static user-class methods, typed declaration
+  user functions and user-class methods, typed declaration
   enforcement during reflection invocation, `invokeArgs()` named-argument
   semantics, non-public or dynamic `ReflectionProperty` value mutation,
-  `ReflectionClass::getProperties()` filter masks, trait-use metadata inside
-  trait declarations, exact `ReflectionException`
-  behavior, namespace/import alias expansion beyond parsed class-like names,
-  and native lowering remain unsupported.
+  `ReflectionClass::getProperties()` filter masks, exact
+  `ReflectionClass::getMethod()` exception objects/text for missing methods or
+  non-string names, trait-use metadata inside trait declarations, exact
+  `ReflectionException` behavior, namespace/import alias expansion beyond
+  parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

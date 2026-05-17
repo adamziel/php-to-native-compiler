@@ -627,6 +627,99 @@ fn wordpress_inventory_wpdb_add_option_cache_bootstrap_smoke_matches_fixture() {
 }
 
 #[test]
+fn wordpress_inventory_plugin_theme_loading_smoke_matches_fixture() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let wp_root = std::env::temp_dir().join(format!(
+        "phpc-wordpress-plugin-theme-loading-{}-{unique}",
+        std::process::id()
+    ));
+    let wp_includes = wp_root.join("wp-includes");
+    let mu_plugins = wp_root.join("wp-content").join("mu-plugins");
+    let active_plugin = wp_root
+        .join("wp-content")
+        .join("plugins")
+        .join("active-plugin");
+    let active_theme = wp_root
+        .join("wp-content")
+        .join("themes")
+        .join("active-theme");
+
+    fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
+    fs::create_dir_all(&mu_plugins).expect("create synthetic mu-plugins");
+    fs::create_dir_all(&active_plugin).expect("create synthetic active plugin");
+    fs::create_dir_all(&active_theme).expect("create synthetic active theme");
+    fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\n",
+    )
+    .expect("write front controller");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write wp-config.php");
+    fs::write(
+        wp_root.join("wp-settings.php"),
+        "<?php\ndefine('WPINC', 'wp-includes');\ndefine('WP_CONTENT_DIR', ABSPATH . 'wp-content');\ndefine('WPMU_PLUGIN_DIR', WP_CONTENT_DIR . '/mu-plugins');\ndefine('WP_PLUGIN_DIR', WP_CONTENT_DIR . '/plugins');\ndefine('TEMPLATEPATH', WP_CONTENT_DIR . '/themes/active-theme');\n$GLOBALS['events'] = array();\n$GLOBALS['wp_filter'] = array();\nfunction record_event($label) {\n    $GLOBALS['events'][] = $label;\n}\nfunction add_action($hook, $callback) {\n    $GLOBALS['wp_filter'][$hook][] = $callback;\n}\nfunction do_action($hook) {\n    foreach ($GLOBALS['wp_filter'][$hook] as $callback) {\n        call_user_func($callback);\n    }\n}\nfunction get_template_directory() {\n    return TEMPLATEPATH;\n}\nrecord_event('settings');\nrequire WPMU_PLUGIN_DIR . '/mu-loader.php';\nrecord_event('after-mu');\n$active_plugins = array('active-plugin/active-plugin.php');\nforeach ($active_plugins as $plugin) {\n    require WP_PLUGIN_DIR . '/' . $plugin;\n}\nrecord_event('after-plugin');\nrequire get_template_directory() . '/functions.php';\nrecord_event('after-theme');\ndo_action('after_setup_theme');\ndo_action('init');\necho implode('>', $GLOBALS['events']);\n",
+    )
+    .expect("write wp-settings.php");
+    fs::write(
+        mu_plugins.join("mu-loader.php"),
+        "<?php\nrecord_event('mu-file');\nadd_action('init', 'mu_loader_init');\nfunction mu_loader_init() {\n    record_event('mu-hook');\n}\n",
+    )
+    .expect("write mu plugin");
+    fs::write(
+        active_plugin.join("active-plugin.php"),
+        "<?php\nrecord_event('plugin-file');\nadd_action('init', 'active_plugin_init');\nfunction active_plugin_init() {\n    record_event('plugin-hook');\n}\n",
+    )
+    .expect("write active plugin");
+    fs::write(
+        active_theme.join("functions.php"),
+        "<?php\nrecord_event('theme-functions');\nadd_action('after_setup_theme', 'active_theme_setup');\nfunction active_theme_setup() {\n    record_event('theme-hook');\n}\n",
+    )
+    .expect("write theme functions");
+    fs::write(
+        wp_includes.join("version.php"),
+        "<?php\n$wp_version = '6.9.4';\n",
+    )
+    .expect("write version.php");
+
+    let output = Command::new("sh")
+        .arg(repo_root.join("tools/wordpress-inventory.sh"))
+        .arg("--normalize")
+        .arg(&wp_root)
+        .env("PHPC_BIN", env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(repo_root)
+        .output()
+        .expect("run wordpress inventory");
+
+    let _ = fs::remove_dir_all(&wp_root);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let expected =
+        include_str!("../../tests/fixtures/compat/wordpress/plugin_theme_loading.expected");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
 fn wordpress_inventory_reports_probe_timeouts() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

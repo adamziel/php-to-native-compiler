@@ -168,11 +168,16 @@ By-reference user-function parameters can also bind direct missing named or
 dynamic object-property arguments through the existing magic `__get()`
 reference-return cell path when visible public `__get($name)` returns a direct
 variable by reference. The argument binding shares that returned cell with the
-callee parameter for the duration of the call. This is intentionally limited to
-the existing direct-variable reference-return body shape; array offsets below
-magic properties, inaccessible declared-property magic fallback, magic
-container identity, arbitrary expressions, and copy-on-write semantics still
-belong to the future reference-container model.
+callee parameter for the duration of the call. Direct user-function
+by-reference parameters can also bind array offsets below that missing magic
+property, such as `$object->missing["slot"]`, by temporarily rooting the
+returned direct-variable cell and reusing the existing array-offset
+copy-in/writeback alias path. This is intentionally limited to the existing
+direct-variable reference-return body shape and direct user-function calls;
+reference-returning functions or methods with magic-property array-offset
+arguments, inaccessible declared-property magic fallback, magic container
+identity, arbitrary expressions, and copy-on-write semantics still belong to
+the future reference-container model.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -1889,10 +1894,13 @@ The request-local session cache configuration defaults to limiter `nocache`
 and expiration `180`. `session_cache_limiter()` and `session_cache_expire()`
 read or update those values before output or active session state. The empty
 limiter string suppresses the session cache headers on the next fresh start,
-and restoring `nocache` re-enables the deterministic no-cache trio. Other
-stored limiter strings remain an explicit `session_start()` unsupported-call
-boundary until the private/public cache-header variants and Date/request-time
-parity exist.
+and restoring `nocache` re-enables the deterministic no-cache trio. The
+`private`, `private_no_expire`, and `public` variants format bounded
+deterministic headers from the configured expiration minutes and a fixed
+synthetic `Last-Modified`/public `Expires` baseline so CLI fixture output is
+stable. Other stored limiter strings remain an explicit `session_start()`
+unsupported-call boundary until broader limiter variants and exact
+Date/request-time/script-mtime parity exist.
 `session_write_close()` stores the active `$_SESSION` array
 back into that request-local snapshot map and, when the bounded save-path/id
 file slice is active, writes string-keyed scalar and array values back to
@@ -1905,8 +1913,8 @@ keeping the in-memory session array visible. After unbuffered output it
 returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
 applying options. Session cache-header variants outside the documented
-`session_cache_limiter()`/`session_cache_expire()` storage slice and the
-empty/nocache header behavior, cookie encoding, expiration-date formatting,
+empty, `nocache`, `private`, `private_no_expire`, and `public` behavior,
+exact request-time/script-mtime parity, cookie encoding, expiration-date formatting,
 replacement policy, trans-sid behavior, locking, save handlers, garbage
 collection, broader PHP session-id policy, integer top-level session
 keys, object/resource session serialization, exact malformed-session recovery

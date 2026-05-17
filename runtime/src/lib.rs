@@ -26,6 +26,50 @@ pub struct NativeScalarValue {
     float_value: f64,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeByteBuffer {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub cap: usize,
+}
+
+impl NativeByteBuffer {
+    pub const fn empty() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        }
+    }
+
+    pub fn from_vec(mut bytes: Vec<u8>) -> Self {
+        if bytes.is_empty() {
+            return Self::empty();
+        }
+
+        let buffer = Self {
+            ptr: bytes.as_mut_ptr(),
+            len: bytes.len(),
+            cap: bytes.capacity(),
+        };
+        std::mem::forget(bytes);
+        buffer
+    }
+
+    pub fn ptr(&self) -> *mut u8 {
+        self.ptr
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+}
+
 impl NativeScalarValue {
     pub const fn null() -> Self {
         Self {
@@ -128,6 +172,24 @@ pub unsafe extern "C" fn phpc_native_scalar_echo_write(
     let written = required.min(capacity);
     ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, written);
     required
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_scalar_echo_bytes(value: NativeScalarValue) -> NativeByteBuffer {
+    NativeByteBuffer::from_vec(value.echo_string().into_bytes())
+}
+
+/// # Safety
+///
+/// `buffer` must be a `NativeByteBuffer` previously returned by the runtime
+/// ABI. Passing any other pointer/capacity pair is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_byte_buffer_free(buffer: NativeByteBuffer) {
+    if buffer.ptr.is_null() || buffer.cap == 0 {
+        return;
+    }
+
+    drop(unsafe { Vec::from_raw_parts(buffer.ptr, buffer.len, buffer.cap) });
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4508,6 +4570,25 @@ mod tests {
             unsafe { phpc_native_scalar_echo_write(phpc_native_int(123), std::ptr::null_mut(), 0) };
 
         assert_eq!(required, 3);
+    }
+
+    #[test]
+    fn native_scalar_echo_bytes_returns_owned_buffer() {
+        let buffer = phpc_native_scalar_echo_bytes(phpc_native_int(-123));
+
+        assert!(!buffer.ptr().is_null());
+        assert_eq!(buffer.len(), 4);
+        assert!(buffer.cap() >= buffer.len());
+        let bytes = unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) };
+        assert_eq!(bytes, b"-123");
+
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+
+        let empty = phpc_native_scalar_echo_bytes(phpc_native_null());
+        assert!(empty.ptr().is_null());
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(empty) };
     }
 
     #[test]

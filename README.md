@@ -83,7 +83,11 @@ CLI header log, including starts that suppress the cookie with
 request-local cache-header configuration before output or session start: the
 default limiter is `nocache`, the default expiration is `180`, setting the
 limiter to an empty string suppresses session cache headers, and restoring
-`nocache` re-enables the deterministic no-cache trio.
+`nocache` re-enables the deterministic no-cache trio. The `private`,
+`private_no_expire`, and `public` limiters emit bounded deterministic
+`Cache-Control`/`Expires`/`Last-Modified` variants using
+`session_cache_expire()` minutes and a fixed synthetic request timestamp for
+CLI fixture stability.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
@@ -100,8 +104,9 @@ Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
 parity, session-cookie encoding/expiration/replacement beyond the documented
-`session_start()` attribute scaffold, cache-header variants beyond empty
-suppression and the default no-cache trio remain
+`session_start()` attribute scaffold, exact cache-header request-time and
+script-mtime parity, cache-header variants beyond empty suppression,
+`nocache`, `private`, `private_no_expire`, and `public` remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
@@ -610,9 +615,9 @@ core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
-and trait method source-file persistence, reflection invocation beyond the
-current by-value user function/public method slice, now including public
-static method invocation, non-public or dynamic
+and trait method source-file persistence, exact `ReflectionClass::getMethod()`
+exception objects/text, reflection invocation beyond the current by-value user
+function/user-class method slice, non-public or dynamic
 `ReflectionProperty` value mutation, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`

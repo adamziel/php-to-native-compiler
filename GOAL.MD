@@ -175,16 +175,17 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded non-public
-`ReflectionMethod::invoke()`/`invokeArgs()`, direct magic `__get()` reference
-parameters for missing properties, bounded `session_cache_limiter()` and
-`session_cache_expire()` state, and direct literal `wp_options`
-`DELETE ... option_name LIKE '<pattern>' ESCAPE '<char>'` wildcard matching.
-Those are useful compatibility steps, but they do not change the larger
-project shape: the next lanes should keep attacking broad object/interface
-semantics, real reference/COW behavior, request/SAPI/filesystem/stream
-breadth, and executable WordPress database/bootstrap evidence until those
-areas become coherent subsystems instead of reached slices.
+The latest WordPress-focused batch closed bounded
+`ReflectionClass::getMethod()` metadata, magic `__get()` array-offset
+by-reference parameters, `private`/`private_no_expire`/`public` session cache
+limiter headers, expired-transient timeout wildcard matching, a synthetic
+plugin/theme loading evidence probe, and owned scalar echo byte-buffer ABI
+groundwork. Those are useful compatibility steps, but they do not change the
+larger project shape: the next lanes should keep attacking broad
+object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, executable WordPress
+database/bootstrap evidence, and native runtime integration until those areas
+become coherent subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

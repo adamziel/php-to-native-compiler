@@ -24,6 +24,13 @@ pub struct NativeScalarValue {
     int_value: i64,
     float_value: f64,
 }
+
+#[repr(C)]
+pub struct NativeByteBuffer {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub cap: usize,
+}
 ```
 
 The exported constructor symbols are:
@@ -37,12 +44,21 @@ The first scalar output helper symbols are:
 
 - `phpc_native_scalar_echo_len(NativeScalarValue) -> usize`
 - `phpc_native_scalar_echo_write(NativeScalarValue, *mut u8, usize) -> usize`
+- `phpc_native_scalar_echo_bytes(NativeScalarValue) -> NativeByteBuffer`
+- `phpc_native_byte_buffer_free(NativeByteBuffer)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
 and nonzero capacity are supplied, it writes as many bytes as fit. This gives
 future generated code a two-pass sizing/writing path without defining heap
 ownership yet.
+
+`phpc_native_scalar_echo_bytes` returns runtime-owned bytes for the supported
+scalar echo conversion. Non-empty buffers carry the allocation pointer, length,
+and capacity that must later be returned to `phpc_native_byte_buffer_free`.
+Empty echo output is represented as a null pointer with zero length and zero
+capacity. This owned-buffer path is ABI/probe groundwork only; normal generated
+echo lowering does not call it yet.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -78,6 +94,13 @@ for `phpc_native_scalar_echo_write(...)`. This is a prerequisite for truthful
 helper-call lowering across targets; it is not a linker, runtime call emission,
 or native execution path.
 
+Milestone 1562 extends the same deterministic probe with
+`%phpc.NativeByteBuffer = type { ptr, usize, usize }`, declarations for
+`phpc_native_scalar_echo_bytes` and `phpc_native_byte_buffer_free`, and a small
+probe function that extracts the owned buffer length before freeing it. The
+probe still does not alter production `phpc compile` echo lowering or imply
+linked native execution support.
+
 This is not production lowering. Normal `phpc compile --emit-ir` output remains
 unchanged and still does not link or execute runtime helper calls. The snapshot
 uses the selected target's `usize`/pointer-width shape; a real linked native
@@ -101,16 +124,19 @@ The tests pin:
 - conversion from exported constructor return values into runtime `Value`;
 - bool payload normalization for nonzero C-side payloads.
 - scalar echo byte sizing, partial buffer writes, and null-buffer sizing.
+- owned scalar echo byte buffers, including empty null-buffer results and the
+  exported free helper.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
-- explicit 32-bit and 64-bit `usize` IR rendering for scalar echo helper
-  declarations and the probe call.
+- explicit 32-bit and 64-bit `usize` IR rendering for scalar echo and owned
+  byte-buffer helper declarations plus the probe calls.
 
 ## Explicit Non-Support
 
 This ABI does not yet provide:
 
-- string ownership or string interning;
+- general string ownership, string interning, or PHP string value handles beyond
+  the scalar echo owned-byte helper;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR;
 - symbol tables, stack frames, call lookup, or diagnostics;

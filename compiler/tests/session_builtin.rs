@@ -138,6 +138,53 @@ echo implode("|", $out);
 }
 
 #[test]
+fn session_cache_limiter_emits_private_and_public_cache_headers() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+session_cache_limiter("private");
+session_cache_expire(2);
+session_id("phpcprivatecache");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+session_write_close();
+header_remove();
+session_cache_limiter("private_no_expire");
+session_cache_expire(3);
+session_id("phpcprivatenoexpire");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+session_write_close();
+header_remove();
+session_cache_limiter("public");
+session_cache_expire(1);
+session_id("phpcpubliccache");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: private, max-age=120|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT|2|Cache-Control: private, max-age=180|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT|3|Expires: Thu, 01 Jan 1970 00:01:00 GMT|Cache-Control: public, max-age=60|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_cache_apis_warn_when_changed_too_late() {
     let execution = run_source(
         r#"<?php
@@ -166,11 +213,11 @@ echo ":" . $expire;
 }
 
 #[test]
-fn session_start_rejects_unsupported_cache_limiter_before_state_changes() {
+fn session_start_rejects_unknown_cache_limiter_before_state_changes() {
     let error = run_source(
         r#"<?php
-session_cache_limiter("private");
-session_id("phpcprivatecache");
+session_cache_limiter("must-revalidate");
+session_id("phpcunknowncache");
 session_start();
 "#,
     )
@@ -181,7 +228,7 @@ session_start();
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call session_start(): session cache limiter 'private' is not supported in the current subset"
+        "unsupported call session_start(): session cache limiter 'must-revalidate' is not supported in the current subset"
     );
 }
 

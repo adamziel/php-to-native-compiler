@@ -26,6 +26,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T20:35:03+02:00
+
+- Checkpoint before this task:
+  `3b26ccfb runtime: advance WordPress reflection refs session cache and deletes`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1556-1562, focused on large WordPress/PHP
+  blockers with six disjoint lanes plus one integration/full-gate slot.
+- Files changed so far: bounded `ReflectionClass::getMethod()` metadata;
+  direct user-function by-reference parameters for array offsets below missing
+  magic `__get()` properties; bounded `private`, `private_no_expire`, and
+  `public` session cache-limiter headers; expired-transient timeout wildcard
+  matching over the deterministic MySQLi `wp_options` island; synthetic
+  WordPress plugin/theme loading evidence in the inventory harness; owned
+  scalar echo byte-buffer native ABI helpers and probe declarations; milestone
+  fixtures 1556-1559; WordPress compatibility, native ABI, MySQLi extension,
+  support, architecture, README, queue, progress, loop-memory, goal, and
+  lane-worker docs.
+- Tests run and result: focused integrated checks passed for the named
+  `ReflectionClass::getMethod()`, magic `__get()` array-offset reference
+  parameter, session cache-limiter variant, expired-transient wildcard,
+  WordPress plugin/theme inventory, native-runtime ABI, and runtime
+  byte-buffer tests. Milestone fixtures 1556-1559 passed, with system PHP
+  comparisons for 1556 and 1557 and documented `phpc-only` skips for 1558 and
+  1559. Native compile rejection checks passed for the four new milestone
+  fixtures. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1556-1562 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1621` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1621` fixture tests
+  passed with `0` failures, `946` system PHP comparisons, and `675` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: interface/trait/closure/internal reflection
+  invocation, exact reflection exceptions, inherited interface compatibility,
+  constructor/destructor and magic-hook fidelity, class alias/autoload
+  lifecycle, general reference containers, broader by-reference returns and
+  assignment, reference-returning calls with magic-property array-offset
+  arguments, broad copy-on-write, mixed nested `ArrayAccess`, superglobal
+  reference lifetime, exact session Date/request-time/script-mtime parity,
+  session cookie replacement parity, locking/save handlers, real SAPI
+  emission, realpath/stat-cache breadth, uploads/output/shutdown fidelity,
+  prepared `ESCAPE` clauses for expired-timeout predicates, SQL-mode-aware
+  deletes, arbitrary SQL/database/schema execution, dbDelta, persistent
+  cache/transients, real WordPress plugin/theme/admin/REST/front-controller
+  flows, normal generated LLVM runtime helper calls, linked native execution,
+  PHP string/array/object/resource/reference ABI handles, and native runtime
+  integration remain explicit blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean the 1556-1562 lane worktrees and target directories, then
+  start the next blocker-focused lanes from Milestones 1563-1567. Keep one
+  integration owner and one serialized full gate per checkpoint batch; use
+  extra lanes only where file ownership is disjoint enough to avoid conflicts.
+
 ## Loop Event 2026-05-17T20:25:00+02:00
 
 - Checkpoint before this task:

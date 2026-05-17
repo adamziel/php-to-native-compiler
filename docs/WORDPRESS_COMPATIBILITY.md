@@ -332,6 +332,22 @@ mutation SQL, broad projections, real database connectivity, broad `wpdb`,
 full WordPress option APIs, plugins/themes, request/SAPI fidelity,
 references/copy-on-write, or native support.
 
+After Milestone 1561, the synthetic harness also includes a
+plugin/theme-loading smoke after the existing bootstrap and front-controller
+probes. The synthetic root follows
+`wp-blog-header.php` -> `wp-load.php` -> `wp-config.php` -> `wp-settings.php`,
+loads one must-use plugin file, one active plugin file, and one active theme
+`functions.php`, then runs a minimal string-callback `add_action()`/
+`do_action()` path. The deterministic emitted order is
+`settings>mu-file>after-mu>plugin-file>after-plugin>theme-functions>after-theme>theme-hook>mu-hook>plugin-hook`
+(`stdout_bytes: 109` in normalized output) through both the generated
+bootstrap shim and `wp-blog-header.php` front-controller path. This is
+executable evidence for one bounded synthetic include and hook-callback path
+only; it does not claim real WordPress plugin/theme discovery, activation
+state, hook semantics, callback breadth, templates, request/SAPI fidelity,
+autoloading, filesystem policy, database-backed options, references/
+copy-on-write, or native support.
+
 After Milestone 1304, the placeholder MySQLi state island also supports
 prepared no-placeholder row-set reads for the exact
 `SELECT option_name, option_value, autoload FROM wp_options ...` and

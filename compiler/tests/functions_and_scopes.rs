@@ -2877,6 +2877,51 @@ echo $dynamicStorage;
 }
 
 #[test]
+fn reference_parameter_accepts_magic_get_array_offset_source() {
+    let execution = run_source(
+        r#"<?php
+$storage = ["slot" => "initial", "nested" => ["leaf" => "inside"]];
+$dynamicStorage = [];
+
+class MagicArrayBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+class DynamicMagicArrayBox {
+    public function &__get($name) {
+        global $dynamicStorage;
+        return $dynamicStorage;
+    }
+}
+
+function touch_magic_slot(&$value, $suffix) {
+    $value = ($value === null ? "null" : $value) . ":" . $suffix;
+}
+
+$box = new MagicArrayBox();
+touch_magic_slot($box->missing["slot"], "plain");
+touch_magic_slot($box->missing["nested"]["leaf"], "nested");
+echo $storage["slot"], "\n", $storage["nested"]["leaf"], "\n";
+
+$dynamicBox = new DynamicMagicArrayBox();
+$property = "dynamic";
+touch_magic_slot($dynamicBox->{$property}["created"], "selected");
+echo $dynamicStorage["created"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "initial:plain\ninside:nested\nnull:selected"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
     let execution = run_source(
         r#"<?php
