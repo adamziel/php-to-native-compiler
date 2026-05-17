@@ -555,14 +555,17 @@ case folding, whitespace normalization, status-header removal,
 duplicate/replacement policy, output-started tracking, web-server/SAPI network
 emission, exact warnings, or native header-state lowering.
 
-After Milestone 1253, `setcookie($name, $value = "")` appends a simple
-`Set-Cookie: name=value` line into that same deterministic CLI header log and
-returns `true` for string name/value arguments. This supports small
-WordPress-shaped cookie-setting paths in the current CLI scaffold only. It
-does not implement expiration, path, domain, secure, HttpOnly, SameSite,
-options arrays, deletion cookies, cookie encoding fidelity, output-started
-tracking, web-server/SAPI network emission, exact warnings, or native
-header-state lowering.
+After Milestones 1253 and 1483, `setcookie()` appends a deterministic
+`Set-Cookie:` line into that same CLI header log and returns `true` for the
+bounded string name/value, positional attribute, and options-array attribute
+forms. The current slice percent-encodes cookie values, formats nonzero
+expiration timestamps as GMT dates, applies path/domain/secure/HttpOnly and
+options-array SameSite attributes, and replaces earlier deterministic cookie
+headers with the same cookie name. This supports small WordPress-shaped
+cookie-setting and deletion paths in the current CLI scaffold only. It does
+not implement cookie name validation/encoding, `Max-Age`, raw-cookie variants,
+path/domain-aware duplicate handling, web-server/SAPI network emission, exact
+warnings, or native header-state lowering.
 
 After Milestone 1383, `phpc run` has a bounded interpreter-owned output-buffer
 stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`,

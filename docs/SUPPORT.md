@@ -233,7 +233,9 @@
   object-property argument path.
   Direct variable, direct array-offset, direct append-offset, nested
   append-offset, direct visible object-property, direct visible
-  object-property append-offset, and direct public dynamic-property
+  object-property append-offset, direct public dynamic-property, and
+  non-public dynamic-property assignments reached from a valid method
+  visibility context
   assignments from reference array literals now preserve
   covered reference elements for later stored-array callback use, for example
   `$args = array(&$value); call_user_func_array($callback, $args);`,
@@ -244,8 +246,10 @@
   `$registry["groups"][] = array(&$value);`, and
   `$store->groups[] = array(&$items["slot"]);`. Append targets record the
   covered literal slots below the actual appended integer key. Dynamic-property
-  targets use the evaluated public property name, such as
-  `$store->{$name} = array(&$value);`. The covered
+  targets use the evaluated property name, such as
+  `$store->{$name} = array(&$value);`, and private/protected dynamic names use
+  the same context-aware alias root as named `$this->property` access when the
+  current method context can see that property. The covered
   reference element sources are direct variables, direct array offsets, and
   direct visible named object-property array offsets. Direct variable
   assignment targets may also already be backed by covered array-offset alias
@@ -384,8 +388,8 @@
   copied-path slices,
   dynamic non-public clone mirroring, magic-property clone alias mirroring,
   reference array literals outside direct variable, direct visible
-  object-property, direct array-offset, and direct public dynamic-property
-  assignment targets,
+  object-property, direct array-offset, direct public dynamic-property, and
+  valid-context non-public dynamic-property assignment targets,
   ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
   containers, and native lowering remain unsupported. Direct public
@@ -397,21 +401,24 @@
   protected `$this->property` roots in visible class contexts, and protected
   peer-object roots such as `$alias =& $other->property;` from a valid child
   method context. Writes through the alias or direct property path observe the
-  same scalar or array value. Dynamic public object-property
+  same scalar or array value. Dynamic object-property
   reference sources such as `$alias =& $object->$property;` execute for direct
   variable targets and direct object variables when the property expression
-  evaluates to a string or integer public property name. Existing declared or
-  dynamic public properties alias through the same public-property root, and
-  allowed dynamic-property objects such as `stdClass` materialize a missing
-  selected property as `null` before binding. Missing direct object
+  evaluates to a string or integer property name. Existing declared or dynamic
+  public properties alias through the same public-property root, and
+  private/protected dynamic property names alias through the context-aware
+  property root when reached from a valid method visibility context. Allowed
+  dynamic-property objects such as `stdClass` materialize a missing selected
+  public property as `null` before binding. Missing direct object
   properties can dispatch to visible non-static magic `__get()` when it is
   declared by reference and its body returns a direct variable in the current
   reference-return subset; the alias binds to that returned variable cell.
   This includes named missing-property sources and dynamic public property
   names that resolve to strings or integers. Dynamic-property sources on
   non-direct object expressions, missing dynamic properties on classes that do
-  not allow dynamic public slots and have no supported magic fallback, dynamic
-  non-public property source aliases, non-reference-returning `__get()`,
+  not allow dynamic public slots and have no supported magic fallback,
+  non-public dynamic property names outside a valid method visibility context,
+  non-reference-returning `__get()`,
   `__get()` returns of properties, array offsets, or expressions, non-variable
   reference targets, full reference containers, copy-on-write, exact alias
   destruction ordering, exact magic-property notices, and native lowering
@@ -1977,27 +1984,29 @@
   `mysqli_begin_transaction($handle, 0, $name)` accepts the placeholder object,
   optional flags value `0`, and optional null/string transaction names,
   returning deterministic `true`; for the current exact `wp_options` state
-  island it captures a per-handle option-state snapshot for later rollback. It
-  does not start real server transaction state, change host autocommit state,
-  commit host rows, roll back host rows, or touch host database state.
+  island and bounded dynamic schema-state island it captures per-handle
+  snapshots for later rollback. It does not start real server transaction
+  state, change host autocommit state, commit host rows, roll back host rows,
+  or touch host database state.
   `mysqli_commit($handle, 0, $name)` and
   `mysqli_rollback($handle, 0, $name)` accept the placeholder object, optional
   flags value `0`, and optional null/string transaction names, returning
-  deterministic `true`. For the current exact `wp_options` state island,
-  commit keeps option-state changes and rollback restores the captured
-  per-handle option-state snapshot. They do not commit, roll back, or isolate
-  real host database state, change real transaction/autocommit state, handle
-  savepoints, emit warnings/errors, or touch host database state.
+  deterministic `true`. For the current exact `wp_options` state island and
+  bounded dynamic schema-state island, commit keeps state changes and rollback
+  restores the captured per-handle snapshots, including recorded
+  `CREATE TABLE`/`ALTER TABLE` metadata. They do not commit, roll back, or
+  isolate real host database state, change real transaction/autocommit state,
+  handle host savepoints, emit warnings/errors, or touch host database state.
   `mysqli_savepoint($handle, $name)` and
   `mysqli_release_savepoint($handle, $name)` accept the placeholder object and
   a string savepoint name, returning deterministic `true`. For the current
-  exact `wp_options` state island, savepoint records a named per-handle
-  option-state snapshot, `mysqli_rollback($handle, 0, $name)` restores that
-  named snapshot, and release removes the named snapshot so later named
-  rollbacks leave current option state unchanged. They do not create, release,
-  validate, or persist real host savepoints, implement savepoint nesting
-  diagnostics, roll back host database state, emit warnings/errors, or touch
-  host transaction state.
+  exact `wp_options` state island and bounded dynamic schema-state island,
+  savepoint records named per-handle snapshots,
+  `mysqli_rollback($handle, 0, $name)` restores those named snapshots, and
+  release removes them so later named rollbacks leave current option/schema
+  state unchanged. They do not create, release, validate, or persist real host
+  savepoints, implement savepoint nesting diagnostics, roll back host database
+  state, emit warnings/errors, or touch host transaction state.
   `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder handle and
   returns deterministic `true` for the reached WordPress charset setup path
   without negotiating a real connection charset or collation state.
@@ -2102,8 +2111,9 @@
   custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms,
-  dbDelta diff generation, real DDL execution, transactions for schema state,
-  host database inspection, or native database lowering. For an
+  dbDelta diff generation, real DDL execution, real transactional DDL
+  semantics beyond the bounded in-memory snapshot/restore path, host database
+  inspection, or native database lowering. For an
   exact current synthetic WordPress option write,
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records a deterministic `option_id`, the string option
@@ -2278,8 +2288,8 @@
   exact direct shapes listed above, expression indexes, index
   ordering/opclass/parser metadata, exact MySQL `SHOW CREATE TABLE`
   formatting for every column attribute, exact MySQL `SHOW TABLE STATUS`
-  counters/timestamps/options, dbDelta diff generation, schema
-  transaction rollback, or real index behavior,
+  counters/timestamps/options, dbDelta diff generation, real transactional DDL
+  behavior beyond bounded in-memory schema snapshots, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2294,7 +2304,7 @@
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
   transaction and savepoint helpers can snapshot and restore this exact option
-  state only.
+  state and the bounded dynamic schema-state island only.
   Prepared statement execution over the same state island supports the exact
   `SELECT option_value FROM wp_options WHERE option_name = ?` query, plus the
   same option-value equality query with `LIMIT 1` and the current backticked
@@ -2918,11 +2928,11 @@
   `headers_list()` accepts no arguments and returns the current deterministic
   CLI header log as an ordered array of strings in current log order. It
   exposes only this project-local request-state scaffold after accepted
-  `header()` replacement/appends, simple `setcookie()` appends, and bounded
-  `header_remove()` mutations; PHP CLI parity, SAPI response state,
-  status-code headers, full cookie formatting, header normalization, output
-  buffers beyond the current output-started bookkeeping, exact warnings, and
-  native lowering remain unsupported.
+  `header()` replacement/appends, bounded `setcookie()` formatting and
+  name-only replacement, and bounded `header_remove()` mutations; PHP CLI
+  parity, SAPI response state, status-code headers, full cookie formatting,
+  header normalization, output buffers beyond the current output-started
+  bookkeeping, exact warnings, and native lowering remain unsupported.
   `header_remove($name = null)` accepts no argument or one string header name,
   returns `null`, mutates the current deterministic CLI header log by clearing
   it when no argument is provided, and removes entries whose raw header line
@@ -2933,15 +2943,21 @@
   Whitespace normalization, response-status reset, status-header removal,
   SAPI/web-server behavior, exact warning text, partial-output behavior, and
   native lowering remain unsupported.
-  `setcookie($name, $value = "")` accepts a string name and optional string
-  value, appends `Set-Cookie: name=value` to the same deterministic CLI header
-  log used by `header()`/`headers_list()` while output is still open, and
-  returns `true`. Once unbuffered output has started, it returns `false`,
-  does not append a cookie header, and emits a bounded `E_WARNING` through the
-  current `set_error_handler()` stack or stderr fallback. Expiration, path,
-  domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
-  cookie-name/value encoding, duplicate/replacement policy, SAPI/web-server
-  emission, exact warning text, and native lowering remain unsupported.
+  `setcookie($name, $value = "", $expires_or_options = 0, $path = "",
+  $domain = "", $secure = false, $httponly = false)` accepts a string name,
+  optional string value, bounded integer expiration or options array, string
+  path/domain, truthy secure/HttpOnly flags, and `samesite` in the options
+  array. Accepted values append a deterministic `Set-Cookie:` line to the same
+  CLI header log used by `header()`/`headers_list()` while output is still
+  open, percent-encode the cookie value, format nonzero expiration timestamps
+  as GMT dates, and replace earlier deterministic cookie headers with the same
+  cookie name. Once unbuffered output has started, it returns `false`, does
+  not append a cookie header, and emits a bounded `E_WARNING` through the
+  current `set_error_handler()` stack or stderr fallback. Cookie name
+  validation/encoding, `Max-Age`, raw-cookie variants, array option validation
+  beyond the documented keys, path/domain-aware duplicate handling, SAPI/
+  web-server emission, exact warning text, and native lowering remain
+  unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
@@ -5577,10 +5593,10 @@
   subset as the builtin section above; direct native `http_response_code(...)`
   calls reject under the header-state boundary, while native function-table
   introspection recognizes the name.
-  `setcookie` accepts the same current simple CLI `Set-Cookie` append subset
-  as the builtin section above; direct native `setcookie(...)` calls reject
-  under the header-state boundary, while native function-table introspection
-  recognizes the name.
+  `setcookie` accepts the same current deterministic CLI `Set-Cookie`
+  formatting and name-only replacement subset as the builtin section above;
+  direct native `setcookie(...)` calls reject under the header-state boundary,
+  while native function-table introspection recognizes the name.
   `session_start`, `session_status`, `session_id`, and `session_write_close`
   accept the same current bounded in-memory CLI session subset as the builtin
   section above; direct native calls reject under the session-state boundary,
@@ -5880,7 +5896,12 @@
   `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
   `isConstructor()`, plus bounded parameter inspection through
   `getParameters()`, `getNumberOfParameters()`, and
-  `getNumberOfRequiredParameters()`. `new ReflectionParameter([$object_or_class,
+  `getNumberOfRequiredParameters()`, and bounded return type inspection through
+  `hasReturnType()` and `getReturnType()`. Simple named return types
+  materialize `ReflectionNamedType`; bounded union and pure intersection return
+  types materialize `ReflectionUnionType` or `ReflectionIntersectionType` with
+  `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
+  objects. `new ReflectionParameter([$object_or_class,
   $method], $parameter)` accepts the current array-callable method shape with
   an integer position or string parameter name, and `ReflectionParameter`
   objects produced by that constructor or by `ReflectionMethod::getParameters()`
@@ -5890,15 +5911,17 @@
   `hasType()` over the current parsed method parameter metadata. The bounded
   `ReflectionParameter::getType()` path returns `null` for untyped method
   parameters or a request-local `ReflectionNamedType` object for simple named
-  parameter types. That object supports `getName()`, `allowsNull()`, and
-  `isBuiltin()` for the current parsed type string, and
+  parameter types. Bounded union and pure intersection parameter types now
+  return `ReflectionUnionType` or `ReflectionIntersectionType` with
+  `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
+  objects. Those named type objects support `getName()`, `allowsNull()`, and
+  `isBuiltin()` for the current parsed type strings, and
   `ReflectionParameter::allowsNull()` reports untyped, nullable `?T`, `null`
   union member, `mixed`, and typed-default-`null` cases in the current method
   parameter slice. Direct user instantiation of `ReflectionType`,
   `ReflectionNamedType`, `ReflectionUnionType`, and
   `ReflectionIntersectionType` is rejected; these objects are only materialized
-  by the supported reflection `getType()` paths. Compound parameter type
-  objects remain unsupported.
+  by the supported reflection `getType()` and method `getReturnType()` paths.
   `new ReflectionProperty($object_or_class, $property)` creates a bounded
   metadata object for properties declared on current user classes, including
   inherited public and protected properties. `ReflectionClass::hasProperty()`,
@@ -7536,11 +7559,12 @@
   `hasMethod($name)`, `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
-  modifier, predicate, and parameter-list methods documented above.
+  modifier, predicate, parameter-list, and return-type methods documented
+  above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, scalar/array default expressions accepted by the parser,
-  by-reference and variadic flags, and type-presence checks without materialized
-  compound `ReflectionType` objects. `ReflectionProperty` currently supports
+  by-reference and variadic flags, and simple named, bounded union, and bounded
+  pure intersection type metadata. `ReflectionProperty` currently supports
   only declared user-class property metadata for the methods documented above,
   plus simple named, bounded union, and bounded pure intersection typed
   property metadata with bounded uninitialized-slot state for properties
@@ -7550,7 +7574,10 @@
   declared user-interface object assignment checks; broader built-in/internal
   interface catalog behavior, exact PHP union scalar coercion preference rules,
   parenthesized DNF property types, complex reference/COW interactions, and
-  native lowering remain unsupported. Attributes,
+  native lowering remain unsupported. Parameter/return type reflection remains
+  metadata only and does not enforce call arguments or return values.
+  Parenthesized DNF parameter/return types, callable/iterable/object special
+  PHP edge cases beyond the current parsed-name metadata, attributes,
   file/line/doc-comment metadata,
   extension/internal method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, function/closure
@@ -7852,8 +7879,9 @@
   interaction, output-sent warnings, exact diagnostics, and native lowering
   beyond function-table introspection
 - `headers_list()` behavior beyond returning the current deterministic CLI
-  header log after accepted `header()` replacement/appends, simple
-  `setcookie()` appends, and bounded `header_remove()` mutations: PHP CLI
+  header log after accepted `header()` replacement/appends, bounded
+  `setcookie()` formatting/name-only replacement, and bounded
+  `header_remove()` mutations: PHP CLI
   parity, SAPI response state, status-code headers, full cookie formatting,
   header normalization, output buffers beyond the current output-started
   bookkeeping, exact warnings, and native lowering beyond function-table
@@ -7865,14 +7893,15 @@
   stderr fallback: whitespace normalization, response-status reset,
   status-header removal, SAPI/web-server behavior, exact warning text,
   partial-output behavior, and native lowering beyond function-table introspection
-- `setcookie()` behavior beyond accepting a string name and optional string
-  value, appending a simple `Set-Cookie: name=value` line to deterministic CLI
-  request state before output starts, returning `false` after unbuffered output
-  starts with a bounded `E_WARNING`, and returning `true` for accepted
-  pre-output cookies: expiration, path, domain, secure, HttpOnly, SameSite,
-  options arrays, deletion cookies, cookie-name/value encoding,
-  duplicate/replacement policy, SAPI/web-server emission, exact warning text,
-  and native lowering beyond function-table introspection
+- `setcookie()` behavior beyond accepting the documented bounded
+  positional/options-array attributes, percent-encoding values, formatting
+  nonzero expiration timestamps, replacing deterministic cookie headers by
+  cookie name, returning `false` after unbuffered output starts with a bounded
+  `E_WARNING`, and returning `true` for accepted pre-output cookies: cookie
+  name validation/encoding, `Max-Age`, raw-cookie variants, option validation
+  beyond the documented keys, path/domain-aware duplicate handling, SAPI/
+  web-server emission, exact warning text, and native lowering beyond
+  function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct-variable filename/line output-argument slice: non-variable output
   arguments, array/object-property output targets, exact warning text, SAPI

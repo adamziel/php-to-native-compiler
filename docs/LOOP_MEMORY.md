@@ -26,6 +26,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T15:05:00Z
+
+- Checkpoint before this task:
+  `104a6de8 runtime: advance WordPress compound types refs session recovery and sql like`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1481-1485, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded compound method parameter/return reflection
+  type metadata; non-public dynamic-property reference-array alias roots;
+  deterministic `setcookie()` value/attribute formatting with same-name
+  replacement; transaction/savepoint rollback snapshots for the MySQLi
+  schema-state island; milestone fixtures 1481-1484; support, architecture,
+  README, WordPress compatibility, queue, progress, loop-memory, goal, and
+  lane-worker docs.
+- Tests run and result: focused integration checks passed for method
+  reflection metadata, runtime core class metadata, non-public dynamic-property
+  reference array literals, bounded `setcookie()` behavior, MySQLi schema
+  transaction rollback, milestone fixtures 1481-1484, and system PHP
+  comparisons where applicable. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1481-1485 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1561` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1561` fixture tests
+  passed with `0` failures, `913` system PHP comparisons, and `648` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: readonly properties, property hooks, property
+  attributes, function/closure reflection targets, exact reflection exceptions,
+  real reference containers, magic-property references, broad copy-on-write,
+  dynamic `ArrayAccess` roots, exact SAPI/session/upload/filesystem/stream
+  behavior, cookie raw/path/domain/Max-Age parity, session locking/save
+  handlers, real SQL/database/schema execution, dbDelta, WordPress
+  plugin/theme/admin/REST flows, and native runtime integration remain
+  explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers, then
+  start Milestones 1486-1489 in separate worktrees focused on the same four
+  large blocker lanes.
+
 ## Loop Event 2026-05-17T14:20:00Z
 
 - Checkpoint before this task:

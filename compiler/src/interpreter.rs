@@ -267,7 +267,9 @@ struct WordPressSchemaIndexPart {
 #[derive(Clone)]
 struct MysqliTransactionState {
     wp_options_snapshot: Option<HashMap<String, WordPressOptionState>>,
+    schema_tables_snapshot: Option<HashMap<String, WordPressSchemaTableState>>,
     wp_option_savepoints: HashMap<String, Option<HashMap<String, WordPressOptionState>>>,
+    schema_table_savepoints: HashMap<String, Option<HashMap<String, WordPressSchemaTableState>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +305,7 @@ struct ReflectionMethodState {
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
+    return_type: Option<String>,
     params: Vec<ReflectionParameterMetadata>,
 }
 
@@ -1699,23 +1702,6 @@ impl SymbolTable {
                 );
             }
         }
-    }
-
-    fn mirror_public_object_property_array_offset_aliases_from_copy(
-        &mut self,
-        target_name: &str,
-        object_name: &str,
-        property: &str,
-    ) {
-        self.mirror_array_offset_aliases_from_path_copy(
-            target_name,
-            &ArrayOffsetAliasRoot::PublicObjectProperty {
-                object: object_name.to_string(),
-                property: property.to_string(),
-            },
-            &[],
-            true,
-        );
     }
 
     fn mirror_array_offset_aliases_from_path_copy(
@@ -7718,12 +7704,15 @@ impl Interpreter {
             }
         };
 
-        match object.read_public_property(property) {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
-                scope.bind_static_to_dynamic_object_property(
+                scope.bind_static_to_existing_context_object_property(
                     target_name,
                     object_name,
                     property,
+                    current_class_id,
+                    protected_class_ids,
                     span,
                 )?;
                 Ok(())
@@ -8029,11 +8018,19 @@ impl Interpreter {
                             target, property, ..
                         } => {
                             if let Expr::Variable(object_name, _) = target.as_ref() {
-                                scope.mirror_public_object_property_array_offset_aliases_from_copy(
-                                    name,
+                                if let Ok(root) = self.context_object_property_alias_root(
                                     object_name,
                                     property,
-                                );
+                                    expr.span(),
+                                    scope,
+                                ) {
+                                    scope.mirror_array_offset_aliases_from_path_copy(
+                                        name,
+                                        &root,
+                                        &[],
+                                        true,
+                                    );
+                                }
                             }
                         }
                         _ => {}
@@ -8503,9 +8500,23 @@ impl Interpreter {
                     Value::Object(object_value) => {
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, &property);
-                        object_value
-                            .write_dynamic_public_property(&property, value.clone())
-                            .map_err(|error| runtime_error(*span, error))?;
+                        let (current_class_id, protected_class_ids) =
+                            self.current_property_access_context();
+                        match object_value.write_property_from_context_with_object_type_resolver(
+                            &property,
+                            value.clone(),
+                            current_class_id,
+                            &protected_class_ids,
+                            |object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
+                        ) {
+                            Ok(()) => {}
+                            Err(error) if Self::is_undefined_property_error(&error) => object_value
+                                .write_dynamic_public_property(&property, value.clone())
+                                .map_err(|error| runtime_error(*span, error))?,
+                            Err(error) => return Err(runtime_error(*span, error)),
+                        }
                         scope.remove_public_object_property_root_from_array_offset_aliases(
                             object,
                             &property,
@@ -8514,11 +8525,11 @@ impl Interpreter {
                         scope.sync_array_offset_aliases_for_object_property_root(object, &property);
                         if matches!(value, Value::Array(_)) && !array_literal_references.is_empty()
                         {
+                            let root = self.context_object_property_alias_root(
+                                object, &property, *span, scope,
+                            )?;
                             self.bind_array_literal_references_to_alias_root(
-                                ArrayOffsetAliasRoot::PublicObjectProperty {
-                                    object: object.to_string(),
-                                    property: property.clone(),
-                                },
+                                root,
                                 array_literal_references,
                                 expr.span(),
                                 scope,
@@ -10459,6 +10470,10 @@ impl Interpreter {
                     is_static,
                     is_abstract: metadata.is_abstract(),
                     is_final: metadata.is_final(),
+                    return_type: self
+                        .method_signatures
+                        .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
+                        .and_then(|signature| signature.return_type.clone()),
                     params: self
                         .method_signatures
                         .get(&(declaring_class_id, metadata.name().to_ascii_lowercase()))
@@ -10490,6 +10505,11 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: true,
                             is_final: false,
+                            return_type: method
+                                .function
+                                .return_type
+                                .as_ref()
+                                .map(|decl| decl.text.clone()),
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
@@ -10526,6 +10546,11 @@ impl Interpreter {
                             is_static: method.is_static,
                             is_abstract: method.is_abstract,
                             is_final: method.is_final,
+                            return_type: method
+                                .function
+                                .return_type
+                                .as_ref()
+                                .map(|decl| decl.text.clone()),
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
                             ),
@@ -13894,11 +13919,14 @@ impl Interpreter {
             return;
         }
         let wp_options_snapshot = self.mysqli_wp_options.get(&handle_id).cloned();
+        let schema_tables_snapshot = self.mysqli_schema_tables.get(&handle_id).cloned();
         self.mysqli_transactions.insert(
             handle_id,
             MysqliTransactionState {
                 wp_options_snapshot,
+                schema_tables_snapshot,
                 wp_option_savepoints: HashMap::new(),
+                schema_table_savepoints: HashMap::new(),
             },
         );
     }
@@ -13922,6 +13950,25 @@ impl Interpreter {
         }
     }
 
+    fn current_mysqli_schema_tables_snapshot(
+        &self,
+        handle_id: i64,
+    ) -> Option<HashMap<String, WordPressSchemaTableState>> {
+        self.mysqli_schema_tables.get(&handle_id).cloned()
+    }
+
+    fn restore_mysqli_schema_tables_snapshot(
+        &mut self,
+        handle_id: i64,
+        snapshot: Option<HashMap<String, WordPressSchemaTableState>>,
+    ) {
+        if let Some(tables) = snapshot {
+            self.mysqli_schema_tables.insert(handle_id, tables);
+        } else {
+            self.mysqli_schema_tables.remove(&handle_id);
+        }
+    }
+
     fn call_mysqli_commit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         self.expect_mysqli_transaction_completion_args("mysqli_commit", args, span)?;
         let handle_id = expect_mysqli_handle_id("mysqli_commit()", &args[0], span)?;
@@ -13934,16 +13981,26 @@ impl Interpreter {
         self.expect_mysqli_transaction_completion_args("mysqli_rollback", args, span)?;
         let handle_id = expect_mysqli_handle_id("mysqli_rollback()", &args[0], span)?;
         if let Some(Value::String(name)) = args.get(2) {
-            if let Some(snapshot) = self
+            if let Some((wp_options_snapshot, schema_tables_snapshot)) = self
                 .mysqli_transactions
                 .get(&handle_id)
-                .and_then(|transaction| transaction.wp_option_savepoints.get(name))
-                .cloned()
+                .map(|transaction| {
+                    (
+                        transaction.wp_option_savepoints.get(name).cloned(),
+                        transaction.schema_table_savepoints.get(name).cloned(),
+                    )
+                })
+                .and_then(|(wp_options, schema_tables)| Some((wp_options?, schema_tables?)))
             {
-                self.restore_mysqli_wp_options_snapshot(handle_id, snapshot);
+                self.restore_mysqli_wp_options_snapshot(handle_id, wp_options_snapshot);
+                self.restore_mysqli_schema_tables_snapshot(handle_id, schema_tables_snapshot);
             }
         } else if let Some(transaction) = self.mysqli_transactions.remove(&handle_id) {
             self.restore_mysqli_wp_options_snapshot(handle_id, transaction.wp_options_snapshot);
+            self.restore_mysqli_schema_tables_snapshot(
+                handle_id,
+                transaction.schema_tables_snapshot,
+            );
         }
         self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
@@ -13966,10 +14023,14 @@ impl Interpreter {
         };
         self.begin_mysqli_transaction_snapshot(handle_id);
         let snapshot = self.current_mysqli_wp_options_snapshot(handle_id);
+        let schema_snapshot = self.current_mysqli_schema_tables_snapshot(handle_id);
         if let Some(transaction) = self.mysqli_transactions.get_mut(&handle_id) {
             transaction
                 .wp_option_savepoints
                 .insert(name.clone(), snapshot);
+            transaction
+                .schema_table_savepoints
+                .insert(name.clone(), schema_snapshot);
         }
         self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
@@ -13996,6 +14057,7 @@ impl Interpreter {
         };
         if let Some(transaction) = self.mysqli_transactions.get_mut(&handle_id) {
             transaction.wp_option_savepoints.remove(name);
+            transaction.schema_table_savepoints.remove(name);
         }
         self.mysqli_affected_rows.insert(handle_id, 0);
         Ok(Value::Bool(true))
@@ -16016,9 +16078,13 @@ impl Interpreter {
         let target_value = self.evaluate(target, scope)?;
 
         match target_value {
-            Value::Object(object) => object
-                .read_public_property(&property)
-                .map_err(|error| runtime_error(span, error)),
+            Value::Object(object) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(&property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_property_access(format!(
@@ -16558,6 +16624,26 @@ impl Interpreter {
                         .count() as i64,
                 ))
             }
+            "hasreturntype" => {
+                expect_expr_arity("ReflectionMethod::hasReturnType", args.len(), 0, span)?;
+                Ok(Value::Bool(state.return_type.is_some()))
+            }
+            "getreturntype" => {
+                expect_expr_arity("ReflectionMethod::getReturnType", args.len(), 0, span)?;
+                let Some(type_decl) = state.return_type.as_deref() else {
+                    return Ok(Value::Null);
+                };
+                if let Some(compound_state) =
+                    reflection_compound_type_state_from_type_decl(type_decl)
+                {
+                    return self.create_reflection_compound_type_object(compound_state, span);
+                }
+                let Some(type_state) = reflection_named_type_state_from_type_decl(type_decl, None)
+                else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_named_type_object(type_state, span)
+            }
             "ispublic" => {
                 expect_expr_arity("ReflectionMethod::isPublic", args.len(), 0, span)?;
                 Ok(Value::Bool(state.visibility == Visibility::Public))
@@ -16709,19 +16795,16 @@ impl Interpreter {
                 let Some(type_decl) = state.parameter.type_decl.as_deref() else {
                     return Ok(Value::Null);
                 };
-                let Some(type_state) = reflection_named_type_state_from_parameter(
+                if let Some(compound_state) =
+                    reflection_compound_type_state_from_type_decl(type_decl)
+                {
+                    return self.create_reflection_compound_type_object(compound_state, span);
+                }
+                let Some(type_state) = reflection_named_type_state_from_type_decl(
                     type_decl,
                     state.parameter.default.as_ref(),
                 ) else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionParameter::getType",
-                            format!(
-                                "compound parameter type {type_decl} requires ReflectionUnionType or ReflectionIntersectionType, which are not implemented"
-                            ),
-                        ),
-                    ));
+                    return Ok(Value::Null);
                 };
                 self.create_reflection_named_type_object(type_state, span)
             }
@@ -16821,11 +16904,12 @@ impl Interpreter {
                     return Ok(Value::Null);
                 };
                 if let Some(compound_state) =
-                    reflection_compound_type_state_from_property(type_decl)
+                    reflection_compound_type_state_from_type_decl(type_decl)
                 {
                     return self.create_reflection_compound_type_object(compound_state, span);
                 }
-                let Some(type_state) = reflection_named_type_state_from_property(type_decl) else {
+                let Some(type_state) = reflection_named_type_state_from_type_decl(type_decl, None)
+                else {
                     return Ok(Value::Null);
                 };
                 self.create_reflection_named_type_object(type_state, span)
@@ -26101,12 +26185,12 @@ impl Interpreter {
     }
 
     fn call_setcookie(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        if !(1..=2).contains(&args.len()) {
+        if !(1..=7).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     "setcookie()",
-                    ArityExpectation::Between { min: 1, max: 2 },
+                    ArityExpectation::Between { min: 1, max: 7 },
                     args.len(),
                 ),
             ));
@@ -26144,6 +26228,7 @@ impl Interpreter {
             }
             None => "",
         };
+        let cookie_options = parse_setcookie_options(args, span)?;
 
         if let Some(message) = self.header_output_started_warning() {
             self.emit_warning("setcookie()", message, span)?;
@@ -26151,7 +26236,9 @@ impl Interpreter {
         }
 
         self.response_headers
-            .push(format!("Set-Cookie: {name}={value}"));
+            .retain(|header| !set_cookie_header_matches_name(header, name));
+        self.response_headers
+            .push(format_setcookie_header(name, value, &cookie_options));
         Ok(Value::Bool(true))
     }
 
@@ -33291,7 +33378,7 @@ fn reflection_parameter_metadata_from_function_params(
         .collect()
 }
 
-fn reflection_named_type_state_from_parameter(
+fn reflection_named_type_state_from_type_decl(
     type_decl: &str,
     default: Option<&Expr>,
 ) -> Option<ReflectionNamedTypeState> {
@@ -33306,19 +33393,7 @@ fn reflection_named_type_state_from_parameter(
     })
 }
 
-fn reflection_named_type_state_from_property(type_decl: &str) -> Option<ReflectionNamedTypeState> {
-    if type_decl.contains('|') || type_decl.contains('&') {
-        return None;
-    }
-    let name = type_decl.strip_prefix('?').unwrap_or(type_decl).to_string();
-    Some(ReflectionNamedTypeState {
-        allows_null: reflection_property_allows_null(type_decl),
-        is_builtin: reflection_type_name_is_builtin(&name),
-        name,
-    })
-}
-
-fn reflection_compound_type_state_from_property(
+fn reflection_compound_type_state_from_type_decl(
     type_decl: &str,
 ) -> Option<ReflectionCompoundTypeState> {
     let (kind, separator) = if type_decl.contains('|') && !type_decl.contains('&') {
@@ -33331,7 +33406,7 @@ fn reflection_compound_type_state_from_property(
 
     let mut types = Vec::new();
     for part in type_decl.split(separator) {
-        let type_state = reflection_named_type_state_from_property(part.trim())?;
+        let type_state = reflection_named_type_state_from_type_decl(part.trim(), None)?;
         types.push(type_state);
     }
     Some(ReflectionCompoundTypeState { kind, types })
@@ -33347,14 +33422,6 @@ fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Ex
             .any(|part| part.eq_ignore_ascii_case("null"))
         || type_decl.eq_ignore_ascii_case("mixed")
         || matches!(default, Some(Expr::Null(_)))
-}
-
-fn reflection_property_allows_null(type_decl: &str) -> bool {
-    type_decl.starts_with('?')
-        || type_decl
-            .split('|')
-            .any(|part| part.eq_ignore_ascii_case("null"))
-        || type_decl.eq_ignore_ascii_case("mixed")
 }
 
 fn reflection_type_name_is_builtin(name: &str) -> bool {
@@ -40554,6 +40621,214 @@ fn format_session_cookie_header(
         header.push_str(samesite);
     }
     header
+}
+
+#[derive(Debug, Clone, Default)]
+struct SetCookieOptions {
+    expires: Option<i64>,
+    path: Option<String>,
+    domain: Option<String>,
+    secure: bool,
+    httponly: bool,
+    samesite: Option<String>,
+}
+
+fn parse_setcookie_options(args: &[Value], span: Span) -> CompileResult<SetCookieOptions> {
+    let mut options = SetCookieOptions::default();
+    let Some(third) = args.get(2) else {
+        return Ok(options);
+    };
+
+    if let Value::Array(array) = third {
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "setcookie()",
+                    "options array form cannot be combined with positional cookie attributes",
+                ),
+            ));
+        }
+        options.expires = optional_cookie_int_option(array, "expires", span)?;
+        options.path = optional_cookie_string_option(array, "path", span)?;
+        options.domain = optional_cookie_string_option(array, "domain", span)?;
+        options.secure = array
+            .get(ArrayKey::String("secure".into()))
+            .is_some_and(Value::is_truthy);
+        options.httponly = array
+            .get(ArrayKey::String("httponly".into()))
+            .is_some_and(Value::is_truthy);
+        options.samesite = optional_cookie_string_option(array, "samesite", span)?;
+        return Ok(options);
+    }
+
+    options.expires = match third {
+        Value::Int(value) => Some(*value),
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "setcookie()",
+                    format!(
+                        "expires argument must be int or options array in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+    options.path = optional_cookie_positional_string(args, 3, "path", span)?;
+    options.domain = optional_cookie_positional_string(args, 4, "domain", span)?;
+    options.secure = args.get(5).is_some_and(Value::is_truthy);
+    options.httponly = args.get(6).is_some_and(Value::is_truthy);
+    Ok(options)
+}
+
+fn optional_cookie_positional_string(
+    args: &[Value],
+    index: usize,
+    name: &str,
+    span: Span,
+) -> CompileResult<Option<String>> {
+    match args.get(index) {
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "setcookie()",
+                format!(
+                    "{name} argument must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Ok(None),
+    }
+}
+
+fn optional_cookie_int_option(
+    options: &PhpArray,
+    name: &str,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    match options.get(ArrayKey::String(name.into())) {
+        Some(Value::Int(value)) => Ok(Some(*value)),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "setcookie()",
+                format!(
+                    "{name} option must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Ok(None),
+    }
+}
+
+fn optional_cookie_string_option(
+    options: &PhpArray,
+    name: &str,
+    span: Span,
+) -> CompileResult<Option<String>> {
+    match options.get(ArrayKey::String(name.into())) {
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "setcookie()",
+                format!(
+                    "{name} option must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Ok(None),
+    }
+}
+
+fn format_setcookie_header(name: &str, value: &str, options: &SetCookieOptions) -> String {
+    let mut header = format!("Set-Cookie: {name}={}", percent_encode_cookie_value(value));
+    if let Some(expires) = options.expires.filter(|value| *value != 0) {
+        header.push_str("; expires=");
+        header.push_str(&format_cookie_expires(expires));
+    }
+    if let Some(path) = options.path.as_deref().filter(|value| !value.is_empty()) {
+        header.push_str("; path=");
+        header.push_str(path);
+    }
+    if let Some(domain) = options.domain.as_deref().filter(|value| !value.is_empty()) {
+        header.push_str("; domain=");
+        header.push_str(domain);
+    }
+    if options.secure {
+        header.push_str("; secure");
+    }
+    if options.httponly {
+        header.push_str("; HttpOnly");
+    }
+    if let Some(samesite) = options
+        .samesite
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        header.push_str("; SameSite=");
+        header.push_str(samesite);
+    }
+    header
+}
+
+fn set_cookie_header_matches_name(header: &str, name: &str) -> bool {
+    let Some(rest) = header.strip_prefix("Set-Cookie: ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .map(|(existing, _)| existing == name)
+        .unwrap_or(false)
+}
+
+fn percent_encode_cookie_value(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+fn format_cookie_expires(timestamp: i64) -> String {
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let days = timestamp.div_euclid(86_400);
+    let seconds = timestamp.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds / 3_600;
+    let minute = (seconds % 3_600) / 60;
+    let second = seconds % 60;
+    let weekday = WEEKDAYS[days.rem_euclid(7) as usize];
+    let month_name = MONTHS[(month - 1) as usize];
+    format!("{weekday}, {day:02} {month_name} {year:04} {hour:02}:{minute:02}:{second:02} GMT")
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2).div_euclid(153);
+    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
 }
 
 fn header_name(header: &str) -> Option<&str> {

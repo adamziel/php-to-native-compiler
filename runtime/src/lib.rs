@@ -2106,6 +2106,8 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "hasReturnType",
+            "getReturnType",
             "isPublic",
             "isProtected",
             "isPrivate",

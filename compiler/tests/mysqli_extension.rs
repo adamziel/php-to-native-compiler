@@ -3449,6 +3449,52 @@ echo $released_row["option_value"];
 }
 
 #[test]
+fn mysqli_transactions_restore_current_wordpress_schema_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_schema_base (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', PRIMARY KEY  (id), KEY slug (slug)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_begin_transaction($handle);
+mysqli_query($handle, "ALTER TABLE wp_schema_base ADD COLUMN checksum varchar(64) NOT NULL default '', ADD KEY checksum (checksum)");
+mysqli_query($handle, "CREATE TABLE wp_schema_temp (id bigint(20) unsigned NOT NULL, PRIMARY KEY  (id)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+echo mysqli_rollback($handle) ? "rollback" : "failed";
+echo "|temp=";
+$temp = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp_schema_temp'");
+echo mysqli_num_rows($temp);
+echo "|base=";
+$base = mysqli_query($handle, "DESCRIBE wp_schema_base");
+while ($column = mysqli_fetch_assoc($base)) {
+    echo $column["Field"], ":", $column["Key"], ";";
+}
+mysqli_begin_transaction($handle);
+mysqli_savepoint($handle, "before_extra");
+mysqli_query($handle, "ALTER TABLE wp_schema_base ADD COLUMN extra varchar(20) NULL");
+echo "|savepoint=";
+echo mysqli_rollback($handle, 0, "before_extra") ? "rollback" : "failed";
+echo "|extra=";
+$extra = mysqli_query($handle, "SHOW FULL COLUMNS FROM wp_schema_base LIKE 'extra'");
+echo mysqli_num_rows($extra);
+mysqli_commit($handle);
+mysqli_begin_transaction($handle);
+mysqli_query($handle, "ALTER TABLE wp_schema_base ADD COLUMN committed varchar(20) NULL");
+echo "|";
+echo mysqli_commit($handle) ? "commit" : "failed";
+echo "|committed=";
+$committed = mysqli_query($handle, "SHOW FULL COLUMNS FROM wp_schema_base LIKE 'committed'");
+echo mysqli_num_rows($committed);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "rollback|temp=0|base=id:PRI;slug:MUL;|savepoint=rollback|extra=0|commit|committed=1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php

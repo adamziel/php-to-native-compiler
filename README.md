@@ -91,9 +91,11 @@ before headers or `$_SESSION` are changed.
 Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
-parity, cookie encoding,
-expiration-date formatting, cookie replacement, and cache-header emission
-remain unsupported. `fopen()` can create bounded
+parity, session-cookie encoding/expiration/replacement beyond the documented
+`session_start()` attribute scaffold, and cache-header emission remain
+unsupported. `setcookie()` separately supports a bounded deterministic CLI
+header-log slice for value encoding, expiration dates, attributes, and
+name-only replacement. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -289,8 +291,8 @@ incorrect native code.
   `SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, exact table-status counters or timestamps, dbDelta diffing,
-  schema rollback, persistent object cache, full `wpdb`, or native database
-  support
+  real transactional DDL beyond bounded in-memory schema snapshots, persistent
+  object cache, full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -425,12 +427,14 @@ incorrect native code.
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
-  constructor, modifier-mask, and parameter-list inspection, bounded
+  constructor, modifier-mask, parameter-list, and return-type inspection,
+  bounded
   `ReflectionParameter` method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
-  type-presence predicates plus simple named `ReflectionNamedType`
-  metadata through `getType()`, `allowsNull()`, `getName()`, and
-  `isBuiltin()`, bounded `ReflectionProperty` metadata for declared
+  type-presence predicates plus simple named and bounded compound
+  `ReflectionType` metadata through `getType()`, `getReturnType()`,
+  `allowsNull()`, `getTypes()`, `getName()`, and `isBuiltin()`, bounded
+  `ReflectionProperty` metadata for declared
   user-class properties with declaring-class, visibility/static modifier,
   default-value, simple named typed-property inspection through
   `ReflectionNamedType`, bounded compound property type inspection through
@@ -535,7 +539,8 @@ declarations, exact PHP union scalar coercion preference rules, readonly
 property metadata and write-once enforcement, promoted
 constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
-property creation outside `stdClass`, non-public dynamic property access,
+property creation outside `stdClass` and `wpdb`, non-public dynamic property
+access outside valid method visibility contexts,
 nullsafe object access `?->`, PHP 8 `match` expressions,
 backtick shell execution operators,
 magic methods beyond direct missing-property
@@ -615,9 +620,10 @@ direct variable already backed by covered array-offset alias metadata, such as
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
 Direct variable, direct array-offset, direct append-offset, nested
-append-offset, direct visible object-property, and direct visible
-object-property append-offset assignments from reference
-array literals, such as
+append-offset, direct visible object-property, direct visible
+object-property append-offset, direct public dynamic-property, and
+non-public dynamic-property targets reached from a valid method visibility
+context, when assigned from reference array literals such as
 `$args = array(&$value)`,
 `$registry["args"] = array(&$value)`, and
 `$store->args = array("value" => &$object->items[$key])`, plus
@@ -629,9 +635,12 @@ reference-return alias binding. Append targets record the literal slots below
 the actual appended integer key. The same covered reference elements are
 preserved when the assigned direct variable is already backed by covered
 array-offset alias metadata, such as
-`$args =& $registry["args"]; $args = array(&$value)`. Reference array
-literals assigned into dynamic properties outside the documented direct public
-property assignment shape, dynamic-property append targets, `ArrayAccess`
+`$args =& $registry["args"]; $args = array(&$value)`. Private/protected
+dynamic property names use the same context-aware alias root as named
+`$this->property` access when the current method context can see that
+property. Reference array literals assigned into dynamic properties outside
+that documented direct property assignment shape, dynamic-property append
+targets, `ArrayAccess`
 append targets, or other non-variable targets,
 reference elements from arbitrary expressions, executing
 unknown or duplicate string-keyed argument names beyond the stable diagnostic

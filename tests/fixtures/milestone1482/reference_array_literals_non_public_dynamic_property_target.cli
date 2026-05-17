@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1482/reference_array_literals_non_public_dynamic_property_target.php
+seed:private|seed:private
+seed:private:private:alias|seed:private:private:alias|seed:private:private:alias
+copied|copied|copied
+changed|changed|changed

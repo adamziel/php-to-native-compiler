@@ -208,32 +208,35 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1481 targets readonly/property-hook
-  behavior, attributes/metadata/reflection, compound parameter/return
-  reflection type objects, magic hooks reached by WordPress, broader
-  autoload/class-alias lifecycle parity, interface diagnostics, or broader
-  class metadata behavior.
-- Reference/COW lane: Milestone 1482 targets real reference containers,
-  non-public dynamic property alias roots, magic-property reference containers,
-  arbitrary
-  reference expressions, dynamic `ArrayAccess` roots, mixed nested
-  `ArrayAccess` chains, alias cleanup, broader array/object copy-on-write,
-  exact alias destruction ordering, by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1483 targets session file
-  locking, save handlers, garbage collection, broader PHP session-id policy,
-  cookie encoding, expiration/deletion/replacement semantics, cache headers,
-  broader session option effects, exact diagnostics, binary reads, shutdown
-  ordering, include-path/stat-cache behavior, stream wrappers/contexts,
-  request-body lifetime, host filesystem edge cases, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1484 targets real SQL parsing slices,
-  dbDelta diff generation, schema rollback, expression indexes, host database
-  inspection, broader `wpdb`/MySQLi result or mutation behavior, prepared
-  option/transient query shapes, object-cache/transient persistence, hooks
-  under realistic callback shapes, deterministic plugin/theme loading probes,
-  or a bootstrap/request probe that moves past its next real blocker.
-- Tests/docs lane: Milestone 1485 is the next tests/docs slot after the next
+- Object/interface lane: Milestone 1486 targets readonly/property-hook
+  behavior, attributes/metadata/reflection, function/closure reflection
+  targets, magic hooks reached by WordPress, broader autoload/class-alias
+  lifecycle parity, interface diagnostics, exact reflection exceptions,
+  invocation/value mutation, or broader class metadata behavior.
+- Reference/COW lane: Milestone 1487 targets real reference containers,
+  magic-property reference containers, arbitrary reference expressions, dynamic
+  `ArrayAccess` roots, mixed nested `ArrayAccess` chains, alias cleanup,
+  broader array/object copy-on-write, exact alias destruction ordering,
+  by-reference foreach, or native lowering.
+- Request/SAPI/filesystem/stream lane: Milestone 1488 targets `setrawcookie()`,
+  cookie name validation/encoding, `Max-Age`, path/domain-aware cookie
+  replacement, full cookie option validation, exact warning text, real SAPI
+  emission, session cookie replacement parity, cache headers, session locking,
+  save handlers, garbage collection, binary reads, shutdown ordering,
+  include-path/stat-cache behavior, stream wrappers/contexts, request-body
+  lifetime, host filesystem edge cases, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1489 targets real SQL parsing slices,
+  dbDelta diff generation, expression indexes, host database inspection,
+  broader `wpdb`/MySQLi result or mutation behavior, prepared option/transient
+  query shapes, object-cache/transient persistence, hooks under realistic
+  callback shapes, deterministic plugin/theme loading probes, or a
+  bootstrap/request probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1490 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
+Milestones 1481 through 1484 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1485 refreshed the queue and recorded the
+full-gate result.
 Milestones 1476 through 1479 closed the latest four WordPress-focused
 implementation lanes, and Milestone 1480 refreshed the queue and recorded the
 full-gate result.

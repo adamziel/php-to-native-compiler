@@ -219,7 +219,34 @@ echo $headers[1];
 
     assert_eq!(
         execution.stdout,
-        "0|true|2|Set-Cookie: wordpress_test_cookie=WP Cookie check|Set-Cookie: empty_cookie="
+        "0|true|2|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check|Set-Cookie: empty_cookie="
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn setcookie_formats_bounded_attributes_encoding_and_name_replacement() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+setcookie("wordpress_test_cookie", "old value");
+$out[] = count(headers_list());
+$first = setcookie("wordpress_test_cookie", "WP Cookie check", 1700000000, "/wp-admin", "example.test", true, true);
+$second = setcookie("logged_in", "delete me", ["expires" => 1, "path" => "/", "secure" => false, "httponly" => true, "samesite" => "Lax"]);
+$headers = headers_list();
+$out[] = $first ? "first" : "first-failed";
+$out[] = $second ? "second" : "second-failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|first|second|2|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Lax"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -538,7 +565,7 @@ echo setcookie();
     assert_eq!(missing.column, 6);
     assert_eq!(
         missing.message,
-        "arity mismatch for setcookie(): expected 1 to 2 argument(s), got 0"
+        "arity mismatch for setcookie(): expected 1 to 7 argument(s), got 0"
     );
 
     let non_string_name = runtime_error(
@@ -565,16 +592,28 @@ echo setcookie("wordpress_test_cookie", 1);
         "unsupported call setcookie(): value argument must be string in the current subset, got int"
     );
 
+    let bad_expires = runtime_error(
+        r#"<?php
+echo setcookie("A", "B", "soon");
+"#,
+    );
+    assert_eq!(bad_expires.line, 2);
+    assert_eq!(bad_expires.column, 6);
+    assert_eq!(
+        bad_expires.message,
+        "unsupported call setcookie(): expires argument must be int or options array in the current subset, got string"
+    );
+
     let too_many = runtime_error(
         r#"<?php
-echo setcookie("A", "B", 0);
+echo setcookie("A", "B", 0, "", "", false, false, "extra");
 "#,
     );
     assert_eq!(too_many.line, 2);
     assert_eq!(too_many.column, 6);
     assert_eq!(
         too_many.message,
-        "arity mismatch for setcookie(): expected 1 to 2 argument(s), got 3"
+        "arity mismatch for setcookie(): expected 1 to 7 argument(s), got 8"
     );
 }
 

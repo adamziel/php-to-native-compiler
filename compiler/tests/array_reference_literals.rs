@@ -223,6 +223,60 @@ echo $items["slot"], "|", $store->args[0], "|", $copy[0];
 }
 
 #[test]
+fn array_reference_literals_assigned_to_non_public_dynamic_property_keep_alias_root() {
+    let execution = run_source(
+        r#"<?php
+function mark_refcow_literal_private_dynamic(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+function &pick_refcow_literal_private_dynamic(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+class RefcowLiteralPrivateDynamicStore {
+    private $args = [];
+    private $items = ["slot" => "array"];
+    private $flag = "inner";
+
+    public function run() {
+        $property = "args";
+        $value = "seed";
+        $this->{$property} = array(&$value, "private");
+        call_user_func_array("mark_refcow_literal_private_dynamic", $this->args);
+        echo $value, "|", $this->args[0], "\n";
+
+        $alias =& call_user_func_array("pick_refcow_literal_private_dynamic", $this->args);
+        $alias = $alias . ":alias";
+        echo $value, "|", $this->args[0], "|", $alias, "\n";
+
+        $this->{$property} = array(&$this->items["slot"], "copy");
+        $copy = $this->args;
+        $copy[0] = "copied";
+        echo $this->items["slot"], "|", $this->args[0], "|", $copy[0], "\n";
+
+        $flag = "flag";
+        $alias =& $this->{$flag};
+        $alias = "changed";
+        echo $this->flag, "|", $this->{$flag}, "|", $alias;
+    }
+}
+
+$store = new RefcowLiteralPrivateDynamicStore();
+$store->run();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:private|seed:private\nseed:private:private:alias|seed:private:private:alias|seed:private:private:alias\ncopied|copied|copied\nchanged|changed|changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reference_literals_assigned_to_append_offsets_feed_call_user_func_array() {
     let execution = run_source(
         r#"<?php

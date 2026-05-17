@@ -175,11 +175,11 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded compound union/intersection
-property type metadata and write checks, append-offset reference array literal
-alias metadata, malformed session-file recovery for the current
-`session.save_path`/explicit-id slice, and `_` plus escaped metadata `LIKE`
-semantics over the MySQLi schema-state island. Those are useful compatibility
+The latest WordPress-focused batch closed bounded compound method
+parameter/return reflection type metadata, non-public dynamic-property
+reference-array alias roots, deterministic `setcookie()` value/attribute
+formatting with same-name replacement, and transaction/savepoint rollback
+snapshots for the MySQLi schema-state island. Those are useful compatibility
 steps, but they do not change the larger project shape: the next lanes should
 keep attacking broad object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress

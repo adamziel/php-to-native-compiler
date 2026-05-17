@@ -161,18 +161,19 @@ parent-slot suffix shape, expression-return, magic `__callStatic`, and callback
 forms outside the bounded `call_user_func_array()` slice remain outside the
 executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
-to a declared public object-property root drop stale aliases for that root
+to a declared visible object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
-direct object variable also drops stale public object-property roots for that
-object name. Direct public dynamic-property assignment from a reference array
-literal uses the evaluated property name as the same public object-property
-alias root, so later stored-array callback use can reuse covered reference
-elements. Arbitrary nested copied reference slots beyond the literal copied
-path slice, non-public property-offset or magic clone alias mirroring, dynamic
-ArrayAccess references, arbitrary ArrayAccess append bodies, reference array
-literals outside direct variable, direct array-offset, direct visible
-object-property, and direct public dynamic-property assignment targets, exact
-alias destruction ordering, and native lowering still require the future
+direct object variable also drops stale public and context-aware non-public
+object-property roots for that object name. Direct dynamic-property assignment
+from a reference array literal uses the evaluated property name as the public
+or context-aware non-public object-property alias root, so later stored-array
+callback use can reuse covered reference elements when the current method
+context can see the property. Arbitrary nested copied reference slots beyond
+the literal copied path slice, non-public property-offset or magic clone alias
+mirroring, dynamic ArrayAccess references, arbitrary ArrayAccess append
+bodies, reference array literals outside direct variable, direct array-offset,
+direct visible object-property, and direct dynamic-property assignment targets,
+exact alias destruction ordering, and native lowering still require the future
 runtime reference/COW value model.
 
 ## Compiler Crate
@@ -1730,13 +1731,16 @@ current error-handler stack or stderr fallback. It still does not model
 status-header removal, whitespace normalization, exact PHP warning text, or
 full SAPI removal behavior.
 `setcookie()` is another interpreter-only header-state boundary. The current
-slice accepts a string cookie name plus an optional string value, appends a
-simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
-and returns `true` while output is open. After unbuffered output starts it
-returns `false`, leaves the header log unchanged, and routes a bounded
-`E_WARNING` through the current error-handler stack or stderr fallback; full
-cookie attributes, encoding, exact warning text, SAPI emission, and native
-lowering remain outside the model.
+slice accepts a string cookie name plus optional string value, bounded
+positional attributes, or the bounded options-array attribute form. It
+percent-encodes cookie values, formats nonzero expiration timestamps as GMT
+dates, appends a deterministic `Set-Cookie:` line to the same CLI header log,
+and replaces earlier deterministic `Set-Cookie` lines with the same cookie
+name. After unbuffered output starts it returns `false`, leaves the header log
+unchanged, and routes a bounded `E_WARNING` through the current error-handler
+stack or stderr fallback; cookie-name validation/encoding, `Max-Age`,
+path/domain-aware duplicate handling, exact warning text, SAPI emission, raw
+cookie variants, and native lowering remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1874,17 +1878,20 @@ per-handle dynamic schema island records the current bounded
 `SHOW TABLES LIKE`, `SHOW TABLE STATUS LIKE`, `SHOW TABLE STATUS WHERE Name`,
 `DESCRIBE`/`DESC`, `SHOW [FULL] COLUMNS`, `SHOW CREATE TABLE`, and
 `SHOW INDEX`/`SHOW KEYS` probes against that recorded shape. Metadata `LIKE`
-filters support exact patterns plus `%` wildcards for table names, table
-status rows, and column names; `_` wildcard and SQL escape semantics remain
-outside this bounded matcher. It does not model arbitrary
+filters support exact patterns plus `%` wildcards, `_` single-character
+wildcards, and backslash-escaped `%`, `_`, and `\` literals for table names,
+table status rows, and column names. The same placeholder transaction and
+savepoint helpers that snapshot the `wp_options` state island also snapshot
+and restore this bounded dynamic schema-state island for recorded
+`CREATE TABLE`/`ALTER TABLE` metadata. It does not model arbitrary
 multi-table deletes, subqueries, schema DDL beyond the documented bounded
 `CREATE TABLE`/`ALTER TABLE` shapes, dbDelta diffs,
 charset/collation negotiation, locks, real index inspection
 beyond recorded schema-state rows, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
-forms, exact MySQL affected-row or insert-ID edge cases, or WordPress cleanup
-against tables outside the deterministic `wp_options` state island; it is not
-a general SQL engine, schema model, host database connection, PDO layer, or
-native database runtime.
+forms, exact MySQL affected-row or insert-ID edge cases, real transactional
+DDL/isolation/locking, or WordPress cleanup against tables outside the
+deterministic `wp_options` state island; it is not a general SQL engine,
+schema model, host database connection, PDO layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
 registration path: it accepts closure expressions, string user-function
 callbacks, public `"ClassName::method"` static-method string callbacks,
@@ -2564,7 +2571,10 @@ state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
 resolves inherited class methods through the existing method metadata chain,
 and exposes the bounded modifier predicates, `getDeclaringClass()`, parameter
-counts, and `getParameters()` through interpreter dispatch.
+counts, `getParameters()`, `hasReturnType()`, and `getReturnType()` through
+interpreter dispatch. Return type objects reuse the same request-local
+`ReflectionNamedType`, `ReflectionUnionType`, and `ReflectionIntersectionType`
+state as the property type metadata slice.
 `ReflectionParameter` follows the same request-local state pattern for method
 parameters reached from `ReflectionMethod::getParameters()` or from
 `new ReflectionParameter([$object_or_class, $method], $parameter)`. Parameter
@@ -2573,14 +2583,15 @@ metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
 variadic flags, type-presence checks, nullability checks, and simple named
 type metadata. `ReflectionParameter::getType()` now materializes a
-request-local `ReflectionNamedType` object for a single parsed named type and
-stores that object's copied type name, nullable flag, and builtin flag in the
-interpreter. Untyped parameters return `null`; union and intersection types
-stay outside the materialized type-object slice until
-`ReflectionUnionType`/`ReflectionIntersectionType` exist. It does not expose
+request-local `ReflectionNamedType` object for a single parsed named type, or
+a request-local `ReflectionUnionType`/`ReflectionIntersectionType` object for
+bounded union and pure intersection parameter types, and stores the copied
+type names, nullable flags, and builtin flags in the interpreter. Untyped
+parameters return `null`. It does not expose
 attributes, files, line numbers, doc comments, extension/internal metadata,
 function or closure parameter targets, method invocation, exact exception
-objects, compound type objects, or native lowering.
+objects, DNF type objects, runtime argument/return type enforcement, or native
+lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,
 and optional property type metadata. The interpreter answers name, declaring

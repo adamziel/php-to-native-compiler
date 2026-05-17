@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1484/wpdb_schema_transaction_rollback_probe.php

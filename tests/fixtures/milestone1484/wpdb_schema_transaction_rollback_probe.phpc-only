@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for bounded CREATE TABLE/ALTER TABLE rollback and savepoint rollback probes; system PHP needs a real database connection and is not comparable.
