@@ -1,7 +1,10 @@
+use std::fs;
+use std::path::PathBuf;
+
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), and fclose() until native PHP resource handles, stream wrapper state, local file I/O, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory and php://temp stream resources";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), and fclose() until native PHP resource handles, stream wrapper state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, and local file stream resources";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -61,23 +64,61 @@ echo $close($stream) ? "closed" : "open";
 }
 
 #[test]
-fn stream_resource_builtins_reject_forms_outside_current_subset() {
-    let local = run_source("<?php\nfopen('local.txt', 'w+');\n").unwrap_err();
-    assert_eq!(local.phase, Phase::Runtime);
-    assert_eq!(local.line, 2);
-    assert_eq!(local.column, 1);
-    assert_eq!(
-        local.message,
-        "unsupported call fopen(): local file stream resources are not supported in the current subset"
+fn local_file_stream_resources_round_trip_utf8_contents() {
+    let path = temp_stream_path("phpc-stream-resource-round-trip.txt");
+    let source = format!(
+        r#"<?php
+$path = "{}";
+$stream = fopen($path, "w+");
+echo gettype($stream);
+echo "|";
+echo fwrite($stream, "core-cache");
+rewind($stream);
+echo "|";
+echo fread($stream, 4);
+echo "|";
+echo stream_get_contents($stream);
+echo "|";
+echo fclose($stream) ? "closed" : "open";
+$append = fopen($path, "a+");
+fwrite($append, "-tail");
+rewind($append);
+echo "|";
+echo stream_get_contents($append);
+fclose($append);
+"#,
+        path.display()
     );
+    let execution = run_source(&source).unwrap();
 
+    assert_eq!(
+        execution.stdout,
+        "resource|10|core|-cache|closed|core-cache-tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let contents = fs::read_to_string(&path).expect("temporary stream file is readable");
+    assert_eq!(contents, "core-cache-tail");
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_resource_builtins_reject_forms_outside_current_subset() {
     let wrapper = run_source("<?php\nfopen('http://example.test', 'r');\n").unwrap_err();
     assert_eq!(wrapper.phase, Phase::Runtime);
     assert_eq!(wrapper.line, 2);
     assert_eq!(wrapper.column, 1);
     assert_eq!(
         wrapper.message,
-        "unsupported call fopen(): only php://memory and php://temp are supported in the current stream subset"
+        "unsupported call fopen(): only php://memory, php://temp, and local file paths are supported in the current stream subset"
+    );
+
+    let bad_mode = run_source("<?php\nfopen('php://memory', 'x');\n").unwrap_err();
+    assert_eq!(bad_mode.phase, Phase::Runtime);
+    assert_eq!(bad_mode.line, 2);
+    assert_eq!(bad_mode.column, 1);
+    assert_eq!(
+        bad_mode.message,
+        "unsupported call fopen(): mode \"x\" is not supported in the current stream subset"
     );
 
     let bad_stream = run_source("<?php\nfwrite('not-resource', 'x');\n").unwrap_err();
@@ -117,6 +158,13 @@ echo is_callable("stream_get_contents") ? "1" : "0";
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_STREAM_RESOURCE_REJECTION);
+}
+
+fn temp_stream_path(name: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("{}-{}-{name}", std::process::id(), line!()));
+    let _ = fs::remove_file(&path);
+    path
 }
 
 #[test]

@@ -415,6 +415,22 @@ parsing, real MySQL, persistent object cache, broad `wpdb`, full WordPress
 option APIs, plugin/theme loading, request/SAPI fidelity,
 references/copy-on-write, or native support.
 
+After Milestone 1334, the placeholder MySQLi `wp_options` state island also
+covers exact prepared autoload-list result-set reads for
+`SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ...)`,
+`SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`,
+and
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`
+through both `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array(...))` for string autoload
+parameters. A committed `wpdb`-shaped fixture proves deterministic
+autoload-filtered rows and backticked column/table spelling support. This
+remains a bounded state-island probe only; it does not claim arbitrary
+prepared projections, non-string autoload params, broad SQL parsing, real
+MySQL, persistent object cache, broad `wpdb`, full WordPress option APIs,
+plugin/theme loading, request/SAPI fidelity, references/copy-on-write, or
+native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

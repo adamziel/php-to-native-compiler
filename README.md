@@ -60,12 +60,13 @@ multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 session persistence, locking, save handlers, and cookie emission remain
-unsupported. `fopen()` can create bounded interpreter-owned `php://memory` and
-`php://temp` stream resources for simple in-memory read/write flows through
-`fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and `fclose()`;
-local file handles, stream contexts/filters, binary byte fidelity, temp-file
-spillover, and native stream lowering remain unsupported. Native lowering still
-rejects request/session/stream state until a native runtime ABI exists.
+unsupported. `fopen()` can create bounded interpreter-owned `php://memory`,
+`php://temp`, and local UTF-8 file stream resources for simple read/write flows
+through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and
+`fclose()`; unsupported wrappers, contexts/filters, binary byte fidelity,
+permissions/locking, warning recovery, temp-file spillover, and native stream
+resources remain unsupported. Native lowering still rejects request/session/
+stream state until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -149,9 +150,10 @@ incorrect native code.
   removal, nested object-property array offset removal, array iteration
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
-  object-property array roots, plus direct free-function reference-return
-  iterable roots when the returned direct variable is backed by a caller
-  variable cell, and
+  object-property array roots, plus direct free-function, direct visible
+  instance-method, and direct named-static-method reference-return iterable
+  roots when the returned direct variable is backed by a caller variable cell,
+  and
   positional statement-form
   `list($a, $b) = expr;` plus `[$a, $b] = expr;` assignment over numeric
   keys, including skipped slots
@@ -179,9 +181,9 @@ incorrect native code.
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
-  shapes and selected prepared option-name-list result sets; this is not real
-  MySQL connectivity, arbitrary SQL, persistent object cache, full `wpdb`, or
-  native database support
+  shapes and selected prepared option-name-list and autoload-list result sets;
+  this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
+  full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -193,7 +195,9 @@ incorrect native code.
   including parent interfaces declared later in the same parsed program, and
   public method signatures parse, register class-like interface names, power
   `interface_exists()` and
-  `get_declared_interfaces()`, and require concrete classes that implement
+  `get_declared_interfaces()`, participate in the current string-function
+  autoload callback path for truthy-autoload `interface_exists()` misses, and
+  require concrete classes that implement
   declared interfaces, including through inherited `implements` metadata and
   the current parent interface inheritance slice, to expose
   public methods with the required names and matching static/non-static shape
@@ -338,7 +342,9 @@ unqualified `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
-autoload-triggered class discovery,
+autoload-triggered class discovery beyond string user-function callbacks
+registered through `spl_autoload_register()` for `class_exists()` and
+`interface_exists()` misses,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`

@@ -1,0 +1,10 @@
+run autoloadable_metadata_lookup.php
+--- stdout begin ---
+false-skip
+load:LoadedBox
+class
+interface
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

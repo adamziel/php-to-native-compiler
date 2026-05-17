@@ -105,10 +105,12 @@ binding path as direct reference-returning function and method calls for the
 current literal argument-array/direct-variable-reference-element slice. They do
 not promote callback argument arrays, object-property array bridges, or stored
 array-offset metadata into general runtime reference containers. By-reference
-`foreach` currently consumes only direct free-function reference-return iterable
-roots from this machinery, including bounded direct caller-cell and direct
-static-local cell cases; method/static/callback reference-return iterable roots
-remain outside the executable foreach slice.
+`foreach` currently consumes direct free-function, direct visible
+instance-method, and direct named-static-method reference-return iterable roots
+from this machinery, including bounded direct caller-cell and direct
+static-local cell cases. Callback, `self::`/`parent::`/`static::`, dynamic static
+receiver, property-return, array-offset-return, and expression-return iterable
+roots remain outside the executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -1613,11 +1615,18 @@ deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
-`spl_autoload_register()` is currently an interpreter-only no-op registration
-boundary: it accepts closure expressions or string callback names with optional
-boolean flags and returns true, but does not store or invoke an autoload stack.
-Native function-table introspection recognizes the name, while direct native
-calls reject under the function-call boundary.
+`spl_autoload_register()` is currently an interpreter-only bounded
+registration path: it accepts closure expressions or string callback names with
+optional boolean flags and returns true. String user-function callbacks are
+stored in registration order, the current boolean `prepend` flag can place a
+callback at the front, and truthy-autoload `class_exists()`/`interface_exists()`
+misses invoke those string callbacks with the requested class/interface name
+before rechecking metadata. That lets local include/require paths register
+autoloaded class/interface declarations through the existing included-file
+declaration loader. Closure callbacks remain accepted registration metadata
+only and report a stable unsupported autoload boundary if lookup needs to
+invoke them. Native function-table introspection recognizes the name, while
+direct native calls reject under the function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and
@@ -1759,16 +1768,18 @@ call execution still lacks stream-wrapper handling, local file I/O, binary
 string byte fidelity, warning plus `false` recovery, stream contexts,
 offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
 references/copy-on-write, and exact native diagnostics.
-The first stream-resource slice is interpreter-only and intentionally
-in-memory. `fopen("php://memory", $mode)` and `fopen("php://temp", $mode)`
-allocate request-local resource ids backed by a Rust string buffer for simple
-`r`, `w`, `a`, or `c` modes with optional `+`, `b`, or `t` flags.
-`fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and `fclose()`
-mutate or consume that buffer and cursor. This gives WordPress-style temporary
-request streams an executable path without claiming full PHP resources: local
-file handles, sockets, HTTP/FTP/phar wrappers, contexts, filters, stream
-metadata, EOF/status APIs, binary/non-UTF-8 byte strings, `php://temp`
-spill-to-disk thresholds, locking, warning plus `false` recovery,
+The first stream-resource slices are interpreter-only. `fopen("php://memory",
+$mode)` and `fopen("php://temp", $mode)` allocate request-local resource ids
+backed by a Rust string buffer for simple `r`, `w`, `a`, or `c` modes with
+optional `+`, `b`, or `t` flags. `fopen($localPath, $mode)` uses a host local
+file handle for the same simple mode grammar. `fwrite()`, `fread()`,
+`rewind()`, `stream_get_contents()`, and `fclose()` mutate or consume the
+resource cursor; append-mode writes are routed to EOF. Local file reads remain
+UTF-8 text reads. This gives WordPress-style temporary request and cache-file
+streams an executable path without claiming full PHP resources: sockets,
+HTTP/FTP/phar wrappers, contexts, filters, stream metadata, EOF/status APIs,
+binary/non-UTF-8 byte strings, `php://temp` spill-to-disk thresholds,
+permissions policy, locking, warning plus `false` recovery,
 references/copy-on-write, and exact resource id/type behavior remain out of
 scope. Native stream-resource calls reject before lowering under a dedicated
 resource boundary, while function-table introspection recognizes the names.
@@ -2065,14 +2076,16 @@ names and the declared class name for current object values.
 `class_exists($name[, $autoload])` checks the interpreter's already-registered
 class metadata table by string class name, using the same case-insensitive
 class lookup as instantiation. The autoload flag accepts current bool-like
-scalar values and does not trigger autoloading in the current subset; `null`,
-arrays, objects, references, and exact PHP deprecation/`TypeError` behavior
-remain unsupported for that flag.
+scalar values; when truthy and the initial lookup misses, currently registered
+string user-function autoload callbacks run before the metadata check returns.
+`null`, arrays, objects, references, and exact PHP
+deprecation/`TypeError` behavior remain unsupported for that flag.
 `interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
 and `enum_exists($name[, $autoload])` accept the same string-name and
-bool-like scalar autoload boundary and check declared interface/trait/unit-enum
-metadata without triggering autoloading. `class_exists()` also reports true
-for declared enums in the current class-like metadata slice.
+bool-like scalar autoload boundary. `interface_exists()` shares the bounded
+string-callback autoload path with `class_exists()`, while trait and enum
+lookups still check only already-declared metadata. `class_exists()` also
+reports true for declared enums in the current class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
 with case-sensitive property names and no autoload side effects.

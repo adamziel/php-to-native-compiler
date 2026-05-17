@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+resource|wp|-cache-data|wp-cache-data-tail|closed
+--- stdout end ---
+stderr:
+--- stderr end ---

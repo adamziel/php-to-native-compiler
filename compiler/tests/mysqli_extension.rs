@@ -1136,6 +1136,49 @@ echo $direct_two["option_id"], ":", $direct_two["option_name"], ":", $direct_two
 }
 
 #[test]
+fn mysqli_statement_reads_current_wordpress_option_autoload_lists_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('theme_mods', 'theme-db', 'on')");
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ?)");
+$first = "yes";
+$second = "on";
+mysqli_stmt_bind_param($stmt, "ss", $first, $second);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+echo "|";
+$result = mysqli_stmt_get_result($stmt);
+echo mysqli_num_rows($result), ":", mysqli_num_fields($result);
+echo "|";
+$one = mysqli_fetch_assoc($result);
+$two = mysqli_fetch_assoc($result);
+echo $one["option_name"], "=", $one["option_value"];
+echo "|";
+echo $two["option_name"], "=", $two["option_value"];
+echo "|";
+$direct = mysqli_execute_query($handle, "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `autoload` IN (?, ?)", array("on", "yes"));
+echo mysqli_num_rows($direct), ":", mysqli_num_fields($direct);
+echo "|";
+$direct_one = mysqli_fetch_assoc($direct);
+$direct_two = mysqli_fetch_assoc($direct);
+echo $direct_one["option_id"], ":", $direct_one["option_name"], ":", $direct_one["autoload"];
+echo "|";
+echo $direct_two["option_id"], ":", $direct_two["option_name"], ":", $direct_two["autoload"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "executed|2:2|siteurl=https://example.test|theme_mods=theme-db|2:4|1:siteurl:yes|3:theme_mods:on"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_rejects_non_string_wordpress_option_name_list_parameters() {
     let error = run_source(
         r#"<?php

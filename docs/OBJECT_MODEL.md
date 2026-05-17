@@ -74,10 +74,14 @@ parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited properties with supported constant-expression
 default values or `null` for properties without defaults.
-`interface_exists()`, `trait_exists()`, and `enum_exists()` check declared
-user interface, top-level trait, and top-level unit-enum metadata
-without triggering autoloading. `class_exists()` reports true for declared
-enums in the current class-like metadata slice.
+`class_exists()` and `interface_exists()` check current class/interface
+metadata and, when their autoload flag is truthy, invoke currently registered
+string user-function autoload callbacks on misses before rechecking metadata.
+Those callbacks can use the current include/require path to load local files
+that declare additional class/interface metadata. `trait_exists()` and
+`enum_exists()` check declared top-level trait and unit-enum metadata without
+triggering autoloading. `class_exists()` reports true for declared enums in
+the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
 interfaces and top-level traits in declaration order. A declared interface may
 extend one or more user interfaces declared before or after the child
@@ -454,7 +458,8 @@ instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
 binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
-autoloading, anonymous classes, attributes, reflection, dynamic property
+autoloading beyond string user-function callbacks for `class_exists()` and
+`interface_exists()` misses, anonymous classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
 cloning beyond the current shallow clone plus bounded visible non-static
 `__clone` dispatch slice, serialization hooks, broader visibility enforcement,

@@ -469,6 +469,60 @@ echo $items["c"];
 }
 
 #[test]
+fn foreach_by_reference_binds_method_reference_return_iterables_to_caller_cell() {
+    let execution = run_source(
+        r#"<?php
+class Bag {
+    public function &items(&$items) {
+        return $items;
+    }
+}
+
+class StaticBag {
+    public static function &items(&$items) {
+        return $items;
+    }
+}
+
+$bag = new Bag();
+$items = ["a" => "one", "b" => "two"];
+foreach ($bag->items($items) as $key => &$item) {
+    $item = $item . ":" . $key;
+    if ($key === "a") {
+        $items["c"] = "three";
+    }
+}
+echo $items["a"], "|", $items["b"], "|", $items["c"], "|", $item, "\n";
+$items["c"] = "direct";
+echo $item, "|";
+$item = "tail";
+echo $items["c"], "|", $item, "\n";
+unset($item);
+
+$items = ["x" => "ex", "y" => "why"];
+foreach (StaticBag::items($items) as $key => &$item) {
+    $item = $key . "=" . $item;
+    if ($key === "x") {
+        $items["z"] = "zed";
+    }
+}
+echo $items["x"], "|", $items["y"], "|", $items["z"], "|", $item, "\n";
+$items["z"] = "static-direct";
+echo $item, "|";
+$item = "static-tail";
+echo $items["z"], "|", $item;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "one:a|two:b|three:c|three:c\ndirect|tail|tail\nx=ex|y=why|z=zed|z=zed\nstatic-direct|static-tail|static-tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php

@@ -138,13 +138,13 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed static interface method contract
-validation, direct free-function reference-return `foreach` roots backed by
-caller or static-local cells, in-memory `php://memory`/`php://temp` stream
-resources, and prepared full-row `wp_options` option-name-list reads over the
-placeholder MySQLi state island. Those are useful compatibility steps, but they
-do not change the larger project shape: the next lanes should keep attacking
-broad object/interface semantics, real reference/COW behavior,
+The latest WordPress-focused batch closed bounded string-function autoload
+callbacks for `class_exists()`/`interface_exists()` misses, method/static
+reference-return `foreach` roots backed by caller cells, local UTF-8
+file-backed stream resources, and prepared `wp_options` autoload-list reads
+over the placeholder MySQLi state island. Those are useful compatibility
+steps, but they do not change the larger project shape: the next lanes should
+keep attacking broad object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress
 database/bootstrap evidence until those areas become coherent subsystems
 instead of reached slices.

@@ -13503,35 +13503,101 @@ handled.
 
 ## Milestone 1331: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: advance a larger object/interface subsystem gap
+- [x] Parser/runtime lane: advance a larger object/interface subsystem gap
   from `GOAL.MD`, preferably autoloadable class/interface lookup, constructor
   and destructor ordering fidelity, magic hook dispatch, reflection-visible
   metadata, trait/interface conflict behavior, or interface implementation
   validation reached by WordPress. Keep full type enforcement, full variance,
   exact PHP diagnostics, references/COW, and native lowering unsupported until
-  executable code and tests prove them.
+  executable code and tests prove them. Closed with a bounded autoloadable
+  class/interface lookup slice: string user-function callbacks registered by
+  `spl_autoload_register()` are stored, honor the current boolean `prepend`
+  flag, and are invoked by truthy-autoload `class_exists()`/`interface_exists()`
+  misses so local include/require callbacks can register class/interface
+  metadata.
 
 ## Milestone 1332: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: advance a larger reference/COW subsystem gap from
+- [x] Runtime lane: advance a larger reference/COW subsystem gap from
   `GOAL.MD`, preferably real reference containers, broader array/object
   copy-on-write, reference-return iterable roots beyond direct free functions,
   alias lifetime across include/function boundaries, ArrayAccess references,
   or request/session-state alias behavior. Keep exact warning behavior, full
   PHP alias destruction ordering, resource/object edge cases, and native
-  lowering unsupported until implemented and tested.
+  lowering unsupported until implemented and tested. Closed with a bounded
+  by-reference `foreach` extension for direct visible instance-method and
+  direct named-static-method reference-return iterable roots, where the
+  returned direct variable is backed by a caller variable cell through the
+  current by-reference parameter path.
 
 ## Milestone 1333: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
-  behavior that blocks real WordPress requests, preferably file-backed stream
-  handles, `php://input`/request body follow-up behavior, session persistence,
-  cookies/uploads, header/output/shutdown fidelity, host filesystem metadata,
-  stream contexts/filters, or native rejection coverage for resource state.
-  Keep unsupported wrappers, sockets, HTTP, permissions, locking, exact
-  warning recovery, and native stream resources explicit until tested.
+- [x] Runtime or IR/lowering lane: advanced a bounded stream/filesystem slice:
+  `phpc run` now supports interpreter-owned local UTF-8 file stream resources
+  for simple `fopen($path, $mode)` modes alongside the existing
+  `php://memory`/`php://temp` resources. `fwrite()`, `fread()`, `rewind()`,
+  `stream_get_contents()`, and `fclose()` operate on local file handles, with
+  append-mode writes routed to EOF and native stream-resource calls still
+  rejected at the dedicated codegen boundary. Unsupported wrappers, sockets,
+  HTTP/FTP/phar, stream contexts/filters, binary/non-UTF-8 byte fidelity,
+  permissions policy, locking, exact warning/`false` recovery, native stream
+  resources, and broader PHP resource metadata remain explicit gaps.
 
 ## Milestone 1334: WordPress DB/Bootstrap Evidence Blocker
+
+- [x] Compatibility/runtime lane: advanced executable WordPress database
+  evidence with exact prepared `wp_options` autoload-list result-set reads for
+  name/value, name/value/autoload, and id/name/value/autoload projections
+  through both `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array(...))`. A committed
+  `milestone1334` `wpdb`-shaped fixture proves deterministic
+  autoload-filtered rows and backticked column/table spelling support over the
+  placeholder state island. Real MySQL, arbitrary SQL, full request support,
+  plugin/theme support, references/COW, and native support remain unsupported.
+
+## Milestone 1335: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1331-1334 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch. Manual full gate passed before checkpoint: `cargo
+  test` completed successfully, `phpc test` reported `1443` fixture tests
+  passed with `0` failures, and `phpc test --compare-php` reported `1443`
+  fixture tests passed with `0` failures, `832` system PHP comparisons, and
+  `611` skipped `phpc-only` fixtures.
+
+## Milestone 1336: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: advance the next larger object/interface subsystem
+  gap from `GOAL.MD`, preferably autoload-triggered `new`/`extends`/`implements`
+  lookup, constructor/destructor ordering fidelity, magic hook dispatch,
+  reflection-visible metadata, trait/interface conflict behavior, or broader
+  class/interface lookup under namespaces. Keep full type enforcement, full
+  variance, exact PHP diagnostics, references/COW, and native lowering
+  unsupported until executable code and tests prove them.
+
+## Milestone 1337: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: advance the next larger reference/COW subsystem gap from
+  `GOAL.MD`, preferably real reference containers, broader array/object
+  copy-on-write, callback/`self::`/`parent::`/`static::` reference-return
+  iterable roots, alias lifetime across include/function boundaries,
+  ArrayAccess references, or request/session-state alias behavior. Keep exact
+  warning behavior, full PHP alias destruction ordering, resource/object edge
+  cases, and native lowering unsupported until implemented and tested.
+
+## Milestone 1338: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
+  behavior that blocks real WordPress requests, preferably `php://input`
+  follow-up behavior, session persistence, cookies/uploads, header/output/
+  shutdown fidelity, host filesystem metadata, stream status/EOF APIs, stream
+  contexts/filters, or native rejection coverage for resource state. Keep
+  unsupported wrappers, sockets, HTTP, permissions, locking, exact warning
+  recovery, binary byte fidelity, and native stream resources explicit until
+  tested.
+
+## Milestone 1339: WordPress DB/Bootstrap Evidence Blocker
 
 - [ ] Compatibility/runtime lane: advance executable WordPress database or
   bootstrap evidence, preferably broader `wpdb`/MySQLi result and mutation
@@ -13541,9 +13607,9 @@ handled.
   Keep real MySQL, arbitrary SQL, full request support, plugin/theme support,
   references/COW, and native support unsupported until implemented and tested.
 
-## Milestone 1335: WordPress-Focused Queue Refresh
+## Milestone 1340: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1331-1334 land, refresh the
+- [ ] Tests/docs lane: after Milestones 1336-1339 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

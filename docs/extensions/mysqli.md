@@ -417,6 +417,16 @@ prepared result paths; explicit name-list reads preserve parameter order and
 skip missing names. Backticked table/column spellings are accepted for this
 full-row prepared name-list slice. The
 exact
+`SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ...)`,
+`SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`,
+and
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`
+prepared shapes return deterministic row sets for string autoload parameters
+through the same prepared result paths. Matching rows are sorted by option
+name, duplicate autoload parameters do not duplicate rows, and missing
+autoload values return empty zero-field placeholder results when no rows
+match. Backticked table/column spellings are accepted for this prepared
+autoload-list slice. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

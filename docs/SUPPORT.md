@@ -534,8 +534,11 @@
   `foreach ($object->items["child"] as &$value)` route the loop value to the
   selected property array slot through the same bounded alias metadata,
   including visible non-public properties from valid method contexts. Direct
-  free-function call iterables such as `foreach (items($items) as &$value)`
-  are also executable when the called user function is declared as returning
+  free-function call iterables such as `foreach (items($items) as &$value)`,
+  direct visible instance-method call iterables such as
+  `foreach ($bag->items($items) as &$value)`, and direct named-static-method
+  call iterables such as `foreach (Bag::items($items) as &$value)` are also
+  executable when the called user function or method is declared as returning
   by reference, returns a direct variable, and that returned variable is backed
   by a direct caller variable cell, such as a by-reference parameter, or by the
   current direct static-local cell slice. After loop completion the loop
@@ -545,9 +548,9 @@
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
   ArrayAccess iterables, dynamic-property iterable roots, non-string-keyed `$GLOBALS` roots,
-  method/static/callback reference-returning call iterables, direct
-  free-function reference-return iterables that return properties, array
-  offsets, expressions, or nested-control-flow returns,
+  callback, `self::`/`parent::`/`static::`, and dynamic static receiver
+  reference-returning call iterables, reference-return iterables that return
+  properties, array offsets, expressions, or nested-control-flow returns,
   foreach destructuring, array/object/ArrayAccess offset loop variables,
   nested-offset loop values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
@@ -1640,6 +1643,13 @@
   status-copy fidelity, mutation SQL beyond that exact option-name-list
   delete shape, host database state, PHP warning/error fidelity, mysqlnd
   behavior, or native statement lowering.
+  The same bounded prepared-result path includes exact `wp_options`
+  autoload-list row reads for name/value, name/value/autoload, and
+  id/name/value/autoload projections with `WHERE autoload IN (?, ...)` when
+  every placeholder is a string autoload value. Rows are deterministic over the
+  placeholder state island; this is not arbitrary SQL filtering, collation
+  fidelity, real MySQL, full `wpdb`, references/copy-on-write, or native
+  database support.
   `mysqli_stmt_bind_result($statement, &...$vars)` records direct variable
   names for the current known placeholder statement result shape, and
   `mysqli_stmt_fetch($statement)` copies buffered placeholder row values into
@@ -2105,22 +2115,25 @@
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
   boundary before argument lowering or backend selection, while native
   function-table introspection can still see the known builtin name.
-  Bounded in-memory stream resources are supported for `phpc run` only:
-  `fopen("php://memory", $mode)` and `fopen("php://temp", $mode)` create an
-  interpreter-owned stream resource for simple `r`, `w`, `a`, or `c` modes
-  with optional `+`, `b`, or `t` flags; `fwrite($stream, $data, $length = null)`
-  writes string data at the current cursor and returns the written byte count;
-  `fread($stream, $length)` reads up to a non-negative integer length;
-  `rewind($stream)` resets the cursor; `stream_get_contents($stream)` returns
-  the remaining buffer; and `fclose($stream)` closes the resource. This is a
-  deterministic WordPress request/runtime compatibility slice, not full PHP
-  stream support: local file handles, sockets, HTTP/FTP/phar wrappers, wrapper
-  metadata, filters, contexts, binary/non-UTF-8 byte fidelity, large
-  `php://temp` spill-to-disk behavior, locking, EOF/status APIs, warning plus
-  `false` recovery, exact resource ids/types, references/copy-on-write, and
-  native lowering remain unsupported. Direct native stream-resource calls stop
-  at a dedicated resource/stream codegen boundary, while function-table
-  introspection recognizes the known builtin names.
+  Bounded stream resources are supported for `phpc run` only:
+  `fopen("php://memory", $mode)`, `fopen("php://temp", $mode)`, and
+  `fopen($localPath, $mode)` for local filesystem paths create
+  interpreter-owned stream resources for simple `r`, `w`, `a`, or `c` modes
+  with optional `+`, `b`, or `t` flags. `fwrite($stream, $data, $length = null)`
+  writes string data at the current cursor, or at EOF for append mode, and
+  returns the written byte count; `fread($stream, $length)` reads up to a
+  non-negative integer length; `rewind($stream)` resets the cursor;
+  `stream_get_contents($stream)` returns remaining UTF-8 contents; and
+  `fclose($stream)` closes the resource. Local file streams use host files and
+  UTF-8 text only. This is a deterministic WordPress request/runtime
+  compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
+  wrappers, wrapper metadata, filters, contexts, binary/non-UTF-8 byte
+  fidelity, large `php://temp` spill-to-disk behavior, permissions policy,
+  locking, EOF/status APIs, warning plus `false` recovery, exact resource
+  ids/types, references/copy-on-write, and native stream resources remain
+  unsupported. Direct native stream-resource calls stop at a dedicated
+  resource/stream codegen boundary, while function-table introspection
+  recognizes the known builtin names.
   `filesize($path)` accepts one string local path, rejects stream-wrapper
   paths, returns the host file byte length as an integer for existing regular
   files, and returns `false` for missing paths or non-file paths such as
@@ -2207,9 +2220,16 @@
   behavior, and native lowering remain unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
   closure expressions or string callback names plus optional boolean flags and
-  returns `true`. It currently records no autoload stack and never invokes the
-  callback; this is a WordPress bootstrap compatibility boundary, not full SPL
-  autoloading.
+  returns `true`. String user-function callbacks are recorded, honor the
+  current boolean `prepend` flag, and are invoked by truthy-autoload
+  `class_exists()` and `interface_exists()` misses so they can include local
+  files that declare class/interface metadata. Closure callbacks remain a
+  registration-only shape and report a stable unsupported autoload boundary if
+  a lookup needs to invoke them. Autoload unregistering, autoload functions,
+  array callables, throwing/exact warning behavior, trait/enum autoload
+  lookup, namespace/import canonicalization beyond current string lookup,
+  recursive loader edge cases beyond a same-name guard, references/COW, and
+  native lowering remain unsupported.
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
   string callable, object/static array callable, or closure plus optional
   already-evaluated extra arguments and returns `null`. The current slice
@@ -2793,14 +2813,14 @@
   `class_exists($name, $autoload)` accept string class names, perform
   case-insensitive lookup against classes declared in the current parsed
   program, accept current bool-like scalar autoload flags, and are available
-  through string-valued dynamic function calls. The autoload flag does not
-  trigger autoloading in the current subset.
+  through string-valued dynamic function calls. A truthy autoload flag invokes
+  currently registered string user-function autoload callbacks on misses.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names, perform case-insensitive lookup against the bounded
   `Stringable` core interface plus interfaces declared in the current parsed
   program, and are available through string-valued dynamic function calls. The
-  autoload flag accepts current bool-like scalar values and does not trigger
-  autoloading.
+  autoload flag accepts current bool-like scalar values and invokes currently
+  registered string user-function autoload callbacks on misses.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
@@ -4975,12 +4995,12 @@
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, and `fclose`
-  accept the same current bounded `php://memory` and `php://temp` stream
-  resource subset as the builtin section above; direct native calls reject
-  under a dedicated stream-resource boundary until native PHP resource handles,
-  stream wrapper state, local file I/O, binary byte strings, warning plus
-  `false` recovery, references/copy-on-write, and exact native diagnostics
-  exist.
+  accept the same current bounded `php://memory`, `php://temp`, and local
+  UTF-8 file stream resource subset as the builtin section above; direct
+  native calls reject under a dedicated stream-resource boundary until native
+  PHP resource handles, stream wrapper state, binary byte strings, warning
+  plus `false` recovery, references/copy-on-write, and exact native
+  diagnostics exist.
   `filesize` accepts the same current one-string local regular-file metadata
   subset as the builtin section above; direct native `filesize(...)` calls
   still reject under the function-call boundary until native filesystem
@@ -5015,10 +5035,11 @@
   wrappers, symlink/stat-cache/TOCTOU behavior, non-UTF-8 paths,
   references/COW, and exact native diagnostics exist, while native
   function-table introspection recognizes the name.
-  `spl_autoload_register` accepts closure and string callbacks in `phpc run`
-  without storing or invoking them; direct native calls still reject under the
-  function-call boundary, while native function-table introspection recognizes
-  the name.
+  `spl_autoload_register` accepts closure and string callbacks in `phpc run`;
+  string user-function callbacks are stored for truthy-autoload
+  `class_exists()` and `interface_exists()` misses, while closure invocation
+  and direct native calls still reject under explicit boundaries. Native
+  function-table introspection recognizes the name.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -5026,14 +5047,17 @@
   declared class name for current minimal object values. `class_exists($name)`
   and `class_exists($name, $autoload)` accept string class names, return whether
   the current parsed program declared that class, and accept current bool-like
-  scalar autoload flags without triggering autoloading. `null`, arrays,
+  scalar autoload flags. Truthy autoload misses invoke currently registered
+  string user-function autoload callbacks before the metadata check returns.
+  `null`, arrays,
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names and perform case-insensitive lookup against the
   bounded core interface catalog plus interfaces declared in the current parsed
-  program; the autoload flag accepts current bool-like scalar values and does
-  not trigger autoloading.
+  program; the autoload flag accepts current bool-like scalar values and
+  invokes currently registered string user-function autoload callbacks on
+  misses.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
@@ -7033,12 +7057,12 @@
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,
   finally ordering, output buffering, SAPI interaction, and native lowering
-- `spl_autoload_register()` behavior beyond accepting closure/string callback
-  registrations as a no-op success, including autoload stack storage,
-  unregistering, invocation during class lookup, prepend ordering,
-  namespace-aware class resolution, exact callable validation, exact
-  `TypeError`/exception behavior, and native lowering beyond function-table
-  introspection
+- `spl_autoload_register()` behavior beyond storing string user-function
+  callbacks for truthy-autoload `class_exists()`/`interface_exists()` misses:
+  unregistering, `spl_autoload_functions()`, array-callable and closure
+  invocation, trait/enum autoload lookup, namespace-aware class resolution,
+  exact callable validation, exact `TypeError`/exception behavior, and native
+  lowering beyond function-table introspection
 - `extension_loaded()` behavior outside the deterministic bounded compatibility
   registry, including exact extension inventory policy, aliases, host
   PHP/module discovery, dynamic loading side effects, extension versions,

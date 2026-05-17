@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -111,6 +112,8 @@ struct Interpreter {
     ini_values: HashMap<String, String>,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
+    autoload_callbacks: Vec<AutoloadCallback>,
+    active_autoloads: HashSet<String>,
     mysqli_report_mode: i64,
     mysqli_results: HashMap<i64, MysqliResultState>,
     mysqli_pending_results: HashMap<i64, MysqliPendingResultState>,
@@ -132,7 +135,7 @@ struct Interpreter {
     allocated_objects: Vec<PhpObject>,
     next_closure_id: i64,
     next_resource_id: i64,
-    streams: HashMap<i64, MemoryStream>,
+    streams: HashMap<i64, StreamResource>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -229,6 +232,32 @@ struct MysqliResultState {
 struct MemoryStream {
     buffer: String,
     position: usize,
+    readable: bool,
+    writable: bool,
+    append: bool,
+}
+
+#[derive(Debug)]
+struct FileStream {
+    file: fs::File,
+    readable: bool,
+    writable: bool,
+    append: bool,
+}
+
+#[derive(Debug)]
+enum StreamResource {
+    Memory(MemoryStream),
+    File(FileStream),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StreamMode {
+    readable: bool,
+    writable: bool,
+    append: bool,
+    truncate: bool,
+    create: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +305,18 @@ struct ResolvedRequirePath {
 enum Callable {
     Builtin(String),
     User(Rc<FunctionDecl>),
+}
+
+#[derive(Debug, Clone)]
+enum AutoloadCallback {
+    Function(String),
+    Closure,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AutoloadKind {
+    Class,
+    Interface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2511,6 +2552,8 @@ impl Interpreter {
             ini_values: HashMap::new(),
             error_handler: None,
             error_handler_mask: None,
+            autoload_callbacks: Vec::new(),
+            active_autoloads: HashSet::new(),
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             mysqli_results: HashMap::new(),
             mysqli_pending_results: HashMap::new(),
@@ -2731,6 +2774,9 @@ impl Interpreter {
                 })
             }
             Expr::Call { name, .. } if self.direct_function_call_returns_by_reference(name) => {
+                self.by_reference_foreach_reference_return_root(iterable, scope, span)
+            }
+            Expr::MethodCall { .. } | Expr::StaticMethodCall { .. } => {
                 self.by_reference_foreach_reference_return_root(iterable, scope, span)
             }
             expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
@@ -9424,6 +9470,30 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_value_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_value_autoload_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9451,6 +9521,34 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_id_name_value_autoload_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9459,6 +9557,35 @@ impl Interpreter {
                     wordpress_option_id_name_value_autoload_rows_for_filter(
                         options,
                         &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_id".to_string(),
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
                     )
                 })
                 .unwrap_or_default();
@@ -15248,10 +15375,10 @@ impl Interpreter {
             ));
         }
 
-        match &args[0] {
-            Expr::Closure { .. } => {}
+        let callback = match &args[0] {
+            Expr::Closure { .. } => AutoloadCallback::Closure,
             callback => match self.evaluate(callback, caller_scope)? {
-                Value::String(_) => {}
+                Value::String(name) => AutoloadCallback::Function(name),
                 other => {
                     return Err(runtime_error(
                         span,
@@ -15265,11 +15392,16 @@ impl Interpreter {
                     ));
                 }
             },
-        }
+        };
 
+        let mut prepend = false;
         for (index, arg) in args.iter().enumerate().skip(1) {
             match self.evaluate(arg, caller_scope)? {
-                Value::Bool(_) => {}
+                Value::Bool(value) => {
+                    if index == 2 {
+                        prepend = value;
+                    }
+                }
                 other => {
                     return Err(runtime_error(
                         span,
@@ -15286,7 +15418,109 @@ impl Interpreter {
             }
         }
 
+        if prepend {
+            self.autoload_callbacks.insert(0, callback);
+        } else {
+            self.autoload_callbacks.push(callback);
+        }
+
         Ok(Value::Bool(true))
+    }
+
+    fn class_like_exists_with_autoload(
+        &mut self,
+        name: &str,
+        kind: AutoloadKind,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if self.class_like_exists(name, kind) {
+            return Ok(true);
+        }
+        if !autoload {
+            return Ok(false);
+        }
+
+        self.run_autoload_callbacks(name, kind, span)?;
+        Ok(self.class_like_exists(name, kind))
+    }
+
+    fn class_like_exists(&self, name: &str, kind: AutoloadKind) -> bool {
+        match kind {
+            AutoloadKind::Class => {
+                self.classes.lookup_class(name).is_some()
+                    || self.enum_lookup.contains_key(&name.to_ascii_lowercase())
+            }
+            AutoloadKind::Interface => {
+                is_core_interface_name(name)
+                    || self
+                        .interface_lookup
+                        .contains_key(&name.to_ascii_lowercase())
+            }
+        }
+    }
+
+    fn run_autoload_callbacks(
+        &mut self,
+        class_name: &str,
+        kind: AutoloadKind,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.autoload_callbacks.is_empty() {
+            return Ok(());
+        }
+
+        let key = class_name.to_ascii_lowercase();
+        if !self.active_autoloads.insert(key.clone()) {
+            return Ok(());
+        }
+
+        let callbacks = self.autoload_callbacks.clone();
+        let result = (|| {
+            for callback in callbacks {
+                match callback {
+                    AutoloadCallback::Function(function_name) => {
+                        let callable =
+                            self.lookup_function_exact(&function_name).ok_or_else(|| {
+                                runtime_error(
+                                    span,
+                                    RuntimeError::undefined_function(callable_name(&function_name)),
+                                )
+                            })?;
+                        let Callable::User(function) = callable else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "autoload",
+                                    "autoload callbacks must be user functions in the current subset",
+                                ),
+                            ));
+                        };
+                        let _ = self.call_user_function_with_values(
+                            function,
+                            vec![Value::String(class_name.to_string())],
+                            span,
+                        )?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
+                    }
+                    AutoloadCallback::Closure => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "autoload",
+                                "closure autoload callback invocation is not implemented",
+                            ),
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        })();
+
+        self.active_autoloads.remove(&key);
+        result
     }
 
     fn call_preg_match_with_optional_matches(
@@ -17635,58 +17869,88 @@ impl Interpreter {
             ));
         }
 
-        match path {
-            "php://memory" | "php://temp" => {}
+        let is_memory_stream = match path {
+            "php://memory" | "php://temp" => true,
             other if other.contains("://") => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "fopen()",
-                        "only php://memory and php://temp are supported in the current stream subset",
+                        "only php://memory, php://temp, and local file paths are supported in the current stream subset",
                     ),
                 ));
             }
-            _ => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "fopen()",
-                        "local file stream resources are not supported in the current subset",
-                    ),
-                ));
-            }
+            _ => false,
         };
 
-        if !is_supported_memory_stream_mode(mode) {
+        let Some(stream_mode) = parse_stream_mode(mode) else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "fopen()",
-                    format!(
-                        "mode {mode:?} is not supported for php:// memory streams in the current subset"
-                    ),
+                    format!("mode {mode:?} is not supported in the current stream subset"),
                 ),
             ));
-        }
+        };
 
         let id = self.next_resource_id;
         self.next_resource_id += 1;
-        self.streams.insert(
-            id,
-            MemoryStream {
-                buffer: String::new(),
-                position: 0,
-            },
-        );
+        if is_memory_stream {
+            self.streams.insert(
+                id,
+                StreamResource::Memory(MemoryStream {
+                    buffer: String::new(),
+                    position: 0,
+                    readable: stream_mode.readable,
+                    writable: stream_mode.writable,
+                    append: stream_mode.append,
+                }),
+            );
+        } else {
+            let filesystem_path = local_filesystem_metadata_path(path);
+            let file = fs::OpenOptions::new()
+                .read(stream_mode.readable)
+                .write(stream_mode.writable)
+                .create(stream_mode.create)
+                .truncate(stream_mode.truncate)
+                .open(&filesystem_path)
+                .map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fopen()",
+                            format!("local file stream open failed: {error}"),
+                        ),
+                    )
+                })?;
+            let mut stream = FileStream {
+                file,
+                readable: stream_mode.readable,
+                writable: stream_mode.writable,
+                append: stream_mode.append,
+            };
+            if stream.append {
+                stream.file.seek(SeekFrom::End(0)).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fopen()",
+                            format!("local file stream seek failed: {error}"),
+                        ),
+                    )
+                })?;
+            }
+            self.streams.insert(id, StreamResource::File(stream));
+        }
         Ok(Value::Resource(id))
     }
 
-    fn memory_stream_mut(
+    fn stream_mut(
         &mut self,
         function: &str,
         value: &Value,
         span: Span,
-    ) -> CompileResult<&mut MemoryStream> {
+    ) -> CompileResult<&mut StreamResource> {
         let Value::Resource(id) = value else {
             return Err(runtime_error(
                 span,
@@ -17764,23 +18028,67 @@ impl Interpreter {
             }
             None => data,
         };
-        let stream = self.memory_stream_mut("fwrite", &args[0], span)?;
-        if stream.position > stream.buffer.len() {
-            stream
-                .buffer
-                .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
-        }
-        let end = stream.position + data.len();
-        if end <= stream.buffer.len() {
-            stream.buffer.replace_range(stream.position..end, data);
-        } else {
-            if stream.position < stream.buffer.len() {
-                stream.buffer.replace_range(stream.position.., data);
-            } else {
-                stream.buffer.push_str(data);
+        match self.stream_mut("fwrite", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fwrite()",
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.position = stream.buffer.len();
+                }
+                if stream.position > stream.buffer.len() {
+                    stream
+                        .buffer
+                        .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
+                }
+                let end = stream.position + data.len();
+                if end <= stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position..end, data);
+                } else if stream.position < stream.buffer.len() {
+                    stream.buffer.replace_range(stream.position.., data);
+                } else {
+                    stream.buffer.push_str(data);
+                }
+                stream.position = end;
+            }
+            StreamResource::File(stream) => {
+                if !stream.writable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fwrite()",
+                            "stream is not writable in the current subset",
+                        ),
+                    ));
+                }
+                if stream.append {
+                    stream.file.seek(SeekFrom::End(0)).map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fwrite()",
+                                format!("local file stream seek failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                stream.file.write_all(data.as_bytes()).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fwrite()",
+                            format!("local file stream write failed: {error}"),
+                        ),
+                    )
+                })?;
             }
         }
-        stream.position = end;
         Ok(Value::Int(data.len() as i64))
     }
 
@@ -17810,26 +18118,127 @@ impl Interpreter {
                 ));
             }
         };
-        let stream = self.memory_stream_mut("fread", &args[0], span)?;
-        let start = stream.position.min(stream.buffer.len());
-        let end = utf8_boundary_at_or_before(&stream.buffer, start + length);
-        stream.position = end;
-        Ok(Value::String(stream.buffer[start..end].to_string()))
+        match self.stream_mut("fread", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fread()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let start = stream.position.min(stream.buffer.len());
+                let end = utf8_boundary_at_or_before(&stream.buffer, start + length);
+                stream.position = end;
+                Ok(Value::String(stream.buffer[start..end].to_string()))
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fread()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut buffer = vec![0; length];
+                let read = stream.file.read(&mut buffer).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fread()",
+                            format!("local file stream read failed: {error}"),
+                        ),
+                    )
+                })?;
+                buffer.truncate(read);
+                let contents = String::from_utf8(buffer).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fread()",
+                            format!("local file stream read was not valid UTF-8: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::String(contents))
+            }
+        }
     }
 
     fn call_rewind(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("rewind", args, 1, span)?;
-        let stream = self.memory_stream_mut("rewind", &args[0], span)?;
-        stream.position = 0;
+        match self.stream_mut("rewind", &args[0], span)? {
+            StreamResource::Memory(stream) => stream.position = 0,
+            StreamResource::File(stream) => {
+                if stream.writable {
+                    stream.file.flush().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "rewind()",
+                                format!("local file stream flush failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                stream.file.seek(SeekFrom::Start(0)).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "rewind()",
+                            format!("local file stream seek failed: {error}"),
+                        ),
+                    )
+                })?;
+            }
+        }
         Ok(Value::Bool(true))
     }
 
     fn call_stream_get_contents(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("stream_get_contents", args, 1, span)?;
-        let stream = self.memory_stream_mut("stream_get_contents", &args[0], span)?;
-        let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
-        stream.position = stream.buffer.len();
-        Ok(Value::String(stream.buffer[start..].to_string()))
+        match self.stream_mut("stream_get_contents", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_get_contents()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
+                stream.position = stream.buffer.len();
+                Ok(Value::String(stream.buffer[start..].to_string()))
+            }
+            StreamResource::File(stream) => {
+                if !stream.readable {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_get_contents()",
+                            "stream is not readable in the current subset",
+                        ),
+                    ));
+                }
+                let mut contents = String::new();
+                stream.file.read_to_string(&mut contents).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_get_contents()",
+                            format!("local file stream read failed: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::String(contents))
+            }
+        }
     }
 
     fn call_fclose(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -20340,23 +20749,23 @@ impl Interpreter {
             }
             "class_exists" => {
                 match args.as_slice() {
-                    [Value::String(class_name)] => {
-                        Ok(Value::Bool(
-                            self.classes.lookup_class(class_name).is_some()
-                                || self
-                                    .enum_lookup
-                                    .contains_key(&class_name.to_ascii_lowercase()),
-                        ))
-                    }
+                    [Value::String(class_name)] => Ok(Value::Bool(
+                        self.class_like_exists_with_autoload(
+                            class_name,
+                            AutoloadKind::Class,
+                            true,
+                            span,
+                        )?,
+                    )),
                     [Value::String(class_name), autoload] => {
-                        let _autoload =
+                        let autoload =
                             metadata_exists_autoload_flag("class_exists()", autoload, span)?;
-                        Ok(Value::Bool(
-                            self.classes.lookup_class(class_name).is_some()
-                                || self
-                                    .enum_lookup
-                                    .contains_key(&class_name.to_ascii_lowercase()),
-                        ))
+                        Ok(Value::Bool(self.class_like_exists_with_autoload(
+                            class_name,
+                            AutoloadKind::Class,
+                            autoload,
+                            span,
+                        )?))
                     }
                     [other] => Err(runtime_error(
                         span,
@@ -20387,20 +20796,22 @@ impl Interpreter {
             }
             "interface_exists" => match args.as_slice() {
                 [Value::String(interface_name)] => Ok(Value::Bool(
-                    is_core_interface_name(interface_name)
-                        || self
-                            .interface_lookup
-                            .contains_key(&interface_name.to_ascii_lowercase()),
+                    self.class_like_exists_with_autoload(
+                        interface_name,
+                        AutoloadKind::Interface,
+                        true,
+                        span,
+                    )?,
                 )),
                 [Value::String(interface_name), autoload] => {
-                    let _autoload =
+                    let autoload =
                         metadata_exists_autoload_flag("interface_exists()", autoload, span)?;
-                    Ok(Value::Bool(
-                        is_core_interface_name(interface_name)
-                            || self
-                                .interface_lookup
-                                .contains_key(&interface_name.to_ascii_lowercase()),
-                    ))
+                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                        interface_name,
+                        AutoloadKind::Interface,
+                        autoload,
+                        span,
+                    )?))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -26059,6 +26470,7 @@ fn mysqli_multi_result_slot_for_query(query: &str) -> Option<MysqliMultiResultSl
 enum WordPressOptionsRowFilter {
     All,
     Autoload,
+    AutoloadValues(Vec<String>),
     Names(Vec<String>),
 }
 
@@ -26373,6 +26785,15 @@ fn is_wordpress_option_prepared_name_value_select_names_query(query: &str) -> bo
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_value_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, option_value FROM wp_options WHERE autoload IN (",
+        "SELECT `option_name`, `option_value` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
 fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -26382,11 +26803,29 @@ fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &s
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (",
+        "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
 fn is_wordpress_option_prepared_id_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
         "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name IN (",
         "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN (",
+        "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `autoload` IN (",
     )
     .is_some()
 }
@@ -26431,6 +26870,27 @@ fn wordpress_option_names_from_prepared_params(
         option_names.push(option_name.clone());
     }
     Ok(option_names)
+}
+
+fn wordpress_option_autoloads_from_prepared_params(
+    function: &str,
+    params: &[Value],
+    span: Span,
+) -> CompileResult<Vec<String>> {
+    let mut autoload_values = Vec::with_capacity(params.len());
+    for parameter in params {
+        let Value::String(autoload_value) = parameter else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared wp_options autoload-list select requires string autoload parameters in the current subset",
+                ),
+            ));
+        };
+        autoload_values.push(autoload_value.clone());
+    }
+    Ok(autoload_values)
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
@@ -26551,6 +27011,16 @@ fn wordpress_option_rows_for_filter(
             names.sort();
             names
         }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
         WordPressOptionsRowFilter::Names(names) => names.clone(),
     };
     names.dedup();
@@ -26608,6 +27078,16 @@ fn wordpress_option_name_value_autoload_rows_for_filter(
             names.sort();
             names
         }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
         WordPressOptionsRowFilter::Names(names) => names.clone(),
     };
     names.dedup();
@@ -26646,6 +27126,16 @@ fn wordpress_option_id_name_value_autoload_rows_for_filter(
                 .iter()
                 .filter_map(|(name, option)| {
                     is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
                 })
                 .collect();
             names.sort();
@@ -29205,10 +29695,32 @@ fn header_name(header: &str) -> Option<&str> {
     Some(name)
 }
 
-fn is_supported_memory_stream_mode(mode: &str) -> bool {
+fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
     let mut chars = mode.chars();
-    matches!(chars.next(), Some('r' | 'w' | 'a' | 'c'))
-        && chars.all(|ch| matches!(ch, '+' | 'b' | 't'))
+    let primary = chars.next()?;
+    if !matches!(primary, 'r' | 'w' | 'a' | 'c') {
+        return None;
+    }
+
+    let mut plus = false;
+    let mut binary_or_text = false;
+    for ch in chars {
+        match ch {
+            '+' if !plus => plus = true,
+            'b' | 't' if !binary_or_text => binary_or_text = true,
+            _ => return None,
+        }
+    }
+
+    let readable = primary == 'r' || plus;
+    let writable = matches!(primary, 'w' | 'a' | 'c') || plus;
+    Some(StreamMode {
+        readable,
+        writable,
+        append: primary == 'a',
+        truncate: primary == 'w',
+        create: matches!(primary, 'w' | 'a' | 'c'),
+    })
 }
 
 fn utf8_boundary_at_or_before(value: &str, index: usize) -> usize {
