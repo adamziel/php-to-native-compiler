@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1361/invokable_object_autoload_callbacks.php
+invoke:InvokeLoadedBox
+class
+invoke:InvokeLoadedContract
+interface
+invoke:InvokeLoadedTrait
+hook:InvokePlugin
+trait

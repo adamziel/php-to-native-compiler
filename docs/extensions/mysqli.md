@@ -447,7 +447,19 @@ through the same prepared result paths. Matching rows are sorted by option
 name, duplicate autoload parameters do not duplicate rows, and missing
 autoload values return empty zero-field placeholder results when no rows
 match. Backticked table/column spellings are accepted for this prepared
-autoload-list slice. The exact
+autoload-list slice. Exact prepared
+`SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?`,
+`SELECT option_value FROM wp_options WHERE option_name LIKE ?`,
+`SELECT option_name FROM wp_options WHERE option_name LIKE ?`,
+`SELECT option_name, autoload FROM wp_options WHERE option_name LIKE ?`,
+`SELECT option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
+and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
+deterministic row sets for one string trailing-percent prefix pattern,
+including backticked table/column spellings and escaped transient prefixes
+such as `\_transient\_%`. This is still a bounded prefix matcher, not general
+SQL `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
+ordering or collation fidelity, or host database execution. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

@@ -69,11 +69,14 @@ flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `fclose()`. `php://input` handles read the deterministic
 `PHPC_REQUEST_BODY` seed and stay non-writable. Bounded
 `stream_context_create()` resources store array options for
-`stream_context_get_options()` and may be passed to the current
+`stream_context_get_options()`, `stream_context_get_default()` returns a
+request-local default context, and `stream_context_set_default()` plus
+`stream_context_set_option()` persist string-keyed wrapper options on those
+contexts. Context resources may be passed to the current
 `file_get_contents()`/`fopen()` local and `php://input` paths without applying
 wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Unsupported wrappers,
-filters, context option effects, broader wrapper metadata, binary byte
+filters, context option effects, context params, broader wrapper metadata, binary byte
 fidelity, directory entry ordering fidelity, permissions/locking, stat-cache
 behavior, warning recovery, temp-file spillover, and native stream resources
 remain unsupported. Native lowering still rejects request/session/stream state
@@ -168,6 +171,10 @@ incorrect native code.
   direct variable is backed by a caller variable cell, plus bounded
   direct array-offset by-reference parameter writeback with `unset($param)`
   detachment for ordinary arrays and request bags, plus bounded
+  direct free-function reference-return assignment that binds a returned
+  by-reference parameter back to covered direct array-offset and public
+  object-property array-offset arguments,
+  plus bounded
   direct array-offset reference elements in literal `call_user_func_array()`
   argument arrays for request bags, `$GLOBALS`, and nested arrays,
   plus bounded
@@ -203,8 +210,8 @@ incorrect native code.
   WordPress bootstrap probes, including exact option insert/update/delete/read
   shapes and selected prepared option-value-only, option-name-only,
   option-name-list, full-row, star-projection, name/autoload-list, and
-  autoload-list result sets, plus bounded transient-shaped option-name prefix
-  result scans;
+  autoload-list result sets, plus bounded direct and prepared
+  transient-shaped option-name prefix result scans;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -277,13 +284,14 @@ incorrect native code.
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation for `new $class(...)`; missing named or direct-variable
   string class names invoke currently registered string user-function,
-  public object-method array-callable, and public class-string static-method
-  autoload callbacks before the class table is rechecked; class declarations
-  loaded by executed include/require paths also invoke those callbacks for
-  missing `extends` parent classes, direct `implements` interfaces, and direct
-  class-body trait `use` names, while interface declarations loaded through
-  that path invoke them for parent interfaces reached from autoloaded interface
-  declarations before final registration validation,
+  public object-method array-callable, public class-string static-method, and
+  public invokable-object autoload callbacks before the class table is
+  rechecked; class declarations loaded by executed include/require paths also
+  invoke those callbacks for missing `extends` parent classes, direct
+  `implements` interfaces, and direct class-body trait `use` names, while
+  interface declarations loaded through that path invoke them for parent
+  interfaces reached from autoloaded interface declarations before final
+  registration validation,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -375,9 +383,10 @@ values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery beyond string user-function callbacks,
 public `"ClassName::method"` static-method strings, public object-method array
-callables, and public class-string static-method array callables registered
-through `spl_autoload_register()` for `class_exists()`, `interface_exists()`,
-`trait_exists()`, missing `new` class instantiation, and included
+callables, public class-string static-method array callables, and public
+invokable-object callbacks registered through `spl_autoload_register()` for
+`class_exists()`, `interface_exists()`, `trait_exists()`, missing `new` class
+instantiation, and included
 class/interface/trait declaration dependencies,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,

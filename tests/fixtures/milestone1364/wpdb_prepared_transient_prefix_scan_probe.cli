@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1364/wpdb_prepared_transient_prefix_scan_probe.php

@@ -958,6 +958,44 @@ echo "alias=", $alias, "|value=", $value;
 }
 
 #[test]
+fn direct_function_reference_return_assignment_binds_array_offset_arguments() {
+    let execution = run_source(
+        r#"<?php
+function &tag_ref(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$request_alias =& tag_ref($_REQUEST["payload"]["slot"], "function");
+$request_alias = $request_alias . ":alias";
+echo $_REQUEST["payload"]["slot"], "|", $request_alias, "\n";
+
+$items = ["outer" => ["slot" => "array"]];
+$array_alias =& tag_ref($items["outer"]["slot"], "function");
+$array_alias = $array_alias . ":alias";
+echo $items["outer"]["slot"], "|", $array_alias, "\n";
+
+class WP_Object_Cache {
+    public $cache = [];
+}
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+$cache_alias =& tag_ref($cache->cache["options"]["alloptions"], "function");
+$cache_alias = $cache_alias . ":alias";
+echo $cache->cache["options"]["alloptions"], "|", $cache_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:function:alias|request:function:alias\narray:function:alias|array:function:alias\ncold:function:alias|cold:function:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_return_assignment_binds_returned_cell() {
     let execution = run_source(
         r#"<?php

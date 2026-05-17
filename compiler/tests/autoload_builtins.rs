@@ -40,7 +40,7 @@ fn spl_autoload_register_reports_current_argument_boundaries() {
     assert_eq!(non_callable.column, 1);
     assert_eq!(
         non_callable.message,
-        "unsupported call spl_autoload_register(): callback argument must be closure, string, or array callable in the current subset, got int"
+        "unsupported call spl_autoload_register(): callback argument must be closure, string, array callable, or invokable object in the current subset, got int"
     );
 
     let non_bool_throw = run_source("<?php\nspl_autoload_register('Loader', 1);\n").unwrap_err();
@@ -50,6 +50,22 @@ fn spl_autoload_register_reports_current_argument_boundaries() {
     assert_eq!(
         non_bool_throw.message,
         "unsupported call spl_autoload_register(): argument #2 must be bool in the current subset, got int"
+    );
+
+    let non_invokable_object = run_source(
+        r#"<?php
+class LoaderWithoutInvoke {}
+$loader = new LoaderWithoutInvoke();
+spl_autoload_register($loader);
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(non_invokable_object.phase, Phase::Runtime);
+    assert_eq!(non_invokable_object.line, 4);
+    assert_eq!(non_invokable_object.column, 1);
+    assert_eq!(
+        non_invokable_object.message,
+        "unsupported call spl_autoload_register(): object callback LoaderWithoutInvoke must define public non-static __invoke($name) in the current subset"
     );
 }
 
@@ -504,6 +520,95 @@ echo trait_exists("StringLoadedTrait", false) ? "trait" : "missing-trait";
     assert_eq!(
         execution.stdout,
         "string-static:StringLoadedBox\nclass\nstring-static:StringLoadedContract\ninterface\nstring-static:StringLoadedTrait\nhook:StringPlugin\ntrait"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(class_include_path);
+    let _ = fs::remove_file(interface_include_path);
+    let _ = fs::remove_file(plugin_include_path);
+    let _ = fs::remove_file(trait_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
+fn invokable_object_autoload_callbacks_load_class_like_dependencies() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-autoload-invokable-object-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let class_include_path = fixture_dir.join("InvokeLoadedBox.inc");
+    fs::write(
+        &class_include_path,
+        r#"<?php
+class InvokeLoadedBox {
+    public $name = "invoke";
+}
+"#,
+    )
+    .unwrap();
+    let interface_include_path = fixture_dir.join("InvokeLoadedContract.inc");
+    fs::write(
+        &interface_include_path,
+        r#"<?php
+interface InvokeLoadedContract {
+    public function boot();
+}
+"#,
+    )
+    .unwrap();
+    let plugin_include_path = fixture_dir.join("InvokePlugin.inc");
+    fs::write(
+        &plugin_include_path,
+        r#"<?php
+class InvokePlugin implements InvokeLoadedContract {
+    use InvokeLoadedTrait;
+
+    public function boot() {
+        return $this->hook();
+    }
+}
+"#,
+    )
+    .unwrap();
+    let trait_include_path = fixture_dir.join("InvokeLoadedTrait.inc");
+    fs::write(
+        &trait_include_path,
+        r#"<?php
+trait InvokeLoadedTrait {
+    public function hook() {
+        return "hook:" . get_class($this);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+class InvokeLoader {
+    public function __invoke($name) {
+        echo "invoke:", $name, "\n";
+        require_once __DIR__ . "/" . $name . ".inc";
+    }
+}
+
+$loader = new InvokeLoader();
+spl_autoload_register($loader);
+
+echo class_exists("InvokeLoadedBox") ? "class\n" : "missing-class\n";
+echo interface_exists("InvokeLoadedContract") ? "interface\n" : "missing-interface\n";
+require_once __DIR__ . "/InvokePlugin.inc";
+$plugin = new InvokePlugin();
+echo $plugin->boot(), "\n";
+echo trait_exists("InvokeLoadedTrait", false) ? "trait" : "missing-trait";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "invoke:InvokeLoadedBox\nclass\ninvoke:InvokeLoadedContract\ninterface\ninvoke:InvokeLoadedTrait\nhook:InvokePlugin\ntrait"
     );
     assert_eq!(execution.exit_code, 0);
 

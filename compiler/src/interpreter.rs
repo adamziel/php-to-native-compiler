@@ -137,6 +137,7 @@ struct Interpreter {
     next_resource_id: i64,
     streams: HashMap<i64, StreamResource>,
     stream_contexts: HashMap<i64, StreamContextResource>,
+    default_stream_context_id: Option<i64>,
     directories: HashMap<i64, DirectoryResource>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
@@ -337,6 +338,9 @@ enum AutoloadCallback {
     ObjectMethod {
         object: PhpObject,
         method_name: String,
+    },
+    InvokableObject {
+        object: PhpObject,
     },
     Closure,
 }
@@ -2623,6 +2627,7 @@ impl Interpreter {
             next_resource_id: 1,
             streams: HashMap::new(),
             stream_contexts: HashMap::new(),
+            default_stream_context_id: None,
             directories: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
@@ -6166,8 +6171,9 @@ impl Interpreter {
                 if name.eq_ignore_ascii_case("call_user_func_array") {
                     self.call_user_func_array_reference_return_source(args, *call_span, scope)
                 } else {
-                    self.call_reference_return_function(name, args, *call_span, scope)
-                        .map(ReferenceReturnBinding::Cell)
+                    self.call_reference_return_function_for_reference_assignment(
+                        name, args, *call_span, scope,
+                    )
                 }
             }
             Expr::MethodCall {
@@ -9655,6 +9661,29 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_value_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_value_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9687,6 +9716,29 @@ impl Interpreter {
                     wordpress_option_value_rows_for_filter(
                         options,
                         &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_value".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_value_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_value_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
                     )
                 })
                 .unwrap_or_default();
@@ -9749,6 +9801,29 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_autoload_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "autoload".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9781,6 +9856,29 @@ impl Interpreter {
                     wordpress_option_name_rows_for_filter(
                         options,
                         &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
                     )
                 })
                 .unwrap_or_default();
@@ -9832,6 +9930,33 @@ impl Interpreter {
                     wordpress_option_name_value_autoload_rows_for_filter(
                         options,
                         &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
                     )
                 })
                 .unwrap_or_default();
@@ -9908,6 +10033,34 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_id".to_string(),
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_star_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9934,6 +10087,23 @@ impl Interpreter {
                     wordpress_option_id_name_value_autoload_rows_for_filter(
                         options,
                         &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(Some(MysqliPendingResultState {
+                fields: wordpress_option_star_fields(),
+                rows,
+            }));
+        }
+
+        if is_wordpress_option_prepared_star_select_prefix_query(query) {
+            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
                     )
                 })
                 .unwrap_or_default();
@@ -15918,13 +16088,17 @@ impl Interpreter {
                         _ => unreachable!("array_callable_parts restricts callback targets"),
                     }
                 }
+                Value::Object(object) => {
+                    self.validate_autoload_invokable_object_callback(&object, span)?;
+                    AutoloadCallback::InvokableObject { object }
+                }
                 other => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "spl_autoload_register()",
                             format!(
-                                "callback argument must be closure, string, or array callable in the current subset, got {}",
+                                "callback argument must be closure, string, array callable, or invokable object in the current subset, got {}",
                                 other.type_name()
                             ),
                         ),
@@ -16073,6 +16247,12 @@ impl Interpreter {
                             break;
                         }
                     }
+                    AutoloadCallback::InvokableObject { object } => {
+                        self.call_autoload_invokable_object_callback(object, class_name, span)?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
+                    }
                     AutoloadCallback::Closure => {
                         return Err(runtime_error(
                             span,
@@ -16216,6 +16396,110 @@ impl Interpreter {
             Vec::new(),
             None,
         )
+    }
+
+    fn call_autoload_invokable_object_callback(
+        &mut self,
+        object: PhpObject,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let receiver_class = self
+            .classes
+            .get(object.class_id())
+            .expect("object class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((class_id, declaring_class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__invoke")
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::__invoke()")),
+            ));
+        };
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::__invoke()"),
+                    "autoload invokable object callbacks require a non-static __invoke method in the current subset",
+                ),
+            ));
+        }
+        if visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::__invoke()"),
+                    "autoload invokable object callback dispatch is only implemented for public __invoke methods",
+                ),
+            ));
+        }
+
+        let function =
+            self.method_function(class_id, &declaring_class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(
+            function,
+            vec![Value::String(class_name.to_string())],
+            Some(object),
+            Some(class_id),
+            Some(class_id),
+            Vec::new(),
+            None,
+        )
+    }
+
+    fn validate_autoload_invokable_object_callback(
+        &self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        let receiver_class = self
+            .classes
+            .get(object.class_id())
+            .expect("object class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((class_id, declaring_class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__invoke")
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "spl_autoload_register()",
+                    format!(
+                        "object callback {receiver_class_name} must define public non-static __invoke($name) in the current subset"
+                    ),
+                ),
+            ));
+        };
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::__invoke()"),
+                    "autoload invokable object callbacks require a non-static __invoke method in the current subset",
+                ),
+            ));
+        }
+        if visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::__invoke()"),
+                    "autoload invokable object callback dispatch is only implemented for public __invoke methods",
+                ),
+            ));
+        }
+
+        let function =
+            self.method_function(class_id, &declaring_class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_metadata(function, span)
     }
 
     fn call_preg_match_with_optional_matches(
@@ -17130,13 +17414,13 @@ impl Interpreter {
         )
     }
 
-    fn call_reference_return_function(
+    fn call_reference_return_function_for_reference_assignment(
         &mut self,
         name: &str,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<VariableCell> {
+    ) -> CompileResult<ReferenceReturnBinding> {
         let callable = self.lookup_direct_function_call(name).ok_or_else(|| {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
         })?;
@@ -17164,16 +17448,23 @@ impl Interpreter {
         ensure_supported_reference_return_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let (values, reference_bindings) =
-            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let (values, reference_bindings) = self
+            .evaluate_user_function_call_arguments_with_options(
+                function,
+                args,
+                span,
+                caller_scope,
+                true,
+            )?;
 
-        self.call_reference_return_function_with_checked_values(
+        self.call_reference_return_function_with_checked_values_for_reference_assignment(
             function,
             values,
             None,
             None,
             None,
             reference_bindings,
+            caller_scope,
         )
     }
 
@@ -18084,6 +18375,23 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+        self.evaluate_user_function_call_arguments_with_options(
+            function,
+            args,
+            span,
+            caller_scope,
+            false,
+        )
+    }
+
+    fn evaluate_user_function_call_arguments_with_options(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
         let mut values = Vec::with_capacity(args.len());
         let mut reference_bindings = Vec::new();
 
@@ -18106,7 +18414,7 @@ impl Interpreter {
                 } else if let Some((alias, value)) =
                     self.evaluate_direct_array_reference_argument(arg, caller_scope)?
                 {
-                    if function.returns_by_reference {
+                    if function.returns_by_reference && !allow_reference_return_array_bindings {
                         return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
@@ -18123,7 +18431,7 @@ impl Interpreter {
                 } else if let Some((alias, value)) = self
                     .evaluate_public_object_property_array_reference_argument(arg, caller_scope)?
                 {
-                    if function.returns_by_reference {
+                    if function.returns_by_reference && !allow_reference_return_array_bindings {
                         return Err(runtime_error(
                             arg.span(),
                             RuntimeError::unsupported_call(
@@ -18833,6 +19141,189 @@ impl Interpreter {
         let context =
             self.expect_stream_context_resource("stream_context_get_options", &args[0], span)?;
         Ok(Value::Array(context.options.clone()))
+    }
+
+    fn call_stream_context_get_default(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_context_get_default()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let id = self.ensure_default_stream_context();
+        if let Some(options) = args.first() {
+            let options = match options {
+                Value::Array(options) => options.clone(),
+                Value::Null => return Ok(Value::Resource(id)),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "stream_context_get_default()",
+                            format!(
+                                "options argument must be array or null in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            };
+            let context = self
+                .stream_contexts
+                .get_mut(&id)
+                .expect("default stream context is initialized");
+            apply_stream_context_options(
+                &mut context.options,
+                &options,
+                "stream_context_get_default()",
+                span,
+            )?;
+        }
+        Ok(Value::Resource(id))
+    }
+
+    fn call_stream_context_set_default(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_context_set_default", args, 1, span)?;
+        let options = match &args[0] {
+            Value::Array(options) => options.clone(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_set_default()",
+                        format!(
+                            "options argument must be array in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let id = self.ensure_default_stream_context();
+        let context = self
+            .stream_contexts
+            .get_mut(&id)
+            .expect("default stream context is initialized");
+        apply_stream_context_options(
+            &mut context.options,
+            &options,
+            "stream_context_set_default()",
+            span,
+        )?;
+        Ok(Value::Resource(id))
+    }
+
+    fn call_stream_context_set_option(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 && args.len() != 4 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_context_set_option()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+        self.expect_stream_context_resource("stream_context_set_option", &args[0], span)?;
+        let Value::Resource(id) = args[0] else {
+            unreachable!("stream context resource shape checked above")
+        };
+        let context = self
+            .stream_contexts
+            .get_mut(&id)
+            .expect("stream context resource is initialized");
+        match args.len() {
+            2 => {
+                let options = match &args[1] {
+                    Value::Array(options) => options,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "stream_context_set_option()",
+                                format!(
+                                    "options argument must be array in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                apply_stream_context_options(
+                    &mut context.options,
+                    options,
+                    "stream_context_set_option()",
+                    span,
+                )?;
+            }
+            4 => {
+                let wrapper = match &args[1] {
+                    Value::String(wrapper) => wrapper.clone(),
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "stream_context_set_option()",
+                                format!(
+                                    "wrapper argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let option = match &args[2] {
+                    Value::String(option) => option.clone(),
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "stream_context_set_option()",
+                                format!(
+                                    "option argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                set_stream_context_option(&mut context.options, &wrapper, &option, args[3].clone());
+            }
+            _ => unreachable!(),
+        }
+        Ok(Value::Bool(true))
+    }
+
+    fn ensure_default_stream_context(&mut self) -> i64 {
+        if let Some(id) = self.default_stream_context_id {
+            return id;
+        }
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.stream_contexts.insert(
+            id,
+            StreamContextResource {
+                options: PhpArray::new(),
+            },
+        );
+        self.default_stream_context_id = Some(id);
+        id
     }
 
     fn expect_stream_context_resource(
@@ -21590,6 +22081,9 @@ impl Interpreter {
             "fopen" => self.call_fopen(&args, span),
             "stream_context_create" => self.call_stream_context_create(&args, span),
             "stream_context_get_options" => self.call_stream_context_get_options(&args, span),
+            "stream_context_get_default" => self.call_stream_context_get_default(&args, span),
+            "stream_context_set_default" => self.call_stream_context_set_default(&args, span),
+            "stream_context_set_option" => self.call_stream_context_set_option(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
@@ -27346,6 +27840,9 @@ fn is_builtin(name: &str) -> bool {
             | "fopen"
             | "stream_context_create"
             | "stream_context_get_options"
+            | "stream_context_get_default"
+            | "stream_context_set_default"
+            | "stream_context_set_option"
             | "fwrite"
             | "fread"
             | "rewind"
@@ -28170,6 +28667,15 @@ fn is_wordpress_option_prepared_name_value_select_autoloads_query(query: &str) -
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_value_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_name, option_value FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_name`, `option_value` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
+}
+
 fn is_wordpress_option_prepared_name_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -28186,6 +28692,15 @@ fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str
         "SELECT `option_name`, `autoload` FROM `wp_options` WHERE `autoload` IN (",
     )
     .is_some()
+}
+
+fn is_wordpress_option_prepared_name_autoload_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_name, autoload FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_name, autoload FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_name`, `autoload` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
 }
 
 fn is_wordpress_option_prepared_name_select_names_query(query: &str) -> bool {
@@ -28206,6 +28721,15 @@ fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_name FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_name FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_name` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
+}
+
 fn is_wordpress_option_prepared_value_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -28222,6 +28746,15 @@ fn is_wordpress_option_prepared_value_select_autoloads_query(query: &str) -> boo
         "SELECT `option_value` FROM `wp_options` WHERE `autoload` IN (",
     )
     .is_some()
+}
+
+fn is_wordpress_option_prepared_value_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_value FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_value FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_value` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
 }
 
 fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
@@ -28242,6 +28775,15 @@ fn is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_name, option_value, autoload FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
+}
+
 fn is_wordpress_option_prepared_id_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -28260,6 +28802,15 @@ fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(qu
     .is_some()
 }
 
+fn is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT option_id, option_name, option_value, autoload FROM `wp_options` WHERE `option_name` LIKE ?"
+            | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
+}
+
 fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -28267,6 +28818,14 @@ fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
         "SELECT * FROM `wp_options` WHERE `option_name` IN (",
     )
     .is_some()
+}
+
+fn is_wordpress_option_prepared_star_select_prefix_query(query: &str) -> bool {
+    matches!(
+        query.trim(),
+        "SELECT * FROM wp_options WHERE option_name LIKE ?"
+            | "SELECT * FROM `wp_options` WHERE `option_name` LIKE ?"
+    )
 }
 
 fn is_wordpress_option_prepared_star_select_autoloads_query(query: &str) -> bool {
@@ -28339,6 +28898,32 @@ fn wordpress_option_autoloads_from_prepared_params(
         autoload_values.push(autoload_value.clone());
     }
     Ok(autoload_values)
+}
+
+fn wordpress_option_name_prefix_from_prepared_params(
+    function: &str,
+    params: &[Value],
+    span: Span,
+) -> CompileResult<String> {
+    let [Value::String(pattern)] = params else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options option-name LIKE prefix select requires one string pattern parameter in the current subset",
+            ),
+        ));
+    };
+    let pattern = pattern.replace("\\_", "_");
+    parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options option-name LIKE prefix select supports only a trailing-percent prefix pattern in the current subset",
+            ),
+        )
+    })
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
@@ -31325,6 +31910,56 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
 fn header_name(header: &str) -> Option<&str> {
     let (name, _) = header.split_once(':')?;
     Some(name)
+}
+
+fn apply_stream_context_options(
+    target: &mut PhpArray,
+    options: &PhpArray,
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<()> {
+    for entry in options.entries() {
+        let ArrayKey::String(wrapper) = &entry.key else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    "option wrapper keys must be strings in the current subset",
+                ),
+            ));
+        };
+        let Value::Array(wrapper_options) = entry.value() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable,
+                    "option wrapper values must be arrays in the current subset",
+                ),
+            ));
+        };
+        for option_entry in wrapper_options.entries() {
+            let ArrayKey::String(option) = &option_entry.key else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable,
+                        "option names must be strings in the current subset",
+                    ),
+                ));
+            };
+            set_stream_context_option(target, wrapper, option, option_entry.value().clone());
+        }
+    }
+    Ok(())
+}
+
+fn set_stream_context_option(target: &mut PhpArray, wrapper: &str, option: &str, value: Value) {
+    let mut wrapper_options = match target.get(wrapper) {
+        Some(Value::Array(options)) => options.clone(),
+        _ => PhpArray::new(),
+    };
+    wrapper_options.insert(option, value);
+    target.insert(wrapper, Value::Array(wrapper_options));
 }
 
 fn parse_stream_mode(mode: &str) -> Option<StreamMode> {

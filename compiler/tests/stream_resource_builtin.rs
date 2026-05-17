@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, and local directory handles";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, and local directory handles";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -323,6 +323,55 @@ fclose($stream);
 }
 
 #[test]
+fn stream_context_default_and_set_option_persist_bounded_options() {
+    let path = temp_stream_path("phpc-stream-context-default.txt");
+    fs::write(&path, "default-context").expect("temporary stream context file can be written");
+    let source = format!(
+        r#"<?php
+$default = stream_context_get_default(array(
+    "http" => array("method" => "GET"),
+));
+stream_context_set_option($default, "http", "header", "X-WP: one");
+stream_context_set_option($default, array(
+    "ssl" => array("verify_peer" => false),
+    "http" => array("method" => "POST"),
+));
+$again = stream_context_get_default();
+echo $again === $default ? "same" : "different";
+$null_default = stream_context_get_default(null);
+echo ":";
+echo $null_default === $default ? "null-same" : "null-different";
+$options = stream_context_get_options($again);
+echo "|";
+echo $options["http"]["method"];
+echo ":";
+echo $options["http"]["header"];
+echo ":";
+echo $options["ssl"]["verify_peer"] ? "verify" : "skip";
+$replacement = stream_context_set_default(array(
+    "http" => array("timeout" => 7),
+));
+echo "|";
+echo $replacement === $default ? "same-default" : "new-default";
+$default_options = stream_context_get_options(stream_context_get_default());
+echo ":";
+echo $default_options["http"]["timeout"];
+echo "|";
+echo file_get_contents("{}", false, $replacement);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "same:null-same|POST:X-WP: one:skip|same-default:7|default-context"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn local_directory_handle_builtins_iterate_rewind_and_close_entries() {
     let root = temp_stream_path("phpc-directory-handle-root");
     let nested = root.join("nested");
@@ -476,6 +525,9 @@ fn emit_ir_folds_stream_metadata_but_rejects_direct_calls() {
 echo function_exists("fopen") ? "1" : "0";
 echo function_exists("stream_context_create") ? "1" : "0";
 echo is_callable("stream_context_get_options") ? "1" : "0";
+echo function_exists("stream_context_get_default") ? "1" : "0";
+echo is_callable("stream_context_set_default") ? "1" : "0";
+echo function_exists("stream_context_set_option") ? "1" : "0";
 echo is_callable("stream_get_contents") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
@@ -486,7 +538,7 @@ echo is_callable("readdir") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
 
     let error = emit_ir_source("<?php\nstream_context_create();\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);

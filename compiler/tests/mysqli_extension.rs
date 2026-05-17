@@ -3937,6 +3937,51 @@ echo $timeout["option_value"];
 }
 
 #[test]
+fn mysqli_statement_reads_current_wordpress_prepared_transient_prefix_option_rows_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '12345', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_plugins', 'site-plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?");
+mysqli_stmt_execute($stmt, array("\\_transient\\_%"));
+$rows = mysqli_stmt_get_result($stmt);
+$first = mysqli_fetch_assoc($rows);
+$second = mysqli_fetch_assoc($rows);
+echo mysqli_num_rows($rows);
+echo ":";
+echo $first["option_name"], "=", $first["option_value"];
+echo ",";
+echo $second["option_name"], "=", $second["option_value"];
+echo "|";
+$values = mysqli_execute_query($handle, "SELECT `option_value` FROM `wp_options` WHERE `option_name` LIKE ?", array("_transient_timeout_%"));
+$timeout = mysqli_fetch_assoc($values);
+echo $timeout["option_value"];
+echo "|";
+$star = mysqli_prepare($handle, "SELECT * FROM `wp_options` WHERE `option_name` LIKE ?");
+$site_prefix = "\\_site_transient\\_%";
+mysqli_stmt_bind_param($star, "s", $site_prefix);
+mysqli_stmt_execute($star);
+$site_rows = mysqli_stmt_get_result($star);
+$site_row = mysqli_fetch_assoc($site_rows);
+echo mysqli_num_fields($site_rows);
+echo ":";
+echo $site_row["option_id"], ":", $site_row["option_name"], ":", $site_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_timeout_update_plugins=12345,_transient_update_plugins=plugin-payload|12345|4:3:_site_transient_update_plugins:site-plugin-payload"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_row_sets_from_state() {
     let execution = run_source(
         r#"<?php

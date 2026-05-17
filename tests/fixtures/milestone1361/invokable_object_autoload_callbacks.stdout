@@ -1,0 +1,7 @@
+invoke:InvokeLoadedBox
+class
+invoke:InvokeLoadedContract
+interface
+invoke:InvokeLoadedTrait
+hook:InvokePlugin
+trait

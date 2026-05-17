@@ -111,9 +111,13 @@ assignment shape.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
-element slice. They do not promote callback argument arrays, object-property
-array bridges, or stored array-offset metadata into general runtime reference
-containers. By-reference
+element slice. Direct reference-returning free-function assignment now also
+uses the array-offset writeback/alias result path when a reached
+by-reference parameter is supplied by a direct array-offset or public
+object-property array-offset argument and the function returns that parameter
+directly. They do not promote callback argument arrays, object-property array
+bridges, method/static direct-call array arguments, or stored array-offset
+metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -1637,16 +1641,17 @@ autoload, option-name/option-value, exact value/autoload updates, and bounded
 full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
-bounded `option_name LIKE '<prefix>%'` result scans for transient-shaped
-option rows;
+bounded direct `option_name LIKE '<prefix>%'` and prepared
+`option_name LIKE ?` result scans for transient-shaped option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
 registration path: it accepts closure expressions, string user-function
 callbacks, public `"ClassName::method"` static-method string callbacks,
 public `[object, "method"]` instance-method array callbacks, and public
-`["ClassName", "method"]` static-method array callbacks with optional boolean
-flags and returns true. Supported non-closure callbacks are stored in
+`["ClassName", "method"]` static-method array callbacks, plus object
+callbacks with a public non-static `__invoke($name)` method, with optional
+boolean flags and returns true. Supported non-closure callbacks are stored in
 registration order, the current boolean `prepend` flag can place a callback at
 the front, and truthy-autoload
 `class_exists()`/`interface_exists()`/`trait_exists()` misses invoke those
@@ -1656,10 +1661,11 @@ class/interface/trait declarations through the existing included-file
 declaration loader, including missing direct trait `use` names reached while
 registering an included class declaration. Closure callbacks remain accepted
 registration metadata only and report a stable unsupported autoload boundary if
-lookup needs to invoke them. Invokable objects, non-public methods,
-class-string non-static methods, object static methods,
-`self::`/`parent::`/`static::` callback strings, exact callable validation,
-and `spl_autoload_functions()` remain unsupported. Native function-table
+lookup needs to invoke them. Non-public/static `__invoke`, invokable-object
+dispatch outside autoloading, non-public methods, class-string non-static
+methods, object static methods, `self::`/`parent::`/`static::` callback
+strings, exact callable validation, and `spl_autoload_functions()` remain
+unsupported. Native function-table
 introspection recognizes the name, while direct native calls reject under the
 function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
@@ -1815,8 +1821,12 @@ the same simple mode grammar, optionally resolves through the existing bounded
 include-path candidate order, and accepts a bounded stream-context resource
 without applying wrapper-specific context behavior. `stream_context_create()`
 allocates a request-local context resource that stores array options, and
-`stream_context_get_options()` returns those stored options; context params are
-shape-validated and ignored. `fwrite()`,
+`stream_context_get_options()` returns those stored options.
+`stream_context_get_default()` lazily allocates and returns one request-local
+default context resource, while `stream_context_set_default()` and
+`stream_context_set_option()` merge string-keyed wrapper/option entries into
+that same bounded context table. Context params are shape-validated and
+ignored. `fwrite()`,
 `fread()`, `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`,
 `fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
 or inspect the resource cursor or bounded metadata; append-mode writes are
@@ -1832,8 +1842,8 @@ metadata for local files;
 seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
 reads. This gives WordPress-style temporary request, cache-file stream, and
 directory-scanning paths an executable path without claiming full PHP
-resources: sockets, HTTP/FTP/phar wrappers, filters, context option effects,
-default context mutation, broader wrapper/status metadata APIs, exact host
+resources: sockets, HTTP/FTP/phar wrappers, filters, context option effects
+beyond persistence, broader wrapper/status metadata APIs, exact host
 directory iteration order,
 binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
 `php://input` edge behavior, `php://temp` spill-to-disk thresholds, permissions
