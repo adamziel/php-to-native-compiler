@@ -175,16 +175,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded declared class-like
-`ReflectionClass` source metadata, covered root-variable `unset($name)` alias
-cleanup, path/domain-aware deterministic `setcookie()`/`setrawcookie()`
-replacement, and bounded `SHOW INDEX` `Key_name` filtering in the MySQLi
-schema-state island. Those are useful compatibility steps, but they do not
-change the larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior, request/SAPI/
-filesystem/stream breadth, and executable WordPress database/bootstrap
-evidence until those areas become coherent subsystems instead of reached
-slices.
+The latest WordPress-focused batch closed bounded declared user-class
+`ReflectionProperty::getDocComment()` metadata, plain object-property
+`unset(...)` alias cleanup, case-insensitive deterministic cookie domain
+identity replacement, and bounded `LIKE ... ESCAPE` schema metadata filtering
+in the MySQLi schema-state island. Those are useful compatibility steps, but
+they do not change the larger project shape: the next lanes should keep
+attacking broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress database/
+bootstrap evidence until those areas become coherent subsystems instead of
+reached slices.
 
 ### Near-Term Compatibility Roadmap
 

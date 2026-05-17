@@ -5500,6 +5500,38 @@ echo "|missing=", mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_query_filters_bounded_wordpress_schema_like_with_escape_clause() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_escape_filter (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(255) NOT NULL default '', meta_value longtext NOT NULL, PRIMARY KEY  (ID), KEY meta_lookup (meta_key(191)), KEY metaXlookup (meta_value(10)), KEY literal_percent (meta_key(20))) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$wild = mysqli_query($handle, "SHOW INDEX FROM wp_probe_escape_filter WHERE Key_name LIKE 'meta_%'");
+echo "wild=", mysqli_num_rows($wild), ":";
+while ($index = mysqli_fetch_assoc($wild)) {
+    echo $index["Key_name"], ";";
+}
+$escaped = mysqli_query($handle, "SHOW INDEX FROM wp_probe_escape_filter WHERE `Key_name` LIKE 'meta!_%' ESCAPE '!'");
+echo "|escaped=", mysqli_num_rows($escaped), ":";
+while ($index = mysqli_fetch_assoc($escaped)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ";";
+}
+$percent = mysqli_query($handle, "SHOW KEYS FROM wp_probe_escape_filter WHERE Key_name LIKE 'literal!_%' ESCAPE '!'");
+echo "|percent=", mysqli_num_rows($percent), ":";
+$row = mysqli_fetch_assoc($percent);
+echo $row["Key_name"], ":", $row["Sub_part"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "wild=2:meta_lookup;metaXlookup;|escaped=1:meta_lookup:meta_key;|percent=1:literal_percent:20"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

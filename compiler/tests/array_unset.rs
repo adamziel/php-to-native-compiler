@@ -211,6 +211,50 @@ echo "|alias=", $propertyAlias, "|leaf=", $propertyLeaf;
 }
 
 #[test]
+fn unset_object_properties_detaches_covered_reference_aliases() {
+    let source = r#"<?php
+class RefcowUnsetPropertyBag {
+    public $items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+    private $privateItems = ["slot" => "private-seed", "outer" => ["leaf" => "private-nested"]];
+
+    public function clearPrivate() {
+        $alias =& $this->privateItems["slot"];
+        $leaf =& $this->privateItems["outer"]["leaf"];
+
+        unset($this->privateItems);
+        echo isset($this->privateItems) ? "private:set" : "private:unset";
+        echo "|alias=", $alias, "|leaf=", $leaf, "\n";
+        $alias = "private-after";
+        $leaf = "private-changed";
+        echo isset($this->privateItems) ? "private:set" : "private:unset";
+        echo "|alias=", $alias, "|leaf=", $leaf;
+    }
+}
+
+$bag = new RefcowUnsetPropertyBag();
+$alias =& $bag->items["slot"];
+$leaf =& $bag->items["outer"]["leaf"];
+
+unset($bag->items);
+echo isset($bag->items) ? "public:set" : "public:unset";
+echo "|alias=", $alias, "|leaf=", $leaf, "\n";
+$alias = "after";
+$leaf = "changed";
+echo isset($bag->items) ? "public:set" : "public:unset";
+echo "|alias=", $alias, "|leaf=", $leaf, "\n";
+
+$bag->clearPrivate();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "public:unset|alias=seed|leaf=nested\npublic:unset|alias=after|leaf=changed\nprivate:unset|alias=private-seed|leaf=private-nested\nprivate:unset|alias=private-after|leaf=private-changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_array_offset_rejects_non_array_targets() {
     let error = runtime_error("<?php\n$value = 1;\nunset($value[0]);\n");
 

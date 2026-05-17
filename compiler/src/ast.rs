@@ -640,6 +640,7 @@ pub struct ClassPropertyDecl {
     pub is_static: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
+    pub doc_comment: Option<String>,
     pub span: Span,
 }
 

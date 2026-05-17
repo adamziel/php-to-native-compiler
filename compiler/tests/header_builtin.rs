@@ -280,6 +280,31 @@ echo implode("|", $out);
 }
 
 #[test]
+fn setcookie_replaces_domain_identity_case_insensitively() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+setcookie("wordpress_test_cookie", "upper", 0, "/wp-admin", "EXAMPLE.test");
+setrawcookie("wordpress_test_cookie", "mixed", 0, "/wp-admin", "Example.TEST");
+setcookie("wordpress_test_cookie", "lower", 0, "/wp-admin", "example.test");
+setcookie("wordpress_test_cookie", "network", 0, "/wp-admin", "network.example.test");
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2|Set-Cookie: wordpress_test_cookie=lower; path=/wp-admin; domain=example.test|Set-Cookie: wordpress_test_cookie=network; path=/wp-admin; domain=network.example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
     let execution = run_source(
         r#"<?php

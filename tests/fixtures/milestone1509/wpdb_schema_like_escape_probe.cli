@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1509/wpdb_schema_like_escape_probe.php

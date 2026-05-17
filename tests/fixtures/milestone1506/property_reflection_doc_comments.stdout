@@ -1,0 +1,3 @@
+direct|name|Plugin|1|/**\n     * Public hook name metadata.\n     */
+inherited|cache|Base|1|/**\n     * Shared cache metadata.\n     */
+plain|plain|1

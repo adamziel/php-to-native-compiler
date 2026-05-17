@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1507/unset_property_reference_alias_cleanup.php

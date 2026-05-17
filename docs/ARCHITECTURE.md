@@ -178,21 +178,24 @@ object-property roots for that object name. Direct dynamic-property assignment
 from a reference array literal uses the evaluated property name as the public
 or context-aware non-public object-property alias root, so later stored-array
 callback use can reuse covered reference elements when the current method
-context can see the property. Direct array-offset `unset(...)` paths and
-direct visible object-property array-offset `unset(...)` paths remove covered
-alias metadata for the removed slot, and for child aliases below a removed
-parent slot, while storing the last observed alias value back into the
-detached direct alias variable. This models the bounded PHP behavior where
-unsetting a referenced container slot deletes the container entry without
-deleting the remaining reference variable. Direct variable `unset($name)` also
-detaches covered aliases rooted below the removed direct array/object variable.
+context can see the property. Direct array-offset `unset(...)` paths, direct
+visible object-property array-offset `unset(...)` paths, and direct visible
+object-property `unset(...)` paths remove covered alias metadata for the
+removed slot/property, and for child aliases below a removed parent slot or
+property, while storing the last observed alias value back into the detached
+direct alias variable. This models the bounded PHP behavior where unsetting a
+referenced container slot or containing property deletes the container entry
+without deleting the remaining reference variable. Direct variable
+`unset($name)` also detaches covered aliases rooted below the removed direct
+array/object variable.
 Arbitrary nested copied reference slots beyond the literal copied path slice,
 non-public property-offset or magic clone alias mirroring, dynamic ArrayAccess
 references, arbitrary ArrayAccess append bodies, reference array literals
 outside direct variable, direct array-offset, direct visible object-property,
 and direct dynamic-property assignment targets, plain object-property
-`unset(...)` alias cleanup, exact alias destruction ordering, and native
-lowering still require the future runtime reference/COW value model.
+`unset(...)` alias cleanup outside visible properties, exact alias destruction
+ordering, and native lowering still require the future runtime reference/COW
+value model.
 
 ## Compiler Crate
 
@@ -1757,14 +1760,16 @@ form. It formats nonzero expiration timestamps as GMT dates, appends a
 deterministic `Set-Cookie:` line to the same CLI header log, and replaces
 earlier deterministic `Set-Cookie` lines with the same cookie name plus
 normalized non-empty path/domain identity while preserving same-name cookies
-for different path/domain identities.
+for different path/domain identities. Domain identity matching lowercases
+non-empty ASCII domain text for replacement only; the emitted header preserves
+the caller-provided domain text.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
 string value. After unbuffered output starts these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,
-`Max-Age`, full option validation, case-insensitive domain identity
-normalization, exact warning text, SAPI emission, and native lowering remain
-outside the model.
+`Max-Age`, full option validation, IDNA/trailing-dot/domain-policy
+canonicalization, exact warning text, SAPI emission, and native lowering
+remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1910,9 +1915,10 @@ deterministic `SHOW CREATE TABLE` text. `SHOW INDEX`/`SHOW KEYS` can also
 filter the recorded rows by bounded `Key_name` equality or `Key_name LIKE`
 predicates before result materialization. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
-wildcards, and backslash-escaped `%`, `_`, and `\` literals for table names,
-table status rows, column names, and index names. The same placeholder transaction and
-savepoint helpers that snapshot the `wp_options` state island also snapshot
+wildcards, backslash-escaped `%`, `_`, and `\` literals, and a bounded
+single-character `ESCAPE '<char>'` clause for table names, table status rows,
+column names, and index names. The same placeholder transaction and savepoint
+helpers that snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
 `CREATE TABLE`/`ALTER TABLE` metadata. It does not model arbitrary
 multi-table deletes, subqueries, schema DDL beyond the documented bounded
@@ -2651,17 +2657,19 @@ objects, DNF type objects, runtime argument/return type enforcement, or native
 lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,
-and optional property type metadata. The interpreter answers name, declaring
-class, modifier-mask, visibility/static predicates, default-value availability
-and value, and `hasType()`/`getType()`. Simple named property types materialize
+directly preceding property doc-comment text, and optional property type
+metadata. The interpreter answers name, doc comment, declaring class,
+modifier-mask, visibility/static predicates, default-value availability and
+value, and `hasType()`/`getType()`. Simple named property types materialize
 the existing request-local `ReflectionNamedType` object. Bounded union and pure
 intersection property types materialize request-local `ReflectionUnionType` or
 `ReflectionIntersectionType` objects whose `getTypes()` entries are
 `ReflectionNamedType` objects. Runtime typed-property enforcement reuses the
 current scalar coercion and class/interface relationship checks for those
-bounded property type shapes. Parenthesized DNF property types, exact PHP union
-scalar coercion preference rules, reference/COW interactions, and native
-lowering remain unsupported.
+bounded property type shapes. Property file/line metadata, attributes and exact
+docblock association across unusual trivia, parenthesized DNF property types,
+exact PHP union scalar coercion preference rules, reference/COW interactions,
+and native lowering remain unsupported.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

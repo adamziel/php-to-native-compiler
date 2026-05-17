@@ -89,6 +89,7 @@ struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     function_source_files: HashMap<String, Option<String>>,
     class_source_metadata: HashMap<ClassId, ClassLikeSourceMetadata>,
+    property_source_metadata: HashMap<(ClassId, String), PropertySourceMetadata>,
     interface_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
     trait_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
@@ -338,6 +339,11 @@ struct ClassLikeSourceMetadata {
 }
 
 #[derive(Debug, Clone)]
+struct PropertySourceMetadata {
+    doc_comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 struct ReflectionFunctionState {
     name: String,
     file_name: Option<String>,
@@ -394,6 +400,7 @@ struct ReflectionPropertyState {
     declaring_class_name: String,
     declaring_class_id: ClassId,
     name: String,
+    doc_comment: Option<String>,
     visibility: Visibility,
     is_static: bool,
     has_default: bool,
@@ -3076,6 +3083,7 @@ impl Interpreter {
         let mut functions = HashMap::new();
         let mut function_source_files = HashMap::new();
         let mut class_source_metadata = HashMap::new();
+        let mut property_source_metadata = HashMap::new();
         let mut interface_source_metadata = HashMap::new();
         let mut trait_source_metadata = HashMap::new();
         let mut interfaces = Vec::new();
@@ -3190,6 +3198,7 @@ impl Interpreter {
                 register_class_member_runtime_tables(
                     &mut class_constants,
                     &mut static_properties,
+                    &mut property_source_metadata,
                     &mut methods,
                     &mut method_signatures,
                     &mut abstract_methods,
@@ -3208,6 +3217,7 @@ impl Interpreter {
             functions,
             function_source_files,
             class_source_metadata,
+            property_source_metadata,
             interface_source_metadata,
             trait_source_metadata,
             methods,
@@ -3795,6 +3805,7 @@ impl Interpreter {
             register_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
                 &mut self.abstract_methods,
@@ -3901,6 +3912,7 @@ impl Interpreter {
         register_class_member_runtime_tables(
             &mut self.class_constants,
             &mut self.static_properties,
+            &mut self.property_source_metadata,
             &mut self.methods,
             &mut self.method_signatures,
             &mut self.abstract_methods,
@@ -3913,6 +3925,7 @@ impl Interpreter {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
                 &mut self.abstract_methods,
@@ -3930,6 +3943,7 @@ impl Interpreter {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
                 &mut self.static_properties,
+                &mut self.property_source_metadata,
                 &mut self.methods,
                 &mut self.method_signatures,
                 &mut self.abstract_methods,
@@ -5387,10 +5401,18 @@ impl Interpreter {
             }
         };
 
+        let alias_fallbacks =
+            scope.public_object_property_root_alias_fallbacks(object_name, property);
         let found = object
             .unset_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
-        if !found {
+        if found {
+            scope.remove_public_object_property_root_from_array_offset_aliases(
+                object_name,
+                property,
+                &alias_fallbacks,
+            );
+        } else {
             if call_magic_on_missing {
                 self.call_magic_property_method(object, "__unset", property, span)?;
             }
@@ -17069,10 +17091,15 @@ impl Interpreter {
                 .expect("class id should resolve to class metadata");
             if let Some(property) = class.property(property_name) {
                 if current_id == class_id || property.visibility() != Visibility::Private {
+                    let source_metadata = self
+                        .property_source_metadata
+                        .get(&(class.id(), property.name().to_string()));
                     return Some(ReflectionPropertyState {
                         declaring_class_name: class.name().to_string(),
                         declaring_class_id: class.id(),
                         name: property.name().to_string(),
+                        doc_comment: source_metadata
+                            .and_then(|metadata| metadata.doc_comment.clone()),
                         visibility: property.visibility(),
                         is_static: property.is_static(),
                         has_default: self
@@ -17098,10 +17125,14 @@ impl Interpreter {
                 if current_id != class_id && property.visibility() == Visibility::Private {
                     continue;
                 }
+                let source_metadata = self
+                    .property_source_metadata
+                    .get(&(class.id(), property.name().to_string()));
                 properties.push(ReflectionPropertyState {
                     declaring_class_name: class.name().to_string(),
                     declaring_class_id: class.id(),
                     name: property.name().to_string(),
+                    doc_comment: source_metadata.and_then(|metadata| metadata.doc_comment.clone()),
                     visibility: property.visibility(),
                     is_static: property.is_static(),
                     has_default: self
@@ -17611,6 +17642,13 @@ impl Interpreter {
             "getname" => {
                 expect_expr_arity("ReflectionProperty::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
+            }
+            "getdoccomment" => {
+                expect_expr_arity("ReflectionProperty::getDocComment", args.len(), 0, span)?;
+                Ok(state
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
             }
             "getdeclaringclass" => {
                 expect_expr_arity("ReflectionProperty::getDeclaringClass", args.len(), 0, span)?;
@@ -33214,6 +33252,7 @@ fn register_enum_name(
 fn register_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
+    property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
@@ -33241,6 +33280,10 @@ fn register_class_member_runtime_tables(
                 class_constants.insert((class_id, constant.name.clone()), constant.clone());
             }
             ClassMember::Property(property) if property.is_static => {
+                property_source_metadata.insert(
+                    (class_id, property.name.clone()),
+                    property_source_metadata_from_decl(property),
+                );
                 if property.type_decl.is_none() || property.default.is_some() {
                     static_properties.insert((class_id, property.name.clone()), Value::Null);
                 }
@@ -33257,7 +33300,12 @@ fn register_class_member_runtime_tables(
                     methods.insert(key, Rc::new(method.function.clone()));
                 }
             }
-            ClassMember::Property(_) => {}
+            ClassMember::Property(property) => {
+                property_source_metadata.insert(
+                    (class_id, property.name.clone()),
+                    property_source_metadata_from_decl(property),
+                );
+            }
         }
     }
     Ok(())
@@ -33339,6 +33387,7 @@ fn seed_core_class_constant_runtime_tables(
 fn remove_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
+    property_source_metadata: &mut HashMap<(ClassId, String), PropertySourceMetadata>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
@@ -33346,6 +33395,7 @@ fn remove_class_member_runtime_tables(
 ) {
     class_constants.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     static_properties.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    property_source_metadata.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     methods.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     method_signatures.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     abstract_methods.retain(|(declaring_class_id, _)| *declaring_class_id != class_id);
@@ -34399,6 +34449,12 @@ fn class_like_source_metadata_from_trait(
         start_line: trait_decl.span.line,
         end_line: trait_decl.end_line,
         doc_comment: trait_decl.doc_comment.clone(),
+    }
+}
+
+fn property_source_metadata_from_decl(property: &ClassPropertyDecl) -> PropertySourceMetadata {
+    PropertySourceMetadata {
+        doc_comment: property.doc_comment.clone(),
     }
 }
 
@@ -36502,8 +36558,26 @@ impl WordPressSchemaNameFilter {
 
 fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSchemaNameFilter> {
     let mut rest = input.trim();
-    let (filter, next) = parse_sql_single_quoted_schema_like_value(rest)?;
+    let (mut filter, next) = parse_sql_single_quoted_schema_like_value(rest, '\\')?;
     rest = next.trim_start();
+    if let Some(escape) = rest.strip_prefix("ESCAPE ") {
+        let (escape, next) = parse_sql_single_quoted_value(escape.trim_start())?;
+        if !next.trim().is_empty() {
+            return None;
+        }
+        let mut escape_chars = escape.chars();
+        let escape_char = escape_chars.next()?;
+        if escape_chars.next().is_some() {
+            return None;
+        }
+        let (escaped_filter, escaped_next) =
+            parse_sql_single_quoted_schema_like_value(input.trim(), escape_char)?;
+        if !escaped_next.trim_start().starts_with("ESCAPE ") {
+            return None;
+        }
+        filter = escaped_filter;
+        rest = "";
+    }
     if rest.is_empty() {
         Some(filter)
     } else {
@@ -36513,6 +36587,7 @@ fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSc
 
 fn parse_sql_single_quoted_schema_like_value(
     input: &str,
+    escape_char: char,
 ) -> Option<(WordPressSchemaNameFilter, &str)> {
     let rest = input.strip_prefix('\'')?;
     let mut pattern = String::new();
@@ -36534,6 +36609,30 @@ fn parse_sql_single_quoted_schema_like_value(
             };
             return Some((filter, &rest[index + ch.len_utf8()..]));
         }
+        if ch == escape_char {
+            let (_, escaped) = chars.next()?;
+            let literal = if escape_char == '\\' {
+                match escaped {
+                    '0' => '\0',
+                    '\'' => '\'',
+                    '"' => '"',
+                    'b' => '\u{0008}',
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    'Z' => '\u{001A}',
+                    '\\' => '\\',
+                    '%' => '%',
+                    '_' => '_',
+                    other => other,
+                }
+            } else {
+                escaped
+            };
+            pattern.push(literal);
+            tokens.push(WordPressSchemaLikeToken::Literal(literal));
+            continue;
+        }
         if ch == '\\' {
             let (_, escaped) = chars.next()?;
             let literal = match escaped {
@@ -36546,8 +36645,6 @@ fn parse_sql_single_quoted_schema_like_value(
                 't' => '\t',
                 'Z' => '\u{001A}',
                 '\\' => '\\',
-                '%' => '%',
-                '_' => '_',
                 other => other,
             };
             pattern.push(literal);
@@ -42217,7 +42314,7 @@ fn set_cookie_header_matches_identity(
     };
     identity.name == name
         && identity.path.as_deref() == normalized_cookie_identity_attr(options.path.as_deref())
-        && identity.domain.as_deref() == normalized_cookie_identity_attr(options.domain.as_deref())
+        && identity.domain == normalized_cookie_identity_domain(options.domain.as_deref())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -42246,7 +42343,7 @@ fn parse_set_cookie_identity(header: &str) -> Option<SetCookieIdentity> {
         if key.eq_ignore_ascii_case("path") {
             identity.path = normalized_cookie_identity_attr(Some(value)).map(str::to_string);
         } else if key.eq_ignore_ascii_case("domain") {
-            identity.domain = normalized_cookie_identity_attr(Some(value)).map(str::to_string);
+            identity.domain = normalized_cookie_identity_domain(Some(value));
         }
     }
 
@@ -42255,6 +42352,10 @@ fn parse_set_cookie_identity(header: &str) -> Option<SetCookieIdentity> {
 
 fn normalized_cookie_identity_attr(value: Option<&str>) -> Option<&str> {
     value.filter(|value| !value.is_empty())
+}
+
+fn normalized_cookie_identity_domain(value: Option<&str>) -> Option<String> {
+    normalized_cookie_identity_attr(value).map(str::to_ascii_lowercase)
 }
 
 fn percent_encode_cookie_value(value: &str) -> String {

@@ -1093,7 +1093,7 @@ impl Parser {
             }));
         }
 
-        self.pending_doc_comment = None;
+        let doc_comment = self.pending_doc_comment.take();
 
         if self.check_unsupported_property_type_declaration() {
             if modifiers.is_abstract || modifiers.is_final {
@@ -1143,6 +1143,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 type_decl: Some(type_decl),
                 default,
+                doc_comment,
                 span,
             }));
         }
@@ -1187,6 +1188,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 type_decl: None,
                 default,
+                doc_comment,
                 span,
             }));
         }

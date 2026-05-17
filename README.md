@@ -95,7 +95,8 @@ parity, session-cookie encoding/expiration/replacement beyond the documented
 `session_start()` attribute scaffold, and cache-header emission remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
-expiration dates, attributes, and path/domain-aware replacement. `fopen()` can create bounded
+expiration dates, attributes, and path/domain-aware replacement with
+ASCII-case-insensitive domain identity matching. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -293,7 +294,9 @@ incorrect native code.
   auto-increment metadata, inline column key metadata, `ASC`/`DESC`
   index-part ordering metadata, and bounded `FULLTEXT`/`SPATIAL` index type
   metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
-  `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
+  `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection, including
+  bounded schema metadata `LIKE` wildcards and single-character `ESCAPE`
+  clauses;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -448,7 +451,7 @@ incorrect native code.
   `allowsNull()`, `getTypes()`, `getName()`, and `isBuiltin()`, bounded
   `ReflectionProperty` metadata for declared
   user-class properties with declaring-class, visibility/static modifier,
-  default-value, simple named typed-property inspection through
+  direct property doc-comment metadata, default-value, simple named typed-property inspection through
   `ReflectionNamedType`, bounded compound property type inspection through
   `ReflectionUnionType`/`ReflectionIntersectionType`, and bounded
   uninitialized typed-property slots for
@@ -582,8 +585,10 @@ PHP reference containers; broader alias rebinding, exact mutation ordering, and
 copy-on-write remain unsupported.
 Covered root-variable `unset($name)` now detaches remaining aliases below a
 removed direct array or object variable with their last observed values. Plain
-object-property unset cleanup, magic-property references, exact alias
-destruction ordering, and broad array/object copy-on-write remain unsupported.
+object-property `unset(...)` cleanup now covers visible public properties and
+method-context private/protected properties for aliases below the removed
+property. Magic-property references, exact alias destruction ordering, and
+broad array/object copy-on-write remain unsupported.
 By-reference function and method return declarations also parse and have
 bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
@@ -692,10 +697,10 @@ property-held append reference sources such as `$alias =& $bag[]` and
 where PHP's `offsetGet(null)` maps to the backing array's empty-string key.
 Real reference containers, magic-property references, arbitrary expressions,
 non-direct holder expressions outside the slice, mixed nested `ArrayAccess`
-chains, alias cleanup outside covered unset slot paths, broad copy-on-write,
-exact alias destruction ordering, by-reference `foreach` expansion, native
-lowering, and alias lifetime after replacing the containing property remain
-outside that bounded slice.
+chains, alias cleanup outside covered unset root/property/slot paths, broad
+copy-on-write, exact alias destruction ordering, by-reference `foreach`
+expansion, native lowering, and alias lifetime after replacing the containing
+property remain outside that bounded slice.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as

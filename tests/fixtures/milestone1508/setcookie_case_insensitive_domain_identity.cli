@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1508/setcookie_case_insensitive_domain_identity.php

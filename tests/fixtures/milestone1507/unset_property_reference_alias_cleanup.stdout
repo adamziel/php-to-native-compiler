@@ -1,0 +1,4 @@
+public:unset|alias=seed|leaf=nested
+public:unset|alias=after|leaf=changed
+private:unset|alias=private-seed|leaf=private-nested
+private:unset|alias=private-after|leaf=private-changed

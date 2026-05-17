@@ -1248,8 +1248,10 @@
   `unset($object->items[$outer][$inner])` for direct object variables and named
   properties, over the current integer/string key subset. Direct and dynamic
   object-property removal such as `unset($object->property)` and
-  `unset($object->$name)` are supported for direct object variables by writing
-  `null` into the visible property slot in the current value model; multiple
+  `unset($object->$name)` are supported for direct object variables by removing
+  the visible property slot in the current value model; covered aliases below a
+  removed visible property detach with their last observed values for direct
+  public properties and method-context private/protected properties. Multiple
   supported `unset(...)` operands execute left to right
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
@@ -2135,8 +2137,10 @@
   narrow deterministic rows before PHP code consumes them. Bounded `LIKE`
   filters support `%` wildcards, `_`
   single-character wildcards, and backslash-escaped `%`, `_`, and `\` literal
-  characters with deterministic sorted table/status rows while preserving
-  exact matching for patterns without unescaped wildcard characters.
+  characters, plus a bounded custom single-character `ESCAPE '<char>'` clause
+  for those schema metadata `LIKE` filters, with deterministic sorted
+  table/status rows while preserving exact matching for patterns without
+  unescaped wildcard characters.
   `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
@@ -2155,7 +2159,7 @@
   metadata beyond recorded index parts, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
-  custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
+  SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
   documented `Key_name` equality and `Key_name LIKE` forms,
@@ -3005,16 +3009,18 @@
   open, percent-encode the cookie value, format nonzero expiration timestamps
   as GMT dates, and replace earlier deterministic cookie headers with the same
   cookie name, normalized non-empty path, and normalized non-empty domain while
-  keeping same-name cookies for different path/domain identities. Once
+  matching the domain identity ASCII-case-insensitively and keeping same-name
+  cookies for different path/domain identities. The emitted header preserves
+  the caller-provided domain text. Once
   unbuffered output has started, it returns `false`, does not append a cookie
   header, and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback. `setrawcookie()`
   accepts the same bounded signature and attributes, but writes the string
   value unchanged instead of percent-encoding it. Cookie name
   validation/encoding, `Max-Age`, array option validation
-  beyond the documented keys, case-insensitive domain identity normalization,
-  SAPI/web-server emission, exact warning text, and native lowering remain
-  unsupported.
+  beyond the documented keys, IDNA/trailing-dot/domain-policy
+  canonicalization, SAPI/web-server emission, exact warning text, and native
+  lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
@@ -6024,10 +6030,10 @@
   `getProperty()`, and zero-argument `getProperties()` use that same class
   metadata slice and exclude inherited private properties when reflecting a
   child class. `ReflectionProperty` supports `getName()`,
-  `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
-  `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
-  `hasType()`, and `getType()` for current untyped properties, bounded simple
-  named typed properties, bounded union typed properties, and bounded pure
+  `getDocComment()`, `getDeclaringClass()`, `getModifiers()`, `isPublic()`,
+  `isProtected()`, `isPrivate()`, `isStatic()`, `hasDefaultValue()`,
+  `getDefaultValue()`, `hasType()`, and `getType()` for current untyped
+  properties, bounded simple named typed properties, bounded union typed properties, and bounded pure
   intersection typed properties with or without explicit defaults. For simple
   named typed properties, `getType()` returns a request-local
   `ReflectionNamedType` object with `getName()`, `allowsNull()`, and
@@ -6037,7 +6043,10 @@
   objects; untyped properties still return `null`. `hasDefaultValue()` reports false for
   uninitialized typed properties without explicit defaults, and
   `getDefaultValue()` returns `null` for that bounded PHP-compatible metadata
-  path.
+  path. For declared user-class properties loaded through the parser,
+  `getDocComment()` returns the directly preceding `/** ... */` docblock or
+  `false`, including inherited public and protected properties resolved by
+  `ReflectionProperty` or `ReflectionClass::getProperties()`.
   The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
@@ -7593,12 +7602,13 @@
   context, complex lvalues, magic `__isset`/`__get` behavior beyond direct
   missing properties,
   references/copy-on-write, exact native error behavior, and native lowering
-- `unset($object->name)`/`unset($object->$name)` true property removal and
-  property uninitialization, typed/uninitialized property behavior,
-  non-public visibility context beyond the current visible-slot lookup,
-  inaccessible-property `__unset` fidelity, dynamic property-name magic
-  `__unset`, references/copy-on-write, exact native error behavior, and native
-  lowering
+- `unset($object->name)`/`unset($object->$name)` typed/uninitialized property
+  behavior, inaccessible-property `__unset` fidelity, dynamic property-name
+  magic `__unset`, magic-property reference containers, arbitrary reference
+  expressions, non-direct holder expressions, invisible dynamic property
+  reference sources, mixed nested `ArrayAccess` chains, alias cleanup beyond
+  the covered root/property/slot paths, broad copy-on-write, exact alias
+  destruction ordering, exact native error behavior, and native lowering
 - `is_a` inheritance beyond current single-parent class chain, interfaces,
   traits, aliases/imports, namespace-aware names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, object operands, and native lowering
@@ -7676,12 +7686,13 @@
   declared user-interface object assignment checks; broader built-in/internal
   interface catalog behavior, exact PHP union scalar coercion preference rules,
   parenthesized DNF property types, complex reference/COW interactions, and
-  native lowering remain unsupported. Parameter/return type reflection remains
-  metadata only and does not enforce call arguments or return values.
+  native lowering remain unsupported. Property file/line metadata and
+  parameter source-file, line, or doc-comment metadata remain unsupported.
+  Parameter/return type reflection remains metadata only and does not enforce
+  call arguments or return values.
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
-  property/parameter file-line or doc-comment metadata,
-  exact docblock association across attributes and unusual trivia,
+  exact parameter/property docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation/value mutation,
@@ -7999,14 +8010,15 @@
 - `setcookie()`/`setrawcookie()` behavior beyond accepting the documented
   bounded positional/options-array attributes, formatting nonzero expiration
   timestamps, replacing deterministic cookie headers by cookie name plus
-  normalized non-empty path/domain identity, returning `false` after unbuffered
-  output starts with a bounded `E_WARNING`, and
+  normalized non-empty path/domain identity with ASCII-case-insensitive domain
+  matching, returning `false` after unbuffered output starts with a bounded
+  `E_WARNING`, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
   cookie name validation/encoding, `Max-Age`, option validation
-  beyond the documented keys, case-insensitive domain identity normalization,
-  SAPI/web-server emission, exact warning text, and native lowering beyond
-  function-table introspection
+  beyond the documented keys, IDNA/trailing-dot/domain-policy
+  canonicalization, SAPI/web-server emission, exact warning text, and native
+  lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct writable filename/line output-argument slice, including direct
   variables, direct array offsets, direct object properties, direct
