@@ -535,6 +535,7 @@ pub struct InterfaceDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InterfaceMethodDecl {
     pub function: FunctionDecl,
+    pub is_static: bool,
     pub span: Span,
 }
 

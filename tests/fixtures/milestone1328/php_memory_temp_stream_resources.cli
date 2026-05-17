@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+wp|-temp|request-body-cache|closed
+--- stdout end ---
+stderr:
+--- stderr end ---

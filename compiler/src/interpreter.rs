@@ -131,6 +131,8 @@ struct Interpreter {
     next_object_id: i64,
     allocated_objects: Vec<PhpObject>,
     next_closure_id: i64,
+    next_resource_id: i64,
+    streams: HashMap<i64, MemoryStream>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -221,6 +223,12 @@ struct MysqliResultState {
     row_cursor: usize,
     field_cursor: usize,
     last_lengths: Option<Vec<usize>>,
+}
+
+#[derive(Debug, Clone)]
+struct MemoryStream {
+    buffer: String,
+    position: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -2523,6 +2531,8 @@ impl Interpreter {
             next_object_id: 1,
             allocated_objects: Vec::new(),
             next_closure_id: 1,
+            next_resource_id: 1,
+            streams: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -2567,6 +2577,42 @@ impl Interpreter {
                 _ => true,
             },
             _ => false,
+        }
+    }
+
+    fn direct_function_call_returns_by_reference(&self, name: &str) -> bool {
+        matches!(
+            self.lookup_direct_function_call(name),
+            Some(Callable::User(function)) if function.returns_by_reference
+        )
+    }
+
+    fn by_reference_foreach_reference_return_root(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<ForeachArrayRoot> {
+        match self.evaluate_reference_return_call_binding(expr, span, scope)? {
+            ReferenceReturnBinding::Cell(cell) => {
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.bind_static_to_cell(&temp_name, cell);
+                Ok(ForeachArrayRoot::Static {
+                    name: temp_name,
+                    keys: Vec::new(),
+                })
+            }
+            ReferenceReturnBinding::ArrayOffset(alias) => Ok(ForeachArrayRoot::Alias {
+                root: alias.root,
+                keys: alias.keys,
+            }),
+            ReferenceReturnBinding::ArrayOffsets(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "foreach",
+                    "by-reference iteration over copied multi-slot reference-return aliases is not implemented",
+                ),
+            )),
         }
     }
 
@@ -2683,6 +2729,9 @@ impl Interpreter {
                     root,
                     keys: Vec::new(),
                 })
+            }
+            Expr::Call { name, .. } if self.direct_function_call_returns_by_reference(name) => {
+                self.by_reference_foreach_reference_return_root(iterable, scope, span)
             }
             expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
                 let value = self.evaluate(expr, scope)?;
@@ -9389,6 +9438,34 @@ impl Interpreter {
             if !rows.is_empty() {
                 return Ok(Some(MysqliPendingResultState {
                     fields: vec![
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_id_name_value_autoload_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_id".to_string(),
                         "option_name".to_string(),
                         "option_value".to_string(),
                         "autoload".to_string(),
@@ -17506,6 +17583,272 @@ impl Interpreter {
         Some(self.classes.get(parent_id)?.name().to_string())
     }
 
+    fn call_fopen(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fopen()",
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let path = match &args[0] {
+            Value::String(path) => path.as_str(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fopen()",
+                        format!(
+                            "path argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let mode = match &args[1] {
+            Value::String(mode) => mode.as_str(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fopen()",
+                        format!(
+                            "mode argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "fopen()",
+                    "use_include_path and context arguments are not supported in the current stream subset",
+                ),
+            ));
+        }
+
+        match path {
+            "php://memory" | "php://temp" => {}
+            other if other.contains("://") => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fopen()",
+                        "only php://memory and php://temp are supported in the current stream subset",
+                    ),
+                ));
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fopen()",
+                        "local file stream resources are not supported in the current subset",
+                    ),
+                ));
+            }
+        };
+
+        if !is_supported_memory_stream_mode(mode) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "fopen()",
+                    format!(
+                        "mode {mode:?} is not supported for php:// memory streams in the current subset"
+                    ),
+                ),
+            ));
+        }
+
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.streams.insert(
+            id,
+            MemoryStream {
+                buffer: String::new(),
+                position: 0,
+            },
+        );
+        Ok(Value::Resource(id))
+    }
+
+    fn memory_stream_mut(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<&mut MemoryStream> {
+        let Value::Resource(id) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "stream argument must be resource in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        self.streams.get_mut(id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "closed or unknown stream resource in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn call_fwrite(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fwrite()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let data = match &args[1] {
+            Value::String(data) => data.as_str(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fwrite()",
+                        format!(
+                            "data argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let data = match args.get(2) {
+            Some(Value::Int(length)) if *length >= 0 => {
+                let length = utf8_boundary_at_or_before(data, *length as usize);
+                &data[..length]
+            }
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fwrite()",
+                        "length argument must be non-negative in the current subset",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fwrite()",
+                        format!(
+                            "length argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => data,
+        };
+        let stream = self.memory_stream_mut("fwrite", &args[0], span)?;
+        if stream.position > stream.buffer.len() {
+            stream
+                .buffer
+                .push_str(&"\0".repeat(stream.position - stream.buffer.len()));
+        }
+        let end = stream.position + data.len();
+        if end <= stream.buffer.len() {
+            stream.buffer.replace_range(stream.position..end, data);
+        } else {
+            if stream.position < stream.buffer.len() {
+                stream.buffer.replace_range(stream.position.., data);
+            } else {
+                stream.buffer.push_str(data);
+            }
+        }
+        stream.position = end;
+        Ok(Value::Int(data.len() as i64))
+    }
+
+    fn call_fread(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fread", args, 2, span)?;
+        let length = match &args[1] {
+            Value::Int(length) if *length >= 0 => *length as usize,
+            Value::Int(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fread()",
+                        "length argument must be non-negative in the current subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fread()",
+                        format!(
+                            "length argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let stream = self.memory_stream_mut("fread", &args[0], span)?;
+        let start = stream.position.min(stream.buffer.len());
+        let end = utf8_boundary_at_or_before(&stream.buffer, start + length);
+        stream.position = end;
+        Ok(Value::String(stream.buffer[start..end].to_string()))
+    }
+
+    fn call_rewind(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("rewind", args, 1, span)?;
+        let stream = self.memory_stream_mut("rewind", &args[0], span)?;
+        stream.position = 0;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_stream_get_contents(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_get_contents", args, 1, span)?;
+        let stream = self.memory_stream_mut("stream_get_contents", &args[0], span)?;
+        let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
+        stream.position = stream.buffer.len();
+        Ok(Value::String(stream.buffer[start..].to_string()))
+    }
+
+    fn call_fclose(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fclose", args, 1, span)?;
+        let Value::Resource(id) = args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "fclose()",
+                    format!(
+                        "stream argument must be resource in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Value::Bool(self.streams.remove(&id).is_some()))
+    }
+
     fn call_ob_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_start", args, 0, span)?;
         self.output_buffers.push(String::new());
@@ -19523,6 +19866,12 @@ impl Interpreter {
                     )),
                 }
             }
+            "fopen" => self.call_fopen(&args, span),
+            "fwrite" => self.call_fwrite(&args, span),
+            "fread" => self.call_fread(&args, span),
+            "rewind" => self.call_rewind(&args, span),
+            "stream_get_contents" => self.call_stream_get_contents(&args, span),
+            "fclose" => self.call_fclose(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -22350,6 +22699,13 @@ impl Interpreter {
                     "Closure __toString() and cast error behavior are not implemented",
                 ),
             )),
+            Value::Resource(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "(string)",
+                    "resource-to-string cast warning behavior is not implemented",
+                ),
+            )),
         }
     }
 
@@ -22449,6 +22805,13 @@ impl Interpreter {
                         "Closure object-to-int cast behavior is not implemented",
                     ),
                 )),
+                Value::Resource(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(int)",
+                        "resource-to-int cast behavior is not implemented",
+                    ),
+                )),
             },
             CastKind::Bool => Ok(Value::Bool(value.is_truthy())),
             CastKind::Float => match value {
@@ -22478,6 +22841,13 @@ impl Interpreter {
                         "Closure object-to-float cast behavior is not implemented",
                     ),
                 )),
+                Value::Resource(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(float)",
+                        "resource-to-float cast behavior is not implemented",
+                    ),
+                )),
             },
             CastKind::Array => match value {
                 Value::Null => Ok(Value::Array(PhpArray::new())),
@@ -22501,6 +22871,13 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "(array)",
                         "Closure object-to-array cast behavior is not implemented",
+                    ),
+                )),
+                Value::Resource(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(array)",
+                        "resource-to-array cast behavior is not implemented",
                     ),
                 )),
             },
@@ -22833,6 +23210,18 @@ fn validate_parent_interface_method_pair(
     right_interface: &str,
     right_method: &InterfaceMethodDecl,
 ) -> CompileResult<()> {
+    if left_method.is_static != right_method.is_static {
+        return validate_child_interface_method_compatibility(
+            classes,
+            interface_lookup,
+            interface,
+            left_interface,
+            left_method,
+            right_interface,
+            right_method,
+        );
+    }
+
     let left_required = required_param_count(&left_method.function);
     let right_required = required_param_count(&right_method.function);
     if left_required > right_required {
@@ -22948,6 +23337,24 @@ fn validate_child_interface_method_compatibility(
     parent_interface_name: &str,
     parent_method: &InterfaceMethodDecl,
 ) -> CompileResult<()> {
+    if child_method.is_static != parent_method.is_static {
+        return Err(runtime_error(
+            interface.span,
+            RuntimeError::unsupported_class_inheritance(
+                &interface.name,
+                format!(
+                    "interface method {}::{}() must keep staticness of parent interface method {}::{}(); expected {}, found {}",
+                    child_interface_name,
+                    child_method.function.name,
+                    parent_interface_name,
+                    parent_method.function.name,
+                    method_static_name(parent_method.is_static),
+                    method_static_name(child_method.is_static)
+                ),
+            ),
+        ));
+    }
+
     let child_required = required_param_count(&child_method.function);
     let parent_required = required_param_count(&parent_method.function);
     if child_required > parent_required {
@@ -23708,7 +24115,7 @@ fn validate_interface_method_implementation(
                 continue;
             };
 
-            if class_method.is_static() {
+            if class_method.is_static() != method.is_static {
                 return Err(RuntimeError::unsupported_class_inheritance(
                     &class.name,
                     format!(
@@ -23716,7 +24123,7 @@ fn validate_interface_method_implementation(
                         class.name,
                         method_interface_name,
                         method.function.name,
-                        method_static_name(false),
+                        method_static_name(method.is_static),
                         method_static_name(class_method.is_static()),
                         declaring_class_name,
                         class_method.name()
@@ -25177,6 +25584,12 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "fopen"
+            | "fwrite"
+            | "fread"
+            | "rewind"
+            | "stream_get_contents"
+            | "fclose"
             | "filesize"
             | "filemtime"
             | "realpath"
@@ -25527,6 +25940,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
             .find_map(|entry| unsupported_runtime_constant_value_type(entry.value())),
         Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
+        Value::Resource(_) => Some("resource"),
     }
 }
 
@@ -25964,6 +26378,15 @@ fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &s
         query.trim(),
         "SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (",
         "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_id_name_value_autoload_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name IN (",
+        "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` IN (",
     )
     .is_some()
 }
@@ -28782,6 +29205,20 @@ fn header_name(header: &str) -> Option<&str> {
     Some(name)
 }
 
+fn is_supported_memory_stream_mode(mode: &str) -> bool {
+    let mut chars = mode.chars();
+    matches!(chars.next(), Some('r' | 'w' | 'a' | 'c'))
+        && chars.all(|ch| matches!(ch, '+' | 'b' | 't'))
+}
+
+fn utf8_boundary_at_or_before(value: &str, index: usize) -> usize {
+    let mut index = index.min(value.len());
+    while !value.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 impl Interpreter {
     fn call_headers_sent_values(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 2 {
@@ -29551,6 +29988,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
                 value.id()
             )
         }
+        Value::Resource(id) => format!("{padding}resource({id}) of type (stream)\n"),
     }
 }
 

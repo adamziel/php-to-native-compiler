@@ -1401,7 +1401,7 @@ fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> Runtim
 
 fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
     match value {
-        Value::Array(_) | Value::Object(_) | Value::Closure(_) => {
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
             Err(RuntimeError::unsupported_call(
                 callable,
                 format!(
@@ -2991,6 +2991,7 @@ pub enum Value {
     Array(PhpArray),
     Object(PhpObject),
     Closure(PhpClosure),
+    Resource(i64),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3062,6 +3063,7 @@ impl Value {
             Value::Array(_) => "array",
             Value::Object(_) => "object",
             Value::Closure(_) => "closure",
+            Value::Resource(_) => "resource",
         }
     }
 
@@ -3075,6 +3077,7 @@ impl Value {
             Value::Array(_) => "array",
             Value::Object(_) => "object",
             Value::Closure(_) => "object",
+            Value::Resource(_) => "resource",
         }
     }
 
@@ -3093,7 +3096,8 @@ impl Value {
             | Value::Bool(_)
             | Value::Array(_)
             | Value::Object(_)
-            | Value::Closure(_) => false,
+            | Value::Closure(_)
+            | Value::Resource(_) => false,
         }
     }
 
@@ -3116,6 +3120,7 @@ impl Value {
             Value::Array(_) => "Array".to_string(),
             Value::Object(_) => "Object".to_string(),
             Value::Closure(_) => "Object".to_string(),
+            Value::Resource(id) => format!("Resource id #{id}"),
         }
     }
 
@@ -3127,6 +3132,9 @@ impl Value {
             ))),
             Value::Closure(_) => Err(RuntimeError::invalid_string_conversion(
                 "object of class Closure cannot be converted to string",
+            )),
+            Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(
+                "resource cannot be converted to string",
             )),
             _ => Ok(self.echo_string()),
         }
@@ -3142,6 +3150,7 @@ impl Value {
             Value::Array(value) => !value.is_empty(),
             Value::Object(_) => true,
             Value::Closure(_) => true,
+            Value::Resource(_) => true,
         }
     }
 
@@ -3278,6 +3287,10 @@ impl Value {
                 ArithmeticOp::BitwiseNot,
                 "closures cannot be used with unary bitwise not",
             )),
+            Value::Resource(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "resources cannot be used with unary bitwise not",
+            )),
         }
     }
 
@@ -3323,6 +3336,8 @@ impl Value {
             (Value::Array(_), _) | (_, Value::Array(_)) => Ok(false),
             (Value::Object(left), Value::Object(right)) => Ok(left.id() == right.id()),
             (Value::Object(_), _) | (_, Value::Object(_)) => Ok(false),
+            (Value::Resource(left), Value::Resource(right)) => Ok(left == right),
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => Ok(false),
             _ => Ok(self.php_identical_scalar(other)),
         }
     }
@@ -3334,6 +3349,7 @@ impl Value {
             (Value::Int(left), Value::Int(right)) => left == right,
             (Value::Float(left), Value::Float(right)) => left == right,
             (Value::String(left), Value::String(right)) => left == right,
+            (Value::Resource(left), Value::Resource(right)) => left == right,
             _ => false,
         }
     }
@@ -3342,6 +3358,9 @@ impl Value {
         match (self, other) {
             (Value::Object(_), _) | (_, Value::Object(_)) => Err(
                 RuntimeError::unsupported_comparison("object comparisons are not implemented"),
+            ),
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => Err(
+                RuntimeError::unsupported_comparison("resource comparisons are not implemented"),
             ),
             _ => Ok(self.php_cmp(other, op)),
         }
@@ -3364,6 +3383,7 @@ impl Value {
             }
             (Value::Array(_), _) | (_, Value::Array(_)) => None,
             (Value::Object(_), _) | (_, Value::Object(_)) => None,
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => None,
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Null, Value::String(right)) => compare_binary_strings("", right),
             (Value::String(left), Value::Null) => compare_binary_strings(left, ""),
@@ -3397,6 +3417,7 @@ impl Value {
             Value::Array(_) => None,
             Value::Object(_) => None,
             Value::Closure(_) => None,
+            Value::Resource(_) => None,
         }
     }
 
@@ -3421,6 +3442,10 @@ impl Value {
             Value::Closure(_) => Err(RuntimeError::invalid_arithmetic(
                 operation,
                 "closures are not numeric",
+            )),
+            Value::Resource(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "resources are not numeric",
             )),
         }
     }
@@ -3474,6 +3499,10 @@ impl Value {
             Value::Closure(_) => Err(RuntimeError::invalid_arithmetic(
                 operation,
                 "closures cannot be used with bitwise operators",
+            )),
+            Value::Resource(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "resources cannot be used with bitwise operators",
             )),
         }
     }

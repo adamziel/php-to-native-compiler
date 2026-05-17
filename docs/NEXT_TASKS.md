@@ -13443,7 +13443,7 @@ handled.
 
 ## Milestone 1326: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: advance the next larger object/interface blocker
+- [x] Parser/runtime lane: advance the next larger object/interface blocker
   from `GOAL.MD`. Prefer interface declaration/implements validation reached
   by WordPress, constructor/default fidelity, autoloadable class/interface
   lookup scaffolding, magic hooks such as `__get`/`__set`/`__isset`/`__call`,
@@ -13454,27 +13454,35 @@ handled.
 
 ## Milestone 1327: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: advance the next larger reference/COW blocker from
+- [x] Runtime lane: advance the next larger reference/COW blocker from
   `GOAL.MD`. Prefer real reference containers, broader array/object
   copy-on-write, alias lifetime cleanup across function/include boundaries,
   ArrayAccess by-reference iteration roots, reference-return iterable aliases,
   or request/session-state alias behavior. Keep exact warning behavior, full
   PHP alias destruction ordering, resource/object edge cases, and native
-  lowering unsupported until implemented and tested.
+  lowering unsupported until implemented and tested. Closed with a bounded
+  direct free-function reference-return iterable alias for by-reference
+  `foreach`: `foreach (items($items) as &$item)` can now bind the loop root to
+  a returned direct caller variable cell when the function is declared `&` and
+  returns a direct variable.
 
 ## Milestone 1328: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
+- [x] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
   behavior that blocks real WordPress requests. Prefer `php://temp`,
   `php://memory`, stream resources, header/output buffering fidelity, session
   persistence or cookies, shutdown-time visibility, host filesystem fidelity,
   multipart/upload handling, or `php://input`/request-body follow-up behavior.
   Keep native lowering rejected for request, stream, filesystem, and resource
-  state unless runtime support and tests exist.
+  state unless runtime support and tests exist. Milestone 1328 adds bounded
+  interpreter-owned `php://memory` and `php://temp` stream resources through
+  `fopen()`, `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and
+  `fclose()`, with direct native stream-resource calls rejected under a
+  dedicated resource boundary.
 
 ## Milestone 1329: WordPress DB/Bootstrap Evidence Blocker
 
-- [ ] Compatibility/runtime lane: advance executable WordPress database or
+- [x] Compatibility/runtime lane: advance executable WordPress database or
   bootstrap evidence. Prefer broader `wpdb`/MySQLi result or mutation
   behavior, object-cache/transient persistence, option API state, hooks under
   realistic callback shapes, deterministic plugin/theme loading probes, or a
@@ -13484,7 +13492,58 @@ handled.
 
 ## Milestone 1330: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1326-1329 land, refresh the
+- [x] Tests/docs lane: after Milestones 1326-1329 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch. Manual full gate passed before checkpoint: `cargo
+  test` completed successfully, `phpc test` reported `1439` fixture tests
+  passed with `0` failures, and `phpc test --compare-php` reported `1439`
+  fixture tests passed with `0` failures, `829` system PHP comparisons, and
+  `610` skipped `phpc-only` fixtures.
+
+## Milestone 1331: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: advance a larger object/interface subsystem gap
+  from `GOAL.MD`, preferably autoloadable class/interface lookup, constructor
+  and destructor ordering fidelity, magic hook dispatch, reflection-visible
+  metadata, trait/interface conflict behavior, or interface implementation
+  validation reached by WordPress. Keep full type enforcement, full variance,
+  exact PHP diagnostics, references/COW, and native lowering unsupported until
+  executable code and tests prove them.
+
+## Milestone 1332: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: advance a larger reference/COW subsystem gap from
+  `GOAL.MD`, preferably real reference containers, broader array/object
+  copy-on-write, reference-return iterable roots beyond direct free functions,
+  alias lifetime across include/function boundaries, ArrayAccess references,
+  or request/session-state alias behavior. Keep exact warning behavior, full
+  PHP alias destruction ordering, resource/object edge cases, and native
+  lowering unsupported until implemented and tested.
+
+## Milestone 1333: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
+  behavior that blocks real WordPress requests, preferably file-backed stream
+  handles, `php://input`/request body follow-up behavior, session persistence,
+  cookies/uploads, header/output/shutdown fidelity, host filesystem metadata,
+  stream contexts/filters, or native rejection coverage for resource state.
+  Keep unsupported wrappers, sockets, HTTP, permissions, locking, exact
+  warning recovery, and native stream resources explicit until tested.
+
+## Milestone 1334: WordPress DB/Bootstrap Evidence Blocker
+
+- [ ] Compatibility/runtime lane: advance executable WordPress database or
+  bootstrap evidence, preferably broader `wpdb`/MySQLi result and mutation
+  behavior, object-cache/transient persistence, option API state, hooks under
+  realistic callback shapes, deterministic plugin/theme loading probes, or a
+  committed bootstrap/request probe that moves past its next real blocker.
+  Keep real MySQL, arbitrary SQL, full request support, plugin/theme support,
+  references/COW, and native support unsupported until implemented and tested.
+
+## Milestone 1335: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1331-1334 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

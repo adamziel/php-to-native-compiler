@@ -855,17 +855,19 @@ impl Parser {
     }
 
     fn parse_interface_method(&mut self) -> CompileResult<InterfaceMethodDecl> {
-        self.match_token(|kind| matches!(kind, TokenKind::Public));
-        if self.match_token(|kind| matches!(kind, TokenKind::Protected | TokenKind::Private)) {
+        let modifiers = self.parse_class_member_modifiers()?;
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
             return Err(self.error_at(
                 self.previous().span,
                 unsupported_interface_method_visibility_message(),
             ));
         }
-        if self.match_token(|kind| matches!(kind, TokenKind::Static)) {
+        if modifiers.is_abstract || modifiers.is_final {
             return Err(self.error_at(
-                self.previous().span,
-                unsupported_static_interface_method_message(),
+                modifiers
+                    .abstract_or_final_span()
+                    .unwrap_or_else(|| self.peek().span),
+                "unsupported interface method declaration: abstract/final interface methods are not implemented",
             ));
         }
         let span = self
@@ -880,7 +882,11 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after interface method")?;
 
-        Ok(InterfaceMethodDecl { function, span })
+        Ok(InterfaceMethodDecl {
+            function,
+            is_static: modifiers.is_static,
+            span,
+        })
     }
 
     fn parse_function_signature_after_keyword(
@@ -6538,10 +6544,6 @@ fn unsupported_nested_interface_declaration_message() -> &'static str {
 
 fn unsupported_interface_method_visibility_message() -> &'static str {
     "unsupported interface method declaration: only public interface methods are implemented"
-}
-
-fn unsupported_static_interface_method_message() -> &'static str {
-    "unsupported interface method declaration: static interface methods are not implemented"
 }
 
 fn unsupported_interface_method_body_message() -> &'static str {

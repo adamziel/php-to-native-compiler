@@ -410,6 +410,13 @@ preserve parameter order, skip missing names, and return empty zero-field
 placeholder results when every requested name is missing. Backticked
 table/column spellings are accepted for this prepared name-list slice. The
 exact
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
+prepared shape also returns deterministic full option rows, including recorded
+placeholder option ids, for string option-name parameter lists through the same
+prepared result paths; explicit name-list reads preserve parameter order and
+skip missing names. Backticked table/column spellings are accepted for this
+full-row prepared name-list slice. The
+exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

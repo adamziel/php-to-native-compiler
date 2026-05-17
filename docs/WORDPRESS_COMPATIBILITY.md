@@ -402,6 +402,19 @@ persistent object cache, broad `wpdb`, full WordPress option APIs,
 plugin/theme loading, request/SAPI fidelity, references/copy-on-write, or
 native support.
 
+After Milestone 1329, that prepared option-name-list result-set slice also
+covers the exact full-row projection
+`SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
+through both `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array(...))` for string option-name
+parameters. A committed `wpdb`-shaped fixture proves placeholder option ids,
+parameter-ordered rows, skipped missing names, and backticked column/table
+spelling support. This remains a bounded state-island probe only; it does not
+claim arbitrary prepared projections, non-string option-name params, broad SQL
+parsing, real MySQL, persistent object cache, broad `wpdb`, full WordPress
+option APIs, plugin/theme loading, request/SAPI fidelity,
+references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

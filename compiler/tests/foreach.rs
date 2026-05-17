@@ -435,26 +435,37 @@ echo $bag->items["outer"]["d"];
 }
 
 #[test]
-fn foreach_by_reference_rejects_reference_return_iterables_as_stable_boundary() {
-    let error = runtime_error(
+fn foreach_by_reference_binds_reference_return_iterable_to_caller_cell() {
+    let execution = run_source(
         r#"<?php
-function &items() {
-    static $items = [1];
+function &items(&$items) {
     return $items;
 }
 
-foreach (items() as &$item) {
-    echo $item;
+$items = ["a" => "one", "b" => "two"];
+foreach (items($items) as $key => &$item) {
+    $item = $item . ":" . $key;
+    if ($key === "a") {
+        $items["c"] = "three";
+    }
 }
+echo $items["a"], "|", $items["b"], "|", $items["c"], "|", $item, "\n";
+$items["c"] = "direct";
+echo $item, "|";
+$item = "tail";
+echo $items["c"], "|", $item, "\n";
+unset($item);
+$items["c"] = "detached";
+echo $items["c"];
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression"
+        execution.stdout,
+        "one:a|two:b|three:c|three:c\ndirect|tail|tail\ndetached"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

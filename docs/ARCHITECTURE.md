@@ -40,7 +40,12 @@ direct nested array-offset roots, request-bag roots such as
 `$GLOBALS["bag"]["child"]`. The same path now covers direct visible
 object-property array roots such as `$object->items` and
 `$object->items["child"]`, using the existing public/context property alias
-root instead of a general PHP reference container. This is still a
+root instead of a general PHP reference container. Direct free-function calls
+declared as returning by reference can also serve as by-reference `foreach`
+iterable roots when the function returns a direct variable backed by a caller
+variable cell, such as a by-reference parameter; the interpreter binds a
+private temporary root to that returned cell before applying the existing
+foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, ArrayAccess
 iteration, dynamic object-property iterable roots, or included-file scope
@@ -99,7 +104,11 @@ Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array/direct-variable-reference-element slice. They do
 not promote callback argument arrays, object-property array bridges, or stored
-array-offset metadata into general runtime reference containers.
+array-offset metadata into general runtime reference containers. By-reference
+`foreach` currently consumes only direct free-function reference-return iterable
+roots from this machinery, including bounded direct caller-cell and direct
+static-local cell cases; method/static/callback reference-return iterable roots
+remain outside the executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -1750,6 +1759,19 @@ call execution still lacks stream-wrapper handling, local file I/O, binary
 string byte fidelity, warning plus `false` recovery, stream contexts,
 offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
 references/copy-on-write, and exact native diagnostics.
+The first stream-resource slice is interpreter-only and intentionally
+in-memory. `fopen("php://memory", $mode)` and `fopen("php://temp", $mode)`
+allocate request-local resource ids backed by a Rust string buffer for simple
+`r`, `w`, `a`, or `c` modes with optional `+`, `b`, or `t` flags.
+`fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and `fclose()`
+mutate or consume that buffer and cursor. This gives WordPress-style temporary
+request streams an executable path without claiming full PHP resources: local
+file handles, sockets, HTTP/FTP/phar wrappers, contexts, filters, stream
+metadata, EOF/status APIs, binary/non-UTF-8 byte strings, `php://temp`
+spill-to-disk thresholds, locking, warning plus `false` recovery,
+references/copy-on-write, and exact resource id/type behavior remain out of
+scope. Native stream-resource calls reject before lowering under a dedicated
+resource boundary, while function-table introspection recognizes the names.
 Direct `filesize(...)` calls reject through the native function-call boundary.
 Native function-table introspection still recognizes `filesize`, but native
 call execution still lacks filesystem metadata, warning plus `false` recovery,
@@ -2082,18 +2104,18 @@ Non-object values return false. `implements` names are recorded as metadata so
 internal names can participate in relationships without being declared. For
 interfaces declared in the current parsed program, runtime class registration
 checks concrete classes, including concrete children of abstract implementors,
-for public methods with the required interface method names and the current
-supported non-static method shape. Parent interfaces declared before or after
-the child are flattened into both relationship metadata and method-presence
-checks.
+for public methods with the required interface method names and required static
+or non-static method shape. Parent interfaces declared before or after the
+child are flattened into both relationship metadata and method-presence checks.
 Implementations may omit an interface parameter type or repeat the same type
 text case-insensitively, but may not add a parameter type to an untyped
 interface parameter or substitute a different type for a typed interface
 parameter. Implementations may add a return type to an untyped interface
 method, but a typed interface method requires the implementation to declare the
-same return type text case-insensitively. Public static methods do not satisfy
-non-static interface method requirements. This is a bounded compatibility check
-only; full parameter variance, broader return type covariance/contravariance,
+same return type text case-insensitively. Public static methods satisfy only
+static interface method requirements and do not satisfy non-static interface
+method requirements. This is a bounded compatibility check only; full
+parameter variance, broader return type covariance/contravariance,
 type subtyping, alias/import resolution, union/intersection canonicalization,
 cyclic parent-interface inheritance beyond stable rejection, broad
 built-in/internal interface method enforcement beyond the current

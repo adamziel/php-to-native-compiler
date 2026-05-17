@@ -60,8 +60,12 @@ multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 session persistence, locking, save handlers, and cookie emission remain
-unsupported. Native lowering still rejects request/session state until a native
-runtime ABI exists.
+unsupported. `fopen()` can create bounded interpreter-owned `php://memory` and
+`php://temp` stream resources for simple in-memory read/write flows through
+`fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and `fclose()`;
+local file handles, stream contexts/filters, binary byte fidelity, temp-file
+spillover, and native stream lowering remain unsupported. Native lowering still
+rejects request/session/stream state until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -145,7 +149,9 @@ incorrect native code.
   removal, nested object-property array offset removal, array iteration
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
-  object-property array roots, and
+  object-property array roots, plus direct free-function reference-return
+  iterable roots when the returned direct variable is backed by a caller
+  variable cell, and
   positional statement-form
   `list($a, $b) = expr;` plus `[$a, $b] = expr;` assignment over numeric
   keys, including skipped slots
@@ -171,6 +177,11 @@ incorrect native code.
   file or through the current bounded include path, included files executing
   in caller scope, include return values, and `_once` de-duplication by
   resolved local file
+- bounded deterministic `mysqli`/`wp_options` state-island behavior for
+  WordPress bootstrap probes, including exact option insert/update/delete/read
+  shapes and selected prepared option-name-list result sets; this is not real
+  MySQL connectivity, arbitrary SQL, persistent object cache, full `wpdb`, or
+  native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -185,15 +196,16 @@ incorrect native code.
   `get_declared_interfaces()`, and require concrete classes that implement
   declared interfaces, including through inherited `implements` metadata and
   the current parent interface inheritance slice, to expose
-  public methods with the required names at class registration time, to avoid
-  requiring more parameters than those interface methods, to pass the current
-  bounded interface parameter-type metadata check, and to pass the current
-  bounded interface return-type metadata check, including simple declared
-  class/interface contravariant parameter and covariant return relationships
-  when both type names resolve through current metadata; child interfaces that
-  redeclare inherited methods and simple multi-parent method conflicts are
-  checked against the same bounded required-parameter, parameter-type, and
-  return-type metadata rules; class `implements` clauses
+  public methods with the required names and matching static/non-static shape
+  at class registration time, to avoid requiring more parameters than those
+  interface methods, to pass the current bounded interface parameter-type
+  metadata check, and to pass the current bounded interface return-type
+  metadata check, including simple declared class/interface contravariant
+  parameter and covariant return relationships when both type names resolve
+  through current metadata; child interfaces that redeclare inherited methods
+  and simple multi-parent method conflicts are checked against the same bounded
+  staticness, required-parameter, parameter-type, and return-type metadata
+  rules; class `implements` clauses
   record comma-separated interface names and inherited parent interface names
   as relationship metadata for `is_a`, `is_subclass_of`, and `instanceof`,
   including unresolved built-in/internal interface names; public interface
@@ -201,7 +213,7 @@ incorrect native code.
   interface names, parent-interface inheritance, implementing classes, and
   string `defined()`/`constant()` lookups; missing or cyclic parent interface
   inheritance reports stable runtime boundaries;
-  typed/static/non-public/abstract/final or
+  typed/non-public/abstract/final or
   multi-constant interface declarations, full variance/signature compatibility
   beyond the current bounded checks, namespace-aware type-name resolution,
   union/intersection canonicalization, class/interface type subtyping beyond
@@ -310,7 +322,7 @@ type declaration enforcement, cast behavior outside the current `(string)`,
 `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
-typed/static/non-public/abstract/final or multi-constant interface
+typed/non-public/abstract/final or multi-constant interface
 declarations, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs
 beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
@@ -440,6 +452,8 @@ direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
+direct `fopen()`/`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/
+`fclose()` stream-resource calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,

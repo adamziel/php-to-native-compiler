@@ -2071,6 +2071,98 @@ class Child extends Base {}
 }
 
 #[test]
+fn static_interface_methods_are_declared_validated_and_callable() {
+    let execution = run_source(
+        r#"<?php
+interface FactoryContract {
+    public static function make($name = "core");
+}
+
+interface PluginFactory extends FactoryContract {
+    public static function boot($hook);
+}
+
+class Plugin implements PluginFactory {
+    public static function make($name = "core") {
+        return "make:" . $name;
+    }
+
+    public static function boot($hook) {
+        return "boot:" . $hook;
+    }
+}
+
+echo Plugin::make(), "\n";
+echo Plugin::make("wp"), "\n";
+echo Plugin::boot("init"), "\n";
+echo is_a("Plugin", "FactoryContract", true) ? "factory\n" : "missing\n";
+echo is_subclass_of("Plugin", "PluginFactory", true) ? "plugin-factory" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "make:core\nmake:wp\nboot:init\nfactory\nplugin-factory"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let non_static_implementation_error = runtime_error(
+        r#"<?php
+interface FactoryContract {
+    public static function make();
+}
+
+class Plugin implements FactoryContract {
+    public function make() {}
+}
+"#,
+    );
+    assert_eq!(non_static_implementation_error.line, 6);
+    assert_eq!(non_static_implementation_error.column, 1);
+    assert_eq!(
+        non_static_implementation_error.message,
+        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method FactoryContract::make() as static method; found non static Plugin::make()"
+    );
+
+    let static_non_static_implementation_error = runtime_error(
+        r#"<?php
+interface Logger {
+    public function log();
+}
+
+class Plugin implements Logger {
+    public static function log() {}
+}
+"#,
+    );
+    assert_eq!(static_non_static_implementation_error.line, 6);
+    assert_eq!(static_non_static_implementation_error.column, 1);
+    assert_eq!(
+        static_non_static_implementation_error.message,
+        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Logger::log() as non static method; found static Plugin::log()"
+    );
+
+    let child_interface_staticness_error = runtime_error(
+        r#"<?php
+interface FactoryContract {
+    public static function make();
+}
+
+interface PluginFactory extends FactoryContract {
+    public function make();
+}
+"#,
+    );
+    assert_eq!(child_interface_staticness_error.line, 6);
+    assert_eq!(child_interface_staticness_error.column, 1);
+    assert_eq!(
+        child_interface_staticness_error.message,
+        "unsupported class inheritance for PluginFactory: interface method PluginFactory::make() must keep staticness of parent interface method FactoryContract::make(); expected static, found non static"
+    );
+}
+
+#[test]
 fn interface_required_method_parameter_compatibility_is_enforced_for_concrete_classes() {
     let execution = run_source(
         r#"<?php

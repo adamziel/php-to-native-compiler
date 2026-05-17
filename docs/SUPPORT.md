@@ -533,14 +533,21 @@
   object-property array roots such as
   `foreach ($object->items["child"] as &$value)` route the loop value to the
   selected property array slot through the same bounded alias metadata,
-  including visible non-public properties from valid method contexts. After
-  loop completion the loop variable remains routed to the last
+  including visible non-public properties from valid method contexts. Direct
+  free-function call iterables such as `foreach (items($items) as &$value)`
+  are also executable when the called user function is declared as returning
+  by reference, returns a direct variable, and that returned variable is backed
+  by a direct caller variable cell, such as a by-reference parameter, or by the
+  current direct static-local cell slice. After loop completion the loop
+  variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
   ArrayAccess iterables, dynamic-property iterable roots, non-string-keyed `$GLOBALS` roots,
-  reference-returning call iterables,
+  method/static/callback reference-returning call iterables, direct
+  free-function reference-return iterables that return properties, array
+  offsets, expressions, or nested-control-flow returns,
   foreach destructuring, array/object/ArrayAccess offset loop variables,
   nested-offset loop values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
@@ -768,8 +775,9 @@
   `implements` metadata and the current parent interface inheritance slice
   with one or more user parents declared before or after the child interface,
   must expose public methods
-  with the required interface method names and must not require more
-  parameters than those interface methods at class registration time. For
+  with the required interface method names and matching static/non-static
+  shape, and must not require more parameters than those interface methods at
+  class registration time. For
   interface method parameter type metadata, implementations may omit an
   interface parameter type, use the same type text case-insensitively, or use
   a broader simple declared class/interface type when both type names resolve
@@ -782,8 +790,9 @@
   class/interface type when both type names resolve through current metadata.
   Child interfaces that redeclare inherited methods and simple multi-parent
   inherited method conflicts are
-  checked with those same bounded required-parameter, parameter-type, and
-  return-type metadata rules before class registration. Public interface
+  checked with those same bounded staticness, required-parameter,
+  parameter-type, and return-type metadata rules before class registration.
+  Public interface
   constants declared as `const NAME = ...` or `public const NAME = ...` with
   the current class-constant expression subset resolve through `InterfaceName::CONST`,
   inherited parent-interface lookup, `ClassName::CONST` on implementing
@@ -792,7 +801,7 @@
   inheritance reports stable runtime boundaries. Full PHP method signature
   variance beyond the current simple declared class/interface metadata checks,
   namespace-aware type-name resolution, type aliases, union/intersection canonicalization,
-  typed/static/non-public/abstract/final or multi-constant interface
+  typed/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
   built-in/internal interface inheritance catalogs, named arguments,
   trait composition beyond the current public-method and simple-alias slice,
@@ -1007,7 +1016,8 @@
   `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
-  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`,
+  `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -2095,6 +2105,22 @@
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
   boundary before argument lowering or backend selection, while native
   function-table introspection can still see the known builtin name.
+  Bounded in-memory stream resources are supported for `phpc run` only:
+  `fopen("php://memory", $mode)` and `fopen("php://temp", $mode)` create an
+  interpreter-owned stream resource for simple `r`, `w`, `a`, or `c` modes
+  with optional `+`, `b`, or `t` flags; `fwrite($stream, $data, $length = null)`
+  writes string data at the current cursor and returns the written byte count;
+  `fread($stream, $length)` reads up to a non-negative integer length;
+  `rewind($stream)` resets the cursor; `stream_get_contents($stream)` returns
+  the remaining buffer; and `fclose($stream)` closes the resource. This is a
+  deterministic WordPress request/runtime compatibility slice, not full PHP
+  stream support: local file handles, sockets, HTTP/FTP/phar wrappers, wrapper
+  metadata, filters, contexts, binary/non-UTF-8 byte fidelity, large
+  `php://temp` spill-to-disk behavior, locking, EOF/status APIs, warning plus
+  `false` recovery, exact resource ids/types, references/copy-on-write, and
+  native lowering remain unsupported. Direct native stream-resource calls stop
+  at a dedicated resource/stream codegen boundary, while function-table
+  introspection recognizes the known builtin names.
   `filesize($path)` accepts one string local path, rejects stream-wrapper
   paths, returns the host file byte length as an integer for existing regular
   files, and returns `false` for missing paths or non-file paths such as
@@ -2534,8 +2560,8 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent class `extends` and already-declared interface parent lists,
-  typed/static/non-public/abstract/final or multi-constant interface
-  declarations, non-public or static interface methods, trait properties,
+  typed/non-public/abstract/final or multi-constant interface
+  declarations, non-public interface methods, trait properties,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
   static/abstract/final or non-public trait methods, adaptation blocks beyond
@@ -2842,8 +2868,8 @@
   names, and relationship checks record both the child and parent interface
   names. For declared
   interfaces, concrete classes must expose public methods with the required
-  interface method names, current supported non-static method shape, and no
-  more required parameters than the interface method, and must pass the current
+  interface method names, the required static or non-static method shape, and
+  no more required parameters than the interface method, and must pass the current
   bounded parameter-type metadata check: an implementation may omit an
   interface parameter type, repeat the same type text case-insensitively, or
   use a broader simple declared class/interface type, but may not add a type
@@ -2854,10 +2880,11 @@
   return type text case-insensitively or a narrower simple declared
   class/interface type;
   abstract classes may defer that requirement until a concrete child is
-  registered, and inherited public methods count. Public static methods do not
-  satisfy non-static interface method requirements. Child interfaces that
-  redeclare inherited methods and simple multi-parent inherited method
-  conflicts are validated with those same bounded metadata rules. This is a
+  registered, and inherited public methods count. Public static methods satisfy
+  only static interface method requirements and do not satisfy non-static
+  interface method requirements. Child interfaces that redeclare inherited
+  methods and simple multi-parent inherited method conflicts are validated with
+  those same bounded staticness and signature metadata rules. This is a
   bounded public-method compatibility check only, not full parameter type
   compatibility, broader return type covariance/contravariance, full signature
   variance, class or interface type subtyping, type-alias/import resolution,
@@ -3883,7 +3910,8 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
-  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`,
+  `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -4256,7 +4284,8 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4434,7 +4463,8 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4677,6 +4707,12 @@
   deterministic `false` for active placeholder statements without
   multi-statement execution, pending statement result queues, cursor
   advancement, or host database state,
+  prepared `mysqli_stmt_execute(...)`/`mysqli_stmt_get_result(...)` and
+  `mysqli_execute_query(...)` support selected exact WordPress `wp_options`
+  placeholder result shapes only, including prepared option-name-list reads for
+  `option_name, option_value`, `option_name, option_value, autoload`, and
+  `option_id, option_name, option_value, autoload` projections with string
+  option-name parameters,
   `mysqli_stmt_send_long_data(...)` records only deterministic placeholder
   chunk state for active statements without real blob binding, packet
   buffering, send timing, execution integration, or host database state,
@@ -4938,6 +4974,13 @@
   offsets/lengths, include-path lookup, `open_basedir` and stat-cache
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, and `fclose`
+  accept the same current bounded `php://memory` and `php://temp` stream
+  resource subset as the builtin section above; direct native calls reject
+  under a dedicated stream-resource boundary until native PHP resource handles,
+  stream wrapper state, local file I/O, binary byte strings, warning plus
+  `false` recovery, references/copy-on-write, and exact native diagnostics
+  exist.
   `filesize` accepts the same current one-string local regular-file metadata
   subset as the builtin section above; direct native `filesize(...)` calls
   still reject under the function-call boundary until native filesystem

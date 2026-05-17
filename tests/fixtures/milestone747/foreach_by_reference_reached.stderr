@@ -1,2 +1,0 @@
-runtime error at 7:1: unsupported call foreach: by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression
-

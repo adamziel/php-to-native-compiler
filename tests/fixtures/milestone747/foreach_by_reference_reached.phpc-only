@@ -1,1 +1,0 @@
-phpc supports bounded direct-array-variable and temporary-array-expression by-reference foreach slices; nested lvalue by-reference iterables remain an explicit runtime boundary and do not implement PHP reference aliases or copy-on-write.
