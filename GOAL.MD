@@ -175,16 +175,15 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed typed-property compatibility through
-active class/interface aliases, direct array-offset reference-array literal
-alias metadata, bounded session file persistence across separate `phpc run`
-invocations, and filtered schema-column metadata over the MySQLi schema-state
-island. Those are useful compatibility steps, but they do not change the
-larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+The latest WordPress-focused batch closed late class/interface alias
+typed-property compatibility, dynamic public-property reference-array literal
+alias metadata, bounded explicit session-id validation, and `%` wildcard
+metadata probes over the MySQLi schema-state island. Those are useful
+compatibility steps, but they do not change the larger project shape: the next
+lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
+WordPress database/bootstrap evidence until those areas become coherent
+subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

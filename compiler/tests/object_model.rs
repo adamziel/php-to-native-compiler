@@ -5207,6 +5207,63 @@ Registry::$shared = new OtherHook();
 }
 
 #[test]
+fn typed_properties_accept_class_aliases_registered_after_instantiation() {
+    let execution = run_source(
+        r#"<?php
+class Hook {}
+class ActionHook extends Hook {}
+interface HookContract {}
+class ContractHook implements HookContract {}
+
+class Registry {
+    public HookLateAlias $instance;
+    public static HookLateAlias $shared;
+    public HookContractLateAlias $contract;
+    public static HookContractLateAlias $staticContract;
+}
+
+$hook = new Hook();
+$action = new ActionHook();
+$contract = new ContractHook();
+class_alias("Hook", "HookLateAlias");
+class_alias("HookContract", "HookContractLateAlias");
+
+$registry = new Registry();
+$registry->instance = $hook;
+Registry::$shared = $action;
+$registry->contract = $contract;
+Registry::$staticContract = $contract;
+echo get_class($registry->instance), "|", get_class(Registry::$shared), "|", get_class($registry->contract), "|", get_class(Registry::$staticContract);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Hook|ActionHook|ContractHook|ContractHook"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let write_error = runtime_error(
+        r#"<?php
+class Hook {}
+class OtherHook {}
+class Registry { public HookLateAlias $instance; }
+$other = new OtherHook();
+class_alias("Hook", "HookLateAlias");
+$registry = new Registry();
+$registry->instance = $other;
+"#,
+    );
+    assert_eq!(write_error.line, 8);
+    assert_eq!(write_error.column, 1);
+    assert_eq!(
+        write_error.message,
+        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+    );
+}
+
+#[test]
 fn typed_property_unset_restores_uninitialized_instance_slots() {
     let execution = run_source(
         r#"<?php

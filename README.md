@@ -83,10 +83,12 @@ was closed. When `ini_set("session.save_path", $path)` supplies an explicit
 local save path and `session_id($id)` supplies a bounded alphanumeric,
 underscore, or hyphen id before start, `session_start()`/`session_write_close()`
 also load and write PHP-compatible `sess_<id>` files for scalar and array
-string-keyed session values across separate `phpc run` invocations. Locking,
-save handlers, garbage collection, strict id validation, integer top-level
-session keys, object/resource session values, option effects beyond the
-documented session-start options, cookie encoding,
+string-keyed session values across separate `phpc run` invocations. Starting a
+session with an explicit id outside that bounded file-safe subset returns
+`false` with a bounded warning before headers or `$_SESSION` are changed.
+Locking, save handlers, garbage collection, broader PHP session-id policy,
+integer top-level session keys, object/resource session values, option effects
+beyond the documented session-start options, cookie encoding,
 expiration-date formatting, cookie replacement, and cache-header emission
 remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
@@ -520,9 +522,9 @@ beyond the current public and same-declaring-class private-property, protected-p
 protected-method, constructor, method inheritance
 visibility/staticness/signature-count/type-text, and class-constant slice,
 typed property compatibility beyond exact same-text inherited metadata, weak
-scalar coercions, inherited class-name typed-property write checks, and
-declared user-interface typed-property write checks, current class/interface
-alias typed-property write checks, compound/DNF-shaped typed property
+scalar coercions, inherited class-name typed-property write checks, declared
+user-interface typed-property write checks, and current or newly registered
+class/interface alias typed-property write checks, compound/DNF-shaped typed property
 declarations, readonly property metadata and write-once enforcement, promoted
 constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic

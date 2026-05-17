@@ -9,10 +9,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use php_runtime::{
-    coerce_property_value, ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId,
-    ClassMemberKind, Comparison, ObjectProperty, PhpArray, PhpClassConstantMetadata, PhpClassTable,
-    PhpClosure, PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
-    PhpPropertyMetadata, RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
+    coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayKey,
+    ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
+    PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
+    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError, RuntimeErrorKind,
+    RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -8293,11 +8294,14 @@ impl Interpreter {
                     Value::Object(object_value) => {
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(object, property);
-                        match object_value.write_property_from_context(
+                        match object_value.write_property_from_context_with_object_type_resolver(
                             property,
                             value.clone(),
                             current_class_id,
                             &protected_class_ids,
+                            |object, type_name| {
+                                self.object_satisfies_live_property_type(object, type_name)
+                            },
                         ) {
                             Ok(()) => {
                                 scope.remove_public_object_property_root_from_array_offset_aliases(
@@ -8396,7 +8400,14 @@ impl Interpreter {
                 span,
             } => {
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
                         let alias_fallbacks =
@@ -8410,6 +8421,18 @@ impl Interpreter {
                             &alias_fallbacks,
                         );
                         scope.sync_array_offset_aliases_for_object_property_root(object, &property);
+                        if matches!(value, Value::Array(_)) && !array_literal_references.is_empty()
+                        {
+                            self.bind_array_literal_references_to_alias_root(
+                                ArrayOffsetAliasRoot::PublicObjectProperty {
+                                    object: object.to_string(),
+                                    property: property.clone(),
+                                },
+                                array_literal_references,
+                                expr.span(),
+                                scope,
+                            )?;
+                        }
                         Ok(value)
                     }
                     other => Err(runtime_error(
@@ -17739,8 +17762,31 @@ impl Interpreter {
             return Ok(value);
         };
 
-        coerce_property_value(type_decl, value, declaring_class_name, property)
-            .map_err(|error| runtime_error(span, error))
+        coerce_property_value_with_object_type_resolver(
+            type_decl,
+            value,
+            declaring_class_name,
+            property,
+            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+        )
+        .map_err(|error| runtime_error(span, error))
+    }
+
+    fn object_satisfies_live_property_type(&self, object: &PhpObject, type_name: &str) -> bool {
+        if object.is_instance_of_class_name(type_name) {
+            return true;
+        }
+
+        if let Some(type_class_id) = self.classes.lookup_class_id(type_name) {
+            return object.class_id() == type_class_id
+                || self
+                    .classes
+                    .is_subclass_of(object.class_id(), type_class_id);
+        }
+
+        self.class_implements_interface_names(object.class_id())
+            .iter()
+            .any(|interface_name| interface_name.eq_ignore_ascii_case(type_name))
     }
 
     fn resolve_static_property_storage(
@@ -25974,6 +26020,15 @@ impl Interpreter {
                 span,
             )?;
             return Ok(Value::Bool(true));
+        }
+
+        if !self.session_id.is_empty() && !is_bounded_session_id(&self.session_id) {
+            self.emit_warning(
+                "session_start()",
+                "Session id contains characters outside the current bounded file-safe subset",
+                span,
+            )?;
+            return Ok(Value::Bool(false));
         }
 
         let cookie_lifetime =
@@ -34720,7 +34775,13 @@ struct WordPressSchemaAlter {
 
 struct WordPressSchemaColumnQuery {
     table_name: String,
-    column_filter: Option<String>,
+    column_filter: Option<WordPressSchemaNameFilter>,
+}
+
+#[derive(Clone)]
+enum WordPressSchemaNameFilter {
+    Exact(String),
+    Like(String),
 }
 
 enum WordPressSchemaAlterOperation {
@@ -34742,28 +34803,43 @@ fn wordpress_dynamic_schema_result_for_query(
 ) -> Option<MysqliPendingResultState> {
     let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
 
-    if let Some(table_like) = query
+    if let Some(table_filter) = query
         .strip_prefix("SHOW TABLES LIKE ")
         .and_then(parse_sql_single_quoted_list)
         .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
+        .map(wordpress_schema_name_like_filter)
     {
-        if tables.contains_key(&table_like) {
+        let mut table_names = tables
+            .keys()
+            .filter(|table_name| wordpress_schema_name_matches_filter(table_name, &table_filter))
+            .cloned()
+            .collect::<Vec<_>>();
+        table_names.sort();
+        if !table_names.is_empty() {
+            let field = format!("Tables_in_wordpress ({})", table_filter.pattern());
             return Some(MysqliPendingResultState {
-                fields: vec![format!("Tables_in_wordpress ({table_like})")],
-                rows: vec![vec![(
-                    format!("Tables_in_wordpress ({table_like})"),
-                    Value::String(table_like),
-                )]],
+                fields: vec![field.clone()],
+                rows: table_names
+                    .into_iter()
+                    .map(|table_name| vec![(field.clone(), Value::String(table_name))])
+                    .collect(),
             });
         }
         return None;
     }
 
-    if let Some(table_name) = parse_dynamic_schema_show_table_status_query(query) {
-        let rows = tables
-            .get(&table_name)
-            .map(|table| vec![dynamic_schema_table_status_row(table)])
-            .unwrap_or_default();
+    if let Some(table_filter) = parse_dynamic_schema_show_table_status_query(query) {
+        let mut table_names = tables
+            .keys()
+            .filter(|table_name| wordpress_schema_name_matches_filter(table_name, &table_filter))
+            .cloned()
+            .collect::<Vec<_>>();
+        table_names.sort();
+        let rows = table_names
+            .into_iter()
+            .filter_map(|table_name| tables.get(&table_name))
+            .map(dynamic_schema_table_status_row)
+            .collect();
         return Some(MysqliPendingResultState {
             fields: dynamic_schema_table_status_fields(),
             rows,
@@ -34880,7 +34956,9 @@ fn parse_dynamic_schema_describe_query(query: &str) -> Option<WordPressSchemaCol
     let column_filter = if rest.is_empty() {
         None
     } else {
-        Some(parse_schema_table_identifier(rest)?)
+        Some(WordPressSchemaNameFilter::Exact(
+            parse_schema_table_identifier(rest)?,
+        ))
     };
     Some(WordPressSchemaColumnQuery {
         table_name,
@@ -34899,9 +34977,7 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
         None
     } else if let Some(like) = rest.strip_prefix("LIKE ") {
         Some(parse_sql_single_quoted_list(like).and_then(|values| {
-            (values.len() == 1)
-                .then(|| values[0].clone())
-                .and_then(|value| parse_schema_table_identifier(&value))
+            (values.len() == 1).then(|| wordpress_schema_name_like_filter(values[0].clone()))
         })?)
     } else if let Some(field) = rest
         .strip_prefix("WHERE Field = ")
@@ -34911,6 +34987,14 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
             (values.len() == 1)
                 .then(|| values[0].clone())
                 .and_then(|value| parse_schema_table_identifier(&value))
+                .map(WordPressSchemaNameFilter::Exact)
+        })?)
+    } else if let Some(field) = rest
+        .strip_prefix("WHERE Field LIKE ")
+        .or_else(|| rest.strip_prefix("WHERE `Field` LIKE "))
+    {
+        Some(parse_sql_single_quoted_list(field).and_then(|values| {
+            (values.len() == 1).then(|| wordpress_schema_name_like_filter(values[0].clone()))
         })?)
     } else {
         return None;
@@ -34923,12 +35007,81 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
 
 fn schema_column_matches_filter(
     column: &WordPressSchemaColumnState,
-    filter: &Option<String>,
+    filter: &Option<WordPressSchemaNameFilter>,
 ) -> bool {
     filter
         .as_ref()
-        .map(|filter| column.name == *filter)
+        .map(|filter| wordpress_schema_name_matches_filter(&column.name, filter))
         .unwrap_or(true)
+}
+
+fn wordpress_schema_name_like_filter(pattern: String) -> WordPressSchemaNameFilter {
+    if pattern.contains('%') {
+        WordPressSchemaNameFilter::Like(pattern)
+    } else {
+        WordPressSchemaNameFilter::Exact(pattern)
+    }
+}
+
+fn wordpress_schema_name_matches_filter(name: &str, filter: &WordPressSchemaNameFilter) -> bool {
+    match filter {
+        WordPressSchemaNameFilter::Exact(expected) => name == expected,
+        WordPressSchemaNameFilter::Like(pattern) => {
+            wordpress_schema_name_matches_like(name, pattern)
+        }
+    }
+}
+
+fn wordpress_schema_name_matches_like(name: &str, pattern: &str) -> bool {
+    if pattern == "%" {
+        return true;
+    }
+
+    let pieces = pattern.split('%').collect::<Vec<_>>();
+    if pieces.len() == 1 {
+        return name == pattern;
+    }
+
+    let mut rest = name;
+    let mut start = 0;
+    if !pattern.starts_with('%') {
+        let first = pieces.first().copied().unwrap_or_default();
+        if !rest.starts_with(first) {
+            return false;
+        }
+        start = 1;
+        rest = &rest[first.len()..];
+    }
+
+    let end = if pattern.ends_with('%') {
+        pieces.len()
+    } else {
+        pieces.len().saturating_sub(1)
+    };
+    for piece in pieces[start..end].iter().filter(|piece| !piece.is_empty()) {
+        let Some(index) = rest.find(piece) else {
+            return false;
+        };
+        rest = &rest[index + piece.len()..];
+    }
+
+    if !pattern.ends_with('%') {
+        return pieces
+            .last()
+            .map(|last| rest.ends_with(last))
+            .unwrap_or(true);
+    }
+
+    true
+}
+
+impl WordPressSchemaNameFilter {
+    fn pattern(&self) -> &str {
+        match self {
+            WordPressSchemaNameFilter::Exact(pattern)
+            | WordPressSchemaNameFilter::Like(pattern) => pattern,
+        }
+    }
 }
 
 fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, &str)> {
@@ -34951,14 +35104,14 @@ fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, 
     ))
 }
 
-fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<String> {
-    if let Some(table_name) = query
+fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<WordPressSchemaNameFilter> {
+    if let Some(table_filter) = query
         .strip_prefix("SHOW TABLE STATUS LIKE ")
         .and_then(parse_sql_single_quoted_list)
         .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
-        .and_then(|value| parse_schema_table_identifier(&value))
+        .map(wordpress_schema_name_like_filter)
     {
-        return Some(table_name);
+        return Some(table_filter);
     }
 
     let where_clause = query.strip_prefix("SHOW TABLE STATUS WHERE ")?;
@@ -34967,7 +35120,7 @@ fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<String> {
         .or_else(|| where_clause.strip_prefix("`Name` = "))
         .and_then(parse_sql_single_quoted_list)
         .and_then(|values| (values.len() == 1).then(|| values[0].clone()))?;
-    parse_schema_table_identifier(&table_name)
+    parse_schema_table_identifier(&table_name).map(WordPressSchemaNameFilter::Exact)
 }
 
 fn parse_wordpress_schema_create_table_query(query: &str) -> Option<WordPressSchemaTableState> {

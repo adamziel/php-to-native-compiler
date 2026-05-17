@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone1472/reference_array_literals_dynamic_property_target.php
+seed:dynamic|seed:dynamic
+seed:dynamic:dynamic:alias|seed:dynamic:dynamic:alias|seed:dynamic:dynamic:alias
+copied|copied|copied

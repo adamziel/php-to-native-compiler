@@ -164,12 +164,16 @@ Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
-object name. Arbitrary nested copied reference slots beyond the literal copied
+object name. Direct public dynamic-property assignment from a reference array
+literal uses the evaluated property name as the same public object-property
+alias root, so later stored-array callback use can reuse covered reference
+elements. Arbitrary nested copied reference slots beyond the literal copied
 path slice, non-public property-offset or magic clone alias mirroring, dynamic
 ArrayAccess references, arbitrary ArrayAccess append bodies, reference array
-literals outside direct variable and direct visible object-property assignment
-targets, exact alias destruction ordering, and native lowering still require
-the future runtime reference/COW value model.
+literals outside direct variable, direct array-offset, direct visible
+object-property, and direct public dynamic-property assignment targets, exact
+alias destruction ordering, and native lowering still require the future
+runtime reference/COW value model.
 
 ## Compiler Crate
 
@@ -1731,9 +1735,12 @@ lowering remain outside the model.
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
 `session.save_path` was set through `ini_set()` and the current id is bounded
-to ASCII letters, digits, underscores, or hyphens. Without that file it falls
-back to the request-local snapshot keyed by the current session id, or to an
-empty array when no snapshot exists, and marks the session active. A fresh
+to ASCII letters, digits, underscores, or hyphens. If an explicit non-empty id
+falls outside that bounded file-safe subset, the start returns `false`, routes a
+bounded `E_WARNING`, and does not mark the session active, append headers, or
+materialize `$_SESSION`. Without a file it falls back to the request-local
+snapshot keyed by the current session id, or to an empty array when no snapshot
+exists, and marks the session active. A fresh
 successful start appends a deterministic
 `Set-Cookie: PHPSESSID=<id>` line to the same request-local CLI header log used
 by `header()`, `setcookie()`, and `headers_list()`; the bounded `use_cookies`
@@ -1755,8 +1762,8 @@ returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
 applying options. Cache-header emission, cookie encoding, expiration-date
 formatting, replacement policy, trans-sid behavior, locking, save handlers,
-garbage collection, strict id validation, integer top-level session keys,
-object/resource session serialization, malformed session-file recovery
+garbage collection, broader PHP session-id policy, integer top-level session
+keys, object/resource session serialization, malformed session-file recovery
 diagnostics, option effects beyond the documented session-start options, exact
 warning text, reference aliases across `_SESSION` root replacement, and native
 lowering remain outside the model.
@@ -1852,11 +1859,19 @@ metadata. It also exposes deterministic `SHOW TABLES LIKE 'wp_options'`,
 result rows plus deterministic `SHOW INDEX`/`SHOW KEYS FROM wp_options` rows
 for the current four-column option-table schema so bounded install/update
 probes can inspect table existence, primary/unique key markers, fixed
-primary/unique index rows, and autoload default/collation metadata. It does
-not model arbitrary
-multi-table deletes, subqueries, mutable schema, dbDelta diffs, CREATE/ALTER
-TABLE execution, charset/collation negotiation, locks, real index inspection
-beyond those fixed markers, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
+primary/unique index rows, and autoload default/collation metadata. A separate
+per-handle dynamic schema island records the current bounded
+`CREATE TABLE`/`ALTER TABLE` WordPress/dbDelta shapes and answers deterministic
+`SHOW TABLES LIKE`, `SHOW TABLE STATUS LIKE`, `SHOW TABLE STATUS WHERE Name`,
+`DESCRIBE`/`DESC`, `SHOW [FULL] COLUMNS`, `SHOW CREATE TABLE`, and
+`SHOW INDEX`/`SHOW KEYS` probes against that recorded shape. Metadata `LIKE`
+filters support exact patterns plus `%` wildcards for table names, table
+status rows, and column names; `_` wildcard and SQL escape semantics remain
+outside this bounded matcher. It does not model arbitrary
+multi-table deletes, subqueries, schema DDL beyond the documented bounded
+`CREATE TABLE`/`ALTER TABLE` shapes, dbDelta diffs,
+charset/collation negotiation, locks, real index inspection
+beyond recorded schema-state rows, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, exact MySQL affected-row or insert-ID edge cases, or WordPress cleanup
 against tables outside the deterministic `wp_options` state island; it is not
 a general SQL engine, schema model, host database connection, PDO layer, or

@@ -208,30 +208,31 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1471 targets aliases registered after
-  instantiation, compound property type objects, readonly/property-hook
-  behavior, attributes/metadata/reflection, magic hooks reached by WordPress,
-  broader autoload/class-alias lifecycle parity, interface diagnostics, or
-  broader class metadata behavior.
-- Reference/COW lane: Milestone 1472 targets real reference containers,
-  dynamic-property or append-offset reference-literal assignment targets,
-  arbitrary reference expressions, dynamic `ArrayAccess` roots, mixed nested
+- Object/interface lane: Milestone 1476 targets compound property type
+  objects, readonly/property-hook behavior, attributes/metadata/reflection,
+  magic hooks reached by WordPress, broader autoload/class-alias lifecycle
+  parity, interface diagnostics, or broader class metadata behavior.
+- Reference/COW lane: Milestone 1477 targets real reference containers,
+  append-offset reference-literal assignment targets, non-public dynamic
+  property alias roots, magic-property reference containers, arbitrary
+  reference expressions, dynamic `ArrayAccess` roots, mixed nested
   `ArrayAccess` chains, alias cleanup, broader array/object copy-on-write,
   exact alias destruction ordering, by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1473 targets session file
-  locking, save handlers, garbage collection, strict session-id validation,
-  cookie encoding, expiration/deletion/replacement semantics, cache headers,
-  broader session option effects, exact diagnostics, binary reads, shutdown
-  ordering, include-path/stat-cache behavior, stream wrappers/contexts,
-  request-body lifetime, host filesystem edge cases, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1474 targets real SQL parsing slices,
+- Request/SAPI/filesystem/stream lane: Milestone 1478 targets session file
+  locking, save handlers, garbage collection, malformed session-file recovery,
+  broader PHP session-id policy, cookie encoding, expiration/deletion/
+  replacement semantics, cache headers, broader session option effects, exact
+  diagnostics, binary reads, shutdown ordering, include-path/stat-cache
+  behavior, stream wrappers/contexts, request-body lifetime, host filesystem
+  edge cases, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1479 targets real SQL parsing slices,
   dbDelta diff generation, schema rollback, expression indexes, host database
-  inspection, wildcard column/table metadata filters, broader `wpdb`/MySQLi
+  inspection, `_` wildcard or escaped metadata `LIKE`, broader `wpdb`/MySQLi
   result or mutation behavior, prepared option/transient query shapes,
   object-cache/transient persistence, hooks under realistic callback shapes,
   deterministic plugin/theme loading probes, or a bootstrap/request probe that
   moves past its next real blocker.
-- Tests/docs lane: Milestone 1475 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1480 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,

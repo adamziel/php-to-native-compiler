@@ -1,0 +1,1 @@
+tables=wp_probe_meta;wp_probe_options;|status=wp_probe_meta:utf8mb4_unicode_520_ci;wp_probe_options:utf8mb4_unicode_ci;|columns=option_id:PRI;option_name:UNI;option_value:;|where=meta_id:NO;meta_key:YES;|missing=0

@@ -1,0 +1,1 @@
+phpc emits one bounded warning and leaves the invalid explicit id as a project-specific unsupported SAPI boundary; system PHP's files handler emits version-dependent illegal-character/read-failure warnings.

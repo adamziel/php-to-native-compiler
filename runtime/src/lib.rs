@@ -3126,6 +3126,34 @@ impl PhpObject {
         Ok(())
     }
 
+    pub fn write_property_from_context_with_object_type_resolver<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        object_type_resolver: F,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let mut properties = self.properties.borrow_mut();
+        let property = self.context_property_mut(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?;
+
+        property.value = coerce_typed_property_value_with_object_type_resolver(
+            property,
+            value,
+            &object_type_resolver,
+        )?;
+        property.initialized = true;
+        Ok(())
+    }
+
     pub fn unset_property_from_context(
         &self,
         name: &str,
@@ -3394,12 +3422,51 @@ fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> Runti
     )
 }
 
+fn coerce_typed_property_value_with_object_type_resolver<F>(
+    property: &ObjectProperty,
+    value: Value,
+    object_type_resolver: &F,
+) -> RuntimeResult<Value>
+where
+    F: Fn(&PhpObject, &str) -> bool,
+{
+    let Some(type_decl) = property.type_decl.as_deref() else {
+        return Ok(value);
+    };
+    coerce_property_value_with_object_type_resolver(
+        type_decl,
+        value,
+        &property.declaring_class_name,
+        &property.name,
+        object_type_resolver,
+    )
+}
+
 pub fn coerce_property_value(
     type_decl: &str,
     value: Value,
     class_name: &str,
     property_name: &str,
 ) -> RuntimeResult<Value> {
+    coerce_property_value_with_object_type_resolver(
+        type_decl,
+        value,
+        class_name,
+        property_name,
+        |object, type_name| object.is_instance_of_class_name(type_name),
+    )
+}
+
+pub fn coerce_property_value_with_object_type_resolver<F>(
+    type_decl: &str,
+    value: Value,
+    class_name: &str,
+    property_name: &str,
+    object_type_resolver: F,
+) -> RuntimeResult<Value>
+where
+    F: Fn(&PhpObject, &str) -> bool,
+{
     let without_nullable = type_decl.strip_prefix('?').unwrap_or(type_decl);
     let normalized = without_nullable
         .strip_prefix('\\')
@@ -3467,7 +3534,7 @@ pub fn coerce_property_value(
         (Value::Bool(false), "bool" | "false") => true,
         (Value::Array(_), "array") => true,
         (Value::Object(_), "object") => true,
-        (Value::Object(object), type_name) => object.is_instance_of_class_name(type_name),
+        (Value::Object(object), type_name) => object_type_resolver(object, type_name),
         _ => false,
     };
 

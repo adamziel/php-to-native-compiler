@@ -183,6 +183,46 @@ echo $items["slot"], "|", $registry["args"][0], "|", $copy[0];
 }
 
 #[test]
+fn array_reference_literals_assigned_to_dynamic_property_feed_call_user_func_array() {
+    let execution = run_source(
+        r#"<?php
+function mark_refcow_literal_dynamic(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+function &pick_refcow_literal_dynamic(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$property = "args";
+$value = "seed";
+$store = new stdClass();
+$store->{$property} = array(&$value, "dynamic");
+call_user_func_array("mark_refcow_literal_dynamic", $store->args);
+echo $value, "|", $store->args[0], "\n";
+
+$alias =& call_user_func_array("pick_refcow_literal_dynamic", $store->args);
+$alias = $alias . ":alias";
+echo $value, "|", $store->args[0], "|", $alias, "\n";
+
+$items = ["slot" => "array"];
+$store->{$property} = array(&$items["slot"], "copy");
+$copy = $store->args;
+$copy[0] = "copied";
+echo $items["slot"], "|", $store->args[0], "|", $copy[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:dynamic|seed:dynamic\nseed:dynamic:dynamic:alias|seed:dynamic:dynamic:alias|seed:dynamic:dynamic:alias\ncopied|copied|copied"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_copies_preserve_direct_reference_element_identity() {
     let execution = run_source(
         r#"<?php

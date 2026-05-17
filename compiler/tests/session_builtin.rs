@@ -226,6 +226,35 @@ echo $_SESSION["token"], "|", $_SESSION["nested"]["count"];
 }
 
 #[test]
+fn session_start_rejects_explicit_ids_outside_bounded_file_safe_subset() {
+    let execution = run_source(
+        r#"<?php
+function invalid_session_id_warning($errno, $errstr, $errfile, $errline) {
+    echo "warning:" . $errno;
+    echo ":" . (str_contains($errstr, "bounded file-safe subset") ? "id" : "other");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}
+set_error_handler("invalid_session_id_warning", E_WARNING);
+session_id("bad/slash");
+$started = session_start(["use_cookies" => false]);
+echo "|return:" . ($started ? "true" : "false");
+echo "|status:" . (session_status() === PHP_SESSION_NONE ? "none" : "active");
+echo "|headers:" . count(headers_list());
+echo "|session:" . (isset($_SESSION) ? "set" : "unset");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:id:Command line code:10|return:false|status:none|headers:0|session:unset"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_start_while_active_emits_notice_and_keeps_session_open() {
     let execution = run_source(
         r#"<?php

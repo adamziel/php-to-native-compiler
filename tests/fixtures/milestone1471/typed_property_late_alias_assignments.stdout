@@ -1,0 +1,4 @@
+instance|Hook
+static|ActionHook
+interface|ContractHook
+static-interface|ContractHook

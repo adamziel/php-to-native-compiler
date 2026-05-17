@@ -5246,6 +5246,47 @@ echo mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_query_filters_bounded_wordpress_schema_metadata_with_percent_like() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_options (option_id bigint(20) unsigned NOT NULL auto_increment, option_name varchar(191) NOT NULL default '', option_value longtext NOT NULL, autoload varchar(20) NOT NULL default 'yes', PRIMARY KEY  (option_id), UNIQUE KEY option_name (option_name)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "CREATE TABLE wp_probe_meta (meta_id bigint(20) unsigned NOT NULL auto_increment, option_id bigint(20) unsigned NOT NULL default 0, meta_key varchar(255) NULL, PRIMARY KEY  (meta_id), KEY option_id (option_id)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+$tables = mysqli_query($handle, "SHOW TABLES LIKE 'wp_probe_%'");
+echo "tables=", mysqli_num_rows($tables), ":";
+while ($table = mysqli_fetch_row($tables)) {
+    echo $table[0], ";";
+}
+$status = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp_probe_%'");
+echo "|status=", mysqli_num_rows($status), ":";
+while ($row = mysqli_fetch_assoc($status)) {
+    echo $row["Name"], ":", $row["Collation"], ";";
+}
+$columns = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_probe_options` LIKE 'option_%'");
+echo "|columns=", mysqli_num_rows($columns), ":";
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ":", $column["Key"], ";";
+}
+$where = mysqli_query($handle, "SHOW COLUMNS FROM wp_probe_meta WHERE Field LIKE 'meta_%'");
+echo "|where=", mysqli_num_rows($where), ":";
+while ($column = mysqli_fetch_assoc($where)) {
+    echo $column["Field"], ":", $column["Null"], ";";
+}
+$missing = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp_missing_%'");
+echo "|missing=", mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "tables=2:wp_probe_meta;wp_probe_options;|status=2:wp_probe_meta:utf8mb4_unicode_520_ci;wp_probe_options:utf8mb4_unicode_ci;|columns=3:option_id:PRI;option_name:UNI;option_value:;|where=2:meta_id:NO;meta_key:YES;|missing=0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php
