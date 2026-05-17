@@ -1030,6 +1030,51 @@ echo empty($bag->missing) ? "missing:empty" : "missing:not-empty";
 }
 
 #[test]
+fn magic_get_runs_for_inaccessible_and_dynamic_property_reads() {
+    let source = r#"<?php
+class MagicReadBox {
+    private $secret = "private";
+    protected $settings = "protected";
+
+    public function __get($property) {
+        echo "get:$property\n";
+        if ($property === "secret") {
+            return "magic:" . $this->secret;
+        }
+        if ($property === "settings") {
+            return "magic:" . $this->settings;
+        }
+        return "missing:" . $property;
+    }
+}
+
+$box = new MagicReadBox();
+echo $box->secret, "\n";
+$property = "settings";
+echo $box->{$property}, "\n";
+$property = "dynamic";
+echo $box->{$property}, "\n";
+echo $box->missing;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:secret\n",
+            "magic:private\n",
+            "get:settings\n",
+            "magic:protected\n",
+            "get:dynamic\n",
+            "missing:dynamic\n",
+            "get:missing\n",
+            "missing:missing",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_set_runs_for_missing_direct_property_writes() {
     let source = r#"<?php
 class Bag {
@@ -5557,6 +5602,52 @@ echo "sapi|", $sapi->getNumberOfParameters(), "/", $sapi->getNumberOfRequiredPar
         "strpos|strpos|3/2|ReflectionUnionType:int|false|3\noffset|offset|1|1|0|int\nsubstr|save|3/2\ntrim|init|2/1\nltrim|admin\nrtrim|hook\ncontains|1|bool\nstarts|1\nends|1\ncase|0\npath|wp-config|/var/www\nformat|hook:init:10\nvariadic|values|1|1|0\nimplode|mu-plugin\ndefined|1\nfunction|1\nsapi|0/0|cli"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_reflects_bounded_closure_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$callback = function (string $hook, $priority = 10): string { return $hook; };
+$function = new ReflectionFunction($callback);
+$suffix = "tests/fixtures/milestone1587/closure_reflection_metadata.php";
+echo "fn|", $function->getName(), "|", get_class($function), "|", $function->getNumberOfParameters(), "/", $function->getNumberOfRequiredParameters(), "|", ($function->returnsReference() ? "1" : "0"), "|", ($function->hasReturnType() ? "1" : "0"), "|", $function->getReturnType()->getName(), "\n";
+echo "source|", substr($function->getFileName(), -strlen($suffix)), "|", $function->getStartLine(), "|", $function->getEndLine(), "|", ($function->getDocComment() === false ? "1" : "0"), "\n";
+foreach ($function->getParameters() as $index => $parameter) {
+    $type = $parameter->getType();
+    $declaring = $parameter->getDeclaringFunction();
+    echo "param", $index, "|", $parameter->getName(), "|", ($parameter->isOptional() ? "1" : "0"), "|", ($parameter->isDefaultValueAvailable() ? "1" : "0"), "|", ($parameter->isDefaultValueAvailable() ? $parameter->getDefaultValue() : ""), "|", ($type ? $type->getName() : ""), "|", $declaring->getName(), "\n";
+}
+
+$arrow = fn($value): int => 42;
+$arrowReflection = new ReflectionFunction($arrow);
+echo "arrow|", $arrowReflection->getName(), "|", $arrowReflection->getNumberOfParameters(), "/", $arrowReflection->getNumberOfRequiredParameters(), "|", $arrowReflection->getReturnType()->getName(), "|", $arrowReflection->getStartLine(), "|", $arrowReflection->getEndLine();
+"#,
+        "tests/fixtures/milestone1587/closure_reflection_metadata.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fn|{closure}|ReflectionFunction|2/1|0|1|string\nsource|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1\nparam0|hook|0|0||string|{closure}\nparam1|priority|1|1|10||{closure}\narrow|{closure}|1/1|int|13|13"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_rejects_closure_invocation_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$callback = function () { return "ok"; };
+$function = new ReflectionFunction($callback);
+echo $function->invoke();
+"#,
+    );
+
+    assert!(error.message.contains("ReflectionFunction::invoke"));
+    assert!(error
+        .message
+        .contains("closure reflection invocation is not implemented"));
 }
 
 #[test]

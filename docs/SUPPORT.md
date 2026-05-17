@@ -166,8 +166,9 @@
   receiver calls that return by reference use that same bridge for normal
   invocation when the returned reference is discarded. This does not add
   mixed nested `ArrayAccess` chains, general magic-property reference
-  containers, arbitrary reference expressions, normal property-read magic
-  fallback breadth, or a general in-call PHP reference container. String
+  containers, arbitrary reference expressions, reference-returning `__get()`
+  as a by-value normal property read, or a general in-call PHP reference
+  container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -489,16 +490,15 @@
   private/protected dynamic property names alias through the context-aware
   property root when reached from a valid method visibility context. Allowed
   dynamic-property objects such as `stdClass` materialize a missing selected
-  public property as `null` before binding. Missing direct object
-  properties can dispatch to visible non-static magic `__get()` when it is
-  declared by reference and its body returns a direct variable in the current
-  reference-return subset; the alias binds to that returned variable cell.
-  This includes named missing-property sources and dynamic public property
-  names that resolve to strings or integers. Dynamic-property sources on
-  non-direct object expressions, missing dynamic properties on classes that do
-  not allow dynamic public slots and have no supported magic fallback,
-  non-public dynamic property names outside a valid method visibility context,
-  non-reference-returning `__get()`,
+  public property as `null` before binding. Missing or inaccessible declared
+  direct object properties can dispatch to visible non-static magic `__get()`
+  when it is declared by reference and its body returns a direct variable in
+  the current reference-return subset; the alias binds to that returned
+  variable cell. This includes named and dynamic property names that resolve
+  to strings or integers. Dynamic-property sources on non-direct object
+  expressions, missing dynamic properties on classes that do not allow dynamic
+  public slots and have no supported magic fallback, non-reference-returning
+  `__get()`,
   `__get()` returns of properties, array offsets, or expressions, non-variable
   reference targets, full reference containers, copy-on-write, exact alias
   destruction ordering, exact magic-property notices, and native lowering
@@ -1195,8 +1195,14 @@
   private property slots owned by the active declaring class and protected
   property slots owned by the active class or an ancestor are also supported,
   including inherited parent-declared protected slots on child objects.
-  Missing direct-property reads call a visible non-static `__get($name)` method
-  when one is declared or inherited. Missing direct-property writes call a
+  Missing or inaccessible declared direct-property reads call a visible
+  non-static, non-reference-returning `__get($name)` method when one is
+  declared or inherited. Dynamic property-name reads use the same `__get()`
+  fallback after the property expression evaluates to a supported string or
+  integer property name. Normal by-value property reads through
+  reference-returning `__get()` remain outside this slice; those methods are
+  only executable through the documented reference-source bridges. Missing
+  direct-property writes call a
   visible non-static `__set($name, $value)` method when one is declared or
   inherited, ignore its return value, and preserve the assignment expression
   result as the assigned value. Missing direct-property `unset($object->name)`
@@ -1395,7 +1401,7 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `clearstatcache`, `realpath`, `realpath_cache_get`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -2562,12 +2568,13 @@
   order. The default backslash escape character in prepared option-name
   `LIKE` pattern parameters honors the placeholder handle's bounded
   `NO_BACKSLASH_ESCAPES` branch, while explicit custom single-character
-  `ESCAPE '<char>'` clauses such as `ESCAPE '!'` keep using the declared
-  escape character. This prepared path remains bounded to the documented
-  option-row projections and does not support explicit `ESCAPE '\\'` parity
-  under `NO_BACKSLASH_ESCAPES`, prepared pattern lists, `DESC` ordering,
-  arbitrary `ORDER BY` expressions, collation fidelity, or host database
-  execution. The
+  `ESCAPE '<char>'` clauses such as `ESCAPE '!'`, plus explicit
+  `ESCAPE '\\'`, keep using the declared escape character. This prepared path
+  remains bounded to the documented
+  option-row projections and does not support the same explicit
+  `ESCAPE '\\'` parity for direct SQL literal patterns, prepared pattern
+  lists, `DESC` ordering, arbitrary `ORDER BY` expressions, collation
+  fidelity, or host database execution. The
   exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
@@ -2678,7 +2685,7 @@
   threshold, removing only recorded timeout rows whose string values parse
   below that threshold. Its prepared pattern parsing uses the same bounded
   `NO_BACKSLASH_ESCAPES` behavior as the other prepared option-name `LIKE`
-  filters. Prepared mutation SQL
+  filters, including explicit `ESCAPE '\\'` clauses. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, arbitrary projections, real unique-index enforcement,
   no-op update affected-row fidelity, prepared mutation shapes beyond the exact
@@ -2958,20 +2965,25 @@
   leaves those entries intact, `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
   `clearstatcache(true)` clears all bounded realpath entries.
+  `realpath_cache_size()` accepts no arguments and returns `0` for an empty
+  bounded request-local realpath cache or a deterministic positive integer
+  derived from the currently cached resolved UTF-8 path entries. The value is
+  suitable for request-local empty/non-empty and clear/invalidation probes, not
+  exact PHP memory accounting.
   Relative paths share the same current process-path-then-repository-root
   policy as `file_exists`. This is a bounded local path slice, not full PHP
   filesystem support: symlink policy can differ from PHP/host combinations,
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
   stream wrappers, non-UTF-8 paths, realpath cache entries from other
   filesystem operations, exact realpath-cache `key` hash values and expiration
-  policy, `realpath_cache_size()`, TOCTOU semantics, host filesystem coupling,
+  policy, exact `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
   partial-output behavior, and native lowering remain unsupported. Native
   function-table introspection can
   see the known builtin names, while direct native `realpath(...)` calls stop
   at a dedicated
   filesystem-canonicalization codegen boundary before argument lowering or
-  backend selection and direct `realpath_cache_get()` calls remain rejected by
-  the generic native function-call boundary.
+  backend selection and direct `realpath_cache_get()`/`realpath_cache_size()`
+  calls remain rejected by the generic native function-call boundary.
   `getcwd()` accepts no arguments and returns the process current working
   directory as a UTF-8 string. This is a bounded CLI/request-state filesystem
   slice: directory changes through `chdir()`, failure returning `false`,
@@ -4549,15 +4561,14 @@
   direct reads of previously assigned static variables; direct `isset($name)`
   checks over the current static-variable map; and `echo`/`print`.
   Native echo conversion is limited to this static scalar path: `null` and
-  `false` emit nothing, `true` emits `1`, integers use `%lld`, floats use
-  `%g`, and most strings are emitted through generated static string
-  constants. Statement-form `print` of a direct compile-time string value is
-  the first normal generated runtime-helper output path: LLVM IR copies the
-  static string bytes into a native string handle, clones them into a runtime
-  value handle, writes them with `phpc_native_value_echo_stdout`, and frees the
-  handles. This does not yet cover `echo`, dynamic string expression output,
-  binary PHP string values, diagnostics handles for failed stdout writes, or
-  linked native execution.
+  `false` emit nothing, `true` emits `1`, integers use `%lld`, and floats use
+  `%g`. Statement-form `echo` and `print` of a direct compile-time string value
+  now use the first normal generated runtime-helper output path: LLVM IR copies
+  the static string bytes into a native string handle, clones them into a
+  runtime value handle, writes them with `phpc_native_value_echo_stdout`, and
+  frees the handles. This does not yet cover dynamic string-pointer expression
+  output, binary PHP string values, diagnostics handles for failed stdout
+  writes, linked native execution, or the C fallback assembly helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
@@ -4986,7 +4997,7 @@
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `realpath`, `realpath_cache_get`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_cache_limiter`,
   `session_cache_expire`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -5360,7 +5371,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -5540,7 +5551,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -6304,10 +6315,15 @@
   return type, and by-reference-return predicate, and executes them through
   `invoke()`/`invokeArgs()`. `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions and
-  those internal builtins over the current by-value argument subset. Other
-  internal functions, closure targets, exact internal default metadata beyond
-  that named slice, builtin argument shapes not supported by direct calls
-  such as `trim()` custom masks and `substr()` `null` lengths,
+  those internal builtins over the current by-value argument subset. The
+  constructor also accepts current closure values and exposes bounded metadata
+  for closure name `{closure}`, source file/start/end lines, false doc
+  comments, parameter metadata, return type metadata, and false
+  by-reference-return status. Closure `invoke()`/`invokeArgs()` remains an
+  explicit unsupported boundary because closure invocation itself is not
+  implemented. Other internal functions, exact internal default metadata
+  beyond that named slice, builtin argument shapes not supported by direct
+  calls such as `trim()` custom masks and `substr()` `null` lengths,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection

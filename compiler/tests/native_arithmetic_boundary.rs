@@ -909,8 +909,8 @@ echo ($ambiguous === 4.0) ? 1 : 0;
         "proven float arithmetic identity should fold:\n{ir}"
     );
     assert!(ir.contains("%tmp4 = fadd double %tmp3, 2.75"), "{ir}");
-    assert!(ir.contains("%tmp5 = fcmp oeq double %tmp4, 4.0"), "{ir}");
-    assert!(ir.contains("%tmp6 = select i1 %tmp5, i64 1, i64 0"), "{ir}");
+    assert!(ir.contains("%tmp7 = fcmp oeq double %tmp4, 4.0"), "{ir}");
+    assert!(ir.contains("%tmp8 = select i1 %tmp7, i64 1, i64 0"), "{ir}");
 }
 
 #[test]
@@ -927,13 +927,13 @@ echo 17 % 5;
 
     assert!(ir.contains("%tmp0 = add i64 10, 5"), "{ir}");
     assert!(ir.contains("%tmp1 = srem i64 %tmp0, 4"), "{ir}");
-    assert!(ir.contains("%tmp2 = srem i64 17, 5"), "{ir}");
+    assert!(ir.contains("%tmp4 = srem i64 17, 5"), "{ir}");
     assert!(
         ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp1)"),
         "{ir}"
     );
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp2)"),
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp4)"),
         "{ir}"
     );
 }

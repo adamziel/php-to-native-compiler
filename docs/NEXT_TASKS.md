@@ -17386,59 +17386,159 @@ handled.
 
 ## Milestone 1587: Object/Interface WordPress Blocker
 
-- [ ] Object/interface lane: target the next WordPress-relevant object blocker,
-  prioritizing arbitrary internal `ReflectionFunction` breadth, closure
-  reflection targets, interface or trait method reflection invocation, exact
-  reflection exceptions, inherited interface compatibility breadth,
-  constructor/destructor fidelity, magic hooks reached by WordPress,
-  class alias/autoload lifecycle breadth, readonly/property-hook behavior,
-  adapted recursive trait ordering/conflicts, built-in/internal trait
-  catalogs, or native object/reflection lowering boundaries.
+- [x] Object/interface lane: closed with a bounded closure
+  `ReflectionFunction` metadata slice. `new ReflectionFunction($closure)` now
+  accepts current closure values and exposes the PHP-comparable `{closure}`
+  name, source file/start/end line metadata, false doc comments, parameter
+  metadata, return type metadata, and false by-reference-return status for
+  ordinary and arrow closures. Closure `invoke()`/`invokeArgs()` remains an
+  explicit unsupported boundary because closure invocation itself is not
+  implemented. This does not add closure execution, captured-variable
+  reflection, closure scope/class metadata, closure binding, attributes,
+  by-reference closure returns, exact multi-line closure end-line fidelity
+  beyond the current statement-span approximation, exact `ReflectionException`
+  objects/text, interface or trait method reflection invocation, inherited
+  interface compatibility breadth, constructor/destructor fidelity, additional
+  magic hooks reached by WordPress, broader class alias/autoload lifecycle
+  behavior, readonly/property-hook behavior, adapted recursive trait
+  ordering/conflicts, built-in/internal trait catalogs, or native
+  object/reflection lowering.
 
 ## Milestone 1588: Reference/COW WordPress Blocker
 
-- [ ] Reference/COW lane: target the next real reference/COW blocker,
-  prioritizing real reference containers, general magic-property reference
-  containers, arbitrary reference expressions, invisible selected dynamic
-  properties, mixed nested `ArrayAccess` chains, broader array/object
-  copy-on-write, exact alias destruction ordering, object/Traversable
-  by-reference iteration, superglobal reference lifetime, normal property-read
-  magic fallback breadth, or native lowering diagnostics.
+- [x] Reference/COW lane: closed a bounded normal property-read magic fallback
+  breadth slice. Direct and dynamic object-property reads now route missing or
+  inaccessible declared properties through visible non-static,
+  non-reference-returning `__get($name)` before reporting the existing stable
+  property error. The new `milestone1588` fixture proves the `phpc run` CLI
+  path and matches system PHP. Real reference containers, general
+  magic-property reference containers, arbitrary reference expressions,
+  invisible selected dynamic properties, mixed nested `ArrayAccess` chains,
+  broader array/object copy-on-write, exact alias destruction ordering,
+  object/Traversable by-reference iteration, superglobal reference lifetime,
+  reference-returning `__get()` as a by-value normal property read, and native
+  lowering remain unsupported.
 
 ## Milestone 1589: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Request/SAPI/filesystem lane: target the next WordPress-relevant request
-  or host-state blocker, prioritizing real SAPI `Date` emission,
-  realpath-cache entries from additional filesystem operations,
-  `realpath_cache_size()`, broader stat-cache coverage,
+- [x] Request/SAPI/filesystem lane: added bounded request-local
+  `realpath_cache_size()` support over the existing successful-`realpath()`
+  cache table. The builtin accepts no arguments, is visible through
+  `function_exists()`/`is_callable()` and dynamic string-valued calls, returns
+  `0` for an empty bounded realpath cache, returns a deterministic positive
+  size while resolved UTF-8 path entries are cached, reflects
+  `clearstatcache(true)` and
+  `clearstatcache(true, $filename)` invalidation, and keeps direct native
+  calls rejected at the existing function-call lowering boundary. Exact PHP
+  realpath-cache memory-byte accounting, realpath-cache entries from
+  additional filesystem operations, broader stat-cache coverage,
   include_path/open_basedir policy, stream-wrapper cache interaction,
   cookie-name encoding, exact `ValueError` objects/text, output buffering,
   shutdown/fatal/destructor ordering, request-body lifetime, uploads, broader
-  session-cookie policy, host filesystem edge cases, or native lowering
-  boundaries.
+  host filesystem edge cases, and native realpath-cache lowering remain
+  unsupported.
 
 ## Milestone 1590: WordPress DB/Bootstrap Evidence Blocker
 
-- [ ] WordPress DB/bootstrap lane: target the next database or bootstrap
-  blocker, prioritizing arbitrary prepared SQL, broader
-  SQL-mode/string-literal/wildcard parity, explicit `ESCAPE '\\'` parity under
-  `NO_BACKSLASH_ESCAPES`, prepared pattern lists, collation fidelity, host
-  database execution, dbDelta-relevant schema behavior, persistent object
-  cache/transients, full WordPress option APIs, hook callback breadth,
-  plugin/theme loading breadth, REST/admin/front-controller bootstrap evidence,
-  or native database lowering boundaries.
+- [x] WordPress DB/bootstrap lane: added a bounded prepared option-name
+  `ESCAPE '\\'` SQL-mode parity slice. Prepared `wp_options` option-name
+  `LIKE` scans, prepared option-name `LIKE` deletes, and prepared
+  expired-timeout option-name predicates now distinguish the implicit default
+  backslash escape, which remains disabled under `NO_BACKSLASH_ESCAPES`, from
+  an explicit single-character `ESCAPE '\\'` clause, which keeps using
+  backslash as the pattern escape character. The new `milestone1590` fixture
+  proves the `phpc run` CLI path and is marked `phpc-only` because system PHP
+  needs a real database connection. Arbitrary prepared SQL, broader
+  SQL-mode/string-literal/wildcard parity, direct literal pattern
+  `ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES`, prepared pattern lists,
+  collation fidelity, host database execution, dbDelta-relevant schema
+  breadth, persistent object cache/transients, full WordPress option APIs,
+  hook callback breadth, plugin/theme loading breadth,
+  REST/admin/front-controller evidence, and native database lowering remain
+  unsupported.
 
 ## Milestone 1591: Native Runtime ABI/Execution Blocker
 
-- [ ] Native runtime ABI lane: target the next native integration blocker,
-  prioritizing linked native execution probes, `echo` helper-call lowering,
-  diagnostics handles, binary PHP string value handles, dynamic string
-  expression lowering, request-state handles,
-  array/object/resource/reference ABI shapes, explicit native rejections for
-  unsupported runtime state, WordPress host-state ABI boundaries, or C-fallback
-  assembly helper calls.
+- [x] Native runtime ABI lane: extended the normal generated LLVM helper-call
+  output path from statement-form `print` to statement-form `echo` of direct
+  compile-time string values. Static string `echo` now builds native
+  string/value handles, calls `phpc_native_value_echo_stdout`, and frees those
+  handles instead of using generated static-string `printf`. The new
+  `milestone1591` fixture proves the `phpc run` CLI path, matches system PHP,
+  and pins the generated `--emit-ir` helper-call path. Linked native
+  execution, dynamic string-pointer expression helper lowering, binary PHP
+  string value handles, diagnostics handles, request-state handles,
+  array/object/resource/reference ABI shapes, WordPress host-state ABI, and C
+  fallback assembly helper calls remain unsupported.
 
 ## Milestone 1592: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: refreshed the compatibility ledger, support docs,
+  progress log, lane-worker queue, and loop memory for the 1587-1591 batch;
+  recorded focused verification; regenerated the affected static-string
+  `echo` `--emit-ir` snapshots after helper-call lowering replaced direct
+  static-string `printf`; ran the serialized full gate; and prepared the
+  checkpoint batch. Focused integrated checks passed for closure
+  `ReflectionFunction` metadata, normal property-read magic `__get()`
+  fallback, bounded `realpath_cache_size()`, prepared explicit backslash
+  `ESCAPE` parity under `NO_BACKSLASH_ESCAPES`, generated static string
+  `echo` runtime-helper lowering, and the native boundary suites whose
+  assertions were shifted by the helper calls. Milestone fixtures 1587-1591
+  passed, with system PHP comparisons for 1587, 1588, 1589, and 1591 and a
+  documented `phpc-only` skip for 1590. The full-gate result is recorded in
+  `docs/PROGRESS.md`.
+
+## Milestone 1593: Object/Interface WordPress Blocker
+
+- [ ] Object/interface lane: target inherited interface compatibility,
+  interface/trait method reflection invocation, exact reflection exceptions,
+  constructor/destructor fidelity, additional magic hooks reached by
+  WordPress, class alias/autoload lifecycle behavior, readonly/property-hook
+  behavior, adapted recursive trait ordering/conflicts, built-in/internal trait
+  catalogs, broader closure/internal reflection targets, or native
+  object/reflection lowering. Keep the slice bounded, prove it with code,
+  tests, CLI coverage, docs, and named unsupported edge cases.
+
+## Milestone 1594: Reference/COW WordPress Blocker
+
+- [ ] Reference/COW lane: target real reference containers, general
+  magic-property reference containers, arbitrary reference expressions,
+  invisible selected dynamic properties, mixed nested `ArrayAccess` chains,
+  broader array/object copy-on-write, exact alias destruction ordering,
+  object/Traversable by-reference iteration, superglobal reference lifetime,
+  reference-returning `__get()` as a by-value normal property read, or native
+  lowering diagnostics. Keep the slice bounded and executable.
+
+## Milestone 1595: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Request/SAPI/filesystem lane: target exact PHP realpath-cache byte
+  accounting, realpath-cache entries from additional filesystem operations,
+  broader stat-cache coverage, include_path/open_basedir policy,
+  stream-wrapper cache interaction, cookie-name encoding, exact `ValueError`
+  objects/text, output buffering, shutdown/fatal/destructor ordering,
+  request-body lifetime, uploads, broader session-cookie policy, host
+  filesystem edge cases, or native realpath/cache lowering.
+
+## Milestone 1596: WordPress DB/Bootstrap Evidence Blocker
+
+- [ ] WordPress DB/bootstrap lane: target arbitrary prepared SQL, broader
+  SQL-mode/string-literal/wildcard parity, direct literal pattern
+  `ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES`, prepared pattern lists,
+  collation fidelity, host database execution, dbDelta-relevant schema
+  breadth, persistent object cache/transients, full WordPress option APIs,
+  hook callback breadth, plugin/theme loading breadth, REST/admin/front-
+  controller evidence, or native database lowering.
+
+## Milestone 1597: Native Runtime ABI/Execution Blocker
+
+- [ ] Native runtime ABI lane: target linked native execution,
+  dynamic string-pointer expression helper lowering, binary PHP string value
+  handles, diagnostics handles for failed handle conversion or stdout writes,
+  request-state handles, array/object/resource/reference ABI shapes,
+  WordPress host-state ABI, C fallback assembly helper calls, or explicit
+  native rejections where runtime ABI coverage is still missing.
+
+## Milestone 1598: WordPress-Focused Queue Refresh
 
 - [ ] Tests/docs lane: after the next implementation lanes land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and

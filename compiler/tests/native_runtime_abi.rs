@@ -216,8 +216,7 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
 
 #[test]
 fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
-    let ir = emit_ir_source("<?php\n$label = \"runtime helper\";\nprint $label;\necho \"\\n\";\n")
-        .unwrap();
+    let ir = emit_ir_source("<?php\n$label = \"runtime helper\";\nprint $label;\n").unwrap();
 
     assert!(
         ir.contains("%phpc.NativeStringHandle = type { ptr }"),
@@ -261,8 +260,52 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
         "{ir}"
     );
+}
+
+#[test]
+fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
+    let ir = emit_ir_source("<?php\n$label = \"echo helper\";\necho $label;\n").unwrap();
+
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.1)"),
+        ir.contains("%phpc.NativeStringHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("%phpc.NativeValueHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.0, i64 11)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_echo_stdout"),
+        "{ir}"
+    );
+    assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
+    assert!(
+        !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
         "{ir}"
     );
 }
@@ -301,13 +344,13 @@ fn normal_print_string_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
 }
 
 #[test]
-fn normal_echo_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_out_of_echo_lowering() {
+fn normal_echo_string_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture =
-        workspace_root.join("tests/fixtures/milestone1573/native_string_handle_boundary.php");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1591/native_echo_string_runtime_helper_lowering.php");
     let relative_fixture = fixture
         .strip_prefix(workspace_root)
         .expect("fixture lives under workspace root")
@@ -323,50 +366,14 @@ fn normal_echo_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_out_of_e
 
     let expected = fs::read_to_string(
         workspace_root
-            .join("tests/fixtures/milestone1573/native_string_handle_boundary_emit_ir.cli"),
+            .join("tests/fixtures/milestone1591/native_echo_string_runtime_helper_lowering.cli"),
     )
-    .expect("native string handle boundary CLI snapshot is readable");
+    .expect("native echo runtime helper CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);
-    assert!(
-        !actual.contains("phpc_native_string_from_bytes"),
-        "{actual}"
-    );
-}
-
-#[test]
-fn normal_echo_string_value_emit_ir_cli_snapshot_keeps_value_helpers_out_of_echo_lowering() {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .expect("compiler has a workspace root");
-    let fixture =
-        workspace_root.join("tests/fixtures/milestone1579/native_string_value_handle_boundary.php");
-    let relative_fixture = fixture
-        .strip_prefix(workspace_root)
-        .expect("fixture lives under workspace root")
-        .to_str()
-        .expect("fixture path is valid UTF-8")
-        .to_string();
-
-    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
-        .current_dir(workspace_root)
-        .args(["compile", &relative_fixture, "--emit-ir"])
-        .output()
-        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
-
-    let expected = fs::read_to_string(
-        workspace_root.join("tests/fixtures/milestone1579/native_string_value_handle_boundary.cli"),
-    )
-    .expect("native string value handle boundary CLI snapshot is readable");
-    let actual = render_cli_snapshot(&output);
-
-    assert_eq!(actual, expected);
-    assert!(
-        !actual.contains("phpc_native_value_from_string"),
-        "{actual}"
-    );
+    assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
+    assert!(actual.contains("phpc_native_string_from_bytes"), "{actual}");
     assert!(!actual.contains("phpc_native_value_echo_bytes"), "{actual}");
 }
 

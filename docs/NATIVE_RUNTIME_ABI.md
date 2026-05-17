@@ -167,9 +167,8 @@ Milestone 1579 adds the opaque runtime value handle declaration
 `phpc_native_value_from_string` helper that clones valid UTF-8 string handles
 into runtime `Value::String` handles, value echo-byte cloning, and value-handle
 freeing. The deterministic probe includes a string-handle-to-value echo path,
-while the Milestone 1579 CLI fixture pins that normal generated string output
-still uses the existing direct `printf` lowering path and does not call the
-value helpers.
+while normal generated string output still used the existing direct `printf`
+lowering path at that milestone.
 
 Milestone 1585 adds the first normal generated LLVM helper-call lowering path:
 statement-form `print` of a direct compile-time string value is copied into a
@@ -178,14 +177,20 @@ native string handle, cloned into a runtime value handle, written through
 declares and calls the stdout helper for host-width and explicit 32-bit
 snapshots.
 
-This is still not linked native execution. Normal `echo` string lowering,
-dynamic string expression output, binary PHP string value handles, diagnostics
-handles, request state, arrays, objects, resources, references, and WordPress
-host state remain outside this ABI slice. The snapshot uses the selected
-target's `usize`/pointer-width shape; a real linked native backend still needs
-full target data layout, calling-convention validation, runtime linking, and
-runtime helper emission before broader helper calls can execute truthfully for
-all supported targets.
+Milestone 1591 extends that normal generated LLVM helper-call lowering path to
+statement-form `echo` of direct compile-time string values. Each such value is
+copied into a native string handle, cloned into a runtime value handle, written
+through `phpc_native_value_echo_stdout`, and then freed with the same helper
+sequence used by the `print` slice.
+
+This is still not linked native execution. Dynamic string-pointer expression
+output, binary PHP string value handles, diagnostics handles, request state,
+arrays, objects, resources, references, WordPress host state, and C fallback
+assembly helper calls remain outside this ABI slice. The snapshot uses the
+selected target's `usize`/pointer-width shape; a real linked native backend
+still needs full target data layout, calling-convention validation, runtime
+linking, and runtime helper emission before broader helper calls can execute
+truthfully for all supported targets.
 
 ## Verification
 
@@ -221,9 +226,9 @@ The tests pin:
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
   byte-buffer, string-handle, value-handle, and value stdout helper
   declarations plus the probe calls.
-- the normal generated `--emit-ir` CLI path for statement-form `print` of a
-  direct compile-time string value through the runtime string/value stdout
-  helpers.
+- the normal generated `--emit-ir` CLI path for statement-form `print` and
+  `echo` of direct compile-time string values through the runtime string/value
+  stdout helpers.
 
 ## Explicit Non-Support
 
@@ -234,10 +239,10 @@ This ABI does not yet provide:
   lowering of PHP strings through runtime helpers beyond the scalar echo
   owned-byte helper, copied raw-byte buffer helper, opaque copied string-handle
   helper, valid UTF-8 string-handle-to-value helper, and the narrow
-  statement-form string `print` stdout helper path;
+  statement-form string `echo`/`print` stdout helper path;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR beyond direct
-  compile-time string `print` statements;
+  compile-time string `echo`/`print` statements;
 - symbol tables, stack frames, call lookup, or diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

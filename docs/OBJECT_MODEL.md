@@ -311,7 +311,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   PHP-comparable name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, by-reference-return predicate, and
   by-value `invoke()`/`invokeArgs()` execution through the existing builtin
-  dispatcher;
+  dispatcher; current closure values are also accepted for bounded
+  `{closure}` source/parameter/return metadata, while closure reflection
+  invocation remains unsupported;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -460,10 +462,10 @@ class context lookup has native support.
 handle identity has native support.
 `spl_object_hash` is rejected through that function-call boundary until PHP
 object handle hash behavior has native support.
-`ReflectionFunction` construction and invocation, including the named bounded
-internal function slice, are rejected through the object/class and
-function-call native boundaries until reflection objects and builtin dispatch
-have native runtime support.
+`ReflectionFunction` construction and invocation, including closure metadata
+and the named bounded internal function slice, are rejected through the
+object/class, closure, and function-call native boundaries until reflection
+objects, closure metadata, and builtin dispatch have native runtime support.
 
 ## Unsupported Edge Cases
 

@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone1588/normal_magic_get_property_read_fallback.php
+get:secret
+magic:private
+get:settings
+magic:protected
+get:dynamic
+missing:dynamic
+get:missing
+missing:missing
+0

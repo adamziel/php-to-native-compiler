@@ -2,7 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-nonempty: true
-contains: Codegen error:
-contains: function-call lowering rejects function calls
+codegen error at tests/fixtures/milestone567/array_unique_sort_regular.php:2:10: LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior
 --- stderr end ---

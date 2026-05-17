@@ -25,7 +25,11 @@ entry:
   call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp1)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp0)
   call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 226)
-  call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.1)
+  %tmp2 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.1, i64 1)
+  %tmp3 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp2)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp3)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp3)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp2)
   call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.2)
   ret i32 0
 }

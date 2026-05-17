@@ -445,7 +445,11 @@ echo $same;
         "identical string branches should not emit a pointer select:\n{ir}"
     );
     assert_eq!(ir.matches("c\"same!\\00\"").count(), 1, "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_str"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 5)"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_value_echo_stdout"), "{ir}");
 }
 
 #[test]

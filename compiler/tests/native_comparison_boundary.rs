@@ -132,7 +132,7 @@ echo ($ambiguous === true) ? 1 : 0;
         "known false comparison result should feed later boolean identity:\n{ir}"
     );
     assert!(
-        ir.contains("%tmp4 = select i1 %tmp3, i64 1, i64 0"),
+        ir.contains("%tmp8 = select i1 %tmp3, i64 1, i64 0"),
         "ambiguous comparison result should feed boolean-literal identity without an extra comparison:\n{ir}"
     );
 }
@@ -236,7 +236,7 @@ echo $value >= $value;
     assert_eq!(
         ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.")
             .count(),
-        9,
+        3,
         "{ir}"
     );
 }
@@ -375,7 +375,7 @@ echo ($ambiguous === true) ? 1 : 0;
         "known false float comparison result should feed later boolean identity:\n{ir}"
     );
     assert!(
-        ir.contains("%tmp4 = select i1 %tmp3, i64 1, i64 0"),
+        ir.contains("%tmp8 = select i1 %tmp3, i64 1, i64 0"),
         "ambiguous float comparison result should feed boolean-literal identity without an extra comparison:\n{ir}"
     );
 }
@@ -526,7 +526,7 @@ echo $always_left == $ambiguous;
         "ambiguous boolean comparison should stay emitted:\n{ir}"
     );
     assert!(
-        ir.contains("select i1 %tmp5"),
+        ir.contains("select i1 %tmp9"),
         "ambiguous boolean comparison result should still feed echo conversion:\n{ir}"
     );
 }
@@ -676,7 +676,7 @@ echo $bounded == 7;
         "ambiguous bounded comparison should stay emitted:\n{ir}"
     );
     assert!(
-        ir.contains("select i1 %tmp4"),
+        ir.contains("select i1 %tmp12"),
         "ambiguous bounded comparison should still feed boolean echo conversion:\n{ir}"
     );
 }
@@ -730,7 +730,7 @@ echo $bounded == 7.5;
         "ambiguous bounded comparison should stay emitted:\n{ir}"
     );
     assert!(
-        ir.contains("select i1 %tmp4"),
+        ir.contains("select i1 %tmp12"),
         "ambiguous bounded comparison should still feed boolean echo conversion:\n{ir}"
     );
 }
@@ -823,7 +823,7 @@ echo ($ambiguous === true) ? 1 : 0;
         "known false string comparison result should feed later boolean identity:\n{ir}"
     );
     assert!(
-        ir.contains("%tmp6 = select i1 %tmp5, i64 1, i64 0"),
+        ir.contains("%tmp10 = select i1 %tmp5, i64 1, i64 0"),
         "ambiguous string comparison result should feed boolean-literal identity without an extra comparison:\n{ir}"
     );
 }
@@ -1093,7 +1093,7 @@ echo $y !== 6, "x";
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
     assert!(ir.contains("%tmp1 = mul i64 3, 2"), "{ir}");
     assert!(ir.contains("%tmp2 = icmp eq i64 %tmp0, 3"), "{ir}");
-    assert!(ir.contains("%tmp4 = icmp ne i64 %tmp1, 6"), "{ir}");
+    assert!(ir.contains("%tmp6 = icmp ne i64 %tmp1, 6"), "{ir}");
     assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
     assert!(ir.contains("c\"1\\00\""), "{ir}");
     assert!(ir.contains("c\"\\00\""), "{ir}");
@@ -1228,7 +1228,7 @@ echo ($ambiguous === true) ? 1 : 0;
     assert!(ir.contains("%tmp3 = select i1 %tmp1, i64 3, i64 4"), "{ir}");
     assert!(ir.contains("%tmp4 = icmp eq i64 %tmp0, %tmp3"), "{ir}");
     assert!(
-        ir.contains("%tmp5 = select i1 %tmp4, i64 1, i64 0"),
+        ir.contains("%tmp9 = select i1 %tmp4, i64 1, i64 0"),
         "ambiguous integer identity result should feed boolean-literal identity without an extra comparison:\n{ir}"
     );
 }
@@ -1253,7 +1253,7 @@ echo $sum !== 4.25, "x";
         "{ir}"
     );
     assert!(ir.contains("%tmp3 = fcmp oeq double %tmp2, 3.75"), "{ir}");
-    assert!(ir.contains("%tmp5 = fcmp une double %tmp2, 4.25"), "{ir}");
+    assert!(ir.contains("%tmp7 = fcmp une double %tmp2, 4.25"), "{ir}");
     assert_eq!(ir.matches("select i1").count(), 3, "{ir}");
     assert!(ir.contains("c\"1\\00\""), "{ir}");
     assert!(ir.contains("c\"\\00\""), "{ir}");

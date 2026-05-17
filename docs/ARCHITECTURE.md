@@ -588,18 +588,18 @@ protected `$this`, and protected peer-object roots when the source appears
 inside a valid method visibility context. Dynamic public object-property
 reference sources have similarly bounded routes for direct object variables.
 Named visible object-property sources can bind through the current
-public/private/protected method context. Missing direct object
-properties can also dispatch to a visible non-static magic `__get()`
-reference source when the method is declared by reference and returns a direct
-variable through the existing reference-return method path; the alias target
-binds to that returned variable cell rather than to a property slot. Dynamic
-missing public-property names use the same magic route after the property
-expression resolves to a string or integer. Non-array roots, non-direct object
-expressions, inaccessible private/protected magic fallback fidelity, `__get()`
-returns of properties/offsets/expressions, dynamic non-public magic-property
-behavior, dynamic non-public append-source paths, `ArrayAccess` offsets,
-object-property by-reference `foreach` iterables, exact broad by-reference
-`foreach`, full reference containers, copy-on-write, and native lowering remain
+public/private/protected method context. Missing or inaccessible declared
+direct object properties can also dispatch to a visible non-static magic
+`__get()` reference source when the method is declared by reference and returns
+a direct variable through the existing reference-return method path; the alias
+target binds to that returned variable cell rather than to a property slot.
+Dynamic missing or inaccessible declared property names use the same magic
+route after the property expression resolves to a string or integer. Non-array
+roots, non-direct object expressions, general magic-property reference
+containers, `__get()` returns of properties/offsets/expressions, dynamic
+non-public append-source paths, `ArrayAccess` offsets, object-property
+by-reference `foreach` iterables, exact broad by-reference `foreach`, full
+reference containers, copy-on-write, and native lowering remain
 future work. Direct variable sources
 holding object values can also be assigned into direct array offsets under the
 existing object-handle value model. Direct free-function
@@ -743,10 +743,10 @@ the returned cell. That path reuses the covered array-offset writeback
 machinery for by-reference parameters. Direct named static method and dynamic
 static receiver calls also use the bounded array-offset bridge below missing or
 inaccessible declared magic properties when visible public `__get()` returns a
-direct variable by reference. General magic-property containers, normal
-property-read magic fallback breadth, nested-control-flow returns, and
-arbitrary reference-return invocations still report stable runtime boundaries
-before any by-value return is produced.
+direct variable by reference. General magic-property containers,
+reference-returning `__get()` as a by-value normal property read,
+nested-control-flow returns, and arbitrary reference-return invocations still
+report stable runtime boundaries before any by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
@@ -1261,12 +1261,12 @@ expressions, lowerable same-type `null`, boolean, integer, finite float, known
 ASCII nonnumeric NUL-free string loose/ordering comparisons, identical string
 pointer self-comparisons, empty-string concatenation identity for lowerable
 string operands, direct supported-string-name `defined($name)` checks against
-the current exact built-in constant-name set, `echo`/non-string `print`
-through static `printf` calls, and statement-form `print` of direct
+the current exact built-in constant-name set, non-string `echo`/`print`
+through static `printf` calls, and statement-form `echo`/`print` of direct
 compile-time string values through the native string/value stdout helper ABI.
 It does not
 model PHP zvals, symbol-table storage, PHP numeric coercion,
-references/copy-on-write, broad dynamic string allocation,
+references/copy-on-write, broad dynamic string-pointer output,
 locale/version-specific float formatting, integer overflow promotion, assembly
 linking/execution, or native PHP error objects.
 Finite same-type float arithmetic and finite float unary-minus results are
@@ -2246,19 +2246,23 @@ the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields;
 `clearstatcache(false)` leaves that table intact,
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
 cached resolved-path key, and one-argument `clearstatcache(true)` clears all
-bounded realpath entries. Stream wrappers are rejected instead of being
-modeled. Symlink policy differences, exact warning plus `false` fidelity,
-include-path lookup, `open_basedir`, non-UTF-8 paths, realpath-cache entries
-from other filesystem operations, exact realpath-cache key hashes and
-expiration policy, `realpath_cache_size()`, and native filesystem lowering
-remain out of scope.
+bounded realpath entries. `realpath_cache_size()` returns a deterministic
+request-local integer over that same bounded table: empty caches report `0`,
+and cached resolved UTF-8 path entries contribute a positive stable size for
+empty/non-empty and clear/invalidation probes. Stream wrappers are rejected
+instead of being modeled. Symlink policy differences, exact warning plus
+`false` fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths,
+realpath-cache entries from other filesystem operations, exact realpath-cache
+key hashes and expiration policy, exact `realpath_cache_size()` memory-byte
+accounting, and native filesystem lowering remain out of scope.
 Native function-table introspection recognizes the names, while direct native
 `realpath(...)` calls stop at a dedicated filesystem-canonicalization codegen
 boundary before argument lowering or backend selection until generated code has
 native filesystem canonicalization, symlink/path policy, warning/false recovery,
 include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW,
-and exact native diagnostics; direct native `realpath_cache_get()` calls still
-reject under the generic function-call boundary.
+and exact native diagnostics; direct native
+`realpath_cache_get()`/`realpath_cache_size()` calls still reject under the
+generic function-call boundary.
 `getcwd()` is an interpreter-only request-state/filesystem builtin for the
 current CLI process. It accepts no arguments and returns the process current
 working directory as a UTF-8 string, while function-table introspection
@@ -2809,11 +2813,16 @@ argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-`function_exists`, and `php_sapi_name`. The function path intentionally
-rejects other internal functions, closure targets, by-reference invocation,
+`function_exists`, and `php_sapi_name`. Closure expressions also register a
+request-local `ReflectionFunction` metadata snapshot keyed by closure id, so
+`new ReflectionFunction($closure)` can expose the bounded `{closure}` name,
+current source file/start/end line metadata, parameter metadata, return type,
+false doc-comment metadata, and false by-reference-return status without
+executing the closure body. The function path intentionally rejects other
+internal functions, closure reflection invocation, by-reference invocation,
 typed parameter/return declarations during invocation, and reference returns
-until those metadata and aliasing sources exist, and doc-comment association
-does not yet model attributes or every PHP trivia edge case.
+until those callable execution and aliasing sources exist, and doc-comment
+association does not yet model attributes or every PHP trivia edge case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected

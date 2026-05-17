@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1589/realpath_cache_size.php
+exit: 0
+stdout:
+known|callable|empty|resolved|int|positive|cleared
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -84,8 +84,8 @@ echo $invert ? 1 : 0;
     );
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
-    assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
-    assert!(ir.contains("%tmp3 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
+    assert!(ir.contains("%tmp6 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
+    assert!(ir.contains("%tmp9 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
 }
 

@@ -23,7 +23,8 @@ use crate::ast::{
     EnumDecl, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
     IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
     InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, UnaryOp, UnsetTarget,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -144,6 +145,7 @@ struct Interpreter {
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     reflection_classes: HashMap<i64, ReflectionClassState>,
     reflection_functions: HashMap<i64, ReflectionFunctionState>,
+    closure_reflection_functions: HashMap<i64, ReflectionFunctionState>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -365,6 +367,7 @@ struct PropertySourceMetadata {
 struct ReflectionFunctionState {
     name: String,
     is_internal: bool,
+    is_closure: bool,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -3330,6 +3333,7 @@ impl Interpreter {
             mysqli_statements: HashMap::new(),
             reflection_classes: HashMap::new(),
             reflection_functions: HashMap::new(),
+            closure_reflection_functions: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -5551,6 +5555,16 @@ impl Interpreter {
         cache
     }
 
+    fn realpath_cache_size(&self) -> i64 {
+        self.realpath_cache
+            .values()
+            .map(|entry| {
+                let path_len = entry.realpath.len() as i64;
+                path_len.saturating_mul(2).saturating_add(80)
+            })
+            .sum()
+    }
+
     fn resolve_required_path(
         &self,
         path: &str,
@@ -6234,11 +6248,22 @@ impl Interpreter {
                 Ok(Value::Bool(self.value_instanceof(&value, class_name)))
             }
             Expr::Closure {
+                params,
                 captures,
+                return_type,
+                body,
                 span,
                 is_arrow,
                 ..
-            } => self.evaluate_closure_expression(captures, *is_arrow, *span, scope),
+            } => self.evaluate_closure_expression(
+                params,
+                captures,
+                return_type.as_ref(),
+                body,
+                *is_arrow,
+                *span,
+                scope,
+            ),
             Expr::New {
                 class_name,
                 args,
@@ -11221,12 +11246,27 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<ReflectionFunctionState> {
         let Value::String(name) = target else {
+            if let Value::Closure(closure) = target {
+                return self
+                    .closure_reflection_functions
+                    .get(&closure.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_object_instantiation(
+                                "ReflectionFunction",
+                                "closure reflection metadata is missing in the current subset",
+                            ),
+                        )
+                    });
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     "ReflectionFunction",
                     format!(
-                        "target must be function string in the current subset, got {}",
+                        "target must be function string or closure in the current subset, got {}",
                         target.type_name()
                     ),
                 ),
@@ -17018,7 +17058,7 @@ impl Interpreter {
                     &protected_class_ids,
                 ) {
                     Ok(value) => Ok(value),
-                    Err(error) if Self::is_undefined_property_error(&error) => self
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
                         .call_magic_property_method(object, "__get", property, span)?
                         .ok_or_else(|| runtime_error(span, error)),
                     Err(error) => Err(runtime_error(span, error)),
@@ -17169,9 +17209,17 @@ impl Interpreter {
             Value::Object(object) => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                object
-                    .read_property_from_context(&property, current_class_id, &protected_class_ids)
-                    .map_err(|error| runtime_error(span, error))
+                match object.read_property_from_context(
+                    &property,
+                    current_class_id,
+                    &protected_class_ids,
+                ) {
+                    Ok(value) => Ok(value),
+                    Err(error) if Self::is_magic_get_fallback_property_error(&error) => self
+                        .call_magic_property_method(object, "__get", &property, span)?
+                        .ok_or_else(|| runtime_error(span, error)),
+                    Err(error) => Err(runtime_error(span, error)),
+                }
             }
             other => Err(runtime_error(
                 span,
@@ -18414,6 +18462,15 @@ impl Interpreter {
         values: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
+        if state.is_closure {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionFunction::invoke",
+                    "closure reflection invocation is not implemented",
+                ),
+            ));
+        }
         let function = match self.lookup_function(&state.name) {
             Some(Callable::User(function)) => function,
             Some(Callable::Builtin(key)) => return self.call_builtin(&key, values, span),
@@ -21363,9 +21420,12 @@ impl Interpreter {
 
     fn evaluate_closure_expression(
         &mut self,
+        params: &[FunctionParam],
         captures: &[ClosureCapture],
+        return_type: Option<&TypeDecl>,
+        body: &[Stmt],
         is_arrow: bool,
-        _span: Span,
+        span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let mut captured_values = Vec::with_capacity(captures.len());
@@ -21380,6 +21440,16 @@ impl Interpreter {
 
         let id = self.next_closure_id;
         self.next_closure_id += 1;
+        self.closure_reflection_functions.insert(
+            id,
+            reflection_function_state_from_closure(
+                params,
+                return_type,
+                body,
+                self.source_file.clone(),
+                span,
+            ),
+        );
         Ok(Value::Closure(PhpClosure::new(
             id,
             is_arrow,
@@ -31711,6 +31781,10 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Array(self.realpath_cache_array()))
             }
+            "realpath_cache_size" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(self.realpath_cache_size()))
+            }
             "getcwd" => {
                 expect_arity(name, &args, 0, span)?;
                 let path = std::env::current_dir().map_err(|error| {
@@ -37156,6 +37230,7 @@ fn reflection_function_state_from_decl(
     ReflectionFunctionState {
         name: function.name.clone(),
         is_internal: false,
+        is_closure: false,
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -37164,6 +37239,34 @@ fn reflection_function_state_from_decl(
         returns_by_reference: function.returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(&function.params),
     }
+}
+
+fn reflection_function_state_from_closure(
+    params: &[FunctionParam],
+    return_type: Option<&TypeDecl>,
+    body: &[Stmt],
+    file_name: Option<String>,
+    span: Span,
+) -> ReflectionFunctionState {
+    ReflectionFunctionState {
+        name: "{closure}".to_string(),
+        is_internal: false,
+        is_closure: true,
+        file_name,
+        start_line: span.line,
+        end_line: reflection_closure_end_line(body, span),
+        doc_comment: None,
+        return_type: return_type.map(|decl| decl.text.clone()),
+        returns_by_reference: false,
+        params: reflection_parameter_metadata_from_function_params(params),
+    }
+}
+
+fn reflection_closure_end_line(body: &[Stmt], span: Span) -> usize {
+    body.iter()
+        .map(|stmt| stmt.span().line)
+        .max()
+        .unwrap_or(span.line)
 }
 
 fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionState> {
@@ -37253,6 +37356,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
     Some(ReflectionFunctionState {
         name: name.to_string(),
         is_internal: true,
+        is_closure: false,
         file_name: None,
         start_line: 0,
         end_line: 0,
@@ -38541,6 +38645,7 @@ fn is_builtin(name: &str) -> bool {
             | "filemtime"
             | "realpath"
             | "realpath_cache_get"
+            | "realpath_cache_size"
             | "getcwd"
             | "is_dir"
             | "is_file"
@@ -41462,24 +41567,25 @@ fn is_wordpress_option_prepared_delete_names_query(query: &str) -> bool {
 }
 
 fn is_wordpress_option_prepared_delete_prefix_query(query: &str) -> bool {
-    wordpress_option_prepared_delete_like_escape_char(query).is_some()
+    wordpress_option_prepared_delete_like_escape(query).is_some()
 }
 
-fn wordpress_option_prepared_delete_like_escape_char(query: &str) -> Option<char> {
-    let (query, escape_char) = strip_wordpress_option_prepared_like_escape_suffix(query)?;
+fn wordpress_option_prepared_delete_like_escape(query: &str) -> Option<(char, bool)> {
+    let (query, escape_char, explicit_escape) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)?;
     matches!(
         query,
         "DELETE FROM wp_options WHERE option_name LIKE ?"
             | "DELETE FROM wp_options WHERE `option_name` LIKE ?"
             | "DELETE FROM `wp_options` WHERE `option_name` LIKE ?"
     )
-    .then_some(escape_char)
+    .then_some((escape_char, explicit_escape))
 }
 
-fn strip_wordpress_option_prepared_like_escape_suffix(query: &str) -> Option<(&str, char)> {
+fn strip_wordpress_option_prepared_like_escape_suffix(query: &str) -> Option<(&str, char, bool)> {
     let query = query.trim();
     let Some((base, escape_sql)) = query.rsplit_once(" ESCAPE ") else {
-        return Some((query, '\\'));
+        return Some((query, '\\', false));
     };
     let (escape, rest) = parse_sql_single_quoted_value(escape_sql.trim())?;
     if !rest.trim().is_empty() {
@@ -41490,15 +41596,15 @@ fn strip_wordpress_option_prepared_like_escape_suffix(query: &str) -> Option<(&s
     if chars.next().is_some() {
         return None;
     }
-    Some((base.trim_end(), escape_char))
+    Some((base.trim_end(), escape_char, true))
 }
 
 fn strip_wordpress_option_prepared_expired_timeout_escape_clause(
     query: &str,
-) -> Option<(String, char)> {
+) -> Option<(String, char, bool)> {
     let query = query.trim();
     let Some((base, escape_sql)) = query.split_once(" ESCAPE ") else {
-        return Some((query.to_string(), '\\'));
+        return Some((query.to_string(), '\\', false));
     };
     let (escape, rest) = parse_sql_single_quoted_value(escape_sql.trim_start())?;
     let mut escape_chars = escape.chars();
@@ -41510,11 +41616,19 @@ fn strip_wordpress_option_prepared_expired_timeout_escape_clause(
     if !rest.starts_with("AND ") {
         return None;
     }
-    Some((format!("{} {}", base.trim_end(), rest), escape_char))
+    Some((format!("{} {}", base.trim_end(), rest), escape_char, true))
+}
+
+fn prepared_like_no_backslash_escapes(
+    no_backslash_escapes: bool,
+    escape_char: char,
+    explicit_escape: bool,
+) -> bool {
+    no_backslash_escapes && !(explicit_escape && escape_char == '\\')
 }
 
 fn is_wordpress_option_prepared_delete_expired_timeout_prefix_query(query: &str) -> bool {
-    let Some((query, _escape_char)) =
+    let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
     else {
         return false;
@@ -41555,7 +41669,8 @@ fn is_wordpress_option_prepared_name_value_select_autoload_query(query: &str) ->
 
 fn is_wordpress_option_prepared_name_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41587,7 +41702,8 @@ fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str
 
 fn is_wordpress_option_prepared_name_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41619,7 +41735,8 @@ fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool
 
 fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41632,7 +41749,7 @@ fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
 }
 
 fn is_wordpress_option_prepared_name_select_expired_timeout_prefix_query(query: &str) -> bool {
-    let Some((query, _escape_char)) =
+    let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
     else {
         return false;
@@ -41666,7 +41783,8 @@ fn is_wordpress_option_prepared_value_select_autoloads_query(query: &str) -> boo
 
 fn is_wordpress_option_prepared_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41698,7 +41816,8 @@ fn is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query
 
 fn is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41730,7 +41849,8 @@ fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(qu
 
 fn is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41753,7 +41873,8 @@ fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
 
 fn is_wordpress_option_prepared_star_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let Some((query, _escape_char)) = strip_wordpress_option_prepared_like_escape_suffix(query)
+    let Some((query, _escape_char, _explicit_escape)) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
         return false;
     };
@@ -41852,8 +41973,13 @@ fn wordpress_option_name_like_filter_from_prepared_params(
             ),
         ));
     };
-    let escape_char = wordpress_option_prepared_option_name_like_escape_char(query).unwrap_or('\\');
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
+    let (escape_char, explicit_escape) =
+        wordpress_option_prepared_option_name_like_escape_char(query).unwrap_or(('\\', false));
+    let Some(filter) = parse_schema_like_pattern(
+        pattern,
+        escape_char,
+        prepared_like_no_backslash_escapes(no_backslash_escapes, escape_char, explicit_escape),
+    ) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41865,10 +41991,11 @@ fn wordpress_option_name_like_filter_from_prepared_params(
     Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
-fn wordpress_option_prepared_option_name_like_escape_char(query: &str) -> Option<char> {
+fn wordpress_option_prepared_option_name_like_escape_char(query: &str) -> Option<(char, bool)> {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
-    let (_base, escape_char) = strip_wordpress_option_prepared_like_escape_suffix(query)?;
-    Some(escape_char)
+    let (_base, escape_char, explicit_escape) =
+        strip_wordpress_option_prepared_like_escape_suffix(query)?;
+    Some((escape_char, explicit_escape))
 }
 
 fn wordpress_option_name_delete_like_filter_from_prepared_params(
@@ -41887,8 +42014,13 @@ fn wordpress_option_name_delete_like_filter_from_prepared_params(
             ),
         ));
     };
-    let escape_char = wordpress_option_prepared_delete_like_escape_char(query).unwrap_or('\\');
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
+    let (escape_char, explicit_escape) =
+        wordpress_option_prepared_delete_like_escape(query).unwrap_or(('\\', false));
+    let Some(filter) = parse_schema_like_pattern(
+        pattern,
+        escape_char,
+        prepared_like_no_backslash_escapes(no_backslash_escapes, escape_char, explicit_escape),
+    ) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41916,7 +42048,7 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
             ),
         ));
     };
-    let Some((_query, escape_char)) =
+    let Some((_query, escape_char, explicit_escape)) =
         strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
     else {
         return Err(runtime_error(
@@ -41927,7 +42059,11 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
+    let Some(filter) = parse_schema_like_pattern(
+        pattern,
+        escape_char,
+        prepared_like_no_backslash_escapes(no_backslash_escapes, escape_char, explicit_escape),
+    ) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -41958,7 +42094,7 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
             ),
         ));
     };
-    let Some((_query, escape_char)) =
+    let Some((_query, escape_char, explicit_escape)) =
         strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
     else {
         return Err(runtime_error(
@@ -41969,7 +42105,11 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
+    let Some(filter) = parse_schema_like_pattern(
+        pattern,
+        escape_char,
+        prepared_like_no_backslash_escapes(no_backslash_escapes, escape_char, explicit_escape),
+    ) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(

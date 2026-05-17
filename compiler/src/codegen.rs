@@ -3342,12 +3342,7 @@ impl LlvmGenerator {
                     "call i32 (ptr, ...) @printf(ptr @.fmt_float, double {value})"
                 ));
             }
-            IrValue::String(value) => {
-                let global = self.add_string(&value);
-                self.body.push(format!(
-                    "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @{global})"
-                ));
-            }
+            IrValue::String(value) => self.emit_native_value_string_stdout(&value),
             IrValue::StringPtr(value) => {
                 self.body.push(format!(
                     "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {value})"
@@ -3358,12 +3353,12 @@ impl LlvmGenerator {
 
     fn emit_print(&mut self, value: IrValue) {
         match value {
-            IrValue::String(value) => self.emit_native_value_string_print(&value),
+            IrValue::String(value) => self.emit_native_value_string_stdout(&value),
             value => self.emit_echo(value),
         }
     }
 
-    fn emit_native_value_string_print(&mut self, value: &str) {
+    fn emit_native_value_string_stdout(&mut self, value: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         let global = self.add_string(value);
         let string = self.next_temp();
@@ -7196,6 +7191,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "filemtime"
             | "realpath"
             | "realpath_cache_get"
+            | "realpath_cache_size"
             | "getcwd"
             | "is_dir"
             | "is_file"

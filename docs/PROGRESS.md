@@ -4,6 +4,219 @@
 
 Implemented:
 
+- Added Milestone 1592, the WordPress-focused integration/full-gate refresh
+  for the 1587-1591 implementation batch. The batch closed bounded closure
+  `ReflectionFunction` metadata, normal property-read magic `__get()`
+  fallback for missing/inaccessible declared properties, bounded
+  `realpath_cache_size()` reporting over the request-local realpath cache,
+  prepared `wp_options` explicit backslash `ESCAPE` parity under
+  `NO_BACKSLASH_ESCAPES`, and generated native runtime stdout helper-call
+  lowering for statement-form `echo` of direct compile-time strings. The
+  native string-echo helper path intentionally refreshed the affected
+  committed `--emit-ir` fixture snapshots and native boundary expectations so
+  string output now goes through `phpc_native_string_from_bytes`,
+  `phpc_native_value_from_string`, `phpc_native_value_echo_stdout`, and handle
+  frees instead of direct static-string `printf` calls. Focused integrated
+  checks passed for the named object/reflection, reference/COW, realpath,
+  MySQLi, native ABI, native arithmetic, native assembly, native bitwise,
+  native comparison, native conditional, native logical, and native scalar echo
+  boundary suites. Milestone fixtures 1587-1591 passed in the integration
+  tree, with system PHP comparisons for 1587, 1588, 1589, and 1591 and a
+  documented `phpc-only` skip for 1590. Manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1587-1592 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1645` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1645` fixture tests passed
+  with `0` failures, `964` system PHP comparisons, and `681` `phpc-only`
+  skipped fixtures.
+
+- Added Milestone 1591, a native/runtime ABI slice that extends the normal
+  generated LLVM helper-call output path from statement-form `print` to
+  statement-form `echo` of direct compile-time string values. The LLVM emitter
+  now copies each direct compile-time string echo value into a native string
+  handle, clones it into a runtime value handle, writes it through
+  `phpc_native_value_echo_stdout`, and frees both handles instead of routing
+  that string through a generated static-string `printf` call. The new
+  `milestone1591` fixture proves the `phpc run` CLI path, matches system PHP,
+  and pins the generated `--emit-ir` helper-call path. This does not add linked
+  native execution, dynamic string-pointer expression helper lowering, binary
+  PHP string value handles, diagnostics handles for failed handle conversion or
+  stdout writes, request-state handles, array/object/resource/reference ABI
+  shapes, WordPress host-state ABI, or C fallback assembly helper calls.
+  Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-native-abi-1591 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test native_runtime_abi
+  normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper --
+  --test-threads=1`; `cargo test -p phpc --test native_runtime_abi --
+  --test-threads=1` passed with `8` tests; direct `cargo run -q -p phpc --
+  run
+  tests/fixtures/milestone1591/native_echo_string_runtime_helper_lowering.php`;
+  direct `php
+  tests/fixtures/milestone1591/native_echo_string_runtime_helper_lowering.php`;
+  direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1591/native_echo_string_runtime_helper_lowering.php
+  --emit-ir`; `cargo run -q -p phpc -- test tests/fixtures/milestone1591`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1591`; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1591`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1591`; `cargo fmt`; `cargo fmt
+  --check`; scoped `git diff --check`; and a trailing-whitespace check over
+  the new untracked fixture sidecars passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1590, a bounded WordPress DB/bootstrap slice for prepared
+  option-name explicit backslash `ESCAPE` parity under `NO_BACKSLASH_ESCAPES`.
+  Prepared `wp_options` option-name `LIKE` scans, prepared option-name `LIKE`
+  deletes, and prepared expired-timeout option-name predicates now carry
+  whether their escape character came from an explicit `ESCAPE` clause. The
+  implicit default backslash escape remains disabled in the accepted
+  `NO_BACKSLASH_ESCAPES` SQL-mode branch, while explicit `ESCAPE '\\'` keeps
+  using backslash to escape `%`, `_`, and `\` pattern literals. The new
+  `milestone1590` fixture proves the `phpc run` CLI path and is marked
+  `phpc-only` because system PHP needs a real database connection. This does
+  not add arbitrary prepared SQL, broader SQL-mode/string-literal/wildcard
+  parity, direct literal pattern `ESCAPE '\\'` parity under
+  `NO_BACKSLASH_ESCAPES`, prepared pattern lists, collation fidelity, host
+  database execution, dbDelta-relevant schema breadth, persistent object
+  cache/transients, full WordPress option APIs, hook callback breadth,
+  plugin/theme loading breadth, REST/admin/front-controller evidence, or
+  native database lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1590 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_prepared_option_like_filters_honor_explicit_backslash_escape_under_no_backslash_escapes
+  -- --test-threads=1` passed; `cargo test -p phpc --test mysqli_extension
+  mysqli_prepared_option_like_filters_apply_bounded_no_backslash_escapes --
+  --test-threads=1` passed; full affected `cargo test -p phpc --test
+  mysqli_extension -- --test-threads=1` passed with `189` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1590/wpdb_prepared_explicit_backslash_escape_probe.php`
+  matched the committed stdout; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1590`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1590` passed with `0` comparisons and `1`
+  documented `phpc-only` skip; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1590`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1590`; `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/milestone1590/wpdb_prepared_explicit_backslash_escape_probe.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt`; `cargo fmt --check`; scoped
+  `git diff --check`; and a trailing whitespace check over the new untracked
+  fixture directory passed. Full expensive `tools/run-tests.sh`, checkpoint,
+  commit, and push were deferred per lane instructions.
+
+- Added Milestone 1589, a bounded request/SAPI/filesystem realpath-cache size
+  slice. `realpath_cache_size()` now reports `0` for an empty bounded
+  request-local realpath cache and a deterministic positive integer derived
+  from successful `realpath()` UTF-8 path entries while preserving
+  `clearstatcache(true)` and `clearstatcache(true, $filename)` interactions.
+  The builtin is visible through `function_exists()`/`is_callable()` and
+  dynamic string-valued calls. The new `milestone1589` fixture proves the
+  `phpc run` CLI path and matches system PHP for empty/non-empty/cleared shape
+  checks. This does not add exact PHP memory-byte accounting,
+  realpath-cache entries from additional filesystem operations, broader
+  stat-cache coverage, include_path/open_basedir policy, stream-wrapper cache
+  interaction, cookie-name encoding, exact `ValueError` objects/text, output
+  buffering, shutdown/fatal/destructor ordering, request-body lifetime,
+  uploads, broader session-cookie policy, host filesystem edge cases, or
+  native realpath-cache lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1589 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test realpath_builtin
+  realpath_cache_size_reports_bounded_request_local_cache_bytes --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  realpath_builtin -- --test-threads=1` passed with `10` tests; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1589/realpath_cache_size.php`; direct `php
+  tests/fixtures/milestone1589/realpath_cache_size.php`; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1589`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1589` passed with `1` comparison and
+  `0` skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1589`; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1589`; fixture `compile --emit-ir`
+  and `--emit-asm` checks rejected at the existing explicit
+  `clearstatcache()` native stat-cache mutation boundary; `cargo fmt`;
+  `cargo fmt --check`; and scoped `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1588, a bounded Reference/COW slice for normal property-read
+  magic fallback breadth. Direct named property reads and dynamic
+  property-name reads now treat missing or inaccessible declared properties as
+  eligible `__get()` fallback sites when a visible non-static,
+  non-reference-returning `__get($name)` exists, so WordPress-style magic
+  containers can read private/protected backing values through ordinary
+  by-value property access without using the reference-source bridge. The new
+  `milestone1588` fixture proves the `phpc run` CLI path and matches system
+  PHP. This does not add real reference containers, general magic-property
+  reference containers, arbitrary reference expressions, invisible selected
+  dynamic properties, mixed nested `ArrayAccess` chains, broader array/object
+  copy-on-write, exact alias destruction ordering, object/Traversable
+  by-reference iteration, superglobal reference lifetime,
+  reference-returning `__get()` as a by-value normal property read, or native
+  lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1588 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  magic_get_runs_for_inaccessible_and_dynamic_property_reads --
+  --test-threads=1`; full affected `cargo test -p phpc --test object_model
+  -- --test-threads=1` passed with `279` tests; direct `cargo run -q -p phpc
+  -- run
+  tests/fixtures/milestone1588/normal_magic_get_property_read_fallback.php`;
+  direct `php
+  tests/fixtures/milestone1588/normal_magic_get_property_read_fallback.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1588`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1588` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1588`; `cargo run -q -p phpc --
+  compile
+  tests/fixtures/milestone1588/normal_magic_get_property_read_fallback.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1588`; `cargo fmt`; `cargo fmt
+  --check`; and scoped `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1587, a bounded object/interface reflection slice for
+  closure `ReflectionFunction` metadata reached by WordPress-style callback
+  introspection. `new ReflectionFunction($closure)` now accepts current
+  closure values and exposes the PHP-comparable `{closure}` name, source file,
+  start/end line metadata for the current one-line and statement-span closure
+  subset, false doc comments, parameter/default/type metadata, return-type
+  metadata, and false by-reference-return status. Closure
+  `invoke()`/`invokeArgs()` now stop at an explicit unsupported reflection
+  invocation boundary because closure execution itself remains unsupported.
+  The new `milestone1587` fixture proves the `phpc run` CLI path and matches
+  system PHP. This does not add closure execution, captured-variable
+  reflection, closure scope/class metadata, closure binding, attributes,
+  by-reference closure returns, exact multi-line closure end-line fidelity
+  beyond the current statement-span approximation, exact
+  `ReflectionException` objects/text, interface or trait method reflection
+  invocation, inherited interface compatibility breadth,
+  constructor/destructor fidelity, additional magic hooks reached by
+  WordPress, broader class alias/autoload lifecycle behavior,
+  readonly/property-hook behavior, adapted recursive trait ordering/conflict
+  parity, built-in/internal trait catalogs, or native object/reflection
+  lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1587 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  reflection_function_reflects_bounded_closure_metadata -- --test-threads=1`;
+  `cargo test -p phpc --test object_model
+  reflection_function_rejects_closure_invocation_boundary --
+  --test-threads=1`; full affected `cargo test -p phpc --test object_model
+  -- --test-threads=1` passed with `280` tests; direct `cargo run -q -p phpc
+  -- run tests/fixtures/milestone1587/closure_reflection_metadata.php`;
+  direct `php tests/fixtures/milestone1587/closure_reflection_metadata.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1587`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1587` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1587`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1587`; `cargo run -q -p phpc
+  -- compile tests/fixtures/milestone1587/closure_reflection_metadata.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  closure-lowering boundary; `cargo fmt`; `cargo fmt --check`; and scoped
+  `git diff --check` plus a trailing-whitespace check over the new untracked
+  fixture sidecars passed. Full expensive `tools/run-tests.sh`, checkpoint,
+  commit, and push were deferred per lane instructions.
+
 - Added Milestone 1586, the WordPress-focused integration/full-gate refresh
   for the 1581-1585 implementation batch. The batch closed broader bounded
   internal `ReflectionFunction` targets, inaccessible declared-property magic

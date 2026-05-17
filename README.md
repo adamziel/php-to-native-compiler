@@ -154,7 +154,10 @@ bounded request-local successful metadata cache used by `filesize()` and
 calls populate bounded request-local `realpath_cache_get()` entries;
 one-argument `clearstatcache(true)` clears those entries, while
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
-cached resolved-path key. Bounded
+cached resolved-path key. `realpath_cache_size()` reports `0` for an empty
+bounded realpath cache and a deterministic positive request-local size for
+cached resolved UTF-8 paths; exact PHP memory-byte accounting remains
+unsupported. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -840,13 +843,11 @@ The current native path is focused on straight-line scalar lowering:
 The native runtime ABI has an early helper surface for scalar echo conversion,
 owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
 string-handle-to-runtime-value bridge. Normal generated LLVM now uses that ABI
-for one narrow output path: statement-form `print` of a direct compile-time
-string value calls runtime string/value helpers and
-`phpc_native_value_echo_stdout`. Other string output, including `echo` and
-dynamic string expression output, still uses the existing direct static-string
-`printf` path. Linked native execution, binary PHP string value handles,
-diagnostics handles, and broad production runtime string-helper lowering are not
-implemented.
+for a narrow output path: statement-form `echo` and `print` of a direct
+compile-time string value call runtime string/value helpers and
+`phpc_native_value_echo_stdout`. Dynamic string-pointer expression output,
+linked native execution, binary PHP string value handles, diagnostics handles,
+and broad production runtime string-helper lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,
@@ -870,6 +871,8 @@ calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `clearstatcache(...)` stat-cache mutation calls,
+direct `realpath_cache_get()`/`realpath_cache_size()` realpath-cache
+introspection calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/

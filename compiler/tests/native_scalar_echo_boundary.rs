@@ -49,8 +49,13 @@ fn emit_ir_keeps_false_and_null_echoes_silent() {
     let ir = emit_ir_source("<?php\necho false, null, \"done\";\n").unwrap();
 
     let printf_count = ir.matches("@printf").count();
-    assert_eq!(printf_count, 2, "{ir}");
+    assert_eq!(printf_count, 1, "{ir}");
     assert!(ir.contains("c\"done\\00\""), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 4)"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_value_echo_stdout"), "{ir}");
 }
 
 #[test]

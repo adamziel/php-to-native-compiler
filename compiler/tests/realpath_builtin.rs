@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -139,6 +140,48 @@ echo array_key_exists($resolved_source, realpath_cache_get()) ? "all-kept" : "al
 }
 
 #[test]
+fn realpath_cache_size_reports_bounded_request_local_cache_bytes() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+clearstatcache(true);
+$call = "realpath_cache_size";
+echo function_exists($call) ? "known" : "missing";
+echo "|";
+echo is_callable($call) ? "callable" : "not-callable";
+echo "|";
+echo $call() === 0 ? "empty" : "not-empty";
+$resolved_target = realpath(__DIR__ . "/realpath_target.txt");
+$resolved_source = realpath(__FILE__);
+$size_two = realpath_cache_size();
+echo "|";
+echo is_int($size_two) ? "int" : "other";
+echo "|";
+echo $size_two > 0 ? "positive" : "zero";
+clearstatcache(true, $resolved_target);
+$size_one = realpath_cache_size();
+echo "|";
+echo $size_one > 0 ? "one-positive" : "one-zero";
+echo "|";
+echo $size_one < $size_two ? "smaller" : "not-smaller";
+clearstatcache(true, "");
+echo "|";
+echo realpath_cache_size() === $size_one ? "empty-kept" : "empty-changed";
+clearstatcache(true);
+echo "|";
+echo realpath_cache_size() === 0 ? "cleared" : "still-sized";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "known|callable|empty|int|positive|one-positive|smaller|empty-kept|cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn realpath_reports_current_argument_and_local_path_boundaries() {
     let non_string = run_source("<?php\necho realpath(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);
@@ -166,6 +209,15 @@ fn realpath_reports_current_argument_and_local_path_boundaries() {
         too_many.message,
         "arity mismatch for realpath(): expected 1 argument(s), got 2"
     );
+
+    let cache_size_arity = run_source("<?php\necho realpath_cache_size('extra');\n").unwrap_err();
+    assert_eq!(cache_size_arity.phase, Phase::Runtime);
+    assert_eq!(cache_size_arity.line, 2);
+    assert_eq!(cache_size_arity.column, 6);
+    assert_eq!(
+        cache_size_arity.message,
+        "arity mismatch for realpath_cache_size(): expected 0 argument(s), got 1"
+    );
 }
 
 #[test]
@@ -174,11 +226,13 @@ fn native_metadata_recognizes_realpath_but_direct_calls_stay_unsupported() {
         r#"<?php
 echo function_exists("realpath") ? "1" : "0";
 echo is_callable("realpath") ? "1" : "0";
+echo function_exists("realpath_cache_size") ? "1" : "0";
+echo is_callable("realpath_cache_size") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
@@ -193,6 +247,18 @@ echo is_callable("realpath") ? "1" : "0";
     assert_eq!(asm_error.line, 2);
     assert_eq!(asm_error.column, 6);
     assert_eq!(asm_error.message, LLVM_REALPATH_REJECTION);
+
+    let cache_size_ir_error = emit_ir_source("<?php\necho realpath_cache_size();\n").unwrap_err();
+    assert_eq!(cache_size_ir_error.phase, Phase::Codegen);
+    assert_eq!(cache_size_ir_error.line, 2);
+    assert_eq!(cache_size_ir_error.column, 6);
+    assert_eq!(cache_size_ir_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let cache_size_asm_error = emit_asm_source("<?php\necho realpath_cache_size();\n").unwrap_err();
+    assert_eq!(cache_size_asm_error.phase, Phase::Codegen);
+    assert_eq!(cache_size_asm_error.line, 2);
+    assert_eq!(cache_size_asm_error.column, 6);
+    assert_eq!(cache_size_asm_error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
