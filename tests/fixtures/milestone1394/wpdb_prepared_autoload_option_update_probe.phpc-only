@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and exact prepared autoload-only option reads for an update_option-shaped probe rather than a real MySQL database, full WordPress option APIs, persistent object cache, arbitrary SQL, or native DB lowering.

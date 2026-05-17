@@ -1,0 +1,11 @@
+pre-missing
+alias-ok
+alias-interface
+alias-not-class
+instanceof-source
+instanceof-alias
+is-a-alias
+subclass-alias
+alias-hidden
+second-ok
+second-interface

@@ -131,7 +131,12 @@
   object-property array-offset elements such as
   `array(&$object->items[$group][$key], ...)` and
   `array(10 => &$object->items[$group][$key], ...)` as a bounded
-  copy-in/writeback path. Direct stored argument arrays are also accepted when
+  copy-in/writeback path. If a direct variable element is already routed
+  through the covered direct array-offset alias metadata, such as
+  `$payload =& $_REQUEST["payload"]; call_user_func_array($callback,
+  array(&$payload, ...));`, the callback parameter is copied from and written
+  back through that same alias group. Direct stored argument arrays are also
+  accepted when
   the reached by-reference slots were previously assigned by reference through
   the covered direct array-offset target path, for example
   `$args[0] =& $value; call_user_func_array($callback, $args);`. This stored
@@ -151,6 +156,11 @@
   `$alias =& call_user_func_array("tag", array(&$value));` or
   `$alias =& call_user_func_array("tag", array(&$_REQUEST["mode"]));` or
   `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`.
+  A direct variable element that is already backed by covered array-offset
+  alias metadata is also accepted for this literal argument-array path, so a
+  returned child slot such as `return $payload[$key];` can bind back to the
+  underlying request/global/array/property slot instead of only to the
+  temporary callback parameter.
   Direct stored argument arrays are also accepted for this reference-return
   alias-binding path when each reached by-reference slot was previously
   assigned by reference through the covered direct array-offset target path,
@@ -166,15 +176,16 @@
   object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
-  assigned by reference, non-direct stored array expressions, dynamic static
-  receiver, string-keyed named callback argument arrays, non-public, dynamic,
-  append, `ArrayAccess`, or stored-array object-property bridges for
-  `call_user_func_array()` reference-return alias binding, closure or builtin
-  callbacks as reference-return sources, and broader reference-return binding
-  forms remain unsupported for direct array-offset, object-property, and
-  stored-array reference arguments. This is still a bounded direct-variable
-  alias plus direct array/property slot route, not full PHP reference
-  containers or copy-on-write.
+  assigned by reference, stored argument-array variables that are themselves
+  routed through array-offset alias metadata, non-direct stored array
+  expressions, dynamic static receiver, string-keyed named callback argument
+  arrays, non-public, dynamic, append, `ArrayAccess`, or stored-array
+  object-property bridges for `call_user_func_array()` reference-return alias
+  binding, closure or builtin callbacks as reference-return sources, and
+  broader reference-return binding forms remain unsupported for direct
+  array-offset, object-property, and stored-array reference arguments. This is
+  still a bounded direct-variable alias plus direct array/property slot route,
+  not full PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -1105,7 +1116,7 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -1164,7 +1175,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
@@ -2036,6 +2047,15 @@
   same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array($name))`; missing names return
   an empty zero-field placeholder result. The exact
+  `SELECT autoload FROM wp_options WHERE option_name = ?` query, with or
+  without `LIMIT 1`, and the current backticked WordPress table/column
+  spelling, returns recorded autoload rows for string option-name parameters
+  on the same handle through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array($name))`; missing names return
+  an empty zero-field placeholder result. This covers the current
+  WordPress-shaped `update_option()` autoload reevaluation probe without adding
+  general SQL projection support. The exact
   `SELECT option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
   query returns recorded option-value/autoload rows for string option-name
   parameters on the same handle through
@@ -2433,12 +2453,16 @@
   `null`. The same default callback can be registered as
   `spl_autoload_register("spl_autoload")`.
   `class_alias($class, $alias, $autoload = true)` supports the current class
-  metadata slice: string source and alias names, current bool-like scalar
-  autoload flags, source-class autoload through the same bounded callback
-  path, case-insensitive alias lookup, `class_exists($alias, false)`,
-  `new AliasName(...)`, `is_a($object, "AliasName")`, and duplicate-alias
-  `false` results. Alias-instantiated objects keep the original declared class
-  name in `get_class()`.
+  and interface metadata slice: string source and alias names, current
+  bool-like scalar autoload flags, source class/interface autoload through the
+  same bounded callback path, case-insensitive alias lookup,
+  `class_exists($alias, false)` for class aliases, `new AliasName(...)` for
+  class aliases, `interface_exists($alias, false)` for interface aliases,
+  interface-alias relationship checks through `instanceof`, `is_a()`, and
+  `is_subclass_of()`, and duplicate-alias `false` results.
+  Alias-instantiated objects keep the original declared class name in
+  `get_class()`, and interface aliases stay out of
+  `get_declared_interfaces()`.
   Closure callbacks remain a registration-only shape and report a stable
   unsupported autoload boundary if a lookup needs to invoke them. Nonexistent
   string callback validation for register/unregister, non-public `__invoke`,
@@ -2490,9 +2514,15 @@
   buffer, and returns `true`, or `false` when no buffer is active.
   `ob_end_flush()` accepts no arguments, closes the innermost buffer, appends
   its contents to the next outer buffer or stdout, and returns `true`, or
-  `false` when no buffer is active. Any buffers still active at normal program
-  completion or bounded `exit()` are flushed outward to stdout. Custom output
-  callbacks, chunk sizes, flags, exact `ob_get_status()` metadata,
+  `false` when no buffer is active. `ob_get_status($full_status = false)`
+  accepts no arguments or one bool argument. Without an active buffer it
+  returns an empty array. With the default false flag it returns the innermost
+  default-handler status array with `name`, `type`, `flags`, `level`,
+  `chunk_size`, `buffer_size`, and `buffer_used`; with `true` it returns those
+  status arrays for all active buffers from outermost to innermost. Any buffers
+  still active at normal program completion or bounded `exit()` are flushed
+  outward to stdout. Custom output callbacks, chunk sizes, non-default flags,
+  exact handler status metadata beyond the bounded default-handler fields,
   `ob_get_flush()`/`ob_list_handlers()` custom-handler names, output handler
   nesting semantics, output-started interaction with headers, fatal-error
   cleanup, exact warning behavior, and native lowering remain unsupported.
@@ -3062,12 +3092,18 @@
   program, accept current bool-like scalar autoload flags, and are available
   through string-valued dynamic function calls. A truthy autoload flag invokes
   currently registered bounded autoload callbacks on misses.
-  `class_alias($class, $alias, $autoload = true)` accepts string class and
+  `class_alias($class, $alias, $autoload = true)` accepts string source and
   alias names plus a current bool-like scalar autoload flag. A truthy autoload
-  flag loads the source class through the current bounded autoload path before
-  recording an alias to the original class metadata. Interface aliases, trait
-  aliases, exact PHP warning behavior for missing or duplicate names, alias
-  entries in `get_declared_classes()`, namespace/import canonicalization beyond
+  flag loads the source class or interface through the current bounded
+  autoload path before recording an alias to the original class or interface
+  metadata. Class aliases are visible to `class_exists()`, `new`, and
+  `is_a()`; interface aliases are visible to `interface_exists()`,
+  `instanceof`, `is_a()`, and `is_subclass_of()`, and classes loaded after the
+  alias may implement that alias while relationship metadata canonicalizes to
+  the original interface name. Trait aliases, exact PHP warning behavior for
+  missing or duplicate names, alias entries in `get_declared_classes()` or
+  `get_declared_interfaces()`, same-file runtime alias ordering for already
+  pre-registered class declarations, namespace/import canonicalization beyond
   the current string lookup, and native lowering remain unsupported.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names, perform case-insensitive lookup against the bounded
@@ -4574,7 +4610,7 @@
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
+  `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -4607,7 +4643,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
@@ -4740,7 +4776,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4789,7 +4825,7 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
   `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`,
-  `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
+  `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `http_response_code`,
   `setcookie`, `assert`,
   `spl_autoload`, `spl_autoload_register`, `spl_autoload_functions`,
@@ -5089,7 +5125,7 @@
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`,
-  `ob_list_handlers`, `ob_get_clean`, `ob_clean`, `ob_flush`,
+  `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_clean`, `ob_flush`,
   `ob_end_clean`, and `ob_end_flush` accept the same current
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
@@ -7292,7 +7328,7 @@
   differences, shutdown-time buffer flushing visibility, and native lowering
   beyond function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-  `ob_list_handlers()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
+  `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
   `ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument
   interpreter-owned buffer stack: callbacks, chunk sizes, flags, exact handler
   status metadata, custom handler names, output handler nesting semantics,

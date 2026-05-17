@@ -69,6 +69,43 @@ set of measurable gates:
 8. Evidence: every claimed feature needs implementation code, tests, a CLI
    exercise path, documentation, and named unsupported edge cases.
 
+## Missing Before WordPress Can Run
+
+The current compiler cannot honestly run WordPress yet. The remaining work is
+not one missing builtin; it is a set of difficult compatibility systems that
+must become coherent enough for real WordPress request flows:
+
+- PHP language completeness: references, copy-on-write, by-reference returns
+  and parameters, dynamic calls/properties, magic methods, traits,
+  interfaces, enums, exceptions, generators/fibers, destructors, strict
+  diagnostics, and shutdown/fatal-error behavior.
+- Runtime value model: PHP arrays, object identity, resource handles,
+  strings, aliases, object properties, globals/superglobals, included-file
+  state, and request-local state need general semantics rather than
+  per-fixture bridges.
+- Standard library and extensions: WordPress-critical surfaces such as PCRE,
+  JSON, date/time, hash/password/OpenSSL/sodium, mbstring/iconv-like string
+  handling, filesystem, streams, sessions, cookies, output buffering, curl or
+  HTTP, XML, ZIP, image metadata, mysqli/mysqlnd, and PDO-style behavior need
+  executable coverage or stable unavailable diagnostics.
+- Real execution environment: include paths, autoloading across a full source
+  tree, SAPI request parsing, headers, cookies, uploads, `php://input`,
+  filesystem permissions, stream wrappers, INI/environment state, and
+  request cleanup must match the flows WordPress depends on.
+- Database and persistence: the current MySQLi work is a deterministic
+  `wp_options` state island. Full support needs real or faithfully emulated
+  connections, arbitrary query/result behavior, prepared statements,
+  transactions, errors, charset/collation, persistence, indexes, object cache,
+  options, transients, and schema/install/update flows.
+- WordPress subsystems: bootstrap, front-end routing, admin, AJAX, REST, cron,
+  XML-RPC, plugin/theme loading, hooks under realistic callback shapes,
+  roles/capabilities, nonces/auth, media/filesystem updates, localization,
+  rewrite rules, and block rendering all need executable probes.
+- Native compiler parity: `phpc compile` needs a PHP runtime ABI for heap
+  values, arrays, objects, references/COW, dispatch, includes, resources,
+  exceptions, request state, filesystem/database calls, and extension shims
+  before it can claim native support for WordPress-scale PHP.
+
 ## Compatibility Gap Ledger
 
 Use this ledger to keep the remaining difficult work visible. The active
@@ -138,15 +175,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded `class_alias()` with source
-autoload and alias lookup, alias-backed direct-call reference-return parents,
-`ob_list_handlers()` over the interpreter-owned output-buffer stack, and
-explicit option-row projection reads over the placeholder MySQLi state island.
-Those are useful compatibility steps, but they do not change the larger project
-shape: the next lanes should keep attacking broad object/interface semantics,
-real reference/COW behavior, request/SAPI/filesystem/stream breadth, and
-executable WordPress database/bootstrap evidence until those areas become
-coherent subsystems instead of reached slices.
+The latest WordPress-focused batch closed bounded `class_alias()` support for
+declared interfaces, alias-backed literal `call_user_func_array()` reference
+arguments, `ob_get_status($full_status = false)` over the interpreter-owned
+output-buffer stack, and prepared autoload-only option-name equality reads over
+the placeholder MySQLi `wp_options` state island. Those are useful
+compatibility steps, but they do not change the larger project shape: the next
+lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
+WordPress database/bootstrap evidence until those areas become coherent
+subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1394/wpdb_prepared_autoload_option_update_probe.php

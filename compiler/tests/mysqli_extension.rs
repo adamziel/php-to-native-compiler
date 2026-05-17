@@ -3614,11 +3614,32 @@ mysqli_query($handle, "INSERT INTO `wp_options` (`option_name`, `option_value`, 
 $home = mysqli_query($handle, "SELECT `autoload` FROM `wp_options` WHERE `option_name` = 'home' LIMIT 1");
 $home_row = mysqli_fetch_assoc($home);
 echo $home_row["autoload"];
+echo "|";
+$direct = mysqli_execute_query($handle, "SELECT `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1", array("home"));
+$direct_row = mysqli_fetch_assoc($direct);
+echo $direct_row["autoload"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT autoload FROM wp_options WHERE option_name = ?");
+$name = "home";
+mysqli_stmt_bind_param($stmt, "s", $name);
+echo mysqli_stmt_execute($stmt) ? "prepared" : "failed";
+echo ":";
+$prepared = mysqli_stmt_get_result($stmt);
+$prepared_row = mysqli_fetch_assoc($prepared);
+echo $prepared_row["autoload"];
+echo "|";
+$name = "missing";
+mysqli_stmt_execute($stmt);
+$missing_prepared = mysqli_stmt_get_result($stmt);
+echo "missing:", mysqli_num_rows($missing_prepared), ":", mysqli_num_fields($missing_prepared);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "no|1|0|0|auto-on");
+    assert_eq!(
+        execution.stdout,
+        "no|1|0|0|auto-on|auto-on|prepared:auto-on|missing:0:0"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

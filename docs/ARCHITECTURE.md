@@ -623,12 +623,18 @@ including request/global bag paths such as `&$_REQUEST["payload"]["slot"]`
 and `&$GLOBALS["bag"]["slot"]`, plus direct public object-property
 array-offset elements such as `&$object->items[$group][$key]`, using the
 bounded output-parameter bridge rather than in-call reference-container
-identity. Statement-form reference assignment from a reference-returning
+identity. Literal reference elements whose direct variable is already backed
+by covered array-offset alias metadata, such as
+`array(&$payload, ...)` after `$payload =& $_REQUEST["payload"];`, reuse the
+same alias group for copy-in/writeback instead of requiring a normal caller
+variable cell. Statement-form reference assignment from a reference-returning
 `call_user_func_array()` source can now return the same bounded direct
 array-offset or public object-property array-offset route when the callback
 returns that reached parameter, so the assigned alias is represented in
 symbol-table alias metadata instead of as a general runtime reference
-container. Direct stored argument
+container. If the callback returns a child slot below that alias-backed
+literal direct-variable parameter, the returned suffix is appended to the
+underlying alias group. Direct stored argument
 arrays can also satisfy reached by-reference
 parameters when the selected slots were previously assigned by reference
 through the covered direct array-offset target path. That path finds the
@@ -644,11 +650,12 @@ when the callback function or public array-callable method is declared as
 returning by reference, but the callback call itself still returns a value.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
-assigned by reference, non-direct stored array expressions, string-keyed named
-reference argument arrays, non-public, dynamic, append, or stored-array
-object-property reference-return bridges, dynamic static receiver callback
-object-property array arguments, broader reference-return binding, exact
-by-reference `foreach`, or copy-on-write.
+assigned by reference, stored argument-array variables that are themselves
+routed through array-offset alias metadata, non-direct stored array
+expressions, string-keyed named reference argument arrays, non-public,
+dynamic, append, or stored-array object-property reference-return bridges,
+dynamic static receiver callback object-property array arguments, broader
+reference-return binding, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1568,15 +1575,16 @@ Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
 `ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_length()`,
-`ob_list_handlers()`, `ob_get_clean()`, `ob_clean()`, `ob_flush()`,
-`ob_end_clean()`, and `ob_end_flush()` are
+`ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_clean()`,
+`ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
 interpreter-only output-buffer boundaries for the current WordPress
 request/rendering path. The interpreter keeps a stack of string buffers;
 PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
 peeks at that buffer without closing it, `ob_get_length()` reports its current
 byte length, `ob_list_handlers()` reports one default handler name per active
-buffer, `ob_get_clean()` pops and returns that buffer, `ob_clean()` clears
-the innermost buffer, `ob_flush()` moves its
+buffer, `ob_get_status()` reports bounded default-handler status arrays for
+the innermost buffer or for the full active stack, `ob_get_clean()` pops and
+returns that buffer, `ob_clean()` clears the innermost buffer, `ob_flush()` moves its
 contents outward while keeping it active, `ob_end_clean()` closes and discards
 it, `ob_end_flush()` closes it and flushes its contents outward, and remaining
 buffers flush outward to stdout when execution completes or the bounded
@@ -1675,8 +1683,10 @@ full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
 option-name-list deletes for current option/transient cleanup probes, and
 direct/prepared autoload equality reads for alloptions-shaped probes, plus
-prepared option-value equality reads with `LIMIT 1` for transient-shaped
-`wpdb::get_var()` probes, plus exact explicit full-row-with-id and
+prepared autoload-only option-name equality reads for the current
+`update_option()` autoload reevaluation probe, plus prepared option-value
+equality reads with `LIMIT 1` for transient-shaped `wpdb::get_var()` probes,
+plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
 bounded direct
@@ -1720,15 +1730,19 @@ resolves candidate files through the same bounded local include resolver, and
 includes the first existing file once. Registering `"spl_autoload"` stores it
 as an ordinary function callback, but dispatch handles it as this builtin
 probe instead of requiring a user function body. `class_alias()` uses that
-same callback path when its source class is missing and the current bool-like
-autoload flag is truthy; successful aliases insert an additional
-case-insensitive name into the class table that points at the original class
-metadata, so alias instantiation still creates objects whose declared class is
-the source class. Stream/URL paths, exact PHP warnings, scalar-to-string
-extension coercions, recursive edge cases beyond the current same-name guard,
-enum autoload lookup, interface/trait aliasing, alias entries in
-`get_declared_classes()`, and native autoload lowering remain outside this
-slice. Native function-table introspection
+same callback path when its source class or interface is missing and the
+current bool-like autoload flag is truthy; successful class aliases insert an
+additional case-insensitive name into the class table that points at the
+original class metadata, so alias instantiation still creates objects whose
+declared class is the source class. Successful interface aliases insert an
+additional case-insensitive interface lookup entry that points at the original
+interface declaration; relationship checks canonicalize that alias back to the
+original interface name, and `get_declared_interfaces()` still walks only real
+interface declarations. Stream/URL paths, exact PHP warnings,
+scalar-to-string extension coercions, recursive edge cases beyond the current
+same-name guard, enum autoload lookup, trait aliasing, alias entries in
+`get_declared_classes()`/`get_declared_interfaces()`, and native autoload
+lowering remain outside this slice. Native function-table introspection
 recognizes the names, while direct native calls reject under the function-call
 boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy

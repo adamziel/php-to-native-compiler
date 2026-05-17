@@ -220,9 +220,10 @@ incorrect native code.
   `LIMIT 1`, option-name-only, option-name-list, full-row, explicit
   full-row-with-id equality with and without `LIMIT 1`, star-projection
   including exact option-name equality with and without `LIMIT 1`,
-  name/autoload-list, and autoload-list/equality result sets, plus bounded
-  direct and prepared transient-shaped option-name prefix result scans and
-  deletes;
+  name/autoload-list, autoload-only option-name equality for
+  `update_option()`-shaped probes, and autoload-list/equality result sets,
+  plus bounded direct and prepared transient-shaped option-name prefix result
+  scans and deletes;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -311,8 +312,8 @@ incorrect native code.
   `spl_autoload($class)` probes local lowercased class/interface/trait file
   names through that extension registry and the current include resolver,
   `class_alias($class, $alias, $autoload = true)` can autoload a missing
-  source class and register a bounded class-metadata alias for lookup,
-  instantiation, and `is_a()` checks,
+  source class or interface and register a bounded metadata alias for class
+  lookup, instantiation, interface lookup, and relationship checks,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -493,11 +494,15 @@ argument arrays whose reached by-reference slots were assigned by reference,
 such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
 also covered for those same callback shapes, including normal callback
 invocation of user functions and public array callables declared as returning
-by reference when they mutate reached by-reference parameters. Reference array
-literals stored by value, string-keyed named reference argument arrays,
-non-public or dynamic callback object-property array arguments, dynamic static
-receiver callback object-property array arguments, using
-`call_user_func_array()` itself as a statement-form reference-return source,
+by reference when they mutate reached by-reference parameters. Literal
+reference elements may also use a direct variable already backed by covered
+array-offset alias metadata, such as `array(&$payload)` after
+`$payload =& $_REQUEST["payload"];`, and reference-returning callbacks can
+bind the returned parameter or returned child slot back to that alias group.
+Reference array literals stored by value, string-keyed named reference
+argument arrays, stored argument-array variables that are themselves routed
+through alias metadata, non-public or dynamic callback object-property array
+arguments, dynamic static receiver callback object-property array arguments,
 broader aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
@@ -548,7 +553,7 @@ direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
-`ob_list_handlers()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
+`ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_clean()`/`ob_flush()`/
 `ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()` response header-state calls, including

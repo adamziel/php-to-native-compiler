@@ -9600,6 +9600,32 @@ impl Interpreter {
 
         if matches!(
             query,
+            "SELECT autoload FROM wp_options WHERE option_name = ?"
+                | "SELECT autoload FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `autoload` FROM `wp_options` WHERE `option_name` = ?"
+                | "SELECT `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
+            if let Some(autoload) = match (connection_handle_id, params) {
+                (Some(handle_id), [Value::String(option_name)]) => self
+                    .mysqli_wp_options
+                    .get(&handle_id)
+                    .and_then(|options| options.get(option_name))
+                    .map(|option| option.autoload.clone()),
+                _ => None,
+            } {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["autoload".to_string()],
+                    rows: vec![vec![("autoload".to_string(), Value::String(autoload))]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if matches!(
+            query,
             "SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1"
                 | "SELECT `option_id` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
         ) {
@@ -15777,14 +15803,19 @@ impl Interpreter {
                         ),
                     ));
                 };
-                if caller_scope.is_array_offset_alias_name(caller_name) {
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference-return alias binding does not support argument variables routed through array-offset alias metadata in the current subset",
-                        ),
-                    ));
+                if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
+                    let value = caller_scope.read_named(caller_name).ok_or_else(|| {
+                        runtime_error(
+                            item.value.span(),
+                            RuntimeError::undefined_variable(caller_name),
+                        )
+                    })?;
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                    });
+                    continue;
                 }
                 let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
                     runtime_error(
@@ -16162,14 +16193,19 @@ impl Interpreter {
                     ));
                 }
                 if let Expr::Variable(caller_name, _) = &item.value {
-                    if caller_scope.is_array_offset_alias_name(caller_name) {
-                        return Err(runtime_error(
-                            item.value.span(),
-                            RuntimeError::unsupported_call(
-                                callable_name(&function.name),
-                                "call_user_func_array() reference array elements routed through array-offset alias metadata are not implemented",
-                            ),
-                        ));
+                    if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
+                        let value = caller_scope.read_named(caller_name).ok_or_else(|| {
+                            runtime_error(
+                                item.value.span(),
+                                RuntimeError::undefined_variable(caller_name),
+                            )
+                        })?;
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                        });
+                        continue;
                     }
                     let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
                         runtime_error(
@@ -16599,19 +16635,37 @@ impl Interpreter {
         autoload: bool,
         span: Span,
     ) -> CompileResult<Value> {
-        if self.classes.lookup_class(source_name).is_none() && autoload {
-            self.run_autoload_callbacks(source_name, AutoloadKind::Class, span)?;
+        if self.classes.lookup_class(source_name).is_none()
+            && !self.class_like_exists(source_name, AutoloadKind::Interface)
+            && autoload
+        {
+            self.run_autoload_callbacks(source_name, AutoloadKind::Any, span)?;
         }
 
         if self.classes.lookup_class(source_name).is_none() {
-            if self.class_like_exists(source_name, AutoloadKind::Interface)
-                || self.class_like_exists(source_name, AutoloadKind::Trait)
+            if let Some(interface) = self
+                .interface_lookup
+                .get(&source_name.to_ascii_lowercase())
+                .cloned()
             {
+                if self.class_like_exists(alias_name, AutoloadKind::Any)
+                    || self
+                        .enum_lookup
+                        .contains_key(&alias_name.to_ascii_lowercase())
+                {
+                    return Ok(Value::Bool(false));
+                }
+
+                self.interface_lookup
+                    .insert(alias_name.to_ascii_lowercase(), interface);
+                return Ok(Value::Bool(true));
+            }
+            if self.class_like_exists(source_name, AutoloadKind::Trait) {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "class_alias()",
-                        "interface and trait aliasing are not implemented; only declared class aliases are supported in the current subset",
+                        "trait aliasing is not implemented; only declared class and interface aliases are supported in the current subset",
                     ),
                 ));
             }
@@ -19636,7 +19690,13 @@ impl Interpreter {
         class_id: ClassId,
         interface_name: &str,
     ) -> bool {
-        self.classes.implements_interface(class_id, interface_name)
+        let canonical_interface_name = self
+            .interface_lookup
+            .get(&interface_name.to_ascii_lowercase())
+            .map(|interface| interface.name.as_str())
+            .unwrap_or(interface_name);
+        self.classes
+            .implements_interface(class_id, canonical_interface_name)
             || (interface_name.eq_ignore_ascii_case("Stringable")
                 && self.class_has_public_instance_to_string(class_id))
     }
@@ -20932,6 +20992,64 @@ impl Interpreter {
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(Value::Array(handlers))
+    }
+
+    fn output_buffer_status(&self, index: usize, buffer: &str) -> Value {
+        let mut status = PhpArray::new();
+        status.insert("name", Value::String("default output handler".to_string()));
+        status.insert("type", Value::Int(0));
+        status.insert("flags", Value::Int(112));
+        status.insert("level", Value::Int(index as i64));
+        status.insert("chunk_size", Value::Int(0));
+        status.insert("buffer_size", Value::Int(16384));
+        status.insert("buffer_used", Value::Int(buffer.len() as i64));
+        Value::Array(status)
+    }
+
+    fn call_ob_get_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ob_get_status()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let full_status = match args.first() {
+            Some(Value::Bool(flag)) => *flag,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ob_get_status()",
+                        format!(
+                            "full_status argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+
+        if full_status {
+            let mut statuses = PhpArray::new();
+            for (index, buffer) in self.output_buffers.iter().enumerate() {
+                statuses
+                    .append(self.output_buffer_status(index, buffer))
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+            return Ok(Value::Array(statuses));
+        }
+
+        Ok(self
+            .output_buffers
+            .last()
+            .map(|buffer| self.output_buffer_status(self.output_buffers.len() - 1, buffer))
+            .unwrap_or_else(|| Value::Array(PhpArray::new())))
     }
 
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -23423,6 +23541,7 @@ impl Interpreter {
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
             "ob_get_length" => self.call_ob_get_length(&args, span),
             "ob_list_handlers" => self.call_ob_list_handlers(&args, span),
+            "ob_get_status" => self.call_ob_get_status(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
             "ob_clean" => self.call_ob_clean(&args, span),
             "ob_flush" => self.call_ob_flush(&args, span),
@@ -27268,12 +27387,16 @@ fn push_interface_with_parents(
     names: &mut Vec<String>,
     seen: &mut HashSet<String>,
 ) {
-    let key = interface_name.to_ascii_lowercase();
+    let declared_interface = interface_lookup.get(&interface_name.to_ascii_lowercase());
+    let canonical_name = declared_interface
+        .map(|interface| interface.name.as_str())
+        .unwrap_or(interface_name);
+    let key = canonical_name.to_ascii_lowercase();
     if !seen.insert(key.clone()) {
         return;
     }
-    names.push(interface_name.to_string());
-    let Some(interface) = interface_lookup.get(&key) else {
+    names.push(canonical_name.to_string());
+    let Some(interface) = declared_interface.or_else(|| interface_lookup.get(&key)) else {
         return;
     };
     for parent_name in &interface.parents {
@@ -28924,6 +29047,7 @@ fn is_builtin(name: &str) -> bool {
             | "ob_get_contents"
             | "ob_get_length"
             | "ob_list_handlers"
+            | "ob_get_status"
             | "ob_get_clean"
             | "ob_clean"
             | "ob_flush"

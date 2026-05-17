@@ -566,10 +566,12 @@ header-state lowering.
 
 After Milestone 1383, `phpc run` has a bounded interpreter-owned output-buffer
 stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`,
-`ob_get_length()`, `ob_get_clean()`, `ob_clean()`, `ob_flush()`,
+`ob_get_length()`, `ob_list_handlers()`, `ob_get_status()`, `ob_get_clean()`, `ob_clean()`, `ob_flush()`,
 `ob_end_clean()`, and `ob_end_flush()`: echoed and printed output is captured while a buffer is
 active, `ob_get_contents()` returns the innermost captured string without
 closing that buffer, `ob_get_length()` returns its current byte length,
+`ob_list_handlers()` returns default handler names for active buffers,
+`ob_get_status()` returns bounded default-handler status arrays,
 `ob_get_clean()` returns the innermost captured string and closes that buffer,
 `ob_clean()` clears the innermost buffer, `ob_flush()`
 flushes the innermost buffer to the next outer buffer or stdout while keeping
@@ -578,9 +580,10 @@ it active, `ob_end_clean()` closes and discards the innermost buffer, and
 buffers are flushed outward when execution completes. This supports small
 WordPress-shaped bootstrap/rendering paths that capture, discard, or flush
 generated markup in the current CLI scaffold only. It does not implement
-callbacks, chunk sizes, flags, handler status/list APIs, output handler
-nesting semantics, output-started/header interaction, fatal-error cleanup,
-exact warnings, SAPI network emission, or native output-buffer lowering.
+callbacks, custom chunk sizes, non-default flags, exact handler metadata,
+output handler nesting semantics, output-started/header interaction,
+fatal-error cleanup, exact warnings, SAPI network emission, or native
+output-buffer lowering.
 
 ## Current Probe Status
 

@@ -265,6 +265,71 @@ echo class_alias("Wp_Original", "Wp_Alias") ? "duplicate-ok" : "duplicate-false"
 }
 
 #[test]
+fn class_alias_autoloads_source_interface_and_registers_interface_alias_lookup() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-interface-alias-autoload-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let interface_path = fixture_dir.join("LoadedContract.inc");
+    fs::write(
+        &interface_path,
+        r#"<?php
+interface LoadedContract {
+    public function boot();
+}
+"#,
+    )
+    .unwrap();
+    let plugin_path = fixture_dir.join("AliasPlugin.inc");
+    fs::write(
+        &plugin_path,
+        r#"<?php
+class AliasPlugin implements LoadedAlias {
+    public function boot() {
+        return "boot";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+function LoadContract($name) {
+    echo "load:", $name, "\n";
+    require_once __DIR__ . "/" . $name . ".inc";
+}
+
+spl_autoload_register("LoadContract");
+
+echo interface_exists("LoadedAlias", false) ? "pre-alias\n" : "pre-missing\n";
+echo class_alias("LoadedContract", "LoadedAlias") ? "alias-ok\n" : "alias-fail\n";
+echo interface_exists("LoadedAlias", false) ? "alias-interface\n" : "alias-missing\n";
+echo class_exists("LoadedAlias", false) ? "alias-class\n" : "alias-not-class\n";
+require_once __DIR__ . "/AliasPlugin.inc";
+$plugin = new AliasPlugin();
+echo $plugin instanceof LoadedContract ? "instanceof-source\n" : "missing-source\n";
+echo $plugin instanceof LoadedAlias ? "instanceof-alias\n" : "missing-alias\n";
+echo is_a($plugin, "LoadedAlias") ? "is-a-alias\n" : "not-alias\n";
+echo is_subclass_of("AliasPlugin", "LoadedAlias") ? "subclass-alias\n" : "not-subclass\n";
+echo in_array("LoadedAlias", get_declared_interfaces(), true) ? "alias-declared" : "alias-hidden";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "pre-missing\nload:LoadedContract\nalias-ok\nalias-interface\nalias-not-class\ninstanceof-source\ninstanceof-alias\nis-a-alias\nsubclass-alias\nalias-hidden"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(interface_path);
+    let _ = fs::remove_file(plugin_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn class_and_interface_exists_invoke_string_autoload_callbacks() {
     let fixture_dir =
         std::env::temp_dir().join(format!("phpc-autoload-metadata-{}", std::process::id()));
