@@ -53,8 +53,11 @@ model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
 that root storage. `$_SESSION` is materialized lazily into the same root symbol
-table when the bounded CLI `session_start()` path succeeds. The default
-request bags are empty ordered arrays. For
+table when the bounded CLI `session_start()` path succeeds and then routes
+direct function-scope reads and writes through that same root storage,
+including the current bounded direct nested array-offset alias metadata for
+covered `$_SESSION["..."]` reference slots. The default request bags are empty
+ordered arrays. For
 explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
 and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_REQUEST_METHOD=POST` plus
@@ -1633,23 +1636,32 @@ WordPress-shaped option writes and reads, including direct option-value,
 autoload, option-name/option-value, exact value/autoload updates, and bounded
 full-row option-name/value/autoload result shapes with or without
 deterministic placeholder option IDs, plus exact option-name equality and
-option-name-list deletes for current option/transient cleanup probes;
+option-name-list deletes for current option/transient cleanup probes, and
+bounded `option_name LIKE '<prefix>%'` result scans for transient-shaped
+option rows;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
-registration path: it accepts closure expressions or string callback names with
-optional boolean flags and returns true. String user-function callbacks are
-stored in registration order, the current boolean `prepend` flag can place a
-callback at the front, and truthy-autoload
+registration path: it accepts closure expressions, string user-function
+callbacks, public `"ClassName::method"` static-method string callbacks,
+public `[object, "method"]` instance-method array callbacks, and public
+`["ClassName", "method"]` static-method array callbacks with optional boolean
+flags and returns true. Supported non-closure callbacks are stored in
+registration order, the current boolean `prepend` flag can place a callback at
+the front, and truthy-autoload
 `class_exists()`/`interface_exists()`/`trait_exists()` misses invoke those
-string callbacks with the requested class/interface/trait name before
-rechecking metadata. That lets local include/require paths register autoloaded
+callbacks with the requested class/interface/trait name before rechecking
+metadata. That lets local include/require paths register autoloaded
 class/interface/trait declarations through the existing included-file
 declaration loader, including missing direct trait `use` names reached while
 registering an included class declaration. Closure callbacks remain accepted
 registration metadata only and report a stable unsupported autoload boundary if
-lookup needs to invoke them. Native function-table introspection recognizes
-the name, while direct native calls reject under the function-call boundary.
+lookup needs to invoke them. Invokable objects, non-public methods,
+class-string non-static methods, object static methods,
+`self::`/`parent::`/`static::` callback strings, exact callable validation,
+and `spl_autoload_functions()` remain unsupported. Native function-table
+introspection recognizes the name, while direct native calls reject under the
+function-call boundary.
 `assert()` is currently an interpreter-only assertion builtin for truthy
 bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
 null descriptions as inert metadata, returns true for truthy assertions, and
@@ -1797,8 +1809,14 @@ backed by a Rust string buffer for simple `r`, `w`, `a`, or `c` modes with
 optional `+`, `b`, or `t` flags. `fopen("php://input", $mode)` allocates a
 read-only request-local stream over the deterministic `PHPC_REQUEST_BODY`
 seed, reports PHP/Input/`rb` metadata, and reuses the current seek/read cursor
-machinery without modeling a host SAPI input stream. `fopen($localPath, $mode)`
-uses a host local file handle for the same simple mode grammar. `fwrite()`,
+machinery without modeling a host SAPI input stream. `fopen($localPath, $mode,
+$use_include_path = false, $context = null)` uses a host local file handle for
+the same simple mode grammar, optionally resolves through the existing bounded
+include-path candidate order, and accepts a bounded stream-context resource
+without applying wrapper-specific context behavior. `stream_context_create()`
+allocates a request-local context resource that stores array options, and
+`stream_context_get_options()` returns those stored options; context params are
+shape-validated and ignored. `fwrite()`,
 `fread()`, `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`,
 `fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
 or inspect the resource cursor or bounded metadata; append-mode writes are
@@ -1814,8 +1832,9 @@ metadata for local files;
 seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
 reads. This gives WordPress-style temporary request, cache-file stream, and
 directory-scanning paths an executable path without claiming full PHP
-resources: sockets, HTTP/FTP/phar wrappers, contexts, filters, broader
-wrapper/status metadata APIs, exact host directory iteration order,
+resources: sockets, HTTP/FTP/phar wrappers, filters, context option effects,
+default context mutation, broader wrapper/status metadata APIs, exact host
+directory iteration order,
 binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
 `php://input` edge behavior, `php://temp` spill-to-disk thresholds, permissions
 policy, locking, stat-cache behavior, warning plus `false` recovery,
@@ -2117,9 +2136,10 @@ names and the declared class name for current object values.
 class metadata table by string class name, using the same case-insensitive
 class lookup as instantiation. The autoload flag accepts current bool-like
 scalar values; when truthy and the initial lookup misses, currently registered
-string user-function callbacks, public `[object, "method"]` instance-method
-array callables, and public `["ClassName", "method"]` static-method array
-callables run before the metadata check returns.
+string user-function callbacks, public `"ClassName::method"` static-method
+string callbacks, public `[object, "method"]` instance-method array callables,
+and public `["ClassName", "method"]` static-method array callables run before
+the metadata check returns.
 Missing named or direct-variable string class names in `new` expressions use
 the same bounded autoload callback path before reporting the current
 undefined-class diagnostic.

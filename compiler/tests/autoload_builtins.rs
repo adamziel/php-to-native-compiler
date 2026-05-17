@@ -427,6 +427,94 @@ echo trait_exists("ObjectLoadedTrait", false) ? "trait" : "missing-trait";
 }
 
 #[test]
+fn static_method_string_autoload_callbacks_load_class_like_dependencies() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-autoload-static-method-string-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let class_include_path = fixture_dir.join("StringLoadedBox.inc");
+    fs::write(
+        &class_include_path,
+        r#"<?php
+class StringLoadedBox {
+    public $name = "string";
+}
+"#,
+    )
+    .unwrap();
+    let interface_include_path = fixture_dir.join("StringLoadedContract.inc");
+    fs::write(
+        &interface_include_path,
+        r#"<?php
+interface StringLoadedContract {
+    public function boot();
+}
+"#,
+    )
+    .unwrap();
+    let plugin_include_path = fixture_dir.join("StringPlugin.inc");
+    fs::write(
+        &plugin_include_path,
+        r#"<?php
+class StringPlugin implements StringLoadedContract {
+    use StringLoadedTrait;
+
+    public function boot() {
+        return $this->hook();
+    }
+}
+"#,
+    )
+    .unwrap();
+    let trait_include_path = fixture_dir.join("StringLoadedTrait.inc");
+    fs::write(
+        &trait_include_path,
+        r#"<?php
+trait StringLoadedTrait {
+    public function hook() {
+        return "hook:" . get_class($this);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+class StaticStringLoader {
+    public static function load($name) {
+        echo "string-static:", $name, "\n";
+        require_once __DIR__ . "/" . $name . ".inc";
+    }
+}
+
+spl_autoload_register("StaticStringLoader::load");
+
+echo class_exists("StringLoadedBox") ? "class\n" : "missing-class\n";
+echo interface_exists("StringLoadedContract") ? "interface\n" : "missing-interface\n";
+require_once __DIR__ . "/StringPlugin.inc";
+$plugin = new StringPlugin();
+echo $plugin->boot(), "\n";
+echo trait_exists("StringLoadedTrait", false) ? "trait" : "missing-trait";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "string-static:StringLoadedBox\nclass\nstring-static:StringLoadedContract\ninterface\nstring-static:StringLoadedTrait\nhook:StringPlugin\ntrait"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(class_include_path);
+    let _ = fs::remove_file(interface_include_path);
+    let _ = fs::remove_file(plugin_include_path);
+    let _ = fs::remove_file(trait_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 

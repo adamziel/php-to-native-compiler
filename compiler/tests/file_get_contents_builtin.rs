@@ -130,13 +130,13 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
     );
 
     let too_many =
-        run_source("<?php\nfile_get_contents('php://input', false, false);\n").unwrap_err();
+        run_source("<?php\nfile_get_contents('php://input', false, null, 0);\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);
     assert_eq!(too_many.line, 2);
     assert_eq!(too_many.column, 1);
     assert_eq!(
         too_many.message,
-        "arity mismatch for file_get_contents(): expected 1 to 2 argument(s), got 3"
+        "arity mismatch for file_get_contents(): expected 1 to 3 argument(s), got 4"
     );
 }
 

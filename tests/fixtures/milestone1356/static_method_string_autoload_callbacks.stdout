@@ -1,0 +1,7 @@
+string-static:StringLoadedBox
+class
+string-static:StringLoadedContract
+interface
+string-static:StringLoadedTrait
+hook:StringPlugin
+trait

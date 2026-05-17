@@ -59,15 +59,21 @@ cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
 multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
-session persistence, locking, save handlers, and cookie emission remain
-unsupported. `fopen()` can create bounded interpreter-owned `php://memory`,
+direct function-scope reads/writes route through that session root, including
+covered nested reference aliases. Session persistence, locking, save handlers,
+and cookie emission remain unsupported. `fopen()` can create bounded
+interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
 `fclose()`. `php://input` handles read the deterministic
-`PHPC_REQUEST_BODY` seed and stay non-writable. `opendir()`, `readdir()`,
-`rewinddir()`, and `closedir()` cover bounded local UTF-8 directory handles.
-Unsupported wrappers, contexts/filters, broader wrapper metadata, binary byte
+`PHPC_REQUEST_BODY` seed and stay non-writable. Bounded
+`stream_context_create()` resources store array options for
+`stream_context_get_options()` and may be passed to the current
+`file_get_contents()`/`fopen()` local and `php://input` paths without applying
+wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
+`closedir()` cover bounded local UTF-8 directory handles. Unsupported wrappers,
+filters, context option effects, broader wrapper metadata, binary byte
 fidelity, directory entry ordering fidelity, permissions/locking, stat-cache
 behavior, warning recovery, temp-file spillover, and native stream resources
 remain unsupported. Native lowering still rejects request/session/stream state
@@ -197,7 +203,8 @@ incorrect native code.
   WordPress bootstrap probes, including exact option insert/update/delete/read
   shapes and selected prepared option-value-only, option-name-only,
   option-name-list, full-row, star-projection, name/autoload-list, and
-  autoload-list result sets;
+  autoload-list result sets, plus bounded transient-shaped option-name prefix
+  result scans;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -211,8 +218,8 @@ incorrect native code.
   including parent interfaces declared later in the same parsed program, and
   public method signatures parse, register class-like interface names, power
   `interface_exists()` and
-  `get_declared_interfaces()`, participate in the current string-function
-  autoload callback path for truthy-autoload `interface_exists()` misses, and
+  `get_declared_interfaces()`, participate in the current bounded autoload
+  callback path for truthy-autoload `interface_exists()` misses, and
   require concrete classes that implement
   declared interfaces, including through inherited `implements` metadata and
   the current parent interface inheritance slice, to expose
@@ -367,10 +374,11 @@ conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery beyond string user-function callbacks,
-public object-method array callables, and public class-string static-method
-array callables registered through `spl_autoload_register()` for
-`class_exists()`, `interface_exists()`, `trait_exists()`, missing `new` class
-instantiation, and included class/interface/trait declaration dependencies,
+public `"ClassName::method"` static-method strings, public object-method array
+callables, and public class-string static-method array callables registered
+through `spl_autoload_register()` for `class_exists()`, `interface_exists()`,
+`trait_exists()`, missing `new` class instantiation, and included
+class/interface/trait declaration dependencies,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -488,10 +496,11 @@ direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
-direct `fopen()`/`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/
-`feof()`/`ftell()`/`fseek()`/`fstat()`/`stream_get_meta_data()`/`fclose()`/
-`opendir()`/`readdir()`/`rewinddir()`/`closedir()` stream-resource and
-directory-handle calls,
+direct `fopen()`/`stream_context_create()`/`stream_context_get_options()`/
+`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/`feof()`/`ftell()`/
+`fseek()`/`fstat()`/`stream_get_meta_data()`/`fclose()`/`opendir()`/
+`readdir()`/`rewinddir()`/`closedir()` stream-resource and directory-handle
+calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,

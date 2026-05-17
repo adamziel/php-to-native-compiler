@@ -58,6 +58,32 @@ echo $_SESSION["stage"];
 }
 
 #[test]
+fn session_superglobal_reference_aliases_survive_function_scope_writes() {
+    let execution = run_source(
+        r#"<?php
+session_start();
+$_SESSION["payload"] = ["slot" => "start"];
+$alias =& $_SESSION["payload"]["slot"];
+
+function wp_session_refcow_update($suffix) {
+    $_SESSION["payload"]["slot"] = $_SESSION["payload"]["slot"] . ":" . $suffix;
+}
+
+wp_session_refcow_update("function");
+$alias = $alias . ":alias";
+echo $_SESSION["payload"]["slot"], "|", $alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "start:function:alias|start:function:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_builtins_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php

@@ -136,6 +136,7 @@ struct Interpreter {
     next_closure_id: i64,
     next_resource_id: i64,
     streams: HashMap<i64, StreamResource>,
+    stream_contexts: HashMap<i64, StreamContextResource>,
     directories: HashMap<i64, DirectoryResource>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
@@ -259,6 +260,11 @@ enum StreamResource {
     File(FileStream),
 }
 
+#[derive(Debug, Clone)]
+struct StreamContextResource {
+    options: PhpArray,
+}
+
 #[derive(Debug)]
 struct DirectoryResource {
     entries: Vec<String>,
@@ -352,7 +358,7 @@ enum ArrayFilterMode {
 fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
-        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
+        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
     )
 }
 
@@ -2616,6 +2622,7 @@ impl Interpreter {
             next_closure_id: 1,
             next_resource_id: 1,
             streams: HashMap::new(),
+            stream_contexts: HashMap::new(),
             directories: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
@@ -15879,7 +15886,16 @@ impl Interpreter {
         let callback = match &args[0] {
             Expr::Closure { .. } => AutoloadCallback::Closure,
             callback => match self.evaluate(callback, caller_scope)? {
-                Value::String(name) => AutoloadCallback::Function(name),
+                Value::String(name) => {
+                    if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+                        AutoloadCallback::StaticMethod {
+                            class_name: class_name.to_string(),
+                            method_name: method_name.to_string(),
+                        }
+                    } else {
+                        AutoloadCallback::Function(name)
+                    }
+                }
                 Value::Array(array) => {
                     let Some((target, method_name)) = array_callable_parts(&array) else {
                         return Err(runtime_error(
@@ -18631,14 +18647,24 @@ impl Interpreter {
                 ));
             }
         };
-        if args.len() > 2 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "fopen()",
-                    "use_include_path and context arguments are not supported in the current stream subset",
-                ),
-            ));
+        let use_include_path = match args.get(2) {
+            Some(Value::Bool(flag)) => *flag,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fopen()",
+                        format!(
+                            "use_include_path argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+        if let Some(context) = args.get(3) {
+            self.expect_optional_stream_context_resource("fopen", context, span)?;
         }
 
         let is_memory_stream = match path {
@@ -18707,7 +18733,7 @@ impl Interpreter {
                 }),
             );
         } else {
-            let filesystem_path = local_filesystem_metadata_path(path);
+            let filesystem_path = self.resolve_file_get_contents_path(path, use_include_path);
             let file = fs::OpenOptions::new()
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
@@ -18746,6 +18772,109 @@ impl Interpreter {
             self.streams.insert(id, StreamResource::File(stream));
         }
         Ok(Value::Resource(id))
+    }
+
+    fn call_stream_context_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "stream_context_create()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let options = match args.first() {
+            Some(Value::Array(options)) => options.clone(),
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_create()",
+                        format!(
+                            "options argument must be array or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        match args.get(1) {
+            Some(Value::Array(_)) | Some(Value::Null) | None => {}
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "stream_context_create()",
+                        format!(
+                            "params argument must be array or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.stream_contexts
+            .insert(id, StreamContextResource { options });
+        Ok(Value::Resource(id))
+    }
+
+    fn call_stream_context_get_options(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("stream_context_get_options", args, 1, span)?;
+        let context =
+            self.expect_stream_context_resource("stream_context_get_options", &args[0], span)?;
+        Ok(Value::Array(context.options.clone()))
+    }
+
+    fn expect_stream_context_resource(
+        &self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<&StreamContextResource> {
+        let Value::Resource(id) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "context argument must be stream context resource in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+        self.stream_contexts.get(id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "context argument must be stream context resource in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn expect_optional_stream_context_resource(
+        &self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<&StreamContextResource>> {
+        if matches!(value, Value::Null) {
+            return Ok(None);
+        }
+        self.expect_stream_context_resource(function, value, span)
+            .map(Some)
     }
 
     fn stream_mut(
@@ -21388,12 +21517,12 @@ impl Interpreter {
                 }
             }
             "file_get_contents" => {
-                if args.is_empty() || args.len() > 2 {
+                if args.is_empty() || args.len() > 3 {
                     return Err(runtime_error(
                         span,
                         RuntimeError::arity_mismatch(
                             "file_get_contents()",
-                            ArityExpectation::Between { min: 1, max: 2 },
+                            ArityExpectation::Between { min: 1, max: 3 },
                             args.len(),
                         ),
                     ));
@@ -21414,6 +21543,13 @@ impl Interpreter {
                     }
                     None => false,
                 };
+                if let Some(context) = args.get(2) {
+                    self.expect_optional_stream_context_resource(
+                        "file_get_contents",
+                        context,
+                        span,
+                    )?;
+                }
                 match &args[0] {
                     Value::String(path) if path == "php://input" => {
                         Ok(Value::String(self.request_body.clone()))
@@ -21452,6 +21588,8 @@ impl Interpreter {
                 }
             }
             "fopen" => self.call_fopen(&args, span),
+            "stream_context_create" => self.call_stream_context_create(&args, span),
+            "stream_context_get_options" => self.call_stream_context_get_options(&args, span),
             "fwrite" => self.call_fwrite(&args, span),
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
@@ -26983,6 +27121,14 @@ fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
     }
 }
 
+fn static_method_callable_string(name: &str) -> Option<(&str, &str)> {
+    let (class_name, method_name) = name.split_once("::")?;
+    if class_name.is_empty() || method_name.is_empty() || method_name.contains("::") {
+        return None;
+    }
+    Some((class_name, method_name))
+}
+
 impl From<RuntimeError> for Diagnostic {
     fn from(value: RuntimeError) -> Self {
         Diagnostic::new(Phase::Runtime, 0, 0, value.message())
@@ -27198,6 +27344,8 @@ fn is_builtin(name: &str) -> bool {
             | "file_exists"
             | "file_get_contents"
             | "fopen"
+            | "stream_context_create"
+            | "stream_context_get_options"
             | "fwrite"
             | "fread"
             | "rewind"
@@ -27685,6 +27833,7 @@ enum WordPressOptionsRowFilter {
     All,
     Autoload,
     AutoloadValues(Vec<String>),
+    OptionNamePrefix(String),
     Names(Vec<String>),
 }
 
@@ -28228,6 +28377,9 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
+    }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
@@ -28252,6 +28404,9 @@ fn parse_wordpress_options_name_autoload_row_select_query(
     {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
+    }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
@@ -28274,6 +28429,9 @@ fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPres
     {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
+    }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
@@ -28288,6 +28446,7 @@ fn parse_wordpress_options_value_row_select_query(
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_value FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT option_value FROM `wp_options`"))
         .or_else(|| query.strip_prefix("SELECT `option_value` FROM `wp_options`"))?;
     let rest = rest.trim_start();
     if rest.is_empty() {
@@ -28297,6 +28456,9 @@ fn parse_wordpress_options_value_row_select_query(
         || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
     {
         return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
@@ -28323,6 +28485,9 @@ fn parse_wordpress_options_name_value_autoload_row_select_query(
         || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
     {
         return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
@@ -28352,6 +28517,9 @@ fn parse_wordpress_options_id_name_value_autoload_row_select_query(
     {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
+    }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
@@ -28374,12 +28542,37 @@ fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPres
     {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
+    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+        return Some(filter);
+    }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
     let names = parse_sql_single_quoted_list(names)?;
     Some(WordPressOptionsRowFilter::Names(names))
+}
+
+fn parse_wordpress_options_option_name_like_filter(
+    rest: &str,
+) -> Option<WordPressOptionsRowFilter> {
+    let pattern_sql = rest
+        .strip_prefix("WHERE option_name LIKE ")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` LIKE "))?;
+    let values = parse_sql_single_quoted_list(pattern_sql)?;
+    if values.len() != 1 {
+        return None;
+    }
+    let prefix = parse_wordpress_option_name_prefix_like_pattern(&values[0])?;
+    Some(WordPressOptionsRowFilter::OptionNamePrefix(prefix))
+}
+
+fn parse_wordpress_option_name_prefix_like_pattern(pattern: &str) -> Option<String> {
+    let prefix = pattern.strip_suffix('%')?;
+    if prefix.contains('%') {
+        return None;
+    }
+    Some(prefix.to_string())
 }
 
 fn wordpress_option_star_fields() -> Vec<String> {
@@ -28395,34 +28588,7 @@ fn wordpress_option_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
-        WordPressOptionsRowFilter::All => {
-            let mut names: Vec<_> = options.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Autoload => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::AutoloadValues(values) => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    values.contains(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
+    let mut names = wordpress_option_names_for_filter(options, filter);
     names.dedup();
     names
         .into_iter()
@@ -28444,34 +28610,7 @@ fn wordpress_option_name_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
-        WordPressOptionsRowFilter::All => {
-            let mut names: Vec<_> = options.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Autoload => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::AutoloadValues(values) => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    values.contains(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
+    let mut names = wordpress_option_names_for_filter(options, filter);
     names.dedup();
     names
         .into_iter()
@@ -28487,34 +28626,7 @@ fn wordpress_option_value_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
-        WordPressOptionsRowFilter::All => {
-            let mut names: Vec<_> = options.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Autoload => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::AutoloadValues(values) => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    values.contains(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
+    let mut names = wordpress_option_names_for_filter(options, filter);
     names.dedup();
     names
         .into_iter()
@@ -28533,34 +28645,7 @@ fn wordpress_option_name_autoload_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
-        WordPressOptionsRowFilter::All => {
-            let mut names: Vec<_> = options.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Autoload => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::AutoloadValues(values) => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    values.contains(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
+    let mut names = wordpress_option_names_for_filter(options, filter);
     names.dedup();
     names
         .into_iter()
@@ -28600,34 +28685,7 @@ fn wordpress_option_name_value_autoload_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
-        WordPressOptionsRowFilter::All => {
-            let mut names: Vec<_> = options.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Autoload => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::AutoloadValues(values) => {
-            let mut names: Vec<_> = options
-                .iter()
-                .filter_map(|(name, option)| {
-                    values.contains(&option.autoload).then(|| name.clone())
-                })
-                .collect();
-            names.sort();
-            names
-        }
-        WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
+    let mut names = wordpress_option_names_for_filter(options, filter);
     names.dedup();
     names
         .into_iter()
@@ -28653,7 +28711,34 @@ fn wordpress_option_id_name_value_autoload_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
 ) -> Vec<Vec<(String, Value)>> {
-    let mut names = match filter {
+    let mut names = wordpress_option_names_for_filter(options, filter);
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![
+                    ("option_id".to_string(), Value::Int(option.option_id)),
+                    ("option_name".to_string(), Value::String(name)),
+                    (
+                        "option_value".to_string(),
+                        Value::String(option.value.clone()),
+                    ),
+                    (
+                        "autoload".to_string(),
+                        Value::String(option.autoload.clone()),
+                    ),
+                ]
+            })
+        })
+        .collect()
+}
+
+fn wordpress_option_names_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<String> {
+    match filter {
         WordPressOptionsRowFilter::All => {
             let mut names: Vec<_> = options.keys().cloned().collect();
             names.sort();
@@ -28679,28 +28764,17 @@ fn wordpress_option_id_name_value_autoload_rows_for_filter(
             names.sort();
             names
         }
+        WordPressOptionsRowFilter::OptionNamePrefix(prefix) => {
+            let mut names: Vec<_> = options
+                .keys()
+                .filter(|name| name.starts_with(prefix))
+                .cloned()
+                .collect();
+            names.sort();
+            names
+        }
         WordPressOptionsRowFilter::Names(names) => names.clone(),
-    };
-    names.dedup();
-    names
-        .into_iter()
-        .filter_map(|name| {
-            options.get(&name).map(|option| {
-                vec![
-                    ("option_id".to_string(), Value::Int(option.option_id)),
-                    ("option_name".to_string(), Value::String(name)),
-                    (
-                        "option_value".to_string(),
-                        Value::String(option.value.clone()),
-                    ),
-                    (
-                        "autoload".to_string(),
-                        Value::String(option.autoload.clone()),
-                    ),
-                ]
-            })
-        })
-        .collect()
+    }
 }
 
 fn is_wordpress_autoload_option_value(value: &str) -> bool {

@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1356/static_method_string_autoload_callbacks.php
+string-static:StringLoadedBox
+class
+string-static:StringLoadedContract
+interface
+string-static:StringLoadedTrait
+hook:StringPlugin
+trait

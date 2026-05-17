@@ -375,9 +375,13 @@ returning recorded option-name, value, and autoload columns, and for the exact
 projection, returning deterministic option-id, name, value, and autoload
 columns, and for exact `SELECT * FROM wp_options ...` star projections,
 returning the same deterministic option-id, name, value, and autoload columns.
-All and autoload-filtered row reads use deterministic option-name ordering;
-explicit `IN (...)` reads preserve the requested name order and skip missing
-names.
+These row-set projections also accept exact
+`WHERE option_name LIKE '<prefix>%'` and backtick-quoted
+``WHERE `option_name` LIKE '<prefix>%'`` filters for deterministic
+transient-shaped prefix scans such as `_transient_%` and escaped
+`\_transient\_%`. All, autoload-filtered, and prefix-filtered row reads use
+deterministic option-name ordering; explicit `IN (...)` reads preserve the
+requested name order and skip missing names.
 Missing option names still return an empty placeholder result. The exact
 single-quoted literal parser for those direct option shapes accepts the
 current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
@@ -385,7 +389,8 @@ for quotes, double quotes, backslashes, newlines, and carriage returns, plus
 doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond the exact insert and
-update shapes listed above, arbitrary
+update shapes listed above, SQL `LIKE` wildcard semantics beyond the bounded
+trailing-percent option-name prefix shape, arbitrary
 projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id/star-projection shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real

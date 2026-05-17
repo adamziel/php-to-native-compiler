@@ -3896,6 +3896,47 @@ echo $prepared_single_row["option_id"], ":", $prepared_single_row["option_name"]
 }
 
 #[test]
+fn mysqli_query_reads_current_wordpress_transient_prefix_option_rows_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '12345', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$rows = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE '_transient_%'");
+$first = mysqli_fetch_assoc($rows);
+$second = mysqli_fetch_assoc($rows);
+echo mysqli_num_rows($rows);
+echo ":";
+echo $first["option_name"], "=", $first["option_value"];
+echo ",";
+echo $second["option_name"], "=", $second["option_value"];
+echo "|";
+$star = mysqli_query($handle, "SELECT * FROM `wp_options` WHERE `option_name` LIKE '\\_transient\\_%'");
+$star_first = mysqli_fetch_assoc($star);
+$star_second = mysqli_fetch_assoc($star);
+echo mysqli_num_fields($star);
+echo ":";
+echo $star_first["option_id"], ":", $star_first["option_name"];
+echo ",";
+echo $star_second["option_id"], ":", $star_second["option_name"];
+echo "|";
+$values = mysqli_query($handle, "SELECT option_value FROM wp_options WHERE option_name LIKE '_transient_timeout_%'");
+$timeout = mysqli_fetch_assoc($values);
+echo $timeout["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_timeout_update_plugins=12345,_transient_update_plugins=plugin-payload|4:2:_transient_timeout_update_plugins,1:_transient_update_plugins|12345"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_row_sets_from_state() {
     let execution = run_source(
         r#"<?php
