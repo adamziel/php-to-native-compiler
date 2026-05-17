@@ -3,5 +3,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone1092/reference_assignment_array_access_source_boundary.php:11:1: unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented
+runtime error at tests/fixtures/milestone1092/reference_assignment_array_access_source_boundary.php:11:1: unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset
 --- stderr end ---

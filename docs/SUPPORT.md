@@ -86,7 +86,8 @@
   `$payload =& $_REQUEST["payload"]; $alias =& pick($payload, "slot");`.
   Nested-control-flow returns, dynamic object-property argument roots,
   non-public object-property roots outside valid method visibility contexts,
-  `ArrayAccess` argument roots, callback argument-array parents
+  `ArrayAccess` argument roots outside the documented direct `offsetGet()`
+  reference-source bridge, callback argument-array parents
   beyond the documented `call_user_func_array()` slices, arbitrary return
   expressions, real PHP reference containers, broader copy-on-write, and
   native lowering remain unsupported.
@@ -147,6 +148,14 @@
   copy-in/writeback path. Visible named object-property roots include public
   properties and private/protected properties reached from a valid method
   visibility context, such as `array(&$this->privateItems["slot"], ...)`.
+  Literal callback argument arrays also accept direct `ArrayAccess` reference
+  elements such as `array(&$bag[$key], ...)` when the direct object variable
+  implements `ArrayAccess`, public `offsetGet($offset)` returns by reference,
+  and its body is exactly the current bounded root shape
+  `return $this->property[$offset];`. The selected property array slot is
+  materialized when missing and writes back through the same alias metadata as
+  direct object-property array slots, including private/protected backing
+  properties reached through the declaring `offsetGet()` context.
   If a direct variable element is already routed
   through the covered direct array-offset alias metadata, such as
   `$payload =& $_REQUEST["payload"]; call_user_func_array($callback,
@@ -206,7 +215,8 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Dynamic-property append-offset sources, ArrayAccess, reference array
+  Dynamic-property append-offset sources, `ArrayAccess` roots outside the
+  direct `offsetGet()` bridge, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
@@ -215,7 +225,8 @@
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
-  reference named-argument path, dynamic, append, or `ArrayAccess` object-property bridges for
+  reference named-argument path, dynamic, append, or property-held
+  `ArrayAccess` bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
   forms remain unsupported for direct
@@ -263,7 +274,8 @@
   arrays, the runtime append cursor chooses the selected slot, and that slot
   is bound to the direct alias variable as `null` until either side writes.
   Non-array roots, object-property offsets outside the documented visible
-  named-property source subset, `ArrayAccess` offsets, exact by-reference
+  named-property source subset, `ArrayAccess` offsets outside the direct
+  `offsetGet()` reference-source bridge, exact by-reference
   `foreach`, full PHP reference containers, copy-on-write, and native lowering
   remain unsupported. Direct
   object-property array-offset
@@ -292,7 +304,8 @@
   scope. `$GLOBALS[]` append sources, non-string root keys, recursive
   `$GLOBALS` materialization, dynamic/magic property append sources, dynamic
   non-public append-source paths, non-direct object expressions, non-variable
-  reference targets, ArrayAccess offset reference sources, full PHP reference
+  reference targets, property-held or dynamic ArrayAccess offset reference
+  sources, full PHP reference
   containers, copy-on-write
   containers, exact alias destruction ordering, and native lowering remain
   unsupported for these source forms. When a direct static array
@@ -360,11 +373,19 @@
   `__get()` returns of properties, array offsets, or expressions, non-variable
   reference targets, full reference containers, copy-on-write, exact alias
   destruction ordering, exact magic-property notices, and native lowering
-  remain unsupported. `ArrayAccess` reference sources
-  such as `$alias =& $bag[$key];` and
-  `$alias =& $holder->bag[$key];` report a stable unsupported-call boundary
-  because faithful support requires by-reference `ArrayAccess::offsetGet()`
-  aliasing and runtime reference containers. Direct
+  remain unsupported. Direct `ArrayAccess` reference sources
+  such as `$alias =& $bag[$key];` execute for direct object variables whose
+  class implements `ArrayAccess` when public `offsetGet($offset)` returns by
+  reference and its body is exactly `return $this->property[$offset];` in the
+  current subset. The bridge binds the alias to the backing property array
+  slot, materializes missing slots as `null`, and supports public plus
+  private/protected backing properties through the declaring method context.
+  Normal reads through that same bounded reference-returning `offsetGet()`
+  return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
+  with side effects or broader return expressions, property-held sources such
+  as `$holder->bag[$key]`, append `ArrayAccess` sources, nested
+  `ArrayAccess` chains, and real runtime reference containers remain
+  unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
@@ -1728,11 +1749,15 @@
   `mysqli_stmt_warning_count($statement)` returns `0`,
   `mysqli_stmt_get_warnings($statement)` returns `false`,
   `mysqli_stmt_error_list($statement)` returns an empty array,
-  `mysqli_stmt_affected_rows($statement)` returns `0`, and
-  `mysqli_stmt_insert_id($statement)` returns `0` for the current placeholder
-  statement. This does not track failed prepares, executions,
-  warning-chain objects, error-list entries, affected rows, insert IDs, host
-  database state, PHP warning/error fidelity, or native statement lowering.
+  `mysqli_stmt_affected_rows($statement)` returns deterministic mutation
+  metadata for the exact prepared `wp_options` state-island mutations, and
+  `mysqli_stmt_insert_id($statement)` returns the deterministic placeholder
+  option ID for exact prepared insert, insert-on-duplicate, and replace
+  mutation branches in the state island. Non-insert statement executions reset
+  the statement insert ID to `0`. This does not track failed
+  prepares, warning-chain objects, error-list entries, host database state,
+  PHP warning/error fidelity, exact mysqlnd insert-ID edge cases, or native
+  statement lowering.
   `mysqli_stmt_execute($statement, $params = null)` executes the current
   unbound placeholder statement shapes and the exact known bound-parameter
   placeholder shapes. For the seed-post WordPress SELECT, including the exact
@@ -1773,10 +1798,13 @@
   over `wp_options` aliases `a` and `b`, with payload and timeout
   trailing-percent patterns plus a decimal threshold; it deletes each reached
   payload row and its matching timeout row when the timeout value is below the
-  threshold. This is not broader statement execution, named params-array
-  support, true by-reference aliasing, mutation SQL beyond exact `wp_options`
-  state-island shapes, arbitrary multi-table deletes, host database state, PHP
-  warning/error fidelity, mysqlnd behavior, or native statement lowering.
+  threshold. Exact prepared option insert/insert-on-duplicate/replace
+  statement executions also expose deterministic `mysqli_stmt_insert_id()`
+  metadata for bounded `wpdb` insert-ID probes. This is not broader statement
+  execution, named params-array support, true by-reference aliasing, mutation
+  SQL beyond exact `wp_options` state-island shapes, arbitrary multi-table
+  deletes, host database state, PHP warning/error fidelity, mysqlnd behavior,
+  exact duplicate-key insert-ID semantics, or native statement lowering.
   `mysqli_execute_query($handle, $query, $params = null)` accepts a
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
@@ -2636,19 +2664,20 @@
   destructor slice, exact diagnostics, and native lowering remain unsupported.
   `set_error_handler($callback, $error_levels = E_ALL)` accepts a currently
   valid string callable, object/static array callable, or closure plus an
-  optional integer error-level mask, records the current handler value, and
-  returns the previous handler value or `null`. The current invocation slice
-  routes only recoverable `file_get_contents()` `E_WARNING` events through
-  string user-function handlers and public object/static array callable
-  handlers. Handler masks filter which handlers receive those warnings;
-  `false` return values fall through to the bounded stderr warning path, and
-  other return values suppress that fallback.
-  `restore_error_handler()` accepts no arguments, clears the current bounded
-  handler registration, and returns `true`. True PHP handler-stack behavior,
-  warnings/notices/deprecations outside the current `file_get_contents()`
-  recovery path, closure handler invocation, by-reference callback behavior,
-  output buffering, shutdown/fatal interaction, exact handler `errstr`
-  diagnostics, and native lowering remain unsupported.
+  optional integer error-level mask, pushes it onto a request-local bounded
+  handler stack, and returns the previous handler value or `null`. The current
+  invocation slice routes only recoverable `file_get_contents()` `E_WARNING`
+  events through the top registered string user-function handler or public
+  object/static array callable handler. Handler masks filter whether that top
+  handler receives those warnings; `false` return values fall through to the
+  bounded stderr warning path, and other return values suppress that fallback.
+  `restore_error_handler()` accepts no arguments, pops the current bounded
+  handler registration so the previous registration becomes active again, and
+  returns `true`. Warnings/notices/deprecations outside the current
+  `file_get_contents()` recovery path, closure handler invocation, handler
+  stack mutation edge cases during active handler dispatch, by-reference
+  callback behavior, output buffering, shutdown/fatal interaction, exact
+  handler `errstr` diagnostics, and native lowering remain unsupported.
   `ob_start()` accepts no arguments, starts a new interpreter-owned output
   buffer, and returns `true`. While a buffer is active, PHP-visible output from
   `echo`, `print`, `exit("...")`, `var_dump()`, and `print_r()` is appended to
@@ -5620,7 +5649,18 @@
   support `getName()`, `getPosition()`, `getDeclaringClass()`,
   `getDeclaringFunction()`, `isOptional()`, `isDefaultValueAvailable()`,
   `getDefaultValue()`, `isPassedByReference()`, `isVariadic()`, and
-  `hasType()` over the current parsed method parameter metadata. The current
+  `hasType()` over the current parsed method parameter metadata. The bounded
+  `ReflectionParameter::getType()` path returns `null` for untyped method
+  parameters or a request-local `ReflectionNamedType` object for simple named
+  parameter types. That object supports `getName()`, `allowsNull()`, and
+  `isBuiltin()` for the current parsed type string, and
+  `ReflectionParameter::allowsNull()` reports untyped, nullable `?T`, `null`
+  union member, `mixed`, and typed-default-`null` cases in the current method
+  parameter slice. Direct user instantiation of `ReflectionType` and
+  `ReflectionNamedType` is rejected; these objects are only materialized by the
+  supported `ReflectionParameter::getType()` path. Compound union/intersection
+  type objects remain unsupported.
+  The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
   `get_declared_classes()` returns a zero-indexed array containing the current
@@ -7238,10 +7278,10 @@
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, scalar/array default expressions accepted by the parser,
   by-reference and variadic flags, and type-presence checks without materialized
-  `ReflectionType` objects. `ReflectionProperty`, attributes,
+  compound `ReflectionType` objects. `ReflectionProperty`, attributes,
   file/line/doc-comment metadata, extension/internal method or parameter
-  metadata, parameter attributes, `getType()`/`ReflectionNamedType`,
-  `allowsNull()`, default constant-name introspection, function/closure
+  metadata, parameter attributes, `ReflectionUnionType`/
+  `ReflectionIntersectionType`, default constant-name introspection, function/closure
   `ReflectionParameter` targets, method invocation through reflection, exact
   `ReflectionException` behavior, namespace/import alias expansion beyond
   parsed class-like names, and native lowering remain unsupported.

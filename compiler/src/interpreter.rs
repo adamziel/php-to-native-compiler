@@ -110,8 +110,7 @@ struct Interpreter {
     error_reporting_mask: i64,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
-    error_handler: Option<Value>,
-    error_handler_mask: Option<i64>,
+    error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
     shutdown_callbacks: Vec<ShutdownCallback>,
     shutdown_callback_index: usize,
@@ -131,6 +130,7 @@ struct Interpreter {
     reflection_classes: HashMap<i64, ReflectionClassState>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
+    reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -288,6 +288,13 @@ struct ReflectionParameterState {
 }
 
 #[derive(Debug, Clone)]
+struct ReflectionNamedTypeState {
+    name: String,
+    allows_null: bool,
+    is_builtin: bool,
+}
+
+#[derive(Debug, Clone)]
 struct MemoryStream {
     buffer: String,
     position: usize,
@@ -360,6 +367,7 @@ struct MysqliStatementState {
     bound_parameter_values: Vec<Value>,
     executed_result: Option<MysqliPendingResultState>,
     affected_rows: i64,
+    insert_id: i64,
     buffered_result: Option<MysqliPendingResultState>,
     buffered_result_cursor: usize,
     bound_result_variables: Vec<String>,
@@ -378,6 +386,12 @@ struct ShutdownCallback {
     callback: Value,
     args: Vec<Value>,
     span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct ErrorHandlerRegistration {
+    callback: Value,
+    mask: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2971,8 +2985,7 @@ impl Interpreter {
             error_reporting_mask: PHP_E_ALL,
             ignore_user_abort: false,
             ini_values: HashMap::new(),
-            error_handler: None,
-            error_handler_mask: None,
+            error_handlers: Vec::new(),
             error_handler_active: false,
             shutdown_callbacks: Vec::new(),
             shutdown_callback_index: 0,
@@ -2992,6 +3005,7 @@ impl Interpreter {
             reflection_classes: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
+            reflection_named_types: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -3837,15 +3851,12 @@ impl Interpreter {
         if self.error_handler_active {
             return Ok(false);
         }
-        if self
-            .error_handler_mask
-            .is_some_and(|mask| mask & PHP_E_WARNING == 0)
-        {
-            return Ok(false);
-        }
-        let Some(handler) = self.error_handler.clone() else {
+        let Some(handler) = self.error_handlers.last().cloned() else {
             return Ok(false);
         };
+        if handler.mask.is_some_and(|mask| mask & PHP_E_WARNING == 0) {
+            return Ok(false);
+        }
 
         let args = vec![
             Value::Int(PHP_E_WARNING),
@@ -3854,7 +3865,7 @@ impl Interpreter {
             Value::Int(span.line as i64),
         ];
         self.error_handler_active = true;
-        let result = self.call_error_handler_callback(handler, args, span);
+        let result = self.call_error_handler_callback(handler.callback, args, span);
         self.error_handler_active = false;
         Ok(!matches!(result?, Value::Bool(false)))
     }
@@ -5683,6 +5694,17 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionParameter") {
             return self.instantiate_reflection_parameter(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionType")
+            || declared_class_name.eq_ignore_ascii_case("ReflectionNamedType")
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "reflection type objects are only materialized by ReflectionParameter::getType() in the current subset",
+                ),
+            ));
+        }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
@@ -6180,6 +6202,17 @@ impl Interpreter {
                 } = source
                 {
                     let key = self.evaluate_array_key(index, scope)?;
+                    if let Some((alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            array_name,
+                            key.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_existing_array_offset(name, array_name, key, span)?;
                 } else if let ReferenceSource::NestedArrayIndex {
@@ -7018,6 +7051,164 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn evaluate_direct_array_access_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        key: ArrayKey,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+        if !self
+            .classes
+            .implements_interface(object.class_id(), "ArrayAccess")
+        {
+            return Ok(None);
+        }
+
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "offsetGet")
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ArrayAccess::offsetGet()",
+                    "ArrayAccess objects must declare offsetGet() for reference sources in the current subset",
+                ),
+            ));
+        };
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::offsetGet()"),
+                    "static ArrayAccess offsetGet() reference sources are not implemented",
+                ),
+            ));
+        }
+        if visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::offsetGet()"),
+                    "ArrayAccess offsetGet() reference sources require a public method in the current subset",
+                ),
+            ));
+        }
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        if !function.returns_by_reference {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset",
+                ),
+            ));
+        }
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_reference_return_function_metadata(function, span)?;
+
+        let property = self.array_access_offset_get_reference_property(function, span)?;
+
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        let property_visibility = object
+            .property_visibility_from_context(&property, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        let root = if property_visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property,
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property,
+                current_class_id: Some(class_id),
+                protected_class_ids,
+            }
+        };
+        let alias = ArrayOffsetAlias {
+            root,
+            keys: vec![key],
+        };
+        scope.materialize_array_offset_alias(&alias, span)?;
+        let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind missing ArrayAccess reference source".to_string(),
+                ),
+            )
+        })?;
+        Ok(Some((alias, value)))
+    }
+
+    fn array_access_offset_get_reference_property(
+        &self,
+        function: &FunctionDecl,
+        span: Span,
+    ) -> CompileResult<String> {
+        let Some(param) = function.params.first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require offsetGet() to accept an offset parameter in the current subset",
+                ),
+            ));
+        };
+        let [Stmt::Return {
+            value: Some(Expr::Index { target, index, .. }),
+            ..
+        }] = function.body.as_slice()
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require offsetGet() to contain only return $this->property[$offset] in the current subset",
+                ),
+            ));
+        };
+
+        let Expr::Property {
+            target, property, ..
+        } = target.as_ref()
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] in the current subset",
+                ),
+            ));
+        };
+        if !matches!(target.as_ref(), Expr::Variable(name, _) if name == "this") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require offsetGet() to return $this->property[$offset] in the current subset",
+                ),
+            ));
+        }
+        if !matches!(index.as_ref(), Expr::Variable(name, _) if name == &param.name) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "ArrayAccess offset reference sources require offsetGet() to index by its offset parameter in the current subset",
+                ),
+            ));
+        }
+
+        Ok(property.clone())
     }
 
     fn bind_static_to_context_property_or_magic_get(
@@ -9158,6 +9349,7 @@ impl Interpreter {
                 bound_parameter_values: Vec::new(),
                 executed_result: None,
                 affected_rows: 0,
+                insert_id: 0,
                 buffered_result: None,
                 buffered_result_cursor: 0,
                 bound_result_variables: Vec::new(),
@@ -9674,6 +9866,31 @@ impl Interpreter {
             .get(class_id)
             .expect("core ReflectionParameter class id should resolve");
         self.reflection_parameters.insert(object_id, state);
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
+    fn create_reflection_named_type_object(
+        &mut self,
+        state: ReflectionNamedTypeState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionNamedType")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionNamedType core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionNamedType class id should resolve");
+        self.reflection_named_types.insert(object_id, state);
         Ok(Value::Object(PhpObject::from_class_with_id(
             class, object_id,
         )))
@@ -10340,6 +10557,7 @@ impl Interpreter {
         state.bound_parameter_values.clear();
         state.executed_result = None;
         state.affected_rows = 0;
+        state.insert_id = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
@@ -10521,10 +10739,14 @@ impl Interpreter {
             let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
             state.executed_result = None;
             state.affected_rows = 0;
+            state.insert_id = 0;
             state.buffered_result = None;
             state.buffered_result_cursor = 0;
             return Ok(Value::Bool(false));
         };
+
+        self.mysqli_statement_state_mut(function, stmt_id, span)?
+            .insert_id = 0;
 
         if is_wordpress_option_prepared_value_autoload_update_query(&query) {
             if let Some(handle_id) = connection_handle_id {
@@ -10674,6 +10896,7 @@ impl Interpreter {
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
                 state.affected_rows = 1;
+                state.insert_id = next_insert_id;
                 state.buffered_result = None;
                 state.buffered_result_cursor = 0;
                 return Ok(Value::Bool(true));
@@ -10718,6 +10941,7 @@ impl Interpreter {
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
                 state.affected_rows = affected_rows;
+                state.insert_id = next_insert_id;
                 state.buffered_result = None;
                 state.buffered_result_cursor = 0;
                 return Ok(Value::Bool(true));
@@ -10757,6 +10981,7 @@ impl Interpreter {
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
                 state.affected_rows = affected_rows;
+                state.insert_id = next_insert_id;
                 state.buffered_result = None;
                 state.buffered_result_cursor = 0;
                 return Ok(Value::Bool(true));
@@ -12105,6 +12330,7 @@ impl Interpreter {
         state.bound_parameter_values.clear();
         state.executed_result = None;
         state.affected_rows = 0;
+        state.insert_id = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         state.bound_result_variables.clear();
@@ -12144,8 +12370,8 @@ impl Interpreter {
     fn call_mysqli_stmt_insert_id(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stmt_insert_id", args, 1, span)?;
         let stmt_id = expect_mysqli_stmt_handle("mysqli_stmt_insert_id()", &args[0], span)?;
-        self.mysqli_statement_state("mysqli_stmt_insert_id()", stmt_id, span)?;
-        Ok(Value::Int(0))
+        let state = self.mysqli_statement_state("mysqli_stmt_insert_id()", stmt_id, span)?;
+        Ok(Value::Int(state.insert_id))
     }
 
     fn call_mysqli_execute_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -14833,6 +15059,12 @@ impl Interpreter {
         {
             return self.call_reflection_parameter_method(object, method_name, args, span);
         }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionNamedType")
+        {
+            return self.call_reflection_named_type_method(object, method_name, args, span);
+        }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
             let receiver_class_name = self
@@ -15298,9 +15530,78 @@ impl Interpreter {
                 expect_expr_arity("ReflectionParameter::hasType", args.len(), 0, span)?;
                 Ok(Value::Bool(state.parameter.type_decl.is_some()))
             }
+            "gettype" => {
+                expect_expr_arity("ReflectionParameter::getType", args.len(), 0, span)?;
+                let Some(type_decl) = state.parameter.type_decl.as_deref() else {
+                    return Ok(Value::Null);
+                };
+                let Some(type_state) = reflection_named_type_state_from_parameter(
+                    type_decl,
+                    state.parameter.default.as_ref(),
+                ) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionParameter::getType",
+                            format!(
+                                "compound parameter type {type_decl} requires ReflectionUnionType or ReflectionIntersectionType, which are not implemented"
+                            ),
+                        ),
+                    ));
+                };
+                self.create_reflection_named_type_object(type_state, span)
+            }
+            "allowsnull" => {
+                expect_expr_arity("ReflectionParameter::allowsNull", args.len(), 0, span)?;
+                Ok(Value::Bool(reflection_parameter_allows_null(
+                    state.parameter.type_decl.as_deref(),
+                    state.parameter.default.as_ref(),
+                )))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionParameter::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_reflection_named_type_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_named_types
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionNamedType::{method_name}()"),
+                        "missing ReflectionNamedType runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "getname" => {
+                expect_expr_arity("ReflectionNamedType::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "allowsnull" => {
+                expect_expr_arity("ReflectionType::allowsNull", args.len(), 0, span)?;
+                Ok(Value::Bool(state.allows_null))
+            }
+            "isbuiltin" => {
+                expect_expr_arity("ReflectionNamedType::isBuiltin", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_builtin))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionNamedType::{method_name}()")),
             )),
         }
     }
@@ -17294,6 +17595,13 @@ impl Interpreter {
             return (None, Vec::new());
         };
 
+        (
+            Some(current_class_id),
+            self.protected_class_ids_for_context(current_class_id),
+        )
+    }
+
+    fn protected_class_ids_for_context(&self, current_class_id: ClassId) -> Vec<ClassId> {
         let mut protected_class_ids = vec![current_class_id];
         let mut current = self
             .classes
@@ -17309,7 +17617,7 @@ impl Interpreter {
                 .parent_id();
         }
 
-        (Some(current_class_id), protected_class_ids)
+        protected_class_ids
     }
 
     fn can_call_constructor(&self, class_id: ClassId, visibility: Visibility) -> bool {
@@ -20129,6 +20437,7 @@ impl Interpreter {
         state.bound_parameter_values = variable_values;
         state.executed_result = None;
         state.affected_rows = 0;
+        state.insert_id = 0;
         state.buffered_result = None;
         state.buffered_result_cursor = 0;
         Ok(Value::Bool(true))
@@ -22193,13 +22502,15 @@ impl Interpreter {
             .map(|index| self.evaluate_array_key(index, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
 
-        if keys.len() == 1
-            && matches!(
-                caller_scope.read_named(name),
-                Some(Value::Object(object)) if self.classes.implements_interface(object.class_id(), "ArrayAccess")
-            )
-        {
-            return Ok(None);
+        if keys.len() == 1 {
+            if let Some((alias, value)) = self.evaluate_direct_array_access_reference_source_alias(
+                name,
+                keys[0].clone(),
+                arg.span(),
+                caller_scope,
+            )? {
+                return Ok(Some((alias, value)));
+            }
         }
 
         let alias = if name == "GLOBALS" {
@@ -27976,16 +28287,21 @@ impl Interpreter {
             None
         };
 
-        let previous = self.error_handler.clone().unwrap_or(Value::Null);
-        self.error_handler = Some(args[0].clone());
-        self.error_handler_mask = mask;
+        let previous = self
+            .error_handlers
+            .last()
+            .map(|handler| handler.callback.clone())
+            .unwrap_or(Value::Null);
+        self.error_handlers.push(ErrorHandlerRegistration {
+            callback: args[0].clone(),
+            mask,
+        });
         Ok(previous)
     }
 
     fn call_restore_error_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         expect_arity("restore_error_handler", &args, 0, span)?;
-        self.error_handler = None;
-        self.error_handler_mask = None;
+        self.error_handlers.pop();
         Ok(Value::Bool(true))
     }
 
@@ -29016,6 +29332,83 @@ impl Interpreter {
                     object.class_name()
                 )),
             ));
+        }
+
+        if let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        {
+            let function =
+                self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+            let function = function.as_ref();
+            if function.returns_by_reference {
+                if !method_name.eq_ignore_ascii_case("offsetGet") {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "ArrayAccess reference-return methods other than offsetGet() are not implemented",
+                        ),
+                    ));
+                }
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "static ArrayAccess offsetGet() reference sources are not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::offsetGet()"),
+                            "ArrayAccess offsetGet() reference sources require a public method in the current subset",
+                        ),
+                    ));
+                }
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                let property = self.array_access_offset_get_reference_property(function, span)?;
+                let key_value = args.first().ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ArrayAccess::offsetGet()",
+                            ArityExpectation::Exactly(1),
+                            args.len(),
+                        ),
+                    )
+                })?;
+                let key = match key_value {
+                    Value::Int(value) => ArrayKey::Int(*value),
+                    Value::String(value) => ArrayKey::string(value.clone()),
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_array_key(format!(
+                                "ArrayAccess reference offsetGet() key must be int or string in the current subset, got {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                let property_value = object
+                    .read_property_from_context(&property, Some(class_id), &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))?;
+                let Value::Array(array) = property_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot read offset on {}",
+                            property_value.type_name()
+                        )),
+                    ));
+                };
+                return Ok(array.get(key).cloned().unwrap_or(Value::Null));
+            }
         }
 
         self.call_magic_instance_method_with_values(object, method_name, args, span)?
@@ -31199,6 +31592,53 @@ fn reflection_parameter_metadata_from_function_params(
             default: param.default.clone(),
         })
         .collect()
+}
+
+fn reflection_named_type_state_from_parameter(
+    type_decl: &str,
+    default: Option<&Expr>,
+) -> Option<ReflectionNamedTypeState> {
+    if type_decl.contains('|') || type_decl.contains('&') {
+        return None;
+    }
+    let name = type_decl.strip_prefix('?').unwrap_or(type_decl).to_string();
+    Some(ReflectionNamedTypeState {
+        allows_null: reflection_parameter_allows_null(Some(type_decl), default),
+        is_builtin: reflection_type_name_is_builtin(&name),
+        name,
+    })
+}
+
+fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Expr>) -> bool {
+    let Some(type_decl) = type_decl else {
+        return true;
+    };
+    type_decl.starts_with('?')
+        || type_decl
+            .split('|')
+            .any(|part| part.eq_ignore_ascii_case("null"))
+        || type_decl.eq_ignore_ascii_case("mixed")
+        || matches!(default, Some(Expr::Null(_)))
+}
+
+fn reflection_type_name_is_builtin(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {

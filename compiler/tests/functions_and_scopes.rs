@@ -2660,27 +2660,26 @@ $holder->bag["name"] =& $value;
 }
 
 #[test]
-fn reference_assignment_array_access_offset_source_reports_stable_boundary() {
-    let error = runtime_error(
+fn reference_assignment_array_access_offset_source_binds_bounded_offset_get_root() {
+    let execution = run_source(
         r#"<?php
 class Bag implements ArrayAccess {
     public $items = [];
     public function offsetExists($offset) { return false; }
     public function &offsetGet($offset) { return $this->items[$offset]; }
-    public function offsetSet($offset, $value) { }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
     public function offsetUnset($offset) { }
 }
 $bag = new Bag();
 $alias =& $bag["name"];
+$alias = "Grace";
+echo $bag["name"], "|", $alias;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 10);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented"
-    );
+    assert_eq!(execution.stdout, "Grace|Grace");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -2702,7 +2701,7 @@ $alias =& $bag["name"];
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() and reference containers, which are not implemented"
+        "unsupported call reference assignment: ArrayAccess offset reference sources require by-reference offsetGet() returning $this->property[$offset] in the current subset"
     );
 }
 

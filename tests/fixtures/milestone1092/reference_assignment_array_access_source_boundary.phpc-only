@@ -1,1 +1,1 @@
-phpc reports a structured runtime boundary for ArrayAccess reference sources. PHP behavior depends on by-reference versus by-value offsetGet() and can emit engine-specific indirect-modification notices, so this fixture is intentionally not byte-for-byte compared against system PHP.
+phpc reports a structured runtime boundary for ArrayAccess reference sources whose offsetGet() returns by value. PHP behavior can emit engine-specific indirect-modification notices, so this fixture is intentionally not byte-for-byte compared against system PHP.

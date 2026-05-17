@@ -2111,10 +2111,37 @@ impl PhpClassTable {
             "isPassedByReference",
             "isVariadic",
             "hasType",
+            "getType",
+            "allowsNull",
         ] {
             reflection_parameter
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionParameter core metadata should not duplicate methods");
+        }
+        let reflection_type_id = classes
+            .declare_class("ReflectionType")
+            .expect("core class table should contain ReflectionParameter before ReflectionType");
+        let reflection_type = classes
+            .get_mut(reflection_type_id)
+            .expect("declared ReflectionType class id should resolve");
+        for method in ["allowsNull"] {
+            reflection_type
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionType core metadata should not duplicate methods");
+        }
+        let reflection_named_type_id = classes
+            .declare_class("ReflectionNamedType")
+            .expect("core class table should contain ReflectionType before ReflectionNamedType");
+        classes
+            .set_parent(reflection_named_type_id, reflection_type_id)
+            .expect("ReflectionNamedType should extend ReflectionType");
+        let reflection_named_type = classes
+            .get_mut(reflection_named_type_id)
+            .expect("declared ReflectionNamedType class id should resolve");
+        for method in ["getName", "isBuiltin"] {
+            reflection_named_type
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionNamedType core metadata should not duplicate methods");
         }
         classes
     }
@@ -7783,6 +7810,25 @@ mod tests {
         assert!(reflection_parameter.parent_id().is_none());
         assert!(reflection_parameter.properties().is_empty());
         assert!(reflection_parameter.method("getDefaultValue").is_some());
+        assert!(reflection_parameter.method("getType").is_some());
+
+        let reflection_type = classes.lookup_class("reflectiontype").unwrap();
+        assert_eq!(reflection_type.name(), "ReflectionType");
+        assert_eq!(reflection_type.id().index(), 10);
+        assert!(reflection_type.parent_id().is_none());
+        assert!(reflection_type.properties().is_empty());
+        assert!(reflection_type.method("allowsNull").is_some());
+
+        let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
+        assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
+        assert_eq!(reflection_named_type.id().index(), 11);
+        assert_eq!(
+            reflection_named_type.parent_id(),
+            Some(reflection_type.id())
+        );
+        assert!(reflection_named_type.properties().is_empty());
+        assert!(reflection_named_type.method("getName").is_some());
+        assert!(reflection_named_type.method("isBuiltin").is_some());
     }
 
     #[test]

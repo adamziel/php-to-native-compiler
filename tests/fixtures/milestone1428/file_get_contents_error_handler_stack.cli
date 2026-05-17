@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1428/file_get_contents_error_handler_stack.php
+prev=first_warningsecond:2:path|top-falsefirst:2:path|restored-false

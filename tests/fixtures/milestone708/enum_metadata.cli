@@ -17,9 +17,11 @@ Array
     [7] => ReflectionClass
     [8] => ReflectionMethod
     [9] => ReflectionParameter
-    [10] => App\State\Box
-    [11] => App\State\Mode
-    [12] => App\State\Status
+    [10] => ReflectionType
+    [11] => ReflectionNamedType
+    [12] => App\State\Box
+    [13] => App\State\Mode
+    [14] => App\State\Status
 )
 
 --- stdout end ---

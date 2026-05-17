@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1427/array_access_reference_roots.php
+exit: 0
+stdout:
+seed:alias|seed:alias
+seed:alias:callback|seed:alias:callback
+null:return:picked|null:return:picked
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -82,8 +82,9 @@ wrapper-specific behavior, and `file_get_contents()` accepts bounded integer
 offset plus optional non-negative length reads over those UTF-8 payloads.
 Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
-current slice can route those warnings through registered string or public
-array-callable `set_error_handler()` handlers before the stderr fallback.
+current slice can route those warnings through the top registered string or
+public array-callable `set_error_handler()` handler before the stderr fallback,
+with `restore_error_handler()` restoring the previous bounded handler.
 `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Bounded
 `register_shutdown_function()` callbacks run supported string and public
@@ -97,7 +98,7 @@ binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, stat-cache behavior, closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
-integration beyond that `file_get_contents()` recovery slice, temp-file spillover,
+integration beyond that `file_get_contents()` recovery stack slice, temp-file spillover,
 and native stream resources remain unsupported. Native lowering
 still rejects request/session/stream state
 until a native runtime ABI exists.
@@ -242,7 +243,8 @@ incorrect native code.
   name/autoload-list, autoload-only option-name equality for
   `update_option()`-shaped probes, and autoload-list/equality result sets,
   plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
-  mutations for option/transient-shaped state probes,
+  mutations and deterministic prepared-statement insert-ID metadata for
+  option/transient-shaped state probes,
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
   scans and a bounded expired-transient-timeout
@@ -386,7 +388,9 @@ incorrect native code.
   constructor, modifier-mask, and parameter-list inspection, bounded
   `ReflectionParameter` method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
-  type-presence predicates, declared trait
+  type-presence predicates plus simple named `ReflectionNamedType`
+  metadata through `getType()`, `allowsNull()`, `getName()`, and
+  `isBuiltin()`, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -487,8 +491,8 @@ magic methods beyond direct missing-property
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
-bounded `ReflectionClass`/`ReflectionMethod`/`ReflectionParameter` metadata
-table slices, and
+bounded `ReflectionClass`/`ReflectionMethod`/`ReflectionParameter`/
+`ReflectionNamedType` metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -566,8 +570,12 @@ assigned by reference, non-direct stored array expressions beyond direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
-object-property array arguments, ArrayAccess reference roots, broader
-aliasing, and full copy-on-write remain unsupported.
+object-property array arguments, property-held or dynamic ArrayAccess
+reference roots, broader aliasing, and full copy-on-write remain unsupported.
+The current interpreter does include a narrow direct ArrayAccess reference
+root bridge for `$alias =& $bag[$key]` and literal callback elements such as
+`array(&$bag[$key])` when public by-reference `offsetGet($offset)` is exactly
+`return $this->property[$offset];`.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as

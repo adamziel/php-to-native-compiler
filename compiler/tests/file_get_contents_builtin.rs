@@ -265,6 +265,40 @@ echo $value === false ? "false" : "value";
 }
 
 #[test]
+fn file_get_contents_warning_uses_lifo_error_handler_stack() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function first_warning($errno, $errstr) {
+    echo "first:" . $errno . ":" . (str_contains($errstr, "missing-first-after-restore.txt") ? "path" : "missing");
+    return true;
+}
+function second_warning($errno, $errstr) {
+    echo "second:" . $errno . ":" . (str_contains($errstr, "missing-second-top.txt") ? "path" : "missing");
+    return true;
+}
+set_error_handler("first_warning", E_WARNING);
+$previous = set_error_handler("second_warning", E_WARNING);
+echo is_string($previous) ? "prev=" . $previous : "prev=other";
+$top = file_get_contents("tests/fixtures/missing-second-top.txt");
+echo $top === false ? "|top-false" : "|top-value";
+restore_error_handler();
+$restored = file_get_contents("tests/fixtures/missing-first-after-restore.txt");
+echo $restored === false ? "|restored-false" : "|restored-value";
+restore_error_handler();
+"#,
+        "tests/fixtures/milestone1428/file_get_contents_error_handler_stack.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "prev=first_warningsecond:2:path|top-falsefirst:2:path|restored-false"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

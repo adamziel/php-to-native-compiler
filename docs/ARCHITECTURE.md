@@ -136,10 +136,14 @@ suffix is mapped to that caller variable's child slot. If the direct caller
 variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
 symbol-table cell, so returned child-slot suffixes remain attached to the
-underlying request/global/array/property slot. It does not make callback
-argument arrays, non-public/dynamic object-property array bridges,
-ArrayAccess roots, or stored array-offset metadata into general runtime
-reference containers. By-reference
+underlying request/global/array/property slot. Literal callback argument
+arrays can also bind a direct `ArrayAccess` object-variable element when
+public by-reference `offsetGet($offset)` has the exact bounded
+`return $this->property[$offset];` shape; the interpreter maps that to the
+backing property array alias root instead of creating a real reference
+container. It does not make callback argument arrays, non-public/dynamic
+object-property array bridges, property-held ArrayAccess roots, or stored
+array-offset metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -155,7 +159,7 @@ before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
 object name. Arbitrary nested copied reference slots beyond the literal copied
 path slice, non-public
-property-offset or magic clone alias mirroring, ArrayAccess references,
+property-offset or magic clone alias mirroring, broader ArrayAccess references,
 reference array literals, exact alias destruction ordering, and native lowering
 still require the future runtime reference/COW value model.
 
@@ -575,10 +579,17 @@ sources, non-string root keys, recursive `$GLOBALS` materialization,
 dynamic-property sources on non-direct object expressions, dynamic
 non-public property sources, magic property sources, non-variable reference
 targets, full reference containers, copy-on-write, exact alias destruction
-ordering, and native lowering remain future work. `ArrayAccess` reference
-sources rooted at a direct object variable or public object property now fail
-through a stable boundary because faithful support requires by-reference
-`ArrayAccess::offsetGet()` return aliasing and runtime reference containers.
+ordering, and native lowering remain future work. Direct `ArrayAccess`
+reference sources now have a narrow root bridge for `$alias =& $bag[$key]`
+and literal callback elements such as `array(&$bag[$key])` when the direct
+object variable implements `ArrayAccess`, public `offsetGet($offset)` returns
+by reference, and the method body is exactly the current
+`return $this->property[$offset];` shape. The bridge stores alias metadata
+against the backing property array slot, including private/protected
+properties through the declaring method context. By-value `offsetGet()`,
+property-held ArrayAccess sources, side-effecting or broader `offsetGet()`
+bodies, nested chains, append sources, and real reference containers remain
+future work.
 String-keyed `$GLOBALS` reference targets also have narrow routes:
 `$GLOBALS["name"] =& $value;`, `$GLOBALS["bag"]["slot"] =& $value;`, and
 `$GLOBALS["list"][] =& $value;` bind the selected root global symbol or
@@ -1749,7 +1760,8 @@ prepared autoload-only option-name equality reads for the current
 `update_option()` autoload reevaluation probe, plus prepared option-value
 equality reads with `LIMIT 1` for transient-shaped `wpdb::get_var()` probes,
 plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
-mutations for option/transient-shaped state probes,
+mutations and deterministic `mysqli_stmt_insert_id()` metadata for
+prepared-statement option/transient-shaped state probes,
 plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
@@ -1773,8 +1785,8 @@ row whose decimal value is below the direct or prepared threshold. That slice
 deletes both reached payload and timeout rows and updates affected-row
 metadata. It does not model arbitrary multi-table deletes, subqueries,
 collation, locks, indexes, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
-forms, exact MySQL affected-row edge cases, or WordPress cleanup against
-tables outside the deterministic `wp_options` state island;
+forms, exact MySQL affected-row or insert-ID edge cases, or WordPress cleanup
+against tables outside the deterministic `wp_options` state island;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1880,17 +1892,20 @@ non-negative max length over the current UTF-8 string payload. Missing local
 file reads and negative offsets before the start of the current local or
 `php://input` payload emit a bounded PHP-style `E_WARNING`, return `false`,
 and continue. That warning can route through the current request-local
-`set_error_handler()` registration when the stored handler is a string
+`set_error_handler()` stack when the top stored handler is a string
 user-function callback or public object/static array callable whose mask
-includes `E_WARNING`; a `false` handler return falls through to the stderr
-warning path when `error_reporting()` still includes `E_WARNING`, while other
-return values suppress the fallback. This is intentionally a local recovery
+includes `E_WARNING`; `restore_error_handler()` pops that bounded stack so the
+previous registration becomes active again. A `false` handler return falls
+through to the stderr warning path when `error_reporting()` still includes
+`E_WARNING`, while other return values suppress the fallback. This is
+intentionally a local recovery
 path, not the general PHP warning/error-handler system. It does not model PHP
 binary strings, exact PHP warning or handler `errstr` text, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
 non-UTF-8 data, warning recovery for other stream/resource paths,
-`open_basedir`, stat caching, host SAPI body streams, or native filesystem
-lowering. Direct native `file_get_contents(...)` calls stop at a
+handler stack mutation edge cases during active handler dispatch, `open_basedir`,
+stat caching, host SAPI body streams, or native filesystem lowering. Direct
+native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.
@@ -2450,11 +2465,17 @@ parameters reached from `ReflectionMethod::getParameters()` or from
 objects store copied method metadata plus the selected parsed parameter
 metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
-variadic flags, and type-presence checks without introducing a broader
-reflection object graph. It does not expose `ReflectionProperty`, attributes,
+variadic flags, type-presence checks, nullability checks, and simple named
+type metadata. `ReflectionParameter::getType()` now materializes a
+request-local `ReflectionNamedType` object for a single parsed named type and
+stores that object's copied type name, nullable flag, and builtin flag in the
+interpreter. Untyped parameters return `null`; union and intersection types
+stay outside the materialized type-object slice until
+`ReflectionUnionType`/`ReflectionIntersectionType` exist. It does not expose
+`ReflectionProperty`, attributes,
 files, line numbers, doc comments, extension/internal metadata,
-`ReflectionType`/`ReflectionNamedType`, function or closure parameter targets,
-method invocation, exact exception objects, or native lowering.
+function or closure parameter targets, method invocation, exact exception
+objects, compound type objects, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

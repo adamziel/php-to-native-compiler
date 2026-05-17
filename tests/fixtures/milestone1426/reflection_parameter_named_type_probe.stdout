@@ -1,0 +1,6 @@
+hook|ReflectionNamedType|string|0011
+count|ReflectionNamedType|int|1111
+plugin|ReflectionNamedType|Plugin|1101
+items|ReflectionNamedType|array|1111
+raw|null|1
+direct|ReflectionNamedType|int|1111

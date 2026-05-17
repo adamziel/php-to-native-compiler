@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 11);
+    assert_eq!(classes.classes().len(), 13);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -48,6 +48,8 @@ echo "ready\n";
     assert_eq!(classes.classes()[7].name(), "ReflectionClass");
     assert_eq!(classes.classes()[8].name(), "ReflectionMethod");
     assert_eq!(classes.classes()[9].name(), "ReflectionParameter");
+    assert_eq!(classes.classes()[10].name(), "ReflectionType");
+    assert_eq!(classes.classes()[11].name(), "ReflectionNamedType");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4336,7 +4338,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => Box\n    [11] => Profile\n)\n12|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => Box\n    [13] => Profile\n)\n14|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4357,7 +4359,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => App\\Mode\n    [11] => App\\Status\n)\n12\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => App\\Mode\n    [13] => App\\Status\n)\n14\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4748,6 +4750,43 @@ line("indexed", new ReflectionParameter(array(new Plugin(), "boot"), 2), "");
     assert_eq!(
         execution.stdout,
         "counts|4|1\nparam0|hook|0|Plugin|boot|00|-|001\nparam1|value|1|Plugin|boot|11|seed|100\nparam2|count|2|Plugin|boot|11|3|000\nparam3|rest|3|Plugin|boot|10|-|010\nnamed|value|1|Plugin|boot|11|seed|100\nindexed|count|2|Plugin|boot|11|3|000"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_reports_bounded_named_type_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Plugin {
+    public function boot(string $hook, ?int $count, Plugin $plugin = null, array $items = null, $raw = null) {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($label, $parameter, $ending = "\n") {
+    $type = $parameter->getType();
+    if ($type === null) {
+        echo $label, "|null|", yn($parameter->allowsNull()), $ending;
+        return;
+    }
+    echo $label, "|", get_class($type), "|", $type->getName(), "|", yn($type->allowsNull()), yn($parameter->allowsNull()), yn($type->isBuiltin()), yn($type instanceof ReflectionType), $ending;
+}
+
+$method = new ReflectionMethod(Plugin::class, "boot");
+foreach ($method->getParameters() as $parameter) {
+    line($parameter->getName(), $parameter);
+}
+line("direct", new ReflectionParameter(array(new Plugin(), "boot"), "count"), "");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "hook|ReflectionNamedType|string|0011\ncount|ReflectionNamedType|int|1111\nplugin|ReflectionNamedType|Plugin|1101\nitems|ReflectionNamedType|array|1111\nraw|null|1\ndirect|ReflectionNamedType|int|1111"
     );
     assert_eq!(execution.exit_code, 0);
 }

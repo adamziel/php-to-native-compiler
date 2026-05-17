@@ -175,11 +175,11 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded `ReflectionParameter`
-metadata, append-offset stored `call_user_func_array()` reference roots,
-`file_get_contents()` warning routing through bounded error handlers, and
-expired-transient payload/timeout pair deletes over the placeholder MySQLi
-state island. Those are useful compatibility steps, but they do not change the
+The latest WordPress-focused batch closed bounded `ReflectionNamedType`
+metadata for method parameters, direct `ArrayAccess` reference roots, LIFO
+`set_error_handler()` stack behavior for recoverable filesystem warnings, and
+prepared-statement insert-ID metadata over the placeholder MySQLi state
+island. Those are useful compatibility steps, but they do not change the
 larger project shape: the next lanes should keep attacking broad
 object/interface semantics, real reference/COW behavior,
 request/SAPI/filesystem/stream breadth, and executable WordPress

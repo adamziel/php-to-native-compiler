@@ -66,6 +66,39 @@ echo $call() ? "dynamic" : "false";
 }
 
 #[test]
+fn restore_error_handler_restores_previous_bounded_handler_registration() {
+    let execution = run_source(
+        r#"<?php
+function first_handler() {
+}
+function second_handler() {
+}
+echo set_error_handler("first_handler", E_WARNING) === null ? "null" : "other";
+$previous = set_error_handler("second_handler", E_WARNING);
+echo "|";
+echo is_string($previous) ? $previous : "other";
+echo "|";
+echo restore_error_handler() ? "restored" : "failed";
+$previous = set_error_handler("second_handler", E_WARNING);
+echo "|";
+echo is_string($previous) ? $previous : "other";
+restore_error_handler();
+restore_error_handler();
+$previous = set_error_handler("first_handler", E_WARNING);
+echo "|";
+echo $previous === null ? "null" : "other";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "null|first_handler|restored|first_handler|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn set_error_handler_rejects_forms_outside_current_subset() {
     let arity = runtime_error(
         r#"<?php

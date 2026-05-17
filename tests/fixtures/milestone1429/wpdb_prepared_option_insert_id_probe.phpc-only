@@ -1,0 +1,1 @@
+Uses phpc's deterministic MySQLi/wp_options state island and placeholder statement insert-id metadata, not a real host MySQL database.

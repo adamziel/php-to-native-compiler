@@ -4925,6 +4925,66 @@ echo implode(",", $parts);
 }
 
 #[test]
+fn mysqli_stmt_insert_id_tracks_current_wordpress_prepared_option_insert_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$stmt = mysqli_prepare($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)");
+$name = "siteurl";
+$value = "https://example.test";
+$autoload = "yes";
+mysqli_stmt_bind_param($stmt, "sss", $name, $value, $autoload);
+echo mysqli_stmt_execute($stmt) ? "insert" : "failed";
+echo ":";
+echo mysqli_stmt_insert_id($stmt);
+echo ":";
+echo mysqli_insert_id($handle);
+echo "|";
+$name = "_transient_feed_mod";
+$value = "cached-feed";
+$autoload = "no";
+echo mysqli_stmt_execute($stmt) ? "transient" : "failed";
+echo ":";
+echo mysqli_stmt_insert_id($stmt);
+echo ":";
+echo mysqli_insert_id($handle);
+echo "|";
+$name = "siteurl";
+$value = "duplicate";
+$autoload = "no";
+echo mysqli_stmt_execute($stmt) ? "duplicate" : "duplicate-rejected";
+echo ":";
+echo mysqli_stmt_insert_id($stmt);
+echo ":";
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+$update = mysqli_prepare($handle, "UPDATE wp_options SET option_value = ? WHERE option_name = ?");
+$new_value = "cached-new";
+$name = "_transient_feed_mod";
+mysqli_stmt_execute($update, array($new_value, $name));
+echo mysqli_stmt_insert_id($update);
+echo ":";
+echo mysqli_stmt_affected_rows($update);
+echo "|";
+$rows = mysqli_query($handle, "SELECT option_id, option_name, option_value, autoload FROM wp_options");
+$parts = array();
+while ($row = mysqli_fetch_assoc($rows)) {
+    $parts[] = $row["option_id"] . ":" . $row["option_name"] . "=" . $row["option_value"] . ":" . $row["autoload"];
+}
+echo implode(",", $parts);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "insert:1:1|transient:2:2|duplicate-rejected:0:0|0:1|2:_transient_feed_mod=cached-new:no,1:siteurl=https://example.test:yes"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_rows_from_state() {
     let execution = run_source(
         r#"<?php
