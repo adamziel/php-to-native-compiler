@@ -141,7 +141,8 @@ symbol-table cell, so returned child-slot suffixes remain attached to the
 underlying request/global/array/property slot. Literal callback argument
 arrays can also bind direct, named property-held, and direct dynamic
 property-held `ArrayAccess` elements,
-including nested offset elements, when public by-reference
+including method-context `$this->{$name}` roots for visible private or
+protected holder properties and nested offset elements, when public by-reference
 `offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
 shape; the interpreter maps that to the backing property array alias root plus
 any nested child-key suffix instead of creating a real reference container.
@@ -150,7 +151,8 @@ Append-offset `ArrayAccess` reference sources such as `$bag[]` and
 the backing property array's empty-string key for that exact body shape. It
 does not make callback argument arrays, non-public object-property
 array bridges, dynamic ArrayAccess roots beyond direct dynamic property-held
-sources, arbitrary append ArrayAccess bodies,
+sources, non-direct holder expressions, mixed nested `ArrayAccess` chains,
+magic-property references, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
@@ -1883,8 +1885,10 @@ per-handle dynamic schema island records the current bounded
 `SHOW TABLES LIKE`, `SHOW TABLE STATUS LIKE`, `SHOW TABLE STATUS WHERE Name`,
 `DESCRIBE`/`DESC`, `SHOW [FULL] COLUMNS`, `SHOW CREATE TABLE`, and
 `SHOW INDEX`/`SHOW KEYS` probes against that recorded shape, including bounded
-`ASC`/`DESC` index-part ordering metadata for `SHOW INDEX` collation values
-and deterministic `SHOW CREATE TABLE` text. Metadata `LIKE`
+column `DEFAULT`/`DEFAULT NULL`/`NOT NULL`/`auto_increment` metadata, inline
+column primary/unique/non-unique key metadata, bounded `ASC`/`DESC`
+index-part ordering metadata for `SHOW INDEX` collation values, and
+deterministic `SHOW CREATE TABLE` text. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
 wildcards, and backslash-escaped `%`, `_`, and `\` literals for table names,
 table status rows, and column names. The same placeholder transaction and
@@ -2585,10 +2589,16 @@ interpreter dispatch. Return type objects reuse the same request-local
 state as the property type metadata slice.
 `ReflectionFunction` follows that same core placeholder plus request-local
 state pattern for declared user functions named by string. It stores parsed
-user-function metadata for `getName()`, parameter counts, `getParameters()`,
-`hasReturnType()`, `getReturnType()`, and `returnsReference()`. The function
+user-function metadata for `getName()`, source file, start/end lines, direct
+docblock text, parameter counts, `getParameters()`, `hasReturnType()`,
+`getReturnType()`, and `returnsReference()`. Source paths are tracked beside
+registered function declarations because the AST remains source-text scoped;
+included files record the include source path at declaration-registration time.
+The lexer preserves bounded `/** ... */` doc-comment tokens so the parser can
+attach a directly preceding docblock to a function declaration. The function
 path intentionally rejects internal functions and closure targets until those
-metadata sources exist.
+metadata sources exist, and doc-comment association does not yet model
+attributes or every PHP trivia edge case.
 `ReflectionParameter` follows the same request-local state pattern for
 parameters reached from `ReflectionMethod::getParameters()`,
 `ReflectionFunction::getParameters()`,

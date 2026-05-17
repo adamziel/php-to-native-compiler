@@ -176,15 +176,15 @@ gate above is satisfied.
 ### Current Parallel Focus
 
 The latest WordPress-focused batch closed bounded declared-user-function
-`ReflectionFunction` metadata, dynamic property-held `ArrayAccess` reference
-roots for direct holder variables, deterministic `setrawcookie()` raw-value
-header formatting, and `ASC`/`DESC` index-part ordering metadata in the
-MySQLi schema-state island. Those are useful compatibility steps, but they do
-not change the larger project shape: the next lanes should keep attacking
-broad object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+`ReflectionFunction` source metadata, context-aware non-public dynamic
+property-held `ArrayAccess` reference roots, direct-variable
+`headers_sent($file, $line)` output-parameter writeback including alias-backed
+slots, and dbDelta-relevant column metadata in the MySQLi schema-state island.
+Those are useful compatibility steps, but they do not change the larger
+project shape: the next lanes should keep attacking broad object/interface
+semantics, real reference/COW behavior, request/SAPI/filesystem/stream
+breadth, and executable WordPress database/bootstrap evidence until those
+areas become coherent subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

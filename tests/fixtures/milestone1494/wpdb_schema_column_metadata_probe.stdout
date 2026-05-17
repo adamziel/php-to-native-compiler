@@ -1,0 +1,14 @@
+inline_id:bigint(20) unsigned:NO:PRI::auto_increment;post_slug:varchar(191):NO:MUL:post:;flag:tinyint(1):NO::1:;maybe:varchar(20):YES:::;unique_code:varchar(32):NO:UNI::;plain_key:varchar(32):YES:MUL::;token:varchar(20):NO:MUL:x:;|post_slug:utf8mb4_unicode_ci:post:MUL|PRIMARY:inline_id:0;unique_code:unique_code:0;plain_key:plain_key:1;token:token:1;post_slug:post_slug:1;|CREATE TABLE `wp_column_probe` (
+  `inline_id` bigint(20) unsigned NOT NULL auto_increment,
+  `post_slug` varchar(191) NOT NULL DEFAULT 'post',
+  `flag` tinyint(1) NOT NULL DEFAULT '1',
+  `maybe` varchar(20) NULL DEFAULT NULL,
+  `unique_code` varchar(32) NOT NULL,
+  `plain_key` varchar(32) NULL,
+  `token` varchar(20) NOT NULL DEFAULT 'x',
+  PRIMARY KEY (`inline_id`),
+  UNIQUE KEY `unique_code` (`unique_code`),
+  KEY `plain_key` (`plain_key`),
+  KEY `token` (`token`),
+  KEY `post_slug` (`post_slug`)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

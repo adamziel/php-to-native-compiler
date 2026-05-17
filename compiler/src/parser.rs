@@ -23,6 +23,7 @@ struct Parser {
     current_namespace: String,
     class_imports: Vec<(String, String)>,
     namespace_declared: bool,
+    pending_doc_comment: Option<String>,
     trace_parse: bool,
 }
 
@@ -62,6 +63,7 @@ impl Parser {
             current_namespace: String::new(),
             class_imports: Vec::new(),
             namespace_declared: false,
+            pending_doc_comment: None,
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
         }
     }
@@ -70,12 +72,22 @@ impl Parser {
         let mut statements = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::Eof)) {
             self.trace_parse("top-level");
+            if self.skip_doc_comments_before(|kind| matches!(kind, TokenKind::Eof)) {
+                continue;
+            }
             statements.push(self.parse_statement()?);
         }
         Ok(Program { statements })
     }
 
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
+        while let TokenKind::DocComment(comment) = &self.peek().kind {
+            self.pending_doc_comment = Some(comment.clone());
+            self.advance();
+        }
+        if !matches!(self.peek().kind, TokenKind::Function) {
+            self.pending_doc_comment = None;
+        }
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Class => self.parse_class(),
@@ -190,6 +202,7 @@ impl Parser {
         } else {
             name
         };
+        let doc_comment = self.pending_doc_comment.take();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
 
@@ -202,6 +215,7 @@ impl Parser {
         let body = self.parse_required_block("expected function body");
         self.function_body_depth -= 1;
         let body = body?;
+        let end_line = self.previous().span.line;
 
         Ok(FunctionDecl {
             name,
@@ -210,6 +224,8 @@ impl Parser {
             returns_by_reference,
             body,
             is_nested,
+            end_line,
+            doc_comment,
             span: start,
         })
     }
@@ -423,6 +439,9 @@ impl Parser {
         let mut trait_uses = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("class member");
+            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+                continue;
+            }
             if self.check(|kind| matches!(kind, TokenKind::Use)) {
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
@@ -477,6 +496,9 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("trait member");
+            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+                continue;
+            }
             if self.check_trait_constant_declaration() {
                 constants.push(self.parse_trait_constant()?);
             } else {
@@ -781,6 +803,9 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("interface member");
+            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+                continue;
+            }
             if self.check_interface_constant_declaration() {
                 constants.push(self.parse_interface_constant()?);
             } else {
@@ -910,6 +935,8 @@ impl Parser {
             returns_by_reference,
             body: Vec::new(),
             is_nested: false,
+            end_line: start.line,
+            doc_comment: None,
             span: start,
         })
     }
@@ -3528,6 +3555,11 @@ impl Parser {
             let mut statements = Vec::new();
             while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
                 self.trace_parse("block statement");
+                if self.skip_doc_comments_before(|kind| {
+                    matches!(kind, TokenKind::RBrace | TokenKind::Eof)
+                }) {
+                    continue;
+                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -6094,6 +6126,23 @@ impl Parser {
         &self.tokens[self.current - 1]
     }
 
+    fn skip_doc_comments_before(&mut self, terminal: fn(&TokenKind) -> bool) -> bool {
+        if !matches!(self.peek().kind, TokenKind::DocComment(_)) {
+            return false;
+        }
+        let mut offset = 0;
+        while matches!(self.peek_n(offset).kind, TokenKind::DocComment(_)) {
+            offset += 1;
+        }
+        if !terminal(&self.peek_n(offset).kind) {
+            return false;
+        }
+        for _ in 0..offset {
+            self.advance();
+        }
+        true
+    }
+
     fn check_compound_assignment_operator(&self) -> bool {
         matches!(
             self.peek().kind,
@@ -6216,6 +6265,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Float(_) => "float literal",
         TokenKind::StringLiteral(_) => "string literal",
         TokenKind::InterpolatedString(_) => "interpolated string literal",
+        TokenKind::DocComment(_) => "doc comment",
         TokenKind::InlineHtml(_) => "inline HTML",
         TokenKind::Echo => "echo",
         TokenKind::Print => "print",

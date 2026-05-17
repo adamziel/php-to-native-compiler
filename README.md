@@ -287,9 +287,10 @@ incorrect native code.
   wp_options`, and `SHOW INDEX`/`SHOW KEYS FROM wp_options` schema probe rows
   for the current option table, plus a bounded per-handle dynamic schema island
   for exact `CREATE TABLE`, `ALTER TABLE` add/change/modify/drop column and
-  add/drop index probes with bounded `ASC`/`DESC` index-part ordering metadata,
-  and later `DESCRIBE`/`SHOW COLUMNS`/`SHOW INDEX`/`SHOW CREATE TABLE`/
-  `SHOW TABLE STATUS` inspection;
+  add/drop index probes with bounded column default/nullability/
+  auto-increment metadata, inline column key metadata, and `ASC`/`DESC`
+  index-part ordering metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
+  `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, index opclass/parser metadata, exact
   table-status counters or timestamps, dbDelta diffing, real transactional DDL
@@ -428,7 +429,8 @@ incorrect native code.
   `getInterfaceNames()`, `hasMethod($name)`, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions with
-  name, parameter-list, return-type, and by-reference-return inspection,
+  name, file/start/end/doc-comment, parameter-list, return-type, and
+  by-reference-return inspection,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, parameter-list, and return-type inspection,
@@ -667,13 +669,21 @@ root bridge for `$alias =& $bag[$key]`, nested direct sources such as
 as `array(&$holder->bag["outer"]["slot"])`. It also covers direct dynamic
 property-held sources such as `$alias =& $holder->{$name}["outer"]["slot"]`,
 `array(&$holder->{$name}["outer"]["slot"])`, and stored callback slots
-assigned from `$holder->{$name}["created"]["leaf"]` when public by-reference
+assigned from `$holder->{$name}["created"]["leaf"]`. Method-context forms
+such as `$alias =& $this->{$name}["slot"]`,
+`array(&$this->{$name}["outer"]["slot"])`, and stored callback slots assigned
+from `$this->{$name}["created"]["leaf"]` are covered when the selected
+private or protected holder property is visible and holds the bounded
+`ArrayAccess` object. In these cases public by-reference
 `offsetGet($offset)` is exactly `return $this->property[$offset];`. Direct and
 property-held append reference sources such as `$alias =& $bag[]` and
 `$args[0] =& $holder->bag[]` are covered only for that same exact body shape,
 where PHP's `offsetGet(null)` maps to the backing array's empty-string key.
-Alias lifetime after replacing the containing property remains outside that
-bounded slice.
+Real reference containers, magic-property references, arbitrary expressions,
+non-direct holder expressions outside the slice, mixed nested `ArrayAccess`
+chains, alias cleanup, broad copy-on-write, exact alias destruction ordering,
+by-reference `foreach` expansion, native lowering, and alias lifetime after
+replacing the containing property remain outside that bounded slice.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as
@@ -729,8 +739,9 @@ direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()`/`setrawcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct-variable
-filename/line outputs, bounded ordinary header-name replacement in the
-request-local CLI header log, bounded request-local status-code state, and
+filename/line outputs including direct variables backed by the current bounded
+array-offset reference-alias metadata, bounded ordinary header-name replacement
+in the request-local CLI header log, bounded request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,

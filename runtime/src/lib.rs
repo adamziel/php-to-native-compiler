@@ -2089,6 +2089,10 @@ impl PhpClassTable {
         for method in [
             "__construct",
             "getName",
+            "getFileName",
+            "getStartLine",
+            "getEndLine",
+            "getDocComment",
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",

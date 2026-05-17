@@ -475,16 +475,18 @@ persistent object cache, broad `wpdb`, full WordPress option APIs,
 plugin/theme loading, request/SAPI fidelity, references/copy-on-write, or
 native support.
 
-After Milestone 1273, `phpc run` tracks whether response headers are still open
-or whether bytes have reached unbuffered stdout. The current
+After Milestones 1273 and 1493, `phpc run` tracks whether response headers are
+still open or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line
-outputs, keeps output buffered by `ob_start()` from marking headers sent, marks
-headers sent when an outermost output buffer is flushed, and ignores late
-`header()`/`header_remove()` calls while returning `false` for late
-`setcookie()`/`setrawcookie()`. This is executable request/SAPI evidence for WordPress
-output-started guards only; it does not claim web-server SAPI emission, exact
-warning text, non-variable output arguments, cookie attributes, shutdown-time
-buffer visibility, or native support.
+outputs, including direct variables backed by the bounded array-offset
+reference-alias metadata, keeps output buffered by `ob_start()` from marking
+headers sent, marks headers sent when an outermost output buffer is flushed,
+and ignores late `header()`/`header_remove()` calls while returning `false` for
+late `setcookie()`/`setrawcookie()`. This is executable request/SAPI evidence
+for WordPress output-started guards only; it does not claim web-server SAPI
+emission, exact warning text, non-variable or array/object-property output
+arguments, callback-mediated output parameters, cookie attributes,
+shutdown-time buffer visibility, or native support.
 
 After Milestones 1278, 1283, and 1288, `phpc run` can seed a bounded request input state from
 explicit CLI environment variables. `PHPC_QUERY_STRING` populates flat

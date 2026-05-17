@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1492/context_dynamic_property_array_access_reference_roots.php

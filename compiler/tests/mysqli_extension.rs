@@ -5202,6 +5202,42 @@ echo "|", $row["Create Table"];
 }
 
 #[test]
+fn mysqli_query_preserves_bounded_wordpress_schema_column_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_column_meta (inline_id bigint(20) unsigned NOT NULL auto_increment PRIMARY KEY, slug varchar(191) NOT NULL default 'draft\\'s', flag tinyint(1) NOT NULL default 0, maybe varchar(20) DEFAULT NULL, unique_code varchar(32) NOT NULL UNIQUE KEY, plain_key varchar(32) KEY) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_column_meta ADD COLUMN token varchar(20) NOT NULL default 'x' KEY, MODIFY COLUMN flag tinyint(1) NOT NULL default 1, CHANGE COLUMN slug post_slug varchar(191) NOT NULL default 'post' KEY");
+$describe = mysqli_query($handle, "DESCRIBE wp_probe_column_meta");
+while ($column = mysqli_fetch_assoc($describe)) {
+    echo $column["Field"], ":", $column["Type"], ":", $column["Null"], ":", $column["Key"], ":", $column["Default"], ":", $column["Extra"], ";";
+}
+echo "|";
+$full = mysqli_query($handle, "SHOW FULL COLUMNS FROM wp_probe_column_meta LIKE 'post_%'");
+$full_row = mysqli_fetch_assoc($full);
+echo $full_row["Field"], ":", $full_row["Collation"], ":", $full_row["Default"], ":", $full_row["Key"];
+echo "|";
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_probe_column_meta");
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ":", $index["Non_unique"], ";";
+}
+echo "|";
+$create = mysqli_query($handle, "SHOW CREATE TABLE wp_probe_column_meta");
+$create_row = mysqli_fetch_assoc($create);
+echo $create_row["Create Table"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "inline_id:bigint(20) unsigned:NO:PRI::auto_increment;post_slug:varchar(191):NO:MUL:post:;flag:tinyint(1):NO::1:;maybe:varchar(20):YES:::;unique_code:varchar(32):NO:UNI::;plain_key:varchar(32):YES:MUL::;token:varchar(20):NO:MUL:x:;|post_slug:utf8mb4_unicode_ci:post:MUL|PRIMARY:inline_id:0;unique_code:unique_code:0;plain_key:plain_key:1;token:token:1;post_slug:post_slug:1;|CREATE TABLE `wp_probe_column_meta` (\n  `inline_id` bigint(20) unsigned NOT NULL auto_increment,\n  `post_slug` varchar(191) NOT NULL DEFAULT 'post',\n  `flag` tinyint(1) NOT NULL DEFAULT '1',\n  `maybe` varchar(20) NULL DEFAULT NULL,\n  `unique_code` varchar(32) NOT NULL,\n  `plain_key` varchar(32) NULL,\n  `token` varchar(20) NOT NULL DEFAULT 'x',\n  PRIMARY KEY (`inline_id`),\n  UNIQUE KEY `unique_code` (`unique_code`),\n  KEY `plain_key` (`plain_key`),\n  KEY `token` (`token`),\n  KEY `post_slug` (`post_slug`)\n) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_tracks_bounded_wordpress_schema_column_and_index_changes() {
     let execution = run_source(
         r#"<?php

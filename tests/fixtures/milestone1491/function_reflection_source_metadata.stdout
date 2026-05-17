@@ -1,0 +1,3 @@
+source|tests/fixtures/milestone1491/function_reflection_source_metadata.php|7|9
+doc|1|/**\n * WordPress-style callback metadata.\n */
+plain|11|11|1

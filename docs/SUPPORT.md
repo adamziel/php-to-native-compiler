@@ -157,7 +157,11 @@
   property holds such an `ArrayAccess` object. Dynamic property-held elements
   such as `array(&$holder->{$name}["outer"]["slot"], ...)` are covered when
   the direct holder object exposes the selected visible property and that
-  property holds the same bounded `ArrayAccess` shape. In these cases public
+  property holds the same bounded `ArrayAccess` shape. Method-context
+  non-public forms such as
+  `array(&$this->{$name}["outer"]["slot"], ...)` are covered when the selected
+  private or protected holder property is visible from the active method
+  context. In these cases public
   `offsetGet($offset)` must return by reference and its body must be exactly
   the current bounded root shape `return $this->property[$offset];`. The
   selected property array slot or nested child slot is materialized when
@@ -192,10 +196,13 @@
   by reference from direct and property-held `ArrayAccess` sources such as
   `$args[0] =& $bag["slot"]`, `$args["value"] =& $bag["outer"]["slot"]`,
   `$args[] =& $holder->bag["created"]["leaf"]`, and
-  `$args["value"] =& $holder->{$name}["created"]["leaf"]` when the same bounded
-  public by-reference `offsetGet($offset) { return $this->property[$offset]; }`
-  bridge applies; callback writeback and reference-return binding reuse the
-  backing property array alias metadata. Direct and property-held append-offset
+  `$args["value"] =& $holder->{$name}["created"]["leaf"]`, plus
+  method-context non-public selected properties such as
+  `$args["value"] =& $this->{$name}["created"]["leaf"]`, when the same
+  bounded public by-reference
+  `offsetGet($offset) { return $this->property[$offset]; }` bridge applies;
+  callback writeback and reference-return binding reuse the backing property
+  array alias metadata. Direct and property-held append-offset
   `ArrayAccess` sources such as `$args[0] =& $bag[]` and
   `$args["value"] =& $holder->bag[]` are also covered for that same exact
   `offsetGet()` body shape; the interpreter models PHP's `offsetGet(null)`
@@ -271,7 +278,10 @@
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
   reference named-argument path, dynamic `ArrayAccess` roots beyond direct
-  dynamic property-held sources, append-offset
+  dynamic property-held sources, non-direct holder expressions outside the
+  documented slice, invisible selected properties, magic-property references,
+  mixed nested `ArrayAccess` chains, alias cleanup, broad copy-on-write, exact
+  alias destruction ordering, by-reference `foreach` expansion, append-offset
   `ArrayAccess` source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
@@ -436,7 +446,10 @@
   object property holds an `ArrayAccess` object. Dynamic property-held sources
   such as `$alias =& $holder->{$name}["outer"]["slot"];` execute for direct
   holder variables when the selected visible property holds the same bounded
-  `ArrayAccess` object. In these cases public
+  `ArrayAccess` object. Method-context non-public forms such as
+  `$alias =& $this->{$name}["slot"];` execute when the selected private or
+  protected holder property is visible from the active method context. In
+  these cases public
   `offsetGet($offset)` must return by reference and its body must be exactly
   `return $this->property[$offset];` in the current subset. The bridge binds
   the alias to the backing property array slot or nested child slot,
@@ -2082,10 +2095,13 @@
   utf8mb4 collation metadata. `mysqli_query()` also has a bounded
   per-placeholder-handle schema-state island for WordPress/dbDelta-style
   probes: exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` statements with
-  direct column definitions, `PRIMARY KEY`, `KEY`/`INDEX`, and
+  direct column definitions, bounded inline column `PRIMARY KEY`,
+  `UNIQUE KEY`/`UNIQUE INDEX`/`UNIQUE`, and `KEY`/`INDEX` metadata,
+  plus table-level `PRIMARY KEY`, `KEY`/`INDEX`, and
   `UNIQUE KEY`/`UNIQUE INDEX` entries record a deterministic table shape,
-  including ordered multi-column index parts and numeric prefix sub-parts such
-  as `post_name(191)`, and
+  including `NOT NULL`, `DEFAULT NULL`, bounded quoted/unquoted defaults,
+  `auto_increment`, ordered multi-column index parts, and numeric prefix
+  sub-parts such as `post_name(191)`, and
   exact `ALTER TABLE <table> ADD COLUMN ...`, `ADD KEY ...`, `ADD INDEX ...`,
   `ADD UNIQUE KEY ...`, `ADD PRIMARY KEY ...`, `CHANGE COLUMN old new ...`,
   `MODIFY COLUMN ...`, `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`,
@@ -2106,15 +2122,16 @@
   `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
-  primary/unique/non-unique key markers, per-index sequence numbers, simple
-  defaults, auto-increment extras, prefix sub-part lengths, and placeholder
-  collation metadata for character/text columns. `SHOW TABLE STATUS` returns
+  primary/unique/non-unique key markers, per-index sequence numbers, bounded
+  default/nullability metadata, auto-increment extras, prefix sub-part lengths,
+  and placeholder collation metadata for character/text columns.
+  `SHOW TABLE STATUS` returns
   one deterministic MySQL-shaped row for the recorded table with placeholder
   `InnoDB`, zero row/storage counters, the recorded table collation, empty
   create options/comment, and an empty result for a missing exact table name.
   This does not add real SQL
   parsing, arbitrary DDL beyond those exact `ALTER TABLE` shapes, expression
-  indexes, index ordering/opclass/parser metadata, exact MySQL
+  indexes, opclass/parser metadata beyond recorded index parts, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
   custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
@@ -2281,9 +2298,11 @@
   names, uniqueness markers, `BTREE` type, visibility, and null sub-parts.
   A separate bounded schema-state island for direct `mysqli_query()` accepts
   exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` definitions with direct
-  columns and primary/unique/non-unique indexes, including ordered
-  multi-column parts, numeric prefix sub-parts, and explicit `ASC`/`DESC`
-  index-part ordering metadata, plus exact
+  columns, bounded column `DEFAULT`/`DEFAULT NULL`/`NOT NULL`/
+  `auto_increment` metadata, inline column primary/unique/non-unique key
+  metadata, and table-level primary/unique/non-unique indexes, including
+  ordered multi-column parts, numeric prefix sub-parts, and explicit
+  `ASC`/`DESC` index-part ordering metadata, plus exact
   `ALTER TABLE <table> ADD ...`, `CHANGE COLUMN ...`, `MODIFY COLUMN ...`,
   `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
   `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
@@ -3026,14 +3045,16 @@
   aliases that survive `_SESSION` root replacement on restart, and native
   lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
-  direct variable output arguments for the filename and line. It returns
-  `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
-  output variables in that state. It returns `true` after the first unbuffered
-  output byte, including `ob_flush()`/`ob_end_flush()` from the outermost
-  buffer, and writes the current source filename plus the first-output line.
-  Non-variable output arguments, array/object-property output arguments, exact
-  warning text, SAPI differences, shutdown-time buffer flushing visibility,
-  and native lowering remain unsupported.
+  direct variable output arguments for the filename and line, including direct
+  variables currently backed by the bounded array-offset reference-alias
+  metadata. It returns `false` before bytes reach unbuffered stdout and writes
+  `""`/`0` to supplied output variables in that state. It returns `true` after
+  the first unbuffered output byte, including `ob_flush()`/`ob_end_flush()`
+  from the outermost buffer, and writes the current source filename plus the
+  first-output line. Non-variable output arguments, array/object-property
+  output arguments, `call_user_func()`/`call_user_func_array()` output
+  parameters, exact warning text, SAPI differences, shutdown-time buffer
+  flushing visibility, and native lowering remain unsupported.
   `abs($value)` accepts current integer and finite-float runtime values,
   returning an integer for integer input and a float for finite-float input.
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
@@ -5599,9 +5620,10 @@
   under the header-state boundary, while native function-table introspection
   recognizes the name.
   `headers_sent` accepts the same current output-started and direct-variable
-  filename/line output-argument subset as the builtin section above; direct
-  native `headers_sent(...)` calls reject under the header-state boundary,
-  while native function-table introspection recognizes the name.
+  filename/line output-argument subset as the builtin section above, including
+  direct alias-backed variables; direct native `headers_sent(...)` calls
+  reject under the header-state boundary, while native function-table
+  introspection recognizes the name.
   `http_response_code` accepts the same current bounded request-local status
   subset as the builtin section above; direct native `http_response_code(...)`
   calls reject under the header-state boundary, while native function-table
@@ -5918,11 +5940,17 @@
   `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
   objects. `new ReflectionFunction($function)` creates a bounded metadata
   object for declared user functions named by string. It supports
-  `getName()`, `getParameters()`, `getNumberOfParameters()`,
+  `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
+  `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `hasReturnType()`, `getReturnType()`, and
-  `returnsReference()` over parsed user-function metadata. Function return
-  type objects use the same simple named, bounded union, and pure intersection
-  reflection type objects as the method path. `new ReflectionParameter($function,
+  `returnsReference()` over parsed user-function metadata. `getFileName()`
+  returns the current CLI/fixture source path for declarations loaded from a
+  known file and `false` for source strings without one; line numbers come from
+  the parsed function declaration and closing brace. `getDocComment()` returns
+  the directly preceding `/** ... */` docblock captured by the lexer, or
+  `false` when none was captured. Function return type objects use the same
+  simple named, bounded union, and pure intersection reflection type objects as
+  the method path. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string with an integer position
   or string parameter name; `getDeclaringFunction()` returns a bounded
   `ReflectionFunction` object and `getDeclaringClass()` returns `null` for
@@ -7586,8 +7614,9 @@
   method metadata over declared user classes, interfaces, and traits with the
   modifier, predicate, parameter-list, and return-type methods documented
   above. `ReflectionFunction` currently supports only declared user-function
-  metadata named by string, with the name, parameter-list, return-type, and
-  by-reference-return methods documented above.
+  metadata named by string, with the name, file/start/end/doc-comment,
+  parameter-list, return-type, and by-reference-return methods documented
+  above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice and declared user-function parameters named by string,
   scalar/array default expressions accepted by the parser,
@@ -7606,7 +7635,8 @@
   metadata only and does not enforce call arguments or return values.
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
-  file/line/doc-comment metadata,
+  method/class/property/parameter file-line or doc-comment metadata,
+  exact docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation/value mutation,
@@ -7932,10 +7962,11 @@
   web-server emission, exact warning text, and native lowering beyond
   function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
-  direct-variable filename/line output-argument slice: non-variable output
-  arguments, array/object-property output targets, exact warning text, SAPI
-  differences, shutdown-time buffer flushing visibility, and native lowering
-  beyond function-table introspection
+  direct-variable filename/line output-argument slice, including direct
+  alias-backed variables: non-variable output arguments, array/object-property
+  output targets, callback-mediated output parameters, exact warning text,
+  SAPI differences, shutdown-time buffer flushing visibility, and native
+  lowering beyond function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
   `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument

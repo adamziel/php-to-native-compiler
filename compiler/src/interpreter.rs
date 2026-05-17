@@ -87,6 +87,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
+    function_source_files: HashMap<String, Option<String>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: HashMap<(ClassId, String), MethodSignature>,
     abstract_classes: HashSet<ClassId>,
@@ -248,8 +249,14 @@ struct WordPressSchemaColumnState {
     name: String,
     ty: String,
     nullable: bool,
-    default: Option<String>,
+    default: Option<WordPressSchemaColumnDefault>,
     auto_increment: bool,
+}
+
+#[derive(Clone)]
+enum WordPressSchemaColumnDefault {
+    Value(String),
+    Null,
 }
 
 #[derive(Clone)]
@@ -306,6 +313,10 @@ enum ReflectionClassKind {
 #[derive(Debug, Clone)]
 struct ReflectionFunctionState {
     name: String,
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    doc_comment: Option<String>,
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
@@ -2974,6 +2985,7 @@ impl Interpreter {
         options: RunOptions,
     ) -> CompileResult<Self> {
         let mut functions = HashMap::new();
+        let mut function_source_files = HashMap::new();
         let mut interfaces = Vec::new();
         let mut interface_lookup = HashMap::new();
         let mut traits = Vec::new();
@@ -3001,6 +3013,7 @@ impl Interpreter {
                             RuntimeError::duplicate_function(callable_name(&function.name)),
                         ));
                     }
+                    function_source_files.insert(key.clone(), source_file.clone());
                     functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
@@ -3088,6 +3101,7 @@ impl Interpreter {
 
         let mut interpreter = Self {
             functions,
+            function_source_files,
             methods,
             method_signatures,
             abstract_classes,
@@ -3573,6 +3587,8 @@ impl Interpreter {
                             RuntimeError::duplicate_function(callable_name(&function.name)),
                         ));
                     }
+                    self.function_source_files
+                        .insert(key.clone(), self.source_file.clone());
                     self.functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
@@ -10598,7 +10614,14 @@ impl Interpreter {
         };
 
         match self.lookup_function(name) {
-            Some(Callable::User(function)) => Ok(reflection_function_state_from_decl(&function)),
+            Some(Callable::User(function)) => {
+                let source_file = self
+                    .function_source_files
+                    .get(&function.name.to_ascii_lowercase())
+                    .cloned()
+                    .flatten();
+                Ok(reflection_function_state_from_decl(&function, source_file))
+            }
             Some(Callable::Builtin(_)) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
@@ -16850,6 +16873,28 @@ impl Interpreter {
             "getname" => {
                 expect_expr_arity("ReflectionFunction::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
+            }
+            "getfilename" => {
+                expect_expr_arity("ReflectionFunction::getFileName", args.len(), 0, span)?;
+                Ok(state
+                    .file_name
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getstartline" => {
+                expect_expr_arity("ReflectionFunction::getStartLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.start_line as i64))
+            }
+            "getendline" => {
+                expect_expr_arity("ReflectionFunction::getEndLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.end_line as i64))
+            }
+            "getdoccomment" => {
+                expect_expr_arity("ReflectionFunction::getDocComment", args.len(), 0, span)?;
+                Ok(state
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
             }
             "getparameters" => {
                 expect_expr_arity("ReflectionFunction::getParameters", args.len(), 0, span)?;
@@ -27029,12 +27074,7 @@ impl Interpreter {
                     ),
                 ));
             };
-            let file = self
-                .output_start
-                .as_ref()
-                .map(|start| start.file.clone())
-                .unwrap_or_default();
-            caller_scope.write_static(name, Value::String(file));
+            caller_scope.write_static(name, Value::String(self.headers_sent_file()));
         }
 
         if let Some(arg) = args.get(1) {
@@ -27047,15 +27087,24 @@ impl Interpreter {
                     ),
                 ));
             };
-            let line = self
-                .output_start
-                .as_ref()
-                .map(|start| start.line as i64)
-                .unwrap_or(0);
-            caller_scope.write_static(name, Value::Int(line));
+            caller_scope.write_static(name, Value::Int(self.headers_sent_line()));
         }
 
         Ok(Value::Bool(self.output_start.is_some()))
+    }
+
+    fn headers_sent_file(&self) -> String {
+        self.output_start
+            .as_ref()
+            .map(|start| start.file.clone())
+            .unwrap_or_default()
+    }
+
+    fn headers_sent_line(&self) -> i64 {
+        self.output_start
+            .as_ref()
+            .map(|start| start.line as i64)
+            .unwrap_or(0)
     }
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -33860,9 +33909,16 @@ fn reflection_parameter_metadata_from_function_params(
         .collect()
 }
 
-fn reflection_function_state_from_decl(function: &FunctionDecl) -> ReflectionFunctionState {
+fn reflection_function_state_from_decl(
+    function: &FunctionDecl,
+    file_name: Option<String>,
+) -> ReflectionFunctionState {
     ReflectionFunctionState {
         name: function.name.clone(),
+        file_name,
+        start_line: function.span.line,
+        end_line: function.end_line,
+        doc_comment: function.doc_comment.clone(),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         returns_by_reference: function.returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(&function.params),
@@ -35606,6 +35662,11 @@ enum WordPressSchemaAlterOperation {
     ModifyColumn(WordPressSchemaColumnState),
 }
 
+struct ParsedWordPressSchemaColumnDefinition {
+    column: WordPressSchemaColumnState,
+    indexes: Vec<WordPressSchemaIndexState>,
+}
+
 fn wordpress_dynamic_schema_result_for_query(
     query: &str,
     tables: &HashMap<String, WordPressSchemaTableState>,
@@ -36143,9 +36204,15 @@ fn parse_schema_alter_operation(part: &str) -> Option<Vec<WordPressSchemaAlterOp
         .strip_prefix("MODIFY COLUMN ")
         .or_else(|| part.strip_prefix("MODIFY "))
     {
-        return Some(vec![WordPressSchemaAlterOperation::ModifyColumn(
-            parse_schema_column_definition(definition.trim())?,
-        )]);
+        let parsed = parse_schema_column_definition(definition.trim())?;
+        let mut operations = vec![WordPressSchemaAlterOperation::ModifyColumn(parsed.column)];
+        operations.extend(
+            parsed
+                .indexes
+                .into_iter()
+                .map(WordPressSchemaAlterOperation::AddIndex),
+        );
+        return Some(operations);
     }
 
     if let Some(definition) = part
@@ -36153,10 +36220,18 @@ fn parse_schema_alter_operation(part: &str) -> Option<Vec<WordPressSchemaAlterOp
         .or_else(|| part.strip_prefix("CHANGE "))
     {
         let (old_name, new_definition) = parse_leading_schema_identifier(definition.trim())?;
-        return Some(vec![WordPressSchemaAlterOperation::ChangeColumn {
+        let parsed = parse_schema_column_definition(new_definition.trim())?;
+        let mut operations = vec![WordPressSchemaAlterOperation::ChangeColumn {
             old_name,
-            column: parse_schema_column_definition(new_definition.trim())?,
-        }]);
+            column: parsed.column,
+        }];
+        operations.extend(
+            parsed
+                .indexes
+                .into_iter()
+                .map(WordPressSchemaAlterOperation::AddIndex),
+        );
+        return Some(operations);
     }
 
     None
@@ -36200,11 +36275,13 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
         return Some(());
     }
 
-    table.columns.push(parse_schema_column_definition(part)?);
+    let parsed = parse_schema_column_definition(part)?;
+    table.columns.push(parsed.column);
+    table.indexes.extend(parsed.indexes);
     Some(())
 }
 
-fn parse_schema_column_definition(part: &str) -> Option<WordPressSchemaColumnState> {
+fn parse_schema_column_definition(part: &str) -> Option<ParsedWordPressSchemaColumnDefinition> {
     let mut split = part.splitn(2, char::is_whitespace);
     let name = parse_schema_table_identifier(split.next()?.trim())?;
     let rest = split.next()?.trim();
@@ -36232,13 +36309,63 @@ fn parse_schema_column_definition(part: &str) -> Option<WordPressSchemaColumnSta
     let upper = attributes.to_ascii_uppercase();
     let nullable = !upper.contains("NOT NULL");
     let auto_increment = upper.contains("AUTO_INCREMENT");
-    Some(WordPressSchemaColumnState {
-        name,
+    let column = WordPressSchemaColumnState {
+        name: name.clone(),
         ty,
         nullable,
         default: parse_schema_default(attributes),
         auto_increment,
+    };
+    Some(ParsedWordPressSchemaColumnDefinition {
+        column,
+        indexes: parse_schema_inline_column_indexes(&name, attributes),
     })
+}
+
+fn parse_schema_inline_column_indexes(
+    column_name: &str,
+    attributes: &str,
+) -> Vec<WordPressSchemaIndexState> {
+    let upper = attributes.to_ascii_uppercase();
+    let part = WordPressSchemaIndexPart {
+        column_name: column_name.to_string(),
+        sub_part: None,
+        order: WordPressSchemaIndexOrder::Asc,
+    };
+
+    if upper.contains("PRIMARY KEY") {
+        return vec![WordPressSchemaIndexState {
+            key_name: "PRIMARY".to_string(),
+            parts: vec![part],
+            non_unique: false,
+        }];
+    }
+
+    if upper.starts_with("UNIQUE")
+        || upper.contains(" UNIQUE")
+        || upper.contains("UNIQUE KEY")
+        || upper.contains("UNIQUE INDEX")
+    {
+        return vec![WordPressSchemaIndexState {
+            key_name: column_name.to_string(),
+            parts: vec![part],
+            non_unique: false,
+        }];
+    }
+
+    if upper.starts_with("KEY")
+        || upper.starts_with("INDEX")
+        || upper.contains(" KEY")
+        || upper.contains(" INDEX")
+    {
+        return vec![WordPressSchemaIndexState {
+            key_name: column_name.to_string(),
+            parts: vec![part],
+            non_unique: true,
+        }];
+    }
+
+    Vec::new()
 }
 
 fn parse_schema_named_index(rest: &str) -> Option<(String, Vec<WordPressSchemaIndexPart>)> {
@@ -36345,22 +36472,139 @@ fn parse_schema_collation(suffix: &str) -> String {
         .unwrap_or_else(|| "utf8mb4_unicode_ci".to_string())
 }
 
-fn parse_schema_default(attributes: &str) -> Option<String> {
-    let default_sql = attributes
-        .split_once("DEFAULT ")
-        .or_else(|| attributes.split_once("default "))?
-        .1
-        .trim();
-    if let Some(value) = default_sql.strip_prefix('\'') {
-        return value
-            .split_once('\'')
-            .map(|(value, _)| value.replace("\\'", "'"));
+fn parse_schema_default(attributes: &str) -> Option<WordPressSchemaColumnDefault> {
+    let default_index = find_schema_default_keyword(attributes)?;
+    let default_sql = attributes[default_index + "DEFAULT".len()..].trim_start();
+    if default_sql.is_empty() {
+        return None;
     }
-    default_sql
-        .split_whitespace()
-        .next()
-        .filter(|value| !value.eq_ignore_ascii_case("NULL"))
-        .map(str::to_string)
+
+    if default_sql
+        .get(..4)
+        .is_some_and(|value| value.eq_ignore_ascii_case("NULL"))
+        && default_sql
+            .get(4..)
+            .and_then(|rest| rest.chars().next())
+            .map(|ch| ch.is_whitespace() || ch == ',' || ch == ')')
+            .unwrap_or(true)
+    {
+        return Some(WordPressSchemaColumnDefault::Null);
+    }
+
+    if let Some(value) = parse_schema_single_quoted_value(default_sql) {
+        return Some(WordPressSchemaColumnDefault::Value(value));
+    }
+
+    parse_schema_unquoted_default_value(default_sql).map(WordPressSchemaColumnDefault::Value)
+}
+
+fn find_schema_default_keyword(attributes: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in attributes.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '\'' {
+                in_string = false;
+            }
+            continue;
+        }
+        if ch == '\'' {
+            in_string = true;
+            continue;
+        }
+        if attributes[idx..]
+            .get(.."DEFAULT".len())
+            .is_some_and(|value| value.eq_ignore_ascii_case("DEFAULT"))
+        {
+            let before_ok = attributes[..idx]
+                .chars()
+                .next_back()
+                .map(|before| !is_schema_identifier_char(before))
+                .unwrap_or(true);
+            let after_ok = attributes[idx + "DEFAULT".len()..]
+                .chars()
+                .next()
+                .map(|after| !is_schema_identifier_char(after))
+                .unwrap_or(true);
+            if before_ok && after_ok {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+fn is_schema_identifier_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn parse_schema_single_quoted_value(input: &str) -> Option<String> {
+    let mut chars = input.strip_prefix('\'')?.char_indices().peekable();
+    let mut value = String::new();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\'' => {
+                if let Some((_, '\'')) = chars.peek().copied() {
+                    chars.next();
+                    value.push('\'');
+                    continue;
+                }
+                let rest = &input[idx + 1 + '\''.len_utf8()..];
+                let terminates = rest
+                    .chars()
+                    .next()
+                    .map(|after| after.is_whitespace() || after == ',' || after == ')')
+                    .unwrap_or(true);
+                return terminates.then_some(value);
+            }
+            '\\' => {
+                if let Some((_, escaped)) = chars.next() {
+                    value.push(match escaped {
+                        '0' => '\0',
+                        '\'' => '\'',
+                        '"' => '"',
+                        'b' => '\u{0008}',
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        'Z' => '\u{001A}',
+                        '\\' => '\\',
+                        other => other,
+                    });
+                } else {
+                    value.push(ch);
+                }
+            }
+            other => value.push(other),
+        }
+    }
+    None
+}
+
+fn parse_schema_unquoted_default_value(input: &str) -> Option<String> {
+    let mut end = input.len();
+    let mut depth = 0_i32;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' if depth > 0 => depth -= 1,
+            ')' | ',' if depth == 0 => {
+                end = idx;
+                break;
+            }
+            ch if depth == 0 && ch.is_whitespace() => {
+                end = idx;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let value = input[..end].trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn split_sql_top_level_commas(input: &str) -> Vec<&str> {
@@ -36414,8 +36658,13 @@ fn dynamic_schema_describe_row(
             "Default".to_string(),
             column
                 .default
-                .clone()
-                .map(Value::String)
+                .as_ref()
+                .and_then(|default| match default {
+                    WordPressSchemaColumnDefault::Value(value) => {
+                        Some(Value::String(value.clone()))
+                    }
+                    WordPressSchemaColumnDefault::Null => None,
+                })
                 .unwrap_or(Value::Null),
         ),
         (
@@ -36619,7 +36868,10 @@ fn dynamic_schema_column_sql(column: &WordPressSchemaColumnState) -> String {
     }
     if let Some(default) = &column.default {
         sql.push_str(" DEFAULT ");
-        sql.push_str(&quote_schema_string(default));
+        match default {
+            WordPressSchemaColumnDefault::Value(value) => sql.push_str(&quote_schema_string(value)),
+            WordPressSchemaColumnDefault::Null => sql.push_str("NULL"),
+        }
     }
     if column.auto_increment {
         sql.push_str(" auto_increment");

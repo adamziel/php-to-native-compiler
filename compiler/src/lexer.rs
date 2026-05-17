@@ -16,6 +16,7 @@ pub enum TokenKind {
     Float(f64),
     StringLiteral(String),
     InterpolatedString(Vec<InterpolatedStringPart>),
+    DocComment(String),
     InlineHtml(String),
     Echo,
     Print,
@@ -157,6 +158,13 @@ impl<'a> Lexer<'a> {
                 if let Some(kind) = self.lex_inline_html_after_close_tag() {
                     tokens.push(Token { kind, span });
                 }
+                continue;
+            }
+
+            if self.starts_with("/**") && !self.starts_with("/**/") {
+                let span = self.span();
+                let kind = self.lex_doc_comment(span)?;
+                tokens.push(Token { kind, span });
                 continue;
             }
 
@@ -328,6 +336,9 @@ impl<'a> Lexer<'a> {
             }
 
             if self.peek() == Some('/') && self.peek_next() == Some('*') {
+                if self.starts_with("/**") && !self.starts_with("/**/") {
+                    break;
+                }
                 self.advance();
                 self.advance();
                 let start = self.span();
@@ -346,6 +357,23 @@ impl<'a> Lexer<'a> {
         }
 
         Ok(())
+    }
+
+    fn lex_doc_comment(&mut self, span: Span) -> CompileResult<TokenKind> {
+        let start = self.byte_index;
+        self.advance();
+        self.advance();
+        while !(self.peek() == Some('*') && self.peek_next() == Some('/')) {
+            if self.is_at_end() {
+                return Err(self.error_at(span, "unterminated block comment"));
+            }
+            self.advance();
+        }
+        self.advance();
+        self.advance();
+        Ok(TokenKind::DocComment(
+            self.source[start..self.byte_index].to_string(),
+        ))
     }
 
     fn skip_attribute_block(&mut self) -> CompileResult<()> {

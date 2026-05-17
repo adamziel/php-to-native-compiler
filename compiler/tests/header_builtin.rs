@@ -344,6 +344,30 @@ echo "|" . ($second ? "sent" : "open") . ":" . $file . ":" . $line;
 }
 
 #[test]
+fn headers_sent_writes_direct_variable_output_parameters_through_reference_aliases() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$out = array();
+$slots = array();
+$file =& $slots["file"];
+$line =& $slots["line"];
+$call = "headers_sent";
+$before = $call($file, $line);
+$out[] = ($before ? "sent" : "open") . ":" . $slots["file"] . ":" . $slots["line"];
+echo "body";
+$after = headers_sent($file, $line);
+$out[] = ($after ? "sent" : "open") . ":" . basename($slots["file"]) . ":" . $slots["line"];
+echo "|" . implode("|", $out);
+"#,
+        "virtual/reference-output.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "body|open::0|sent:reference-output.php:9");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn headers_sent_stays_open_until_output_buffer_flushes_to_stdout() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -512,6 +536,19 @@ echo headers_sent($file, 0);
     assert_eq!(
         line_arg.message,
         "unsupported call headers_sent(): line output argument must be a direct variable in the current subset"
+    );
+
+    let array_arg = runtime_error(
+        r#"<?php
+$bag = array();
+echo headers_sent($bag["file"]);
+"#,
+    );
+    assert_eq!(array_arg.line, 3);
+    assert_eq!(array_arg.column, 19);
+    assert_eq!(
+        array_arg.message,
+        "unsupported call headers_sent(): filename output argument must be a direct variable in the current subset"
     );
 
     let too_many = runtime_error(

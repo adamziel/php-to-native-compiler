@@ -1,5 +1,5 @@
 use php_compiler::error::{Diagnostic, Phase};
-use php_compiler::{class_metadata_source, run_source};
+use php_compiler::{class_metadata_source, run_source, run_source_with_source_file};
 use php_runtime::Visibility;
 
 const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
@@ -4898,6 +4898,48 @@ type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
     assert_eq!(
         execution.stdout,
         "fn|select_hook|ReflectionFunction|3|2|1|1\nreturn|ReflectionUnionType|1\nparam0|hook|0|ReflectionFunction|select_hook|1|0|1\nparam1|tagged|1|ReflectionFunction|select_hook|1|0|1\nparam2|fallback|2|ReflectionFunction|select_hook|1|1|0\ndirect|tagged|1|ReflectionFunction|select_hook|1|0|1\nraw|0|raw-return|null\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_reports_bounded_source_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function helper_before() {}
+
+/**
+ * WordPress-style callback metadata.
+ */
+function reflected_callback($hook) {
+    return $hook;
+}
+
+function no_doc_comment() {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function doc_line($label, $function) {
+    $doc = $function->getDocComment();
+    echo $label, "|", yn($doc !== false), "|", str_replace("\n", "\\n", $doc), "\n";
+}
+
+$function = new ReflectionFunction("reflected_callback");
+$suffix = "tests/fixtures/milestone1491/function_reflection_source_metadata.php";
+echo "source|", substr($function->getFileName(), -strlen($suffix)), "|", $function->getStartLine(), "|", $function->getEndLine(), "\n";
+doc_line("doc", $function);
+$plain = new ReflectionFunction("no_doc_comment");
+echo "plain|", $plain->getStartLine(), "|", $plain->getEndLine(), "|", yn($plain->getDocComment() === false);
+"#,
+        "tests/fixtures/milestone1491/function_reflection_source_metadata.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "source|tests/fixtures/milestone1491/function_reflection_source_metadata.php|7|9\ndoc|1|/**\\n * WordPress-style callback metadata.\\n */\nplain|11|11|1"
     );
     assert_eq!(execution.exit_code, 0);
 }
