@@ -210,12 +210,21 @@
   another direct static variable, the copied slot remains tied to the same
   bounded alias group: writes through the source alias, the original array
   slot, or the copied array slot update the same value for that direct key
-  path. Plain arrays without reference elements still copy by value under the
-  current array model. When a declared public object property array with a covered
-  direct object-property array-offset reference target is copied into a direct
-  static variable, the copied slot also joins the same bounded alias group:
-  writes through the source variable, the original object-property slot, or the
-  copied static-array slot update the same selected value. Whole-property
+  path. The same bounded copy mirroring applies when a literal-key direct
+  nested array path is copied into a direct static variable, such as
+  `$copy = $items["outer"];` after
+  `$alias =& $items["outer"]["slot"];`, and to auto-global/request-bag paths
+  such as `$copy = $_REQUEST["payload"];` after
+  `$alias =& $_REQUEST["payload"]["slot"];`. Only int/string literal copied
+  path keys are mirrored in this slice; variable, dynamic, append, and
+  side-effecting copied path keys remain ordinary value copies unless another
+  documented alias route covers them. Plain arrays without reference elements
+  still copy by value under the current array model. When a declared public
+  object property array with a covered direct object-property array-offset
+  reference target is copied into a direct static variable, the copied slot
+  also joins the same bounded alias group: writes through the source variable,
+  the original object-property slot, or the copied static-array slot update
+  the same selected value. Whole-property
   assignment preserves whole-property aliases but detaches narrower
   array-offset aliases into the previous property array before storing the
   replacement value; whole-object-variable reassignment still removes stale
@@ -229,7 +238,8 @@
   Non-public clone mirroring is limited to aliases that were created through a
   valid method visibility context, such as private `$this->property` or
   protected same-class/child peer-object property sources. Arbitrary nested
-  copied reference slots beyond the covered direct array-offset paths,
+  copied reference slots beyond the covered direct array-offset and literal
+  copied-path slices,
   dynamic non-public clone mirroring, magic-property clone alias mirroring,
   reference array literals, ArrayAccess reference containers, exact alias
   destruction ordering, full PHP reference containers, copy-on-write
@@ -773,6 +783,12 @@
   dynamic strings still missing after the current string-callback autoload path
   use the current undefined-class diagnostic. Instantiating an abstract class
   reports a stable runtime boundary;
+- class declarations loaded by executed `include`/`require` paths trigger the
+  current string user-function `spl_autoload_register()` callbacks for missing
+  `extends` parent classes and direct `implements` interface names before
+  final class registration validation. Interface declarations loaded through
+  that path also trigger the same string-callback autoload path for missing
+  parent interfaces before interface inheritance validation.
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
@@ -1029,7 +1045,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -1862,6 +1878,8 @@
   `WHERE option_name IN (...)` shapes return recorded name/value rows through
   the same placeholder result path. The same all-row, autoload-filtered, and
   explicit-name-list shapes are also supported for the exact
+  `SELECT option_name FROM wp_options ...` projection, returning recorded
+  option names only, for the exact
   `SELECT option_name, autoload FROM wp_options ...` projection, returning
   recorded option-name and autoload columns, for the exact
   `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
@@ -1881,7 +1899,7 @@
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond the exact insert and
   update shapes listed above,
-  arbitrary projection beyond exact option id/name/value/autoload/name-value/name-autoload/full-row/full-row-with-id shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
@@ -1902,15 +1920,18 @@
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
   `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
+  `SELECT option_name FROM wp_options WHERE option_name IN (?, ...)`,
+  `SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
   `SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
   and
   `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
   prepared shapes also return deterministic row sets for string option-name
-  parameter lists on the same handle through
+  or autoload-value parameter lists on the same handle through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array(...))`; explicit name-list reads
   preserve parameter order, skip missing names, and return empty zero-field
-  placeholder results when every requested name is missing.
+  placeholder results when every requested name is missing, while autoload-list
+  reads sort matching rows by option name and skip unmatched autoload values.
   Backticked table/column spellings are accepted for this prepared name-list
   slice. The exact
   `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
@@ -1941,6 +1962,7 @@
   an empty zero-field placeholder result. Prepared no-placeholder row-set reads
   also support the exact
   `SELECT option_name, option_value FROM wp_options ...`,
+  `SELECT option_name FROM wp_options ...`,
   `SELECT option_name, option_value, autoload FROM wp_options ...`, and
   `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
   shapes already accepted by the direct query path, including all rows,
@@ -2139,12 +2161,17 @@
   `ftell($stream)` returns the current byte cursor; `fseek($stream, $offset,
   $whence = SEEK_SET)` supports integer offsets with `SEEK_SET`, `SEEK_CUR`,
   and `SEEK_END`; `feof($stream)` reports the bounded EOF flag set by reads
-  that exhaust the stream; and `fclose($stream)` closes the resource. Local
+  that exhaust the stream; `fstat($stream)` returns the current PHP-shaped
+  numeric and associative stat array for memory/temp buffer size and local
+  host-file metadata; `stream_get_meta_data($stream)` returns bounded
+  metadata fields for `timed_out`, `blocked`, `eof`, `wrapper_type`,
+  `stream_type`, `mode`, `unread_bytes`, `seekable`, and `uri`; and
+  `fclose($stream)` closes the resource. Local
   file streams use host files and UTF-8 text only. This is a deterministic WordPress request/runtime
   compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
-  wrappers, wrapper metadata, filters, contexts, binary/non-UTF-8 byte
+  wrappers, filters, contexts, binary/non-UTF-8 byte
   fidelity, large `php://temp` spill-to-disk behavior, permissions policy,
-  locking, `fstat()`/`stream_get_meta_data()` and broader status APIs,
+  locking, broader wrapper/status metadata APIs, stat-cache behavior,
   warning plus `false` recovery, exact resource ids/types,
   references/copy-on-write, and native stream resources remain unsupported.
   Direct native stream-resource calls stop at a dedicated
@@ -2759,8 +2786,9 @@
   fallback. String class names and dynamic string callable names remain literal and are
   not import-expanded. A namespaced `class Child extends Parent {}` resolves
   the parent name through the same lexical namespace/import table, but the
-  parent must already be declared in the current program or an executed
-  include/require path; autoload-triggered parent discovery is not implemented.
+  parent must already be declared in the current program, an executed
+  include/require path, or an include/require-triggered string autoload
+  dependency path.
   Bracketed namespace blocks, global namespace blocks,
   multiple namespaces in one file, namespace-scoped constants,
   namespace-qualified function calls, grouped imports, function imports,
@@ -3948,7 +3976,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -4322,7 +4350,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4501,7 +4529,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -5012,7 +5040,7 @@
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`,
-  `ftell`, `fseek`, and `fclose`
+  `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, and `fclose`
   accept the same current bounded `php://memory`, `php://temp`, and local
   UTF-8 file stream resource subset as the builtin section above; direct
   native calls reject under a dedicated stream-resource boundary until native
@@ -5055,8 +5083,9 @@
   function-table introspection recognizes the name.
   `spl_autoload_register` accepts closure and string callbacks in `phpc run`;
   string user-function callbacks are stored for truthy-autoload
-  `class_exists()`/`interface_exists()` misses and missing `new` class
-  instantiation, while closure invocation
+  `class_exists()`/`interface_exists()` misses, missing `new` class
+  instantiation, and missing included-declaration `extends`/`implements`
+  dependencies, while closure invocation
   and direct native calls still reject under explicit boundaries. Native
   function-table introspection recognizes the name.
   `get_class($object)` returns the declared class name for current minimal
@@ -5068,7 +5097,9 @@
   the current parsed program declared that class, and accept current bool-like
   scalar autoload flags. Truthy autoload misses and missing `new` class
   instantiation invoke currently registered string user-function autoload
-  callbacks before the metadata check returns.
+  callbacks before the metadata check returns. Included class declarations use
+  the same string-callback path for missing `extends` parent classes before
+  inheritance validation.
   `null`, arrays,
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.
@@ -5077,7 +5108,9 @@
   bounded core interface catalog plus interfaces declared in the current parsed
   program; the autoload flag accepts current bool-like scalar values and
   invokes currently registered string user-function autoload callbacks on
-  misses.
+  misses. Included class/interface declarations use the same string-callback
+  path for missing direct `implements` interface names and parent interfaces
+  reached during interface inheritance validation.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
@@ -5972,7 +6005,8 @@
   enforcement, built-in/internal interface catalogs, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
-  autoload-triggered parent class resolution,
+  autoload-triggered trait, enum, static-member, reflection, namespace-imported
+  string-name, closure-callback, and array-callable discovery,
   promoted constructor properties,
   readonly property metadata/enforcement, typed property storage/enforcement,
   DNF-shaped typed property declarations,

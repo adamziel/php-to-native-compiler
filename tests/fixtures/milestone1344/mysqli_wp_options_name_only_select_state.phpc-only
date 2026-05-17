@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state rather than a real MySQL database; system PHP has no seeded placeholder option state for this probe.

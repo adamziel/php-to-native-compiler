@@ -363,9 +363,10 @@ Exact option-row reads for
 'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
 return recorded option-name/option-value rows. The same all-row,
 autoload-filtered, and explicit-name-list shapes are also supported for the
-exact `SELECT option_name, autoload FROM wp_options ...` projection, returning
-recorded option-name and autoload columns, for the
-exact
+exact `SELECT option_name FROM wp_options ...` projection, returning recorded
+option names only, for the exact
+`SELECT option_name, autoload FROM wp_options ...` projection, returning
+recorded option-name and autoload columns, for the exact
 `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
 returning recorded option-name, value, and autoload columns, and for the exact
 `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
@@ -381,7 +382,7 @@ doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond the exact insert and
 update shapes listed above, arbitrary
-projection beyond exact option id/name/value/autoload/name-value/name-autoload/full-row/full-row-with-id shapes,
+projection beyond exact option id/name/value/autoload/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond exact
@@ -402,16 +403,20 @@ also returns a recorded option-name/option-value row for string option-name
 parameters on the same handle through the same prepared result paths; missing
 names return an empty zero-field placeholder result. The exact
 `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
+`SELECT option_name FROM wp_options WHERE option_name IN (?, ...)`,
+`SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
 and
 `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
 prepared shapes also return deterministic row sets for string option-name
-parameter lists on the same handle through
+or autoload-value parameter lists on the same handle through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array(...))`; explicit name-list reads
 preserve parameter order, skip missing names, and return empty zero-field
-placeholder results when every requested name is missing. Backticked
-table/column spellings are accepted for this prepared name-list slice. The
+placeholder results when every requested name is missing, while autoload-list
+reads sort matching rows by option name and skip unmatched autoload values.
+Backticked table/column spellings are accepted for this prepared name-list
+slice. The
 exact
 `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
 prepared shape also returns deterministic full option rows, including recorded
@@ -420,6 +425,7 @@ prepared result paths; explicit name-list reads preserve parameter order and
 skip missing names. Backticked table/column spellings are accepted for this
 full-row prepared name-list slice. The
 exact
+`SELECT option_name FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, autoload FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`,
@@ -457,6 +463,7 @@ same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 empty zero-field placeholder result. Prepared no-placeholder row-set reads also
 support the exact
 `SELECT option_name, option_value FROM wp_options ...`,
+`SELECT option_name FROM wp_options ...`,
 `SELECT option_name, option_value, autoload FROM wp_options ...`, and
 `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
 shapes already accepted by the direct query path, including all rows,

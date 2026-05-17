@@ -410,6 +410,41 @@ echo $_REQUEST["dup_key"];
 }
 
 #[test]
+fn request_bag_nested_reference_slots_survive_literal_path_array_copies() {
+    let execution = run_source(
+        r#"<?php
+function handle_request_payload() {
+    $_REQUEST["payload"] = ["a" => "one"];
+    $alias =& $_REQUEST["payload"]["a"];
+    $copy = $_REQUEST["payload"];
+    $alias = "two";
+    echo $_REQUEST["payload"]["a"], "|", $copy["a"], "|";
+    $copy["a"] = "three";
+    echo $alias, "|", $_REQUEST["payload"]["a"];
+}
+
+handle_request_payload();
+echo "\n";
+
+$items = ["outer" => ["slot" => "alpha"]];
+$slot =& $items["outer"]["slot"];
+$outer = $items["outer"];
+$slot = "beta";
+echo $items["outer"]["slot"], "|", $outer["slot"], "|";
+$outer["slot"] = "gamma";
+echo $slot, "|", $items["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "two|two|three|three\nbeta|beta|gamma|gamma"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir

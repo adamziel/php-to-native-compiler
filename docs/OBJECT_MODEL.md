@@ -9,7 +9,11 @@ evaluate `new ClassName(...)` for declared classes, including public or
 inherited public instance `__construct` execution. Missing named classes and
 direct-variable string dynamic class names in `new` expressions invoke the
 current string user-function autoload callbacks before the class table is
-rechecked. Successfully allocated
+rechecked. Class declarations loaded by executed include/require paths invoke
+the same string user-function callback stack for missing `extends` parent
+classes, direct `implements` interfaces, and parent interfaces reached from
+autoloaded interface declarations before final registration validation.
+Successfully allocated
 objects whose class declares or inherits a public non-static no-argument
 `__destruct` method are queued for shutdown destructor execution, including
 clones created through the current shallow clone slice. It stores class identity
@@ -463,7 +467,8 @@ or multi-declarator class constants, typed static properties, late static
 binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading beyond string user-function callbacks for `class_exists()`,
-`interface_exists()`, and missing `new` class instantiation, anonymous
+`interface_exists()`, missing `new` class instantiation, and included
+class/interface declaration dependencies, anonymous
 classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
 cloning beyond the current shallow clone plus bounded visible non-static

@@ -83,7 +83,12 @@ symbol-table alias metadata, not general runtime reference containers. A direct
 variable may route to one or more direct array-offset aliases; this lets the
 current runtime mirror the bounded PHP behavior where copying a direct array
 or declared public object-property array that contains a referenced direct slot
-preserves that slot's reference identity across a copied direct array. When an
+preserves that slot's reference identity across a copied direct array. Copying
+a literal-key direct nested array path, including auto-global request paths
+such as `$_REQUEST["payload"]`, also mirrors covered reference slots below the
+copied path into the destination direct array variable. Variable, dynamic,
+append, and side-effecting copied path keys remain outside this bounded mirror
+and still require the future reference/COW value model. When an
 array-offset or public object-property array-offset reference target is bound
 from a direct variable that already shares a direct variable-to-variable cell,
 the interpreter rewires every direct name in that small source cell group to
@@ -117,7 +122,8 @@ Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
-object name. Arbitrary nested copied reference slots, non-public
+object name. Arbitrary nested copied reference slots beyond the literal copied
+path slice, non-public
 property-offset or magic clone alias mirroring, ArrayAccess references,
 reference array literals, exact alias destruction ordering, and native lowering
 still require the future runtime reference/COW value model.
@@ -363,7 +369,9 @@ Implemented now:
   class contexts, and bounded direct-variable dynamic class-name instantiation
   for `new $class(...)`; missing named or direct-variable string class names
   invoke the current string user-function autoload callbacks before the class
-  table is rechecked,
+  table is rechecked; included class/interface declarations also use that
+  string-callback path to load missing `extends` parents, direct `implements`
+  interfaces, and parent interfaces before final registration validation,
   bounded dynamic property-name reads/writes for existing public slots,
   `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
   class's dynamic table-name slots, and bounded `clone` expressions that
@@ -1777,20 +1785,24 @@ $mode)` and `fopen("php://temp", $mode)` allocate request-local resource ids
 backed by a Rust string buffer for simple `r`, `w`, `a`, or `c` modes with
 optional `+`, `b`, or `t` flags. `fopen($localPath, $mode)` uses a host local
 file handle for the same simple mode grammar. `fwrite()`, `fread()`,
-`rewind()`, `stream_get_contents()`, `feof()`, `ftell()`, `fseek()`, and
-`fclose()` mutate, consume, or inspect the resource cursor; append-mode writes
-are routed to EOF. `fseek()` supports the built-in `SEEK_SET`, `SEEK_CUR`, and
-`SEEK_END` constants for the current memory/temp/local-file resource set, and
-`feof()` tracks the bounded EOF flag produced by exhaustive reads. Local file
-reads remain UTF-8 text reads. This gives WordPress-style temporary request
-and cache-file streams an executable path without claiming full PHP resources:
-sockets, HTTP/FTP/phar wrappers, contexts, filters, broader stream metadata
-such as `fstat()`/`stream_get_meta_data()`, binary/non-UTF-8 byte strings,
-`php://temp` spill-to-disk thresholds, permissions policy, locking, warning
-plus `false` recovery,
-references/copy-on-write, and exact resource id/type behavior remain out of
-scope. Native stream-resource calls reject before lowering under a dedicated
-resource boundary, while function-table introspection recognizes the names.
+`rewind()`, `stream_get_contents()`, `feof()`, `ftell()`, `fseek()`,
+`fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume, or
+inspect the resource cursor or bounded metadata; append-mode writes are routed
+to EOF. `fseek()` supports the built-in `SEEK_SET`, `SEEK_CUR`, and `SEEK_END`
+constants for the current memory/temp/local-file resource set, and `feof()`
+tracks the bounded EOF flag produced by exhaustive reads. `fstat()` exposes
+buffer size for memory/temp handles and host metadata for local files;
+`stream_get_meta_data()` exposes deterministic wrapper/type/mode/URI,
+seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
+reads. This gives WordPress-style temporary request and cache-file streams an
+executable path without claiming full PHP resources: sockets, HTTP/FTP/phar
+wrappers, contexts, filters, broader wrapper/status metadata APIs,
+binary/non-UTF-8 byte strings, `php://temp` spill-to-disk thresholds,
+permissions policy, locking, stat-cache behavior, warning plus `false`
+recovery, references/copy-on-write, and exact resource id/type behavior remain
+out of scope. Native stream-resource calls reject before lowering under a
+dedicated resource boundary, while function-table introspection recognizes the
+names.
 Direct `filesize(...)` calls reject through the native function-call boundary.
 Native function-table introspection still recognizes `filesize`, but native
 call execution still lacks filesystem metadata, warning plus `false` recovery,

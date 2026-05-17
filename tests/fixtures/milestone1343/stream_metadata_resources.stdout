@@ -1,0 +1,1 @@
+PHP:MEMORY:w+b:php://memory:7:7:eof|TEMP:w+b:php://temp:10|plainfile:STDIO:w+:seekable:same-uri:12:12:mode|closed

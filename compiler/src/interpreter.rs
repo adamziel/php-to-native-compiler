@@ -236,6 +236,9 @@ struct MemoryStream {
     writable: bool,
     append: bool,
     eof: bool,
+    uri: String,
+    metadata_mode: String,
+    metadata_stream_type: String,
 }
 
 #[derive(Debug)]
@@ -245,6 +248,8 @@ struct FileStream {
     writable: bool,
     append: bool,
     eof: bool,
+    uri: String,
+    metadata_mode: String,
 }
 
 #[derive(Debug)]
@@ -1407,29 +1412,23 @@ impl SymbolTable {
             return;
         }
 
-        let additions: Vec<(String, ArrayOffsetAlias)> = self
-            .array_offset_aliases
-            .iter()
-            .flat_map(|(alias_name, aliases)| {
-                aliases.iter().filter_map(move |alias| match &alias.root {
-                    ArrayOffsetAliasRoot::StaticArray { name } if name == source_name => Some((
-                        alias_name.clone(),
-                        ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::StaticArray {
-                                name: target_name.to_string(),
-                            },
-                            keys: alias.keys.clone(),
-                        },
-                    )),
-                    _ => None,
-                })
-            })
-            .collect();
+        self.mirror_array_offset_aliases_from_path_copy(
+            target_name,
+            &ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.to_string(),
+            },
+            &[],
+            true,
+        );
 
-        for (alias_name, alias) in additions {
-            let aliases = self.array_offset_aliases.entry(alias_name).or_default();
-            if !aliases.contains(&alias) {
-                aliases.push(alias);
+        if let Some(source_aliases) = self.array_offset_aliases.get(source_name).cloned() {
+            for source_alias in source_aliases {
+                self.mirror_array_offset_aliases_from_path_copy(
+                    target_name,
+                    &source_alias.root,
+                    &source_alias.keys,
+                    false,
+                );
             }
         }
     }
@@ -1440,20 +1439,43 @@ impl SymbolTable {
         object_name: &str,
         property: &str,
     ) {
+        self.mirror_array_offset_aliases_from_path_copy(
+            target_name,
+            &ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            },
+            &[],
+            true,
+        );
+    }
+
+    fn mirror_array_offset_aliases_from_path_copy(
+        &mut self,
+        target_name: &str,
+        source_root: &ArrayOffsetAliasRoot,
+        source_keys: &[ArrayKey],
+        include_exact_path: bool,
+    ) {
         let additions: Vec<(String, ArrayOffsetAlias)> = self
             .array_offset_aliases
             .iter()
             .flat_map(|(alias_name, aliases)| {
                 aliases.iter().filter_map(move |alias| match &alias.root {
-                    root if root.matches_object_property(object_name, property) => Some((
-                        alias_name.clone(),
-                        ArrayOffsetAlias {
-                            root: ArrayOffsetAliasRoot::StaticArray {
-                                name: target_name.to_string(),
+                    root if root == source_root
+                        && alias.keys.starts_with(source_keys)
+                        && (include_exact_path || alias.keys.len() > source_keys.len()) =>
+                    {
+                        Some((
+                            alias_name.clone(),
+                            ArrayOffsetAlias {
+                                root: ArrayOffsetAliasRoot::StaticArray {
+                                    name: target_name.to_string(),
+                                },
+                                keys: alias.keys[source_keys.len()..].to_vec(),
                             },
-                            keys: alias.keys.clone(),
-                        },
-                    )),
+                        ))
+                    }
                     _ => None,
                 })
             })
@@ -3048,6 +3070,7 @@ impl Interpreter {
                 _ => {}
             }
         }
+        self.autoload_missing_interface_parent_dependencies(program)?;
         validate_interface_parent_relationships(
             &self.classes,
             &self.interface_lookup,
@@ -3061,6 +3084,7 @@ impl Interpreter {
             if class.is_nested {
                 continue;
             }
+            self.autoload_missing_class_dependencies(class)?;
             let class_id = register_class_members(
                 &mut self.classes,
                 &self.final_classes,
@@ -3087,6 +3111,43 @@ impl Interpreter {
             .and_then(|_| self.initialize_instance_property_defaults(program))
     }
 
+    fn autoload_missing_interface_parent_dependencies(
+        &mut self,
+        program: &Program,
+    ) -> CompileResult<()> {
+        for stmt in &program.statements {
+            let Stmt::Interface(interface) = stmt else {
+                continue;
+            };
+            for parent_name in &interface.parents {
+                if !self.class_like_exists(parent_name, AutoloadKind::Interface) {
+                    self.run_autoload_callbacks(
+                        parent_name,
+                        AutoloadKind::Interface,
+                        interface.span,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn autoload_missing_class_dependencies(&mut self, class: &ClassDecl) -> CompileResult<()> {
+        if let Some(parent_name) = &class.parent {
+            if self.classes.lookup_class(parent_name).is_none() {
+                self.run_autoload_callbacks(parent_name, AutoloadKind::Class, class.span)?;
+            }
+        }
+
+        for interface_name in &class.interfaces {
+            if !self.class_like_exists(interface_name, AutoloadKind::Interface) {
+                self.run_autoload_callbacks(interface_name, AutoloadKind::Interface, class.span)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn register_nested_class_declaration(&mut self, class: &ClassDecl) -> CompileResult<()> {
         let key = class.name.to_ascii_lowercase();
         if self.interface_lookup.contains_key(&key)
@@ -3104,6 +3165,12 @@ impl Interpreter {
         }
         if class.is_final {
             self.final_classes.insert(class_id);
+        }
+        if let Err(error) = self.autoload_missing_class_dependencies(class) {
+            self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
         }
         if let Err(error) = register_class_members(
             &mut self.classes,
@@ -6282,6 +6349,55 @@ impl Interpreter {
                     match expr {
                         Expr::Variable(source_name, _) => {
                             scope.mirror_static_array_offset_aliases_from_copy(name, source_name);
+                        }
+                        Expr::Index { target, index, .. } => {
+                            if let Some((source_name, indices)) =
+                                Self::collect_direct_variable_array_index_path(target, index)
+                            {
+                                if let Some(keys) = Self::literal_array_key_path(&indices) {
+                                    if source_name == "GLOBALS" {
+                                        if let Ok((global_name, keys)) =
+                                            SymbolTable::split_globals_reference_path(
+                                                keys,
+                                                expr.span(),
+                                            )
+                                        {
+                                            scope.mirror_array_offset_aliases_from_path_copy(
+                                                name,
+                                                &ArrayOffsetAliasRoot::GlobalArray {
+                                                    name: global_name,
+                                                },
+                                                &keys,
+                                                false,
+                                            );
+                                        }
+                                    } else {
+                                        scope.mirror_array_offset_aliases_from_path_copy(
+                                            name,
+                                            &ArrayOffsetAliasRoot::StaticArray {
+                                                name: source_name.to_string(),
+                                            },
+                                            &keys,
+                                            false,
+                                        );
+                                    }
+                                }
+                            } else if let Some((object_name, property, indices)) =
+                                Self::collect_direct_object_property_array_index_path(target, index)
+                            {
+                                if let Some(keys) = Self::literal_array_key_path(&indices) {
+                                    if let Ok(root) = self.foreach_object_property_alias_root(
+                                        object_name,
+                                        property,
+                                        scope,
+                                        expr.span(),
+                                    ) {
+                                        scope.mirror_array_offset_aliases_from_path_copy(
+                                            name, &root, &keys, false,
+                                        );
+                                    }
+                                }
+                            }
                         }
                         Expr::Property {
                             target, property, ..
@@ -9554,6 +9670,53 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_value_autoload_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9675,6 +9838,23 @@ impl Interpreter {
                 if !rows.is_empty() {
                     return Ok(Some(MysqliPendingResultState {
                         fields: vec!["option_name".to_string(), "option_value".to_string()],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
+
+            if let Some(filter) = parse_wordpress_options_name_row_select_query(query) {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| wordpress_option_name_rows_for_filter(options, &filter))
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec!["option_name".to_string()],
                         rows,
                     }));
                 }
@@ -10844,6 +11024,21 @@ impl Interpreter {
                     return self.create_mysqli_result_placeholder(
                         span,
                         vec!["option_name".to_string(), "autoload".to_string()],
+                        rows,
+                    );
+                }
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_name_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows = wordpress_option_name_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec!["option_name".to_string()],
                         rows,
                     );
                 }
@@ -17988,6 +18183,7 @@ impl Interpreter {
         let id = self.next_resource_id;
         self.next_resource_id += 1;
         if is_memory_stream {
+            let metadata_mode = stream_metadata_mode(path, mode);
             self.streams.insert(
                 id,
                 StreamResource::Memory(MemoryStream {
@@ -17997,6 +18193,13 @@ impl Interpreter {
                     writable: stream_mode.writable,
                     append: stream_mode.append,
                     eof: false,
+                    uri: path.to_string(),
+                    metadata_mode,
+                    metadata_stream_type: if path == "php://temp" {
+                        "TEMP".to_string()
+                    } else {
+                        "MEMORY".to_string()
+                    },
                 }),
             );
         } else {
@@ -18022,6 +18225,8 @@ impl Interpreter {
                 writable: stream_mode.writable,
                 append: stream_mode.append,
                 eof: false,
+                uri: path.to_string(),
+                metadata_mode: mode.to_string(),
             };
             if stream.append {
                 stream.file.seek(SeekFrom::End(0)).map_err(|error| {
@@ -18467,6 +18672,73 @@ impl Interpreter {
                     }
                     Err(_) => Ok(Value::Int(-1)),
                 }
+            }
+        }
+    }
+
+    fn call_fstat(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("fstat", args, 1, span)?;
+        match self.stream_mut("fstat", &args[0], span)? {
+            StreamResource::Memory(stream) => Ok(Value::Array(memory_stream_stat_array(
+                stream.buffer.len() as i64,
+            ))),
+            StreamResource::File(stream) => {
+                if stream.writable {
+                    stream.file.flush().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fstat()",
+                                format!("local file stream flush failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                let metadata = stream.file.metadata().map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "fstat()",
+                            format!("local file stream metadata failed: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::Array(local_file_stream_stat_array(&metadata)))
+            }
+        }
+    }
+
+    fn call_stream_get_meta_data(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_get_meta_data", args, 1, span)?;
+        match self.stream_mut("stream_get_meta_data", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                let mut metadata = PhpArray::new();
+                metadata.insert("timed_out", Value::Bool(false));
+                metadata.insert("blocked", Value::Bool(true));
+                metadata.insert("eof", Value::Bool(stream.eof));
+                metadata.insert("wrapper_type", Value::String("PHP".to_string()));
+                metadata.insert(
+                    "stream_type",
+                    Value::String(stream.metadata_stream_type.clone()),
+                );
+                metadata.insert("mode", Value::String(stream.metadata_mode.clone()));
+                metadata.insert("unread_bytes", Value::Int(0));
+                metadata.insert("seekable", Value::Bool(true));
+                metadata.insert("uri", Value::String(stream.uri.clone()));
+                Ok(Value::Array(metadata))
+            }
+            StreamResource::File(stream) => {
+                let mut metadata = PhpArray::new();
+                metadata.insert("timed_out", Value::Bool(false));
+                metadata.insert("blocked", Value::Bool(true));
+                metadata.insert("eof", Value::Bool(stream.eof));
+                metadata.insert("wrapper_type", Value::String("plainfile".to_string()));
+                metadata.insert("stream_type", Value::String("STDIO".to_string()));
+                metadata.insert("mode", Value::String(stream.metadata_mode.clone()));
+                metadata.insert("unread_bytes", Value::Int(0));
+                metadata.insert("seekable", Value::Bool(true));
+                metadata.insert("uri", Value::String(stream.uri.clone()));
+                Ok(Value::Array(metadata))
             }
         }
     }
@@ -20513,6 +20785,8 @@ impl Interpreter {
             "feof" => self.call_feof(&args, span),
             "ftell" => self.call_ftell(&args, span),
             "fseek" => self.call_fseek(&args, span),
+            "fstat" => self.call_fstat(&args, span),
+            "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "fclose" => self.call_fclose(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
@@ -22873,6 +23147,17 @@ impl Interpreter {
                 _ => return None,
             }
         }
+    }
+
+    fn literal_array_key_path(indices: &[&Expr]) -> Option<Vec<ArrayKey>> {
+        indices
+            .iter()
+            .map(|index| match index {
+                Expr::Int(value, _) => Some(ArrayKey::Int(*value)),
+                Expr::String(value, _) => Some(ArrayKey::string(value.clone())),
+                _ => None,
+            })
+            .collect()
     }
 
     fn array_path_isset(value: &Value, keys: &[ArrayKey]) -> bool {
@@ -26236,6 +26521,8 @@ fn is_builtin(name: &str) -> bool {
             | "feof"
             | "ftell"
             | "fseek"
+            | "fstat"
+            | "stream_get_meta_data"
             | "fclose"
             | "filesize"
             | "filemtime"
@@ -27051,6 +27338,24 @@ fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name FROM wp_options WHERE option_name IN (",
+        "SELECT `option_name` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name FROM wp_options WHERE autoload IN (",
+        "SELECT `option_name` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
 fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -27218,6 +27523,28 @@ fn parse_wordpress_options_name_autoload_row_select_query(
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
+fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT `option_name` FROM `wp_options`"))?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
 fn parse_wordpress_options_name_value_autoload_row_select_query(
     query: &str,
 ) -> Option<WordPressOptionsRowFilter> {
@@ -27317,6 +27644,49 @@ fn wordpress_option_rows_for_filter(
                     ),
                 ]
             })
+        })
+        .collect()
+}
+
+fn wordpress_option_name_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options
+                .contains_key(&name)
+                .then(|| vec![("option_name".to_string(), Value::String(name))])
         })
         .collect()
 }
@@ -27598,6 +27968,16 @@ fn mysqli_statement_result_for_query_with_params(
     if query == "SELECT option_name, option_value FROM wp_options WHERE option_name = ?" {
         return Ok(Some(MysqliPendingResultState {
             fields: vec!["option_name".to_string(), "option_value".to_string()],
+            rows: Vec::new(),
+        }));
+    }
+
+    if parse_wordpress_options_name_row_select_query(query).is_some()
+        || is_wordpress_option_prepared_name_select_names_query(query)
+        || is_wordpress_option_prepared_name_select_autoloads_query(query)
+    {
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec!["option_name".to_string()],
             rows: Vec::new(),
         }));
     }
@@ -30051,6 +30431,86 @@ fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
         truncate: primary == 'w',
         create: matches!(primary, 'w' | 'a' | 'c'),
     })
+}
+
+fn stream_metadata_mode(path: &str, mode: &str) -> String {
+    if !matches!(path, "php://memory" | "php://temp") {
+        return mode.to_string();
+    }
+
+    let Some(primary) = mode.chars().next() else {
+        return mode.to_string();
+    };
+    let plus = mode.contains('+');
+    match primary {
+        'r' if plus => "r+b".to_string(),
+        'r' => "rb".to_string(),
+        'a' if plus => "a+b".to_string(),
+        'a' => "ab".to_string(),
+        'w' | 'c' => {
+            if plus {
+                "w+b".to_string()
+            } else {
+                "wb".to_string()
+            }
+        }
+        _ => mode.to_string(),
+    }
+}
+
+fn stream_stat_array(values: [i64; 13]) -> PhpArray {
+    let mut stats = PhpArray::new();
+    for (index, value) in values.iter().enumerate() {
+        stats.insert(index as i64, Value::Int(*value));
+    }
+    for (name, value) in [
+        ("dev", values[0]),
+        ("ino", values[1]),
+        ("mode", values[2]),
+        ("nlink", values[3]),
+        ("uid", values[4]),
+        ("gid", values[5]),
+        ("rdev", values[6]),
+        ("size", values[7]),
+        ("atime", values[8]),
+        ("mtime", values[9]),
+        ("ctime", values[10]),
+        ("blksize", values[11]),
+        ("blocks", values[12]),
+    ] {
+        stats.insert(name, Value::Int(value));
+    }
+    stats
+}
+
+fn memory_stream_stat_array(size: i64) -> PhpArray {
+    stream_stat_array([12, 0, 33206, 1, 0, 0, -1, size, 0, 0, 0, -1, -1])
+}
+
+#[cfg(unix)]
+fn local_file_stream_stat_array(metadata: &fs::Metadata) -> PhpArray {
+    use std::os::unix::fs::MetadataExt;
+
+    stream_stat_array([
+        metadata.dev() as i64,
+        metadata.ino() as i64,
+        metadata.mode() as i64,
+        metadata.nlink() as i64,
+        metadata.uid() as i64,
+        metadata.gid() as i64,
+        metadata.rdev() as i64,
+        metadata.size() as i64,
+        metadata.atime(),
+        metadata.mtime(),
+        metadata.ctime(),
+        metadata.blksize() as i64,
+        metadata.blocks() as i64,
+    ])
+}
+
+#[cfg(not(unix))]
+fn local_file_stream_stat_array(metadata: &fs::Metadata) -> PhpArray {
+    stream_stat_array([0, 0, 0, 1, 0, 0, 0, metadata.len() as i64, 0, 0, 0, 0, 0])
 }
 
 fn utf8_boundary_at_or_before(value: &str, index: usize) -> usize {

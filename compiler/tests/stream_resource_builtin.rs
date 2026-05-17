@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), and fclose() until native PHP resource handles, stream wrapper state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, and local file stream resources";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), and fclose() until native PHP resource handles, stream wrapper state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, and local file stream resources";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -154,6 +154,77 @@ fclose($file);
 }
 
 #[test]
+fn stream_metadata_builtins_report_bounded_memory_temp_and_file_fields() {
+    let path = temp_stream_path("phpc-stream-resource-metadata.txt");
+    let source = format!(
+        r#"<?php
+$memory = fopen("php://memory", "w+");
+fwrite($memory, "abc");
+$memory_meta = stream_get_meta_data($memory);
+$memory_stat = fstat($memory);
+echo $memory_meta["wrapper_type"];
+echo ":";
+echo $memory_meta["stream_type"];
+echo ":";
+echo $memory_meta["mode"];
+echo ":";
+echo $memory_meta["uri"];
+echo ":";
+echo $memory_stat["size"];
+echo ":";
+echo $memory_stat[7];
+fread($memory, 10);
+$eof_meta = stream_get_meta_data($memory);
+echo ":";
+echo $eof_meta["eof"] ? "eof" : "more";
+fclose($memory);
+$temp = fopen("php://temp", "w+b");
+fwrite($temp, "temp-cache");
+$temp_meta = stream_get_meta_data($temp);
+$temp_stat = fstat($temp);
+echo "|";
+echo $temp_meta["stream_type"];
+echo ":";
+echo $temp_meta["mode"];
+echo ":";
+echo $temp_stat["size"];
+fclose($temp);
+$path = "{}";
+$file = fopen($path, "w+");
+fwrite($file, "plugin-cache");
+$file_meta = stream_get_meta_data($file);
+$file_stat = fstat($file);
+echo "|";
+echo $file_meta["wrapper_type"];
+echo ":";
+echo $file_meta["stream_type"];
+echo ":";
+echo $file_meta["mode"];
+echo ":";
+echo $file_meta["seekable"] ? "seekable" : "fixed";
+echo ":";
+echo $file_meta["uri"] === $path ? "same-uri" : "other-uri";
+echo ":";
+echo $file_stat["size"];
+echo ":";
+echo $file_stat[7];
+echo ":";
+echo $file_stat["mode"] > 0 ? "mode" : "no-mode";
+fclose($file);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "PHP:MEMORY:w+b:php://memory:3:3:eof|TEMP:w+b:10|plainfile:STDIO:w+:seekable:same-uri:12:12:mode"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn stream_resource_builtins_reject_forms_outside_current_subset() {
     let wrapper = run_source("<?php\nfopen('http://example.test', 'r');\n").unwrap_err();
     assert_eq!(wrapper.phase, Phase::Runtime);
@@ -201,6 +272,15 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
         bad_whence.message,
         "unsupported call fseek(): whence argument must be SEEK_SET, SEEK_CUR, or SEEK_END in the current subset"
     );
+
+    let bad_stat = run_source("<?php\nfstat('not-resource');\n").unwrap_err();
+    assert_eq!(bad_stat.phase, Phase::Runtime);
+    assert_eq!(bad_stat.line, 2);
+    assert_eq!(bad_stat.column, 1);
+    assert_eq!(
+        bad_stat.message,
+        "unsupported call fstat(): stream argument must be resource in the current subset, got string"
+    );
 }
 
 #[test]
@@ -210,13 +290,15 @@ fn emit_ir_folds_stream_metadata_but_rejects_direct_calls() {
 echo function_exists("fopen") ? "1" : "0";
 echo is_callable("stream_get_contents") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
+echo function_exists("fstat") ? "1" : "0";
+echo is_callable("stream_get_meta_data") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
 
-    let error = emit_ir_source("<?php\nfseek($stream, 0, SEEK_SET);\n").unwrap_err();
+    let error = emit_ir_source("<?php\nstream_get_meta_data($stream);\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

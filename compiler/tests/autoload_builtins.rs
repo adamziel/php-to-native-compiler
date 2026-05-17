@@ -158,6 +158,96 @@ echo $dynamic->name;
 }
 
 #[test]
+fn included_class_declarations_autoload_missing_extends_and_implements_dependencies() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-autoload-class-dependencies-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let child_include_path = fixture_dir.join("ChildPlugin.inc");
+    fs::write(
+        &child_include_path,
+        r#"<?php
+class ChildPlugin extends LoadedBase implements LoadedContract {
+    public function label() {
+        return $this->name;
+    }
+
+    public function boot() {
+        return "boot";
+    }
+}
+"#,
+    )
+    .unwrap();
+    let parent_include_path = fixture_dir.join("LoadedBase.inc");
+    fs::write(
+        &parent_include_path,
+        r#"<?php
+class LoadedBase {
+    public $name;
+
+    public function __construct($name = "base") {
+        $this->name = $name;
+    }
+}
+"#,
+    )
+    .unwrap();
+    let interface_include_path = fixture_dir.join("LoadedContract.inc");
+    fs::write(
+        &interface_include_path,
+        r#"<?php
+interface LoadedContract extends BaseContract {
+    public function boot();
+}
+"#,
+    )
+    .unwrap();
+    let parent_interface_include_path = fixture_dir.join("BaseContract.inc");
+    fs::write(
+        &parent_interface_include_path,
+        r#"<?php
+interface BaseContract {
+    public function label();
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+function LoadDependency($name) {
+    require_once __DIR__ . "/" . $name . ".inc";
+}
+
+spl_autoload_register("LoadDependency");
+
+require_once __DIR__ . "/ChildPlugin.inc";
+
+$plugin = new ChildPlugin("wp");
+echo get_parent_class($plugin), "\n";
+echo $plugin->name, ":", $plugin->label(), ":", $plugin->boot(), "\n";
+echo is_a($plugin, "BaseContract") ? "base-contract\n" : "missing-base\n";
+echo is_a($plugin, "LoadedContract") ? "loaded-contract" : "missing-loaded";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "LoadedBase\nwp:wp:boot\nbase-contract\nloaded-contract"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(child_include_path);
+    let _ = fs::remove_file(parent_include_path);
+    let _ = fs::remove_file(interface_include_path);
+    let _ = fs::remove_file(parent_interface_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 

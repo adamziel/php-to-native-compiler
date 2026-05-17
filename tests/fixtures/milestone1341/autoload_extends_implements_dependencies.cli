@@ -1,0 +1,10 @@
+run autoload_extends_implements_dependencies.php
+--- stdout begin ---
+LoadedBase
+wp:wp:boot
+base-contract
+loaded-contract
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

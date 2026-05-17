@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1344/mysqli_wp_options_name_only_select_state.php

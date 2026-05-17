@@ -138,17 +138,16 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed autoload-triggered `new` class
-lookup for string user-function autoloaders, extended by-reference `foreach`
-reference-return iterable roots through bounded callback and static dispatch
-shapes, added stream status/position APIs over memory/temp/local-file handles,
-and proved exact `wp_options` name/autoload row-set reads over the placeholder
-MySQLi state island. Those are useful compatibility steps, but they do not
-change the larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+The latest WordPress-focused batch closed autoload-triggered included
+class/interface declaration dependencies, bounded copied nested-array
+reference alias mirroring for request-bag and ordinary array paths, stream
+metadata APIs over memory/temp/local-file handles, and exact `wp_options`
+name-only row-set reads over the placeholder MySQLi state island. Those are
+useful compatibility steps, but they do not change the larger project shape:
+the next lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
+WordPress database/bootstrap evidence until those areas become coherent
+subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 
