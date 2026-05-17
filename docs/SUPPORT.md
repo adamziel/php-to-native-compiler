@@ -124,9 +124,12 @@
   `["ClassName", "method"]` static callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` also support
   by-reference direct variable elements through the same direct-variable cell
-  binding. Those literal callback argument arrays may be unkeyed or explicitly
-  integer-keyed; integer keys are treated as positional in insertion order for
-  this reference path. The callback path additionally accepts by-reference
+  binding. Those literal callback argument arrays may be unkeyed, explicitly
+  integer-keyed, or string-keyed when every string key names a declared
+  parameter in a current user-function or public array-callable method;
+  integer keys are treated as positional in insertion order for this reference
+  path, while supported string keys bind by parameter name. The callback path
+  additionally accepts by-reference
   direct array-offset elements such as
   `array(&$_REQUEST["payload"]["slot"], ...)`,
   `array(&$GLOBALS["bag"]["slot"], ...)`, and
@@ -179,7 +182,10 @@
   alias-binding path when each reached by-reference slot was previously
   assigned by reference through the covered direct array-offset target path,
   for example
-  `$args[0] =& $value; $alias =& call_user_func_array("tag", $args);`. The
+  `$args[0] =& $value; $alias =& call_user_func_array("tag", $args);`.
+  Stored argument arrays may also use string keys that match declared
+  parameter names, provided each reached by-reference slot was assigned by
+  reference through the covered alias path. The
   assigned alias binds to the callback's returned direct variable cell or, when
   the callback returns the reached stored/object-property array-offset
   parameter, to the same bounded alias group, so later writes through the
@@ -193,8 +199,10 @@
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
   object-property array offsets without an intermediate alias variable,
-  dynamic static receiver, string-keyed named callback argument arrays,
-  dynamic, append, or `ArrayAccess` object-property bridges for
+  dynamic static receiver, unknown or duplicate string-keyed callback
+  argument names, positional arguments after a string-keyed named argument,
+  variadic named callback arguments, dynamic key expressions in the literal
+  named-argument path, dynamic, append, or `ArrayAccess` object-property bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
   forms remain unsupported for direct
@@ -1502,7 +1510,9 @@
   argument arrays may pass direct variables or direct visible named
   object-property array offsets to reached by-reference parameters with
   unkeyed or integer-keyed elements such as `array(&$value)` or
-  `array(10 => &$object->items[$key])`. The object-property slice includes
+  `array(10 => &$object->items[$key])`, and may use string keys that match
+  declared parameter names such as
+  `array("suffix" => "cache", "value" => &$value)`. The object-property slice includes
   public properties and private/protected properties reached from valid method
   visibility contexts. Direct stored argument arrays may also
   satisfy reached by-reference parameters when those slots were assigned by
@@ -1515,10 +1525,11 @@
   array slot, or public object-property array slot through the bounded
   alias/writeback metadata. Reference array literals stored by value, stored
   direct arrays
-  whose reached slots were not assigned by reference, string-keyed named
-  reference argument arrays, reference elements that are not direct variables
-  or direct visible named object-property array offsets in the literal path,
-  closure
+  whose reached slots were not assigned by reference, unknown or duplicate
+  string-keyed argument names, positional arguments after string-keyed named
+  arguments, variadic named callback arguments, reference elements that are
+  not direct variables or direct visible named object-property array offsets
+  in the literal path, closure
   and `__invoke` callbacks, non-public methods, other callable array shapes,
   exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
@@ -2020,7 +2031,14 @@
   transient-shaped prefix scans such as `_transient_%` and escaped
   `\_transient\_%`. Those bounded prefix scans also accept an exact trailing
   `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
-  `ASC`, and still use deterministic ascending option-name ordering. All,
+  `ASC`, and still use deterministic ascending option-name ordering. For the
+  exact `SELECT option_name FROM wp_options ...` projection, direct queries
+  also accept a bounded expired-transient-timeout predicate of the form
+  `WHERE option_name LIKE '<prefix>%' AND option_value < <decimal timestamp>`
+  or the same predicate with a single-quoted decimal timestamp, including
+  backticked column/table spellings and the same optional trailing option-name
+  `ORDER BY` suffix. That predicate filters rows whose recorded option value
+  parses as a decimal integer below the threshold. All,
   autoload-filtered, and prefix-filtered row reads use deterministic
   option-name ordering; explicit `IN (...)` reads preserve the requested name
   order and skip missing names.
@@ -2090,7 +2108,16 @@
   option-name order. This remains a bounded prefix matcher, not general SQL
   `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
   `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
-  host database execution. The exact
+  host database execution. The exact prepared
+  `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
+  shape, including backticked table/column spellings and the same optional
+  trailing option-name `ORDER BY` suffix, returns deterministic expired
+  transient-timeout option names for one string trailing-percent prefix
+  pattern plus an integer or decimal-integer-string threshold. It is limited
+  to the option-name projection and decimal-string option values; it does not
+  implement general SQL comparisons, `LIMIT`, joins used by full transient
+  cleanup, delete-by-join behavior, or MySQL numeric conversion edge cases.
+  The exact
   `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns a recorded option-name row for string option-name parameters on the
   same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -2309,20 +2336,24 @@
   fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
-  `file_get_contents($path, $use_include_path = false, $context = null)`
-  accepts one required string path, one optional bool include-path flag, and
-  one optional bounded stream-context resource. The special
+  `file_get_contents($path, $use_include_path = false, $context = null,
+  $offset = 0, $max_length = null)` accepts one required string path, one
+  optional bool include-path flag, one optional bounded stream-context
+  resource, and bounded integer offset/length arguments. The special
   `php://input` path returns the current bounded request body seeded from
   `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths are read
   from the host filesystem as UTF-8 text and share the same current
   relative path policy as `file_exists`; when the second argument is `true`
   for a relative local path, lookup also follows the current bounded
-  `include_path` candidate order used by `include`/`require`. This is a
+  `include_path` candidate order used by `include`/`require`. Non-negative
+  offsets read from the start, negative offsets read from the end, and a
+  non-negative max length truncates the returned UTF-8 string. This is a
   bounded WordPress bootstrap compatibility slice, not full PHP filesystem
   support: binary string byte fidelity, missing-file warning/`false` recovery,
-  other stream wrappers, context option effects, offsets/lengths beyond this
-  bool-plus-context slice, real request-body state outside the explicit CLI
-  seed, `open_basedir`,
+  other stream wrappers, context option effects, wrapper-specific context
+  behavior, exact byte offsets through non-UTF-8 data, negative offsets before
+  the start that require warning plus `false` recovery, real request-body state
+  outside the explicit CLI seed, `open_basedir`,
   stat-cache behavior, partial-output behavior, and native lowering remain
   unsupported. Direct native
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
@@ -5358,12 +5389,13 @@
   under the function-call boundary.
   `file_get_contents` accepts the same current deterministic `php://input`
   placeholder, local UTF-8 text-file read subset, optional bool include-path
-  lookup flag, and optional bounded stream-context resource as the builtin
+  lookup flag, optional bounded stream-context resource, and bounded UTF-8
+  offset/length arguments as the builtin
   section above; direct native
   `file_get_contents(...)` calls reject under a dedicated filesystem-read
   boundary until native PHP stream-wrapper handling, local file I/O, binary
   string byte fidelity, warning plus `false` recovery, stream context effects,
-  offsets/lengths, include-path lookup, `open_basedir` and stat-cache
+  include-path lookup, `open_basedir` and stat-cache
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
   `fopen`, `stream_context_create`, `stream_context_get_options`,
@@ -5509,6 +5541,13 @@
   and values are the resolved class's declared parent class names from
   immediate parent to root. This is enough for covered userland recursive
   trait-helper patterns that combine `class_parents()` with `class_uses()`.
+  `new ReflectionClass($object_or_class)` creates a bounded metadata object
+  for declared user classes, interfaces, and traits. It accepts object values
+  and string class-like names, invokes the existing autoload path for string
+  misses, and supports `getName()`, `getShortName()`, `isInterface()`,
+  `isTrait()`, `isInstantiable()`, `getParentClass()`,
+  `getInterfaceNames()`, and `hasMethod($name)` over the current metadata
+  tables.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7114,6 +7153,15 @@
   missing string classes, namespace/import alias expansion beyond parsed
   class-like names, reflection-object integration, exact PHP ordering for all
   engine metadata, and native lowering
+- `ReflectionClass` currently supports only bounded metadata objects over
+  declared user classes, interfaces, and traits. The executable method subset
+  is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
+  `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
+  `hasMethod($name)`. `ReflectionMethod`, `ReflectionProperty`,
+  `ReflectionParameter`, attributes, modifiers, file/line/doc-comment
+  metadata, constructor/default-value inspection, extension/internal metadata,
+  exact `ReflectionException` behavior, namespace/import alias expansion
+  beyond parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

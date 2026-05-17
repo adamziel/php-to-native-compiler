@@ -78,7 +78,9 @@ flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `stream_context_set_params()` persist string-keyed wrapper options and bounded
 params on those contexts. Context resources may be passed to the current
 `file_get_contents()`/`fopen()` local and `php://input` paths without applying
-wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
+wrapper-specific behavior, and `file_get_contents()` accepts bounded integer
+offset plus optional non-negative length reads over those UTF-8 payloads.
+`opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
@@ -238,7 +240,8 @@ incorrect native code.
   mutations for option/transient-shaped state probes,
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
-  scans;
+  scans and a bounded expired-transient-timeout
+  `option_name LIKE ... AND option_value < timestamp` option-name scan;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -368,7 +371,10 @@ incorrect native code.
   current object values or declared string class names, bounded
   `class_uses()` direct trait-name arrays for current object values or
   declared string class names, bounded `class_parents()` parent-chain arrays
-  for current object values or declared string class names, declared trait
+  for current object values or declared string class names, bounded
+  `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
+  `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
+  `getInterfaceNames()`, and `hasMethod($name)`, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -468,8 +474,8 @@ magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
-beyond the current `class_implements()`/`class_uses()`/`class_parents()`
-metadata table slices, and
+beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
+bounded `ReflectionClass` metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -508,8 +514,10 @@ Mutations before `unset($param)` are written back; later writes to the
 detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public
 object-method callback, and public class-string static-method callback slice
-for unkeyed or integer-keyed literal argument arrays containing direct-variable
-reference elements such as `array(&$value)` and `array(10 => &$value)`, plus
+for unkeyed, integer-keyed, or supported string-keyed literal argument arrays
+containing direct-variable reference elements such as `array(&$value)`,
+`array(10 => &$value)`, and
+`array("suffix" => "cache", "value" => &$value)`, plus
 direct array-offset reference elements such as
 `array(&$_REQUEST["payload"]["slot"])` and direct visible named
 object-property array-offset elements such as `array(&$object->items[$key])`
@@ -530,11 +538,12 @@ direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
-Reference array literals stored by value, string-keyed named reference
-argument arrays, stored arrays whose reached slots were not assigned by
-reference, non-direct stored array expressions beyond direct visible named
-object-property arrays, direct reference assignment between object-property
-array offsets without an intermediate alias variable, dynamic callback
+Reference array literals stored by value, unknown or duplicate string-keyed
+argument names, positional arguments after string-keyed named arguments,
+variadic named callback arguments, stored arrays whose reached slots were not
+assigned by reference, non-direct stored array expressions beyond direct
+visible named object-property arrays, direct reference assignment between
+object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
 object-property array arguments, ArrayAccess reference roots, broader
 aliasing, and full copy-on-write remain unsupported.

@@ -1,0 +1,19 @@
+Plugin
+Plugin
+instantiable
+boot-method
+helper-method
+Array
+(
+    [0] => HookContract
+    [1] => RootContract
+)
+BasePlugin
+interface
+root-method
+Array
+(
+    [0] => RootContract
+)
+trait
+trait-helper

@@ -175,16 +175,15 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded `class_parents()` user-class
-metadata for recursive trait helpers, stored non-public object-property
-argument arrays in `call_user_func_array()`, shutdown callback execution, and
-ordered transient-prefix `wp_options` scans over the placeholder MySQLi state
-island. Those are useful compatibility steps, but they do not change the
-larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, and executable WordPress
-database/bootstrap evidence until those areas become coherent subsystems
-instead of reached slices.
+The latest WordPress-focused batch closed bounded `ReflectionClass` metadata
+objects, string-keyed by-reference `call_user_func_array()` argument mapping,
+`file_get_contents()` offset/length reads, and expired-transient-timeout
+`wp_options` scans over the placeholder MySQLi state island. Those are useful
+compatibility steps, but they do not change the larger project shape: the next
+lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
+WordPress database/bootstrap evidence until those areas become coherent
+subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

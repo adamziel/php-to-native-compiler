@@ -666,13 +666,22 @@ routed through covered array-offset alias metadata, including ordinary array
 roots, request/global roots, and visible object-property array roots; slot
 writes and stored-slot lookups compose the argument-array root alias with the
 selected integer key before binding or writing back.
+For the bounded `call_user_func_array()` reference path, string-keyed
+argument-array entries can also bind by declared parameter name for current
+user-function callbacks and public object/static array-callable methods. The
+literal path maps direct variable, direct array-offset, and visible named
+object-property array-offset reference elements to the named parameter, while
+the stored-array path looks up the existing alias metadata by the same string
+key before copy-in/writeback or reference-return alias binding.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
 assigned by reference, non-direct stored array expressions beyond direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable,
-string-keyed named reference argument arrays, dynamic, append, or ArrayAccess
-reference roots, non-public property roots outside the current valid
+unknown or duplicate string-keyed callback argument names, positional
+arguments after a string-keyed named argument, variadic named callback
+arguments, dynamic key expressions in the literal named-argument path,
+dynamic, append, or ArrayAccess reference roots, non-public property roots outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
 by-reference `foreach`, or copy-on-write.
@@ -1570,12 +1579,14 @@ builtins. It reuses the value-based call path and does not implement array
 callables, closure invocation, `__invoke`, `call_user_func_array`, references,
 variadic unpacking, or native lowering.
 `call_user_func_array()` is a separate interpreter-only callable dispatcher for
-string callbacks, current public array-callable shapes, and integer-keyed
-positional argument arrays. String user-function callbacks, public
+string callbacks, current public array-callable shapes, integer-keyed
+positional argument arrays, and the bounded string-keyed named argument slice
+for current user callbacks. String user-function callbacks, public
 `[object, method]` instance callbacks, and public `["ClassName", "method"]`
 static callbacks can bind reached by-reference parameters from unkeyed or
 integer-keyed literal argument-array elements such as `array(&$value)` and
-`array(10 => &$value)`, using the same direct caller cell as ordinary
+`array(10 => &$value)`, or from string-keyed elements whose keys match
+declared parameter names, using the same direct caller cell as ordinary
 by-reference user-function and method calls. Direct public object-property
 array-offset reference elements use the current copy-in/writeback bridge for
 that callback path. Direct stored argument arrays whose reached slots were
@@ -1584,10 +1595,10 @@ the existing alias metadata as a copy-in/writeback bridge, including for
 normal callback invocations of reference-returning user functions or public
 array-callable methods that mutate reached by-reference parameters.
 Reference array literals stored by value, stored arrays without covered
-reference-assigned slots, string-keyed named reference argument arrays, using
-`call_user_func_array()` itself as a statement-form reference-return source,
-closure invocation, `__invoke`, named arguments, exact warning behavior, and
-native lowering remain unsupported.
+reference-assigned slots, unknown or duplicate string-keyed argument names,
+variadic named callback arguments, positional arguments after string-keyed
+named arguments, closure invocation, `__invoke`, broader named-argument
+semantics, exact warning behavior, and native lowering remain unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1729,7 +1740,11 @@ bounded direct
 and deletes for transient-shaped option rows. The prefix scan result shapes
 also accept the exact trailing `ORDER BY option_name` / backticked
 `ORDER BY` suffix with optional `ASC`, while preserving the deterministic
-ascending option-name order already used by the state island;
+ascending option-name order already used by the state island. A further
+bounded transient-timeout scan accepts exact direct/prepared option-name
+projections with `option_name LIKE '<prefix>%' AND option_value < timestamp`
+or the prepared equivalent for rows whose recorded option value parses below a
+decimal threshold;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1826,11 +1841,16 @@ reject under the function-call boundary.
 `php://input` to the same explicit `PHPC_REQUEST_BODY` request seed used by
 the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
 read using the same process-path-then-repo-root relative path policy as the
-filesystem metadata builtins. The current bounded second argument accepts only
-a bool include-path flag; when true for relative local paths, lookup follows
+filesystem metadata builtins. The current bounded second argument accepts a
+bool include-path flag; when true for relative local paths, lookup follows
 the same include-path candidate order used by current `include`/`require`
-resolution. It does not model PHP binary strings, warning-plus-`false`
-recovery, stream contexts, offsets, lengths beyond this bool flag,
+resolution. The third argument accepts a bounded stream-context resource or
+`null`, and the fourth/fifth arguments apply integer offset plus optional
+non-negative max length over the current UTF-8 string payload. It does not
+model PHP binary strings, warning-plus-`false` recovery, stream context
+effects, wrapper-specific context behavior, exact byte offsets through
+non-UTF-8 data, negative offsets before the start that require warning plus
+`false` recovery,
 `open_basedir`, stat caching, host SAPI body streams, or native filesystem
 lowering. Direct native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
@@ -1922,7 +1942,7 @@ filesystem-read boundary before argument lowering or backend selection. Native
 function-table introspection still recognizes `file_get_contents`, but native
 call execution still lacks stream-wrapper handling, local file I/O, binary
 string byte fidelity, warning plus `false` recovery, stream contexts,
-offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
+include-path lookup, `open_basedir` and stat-cache behavior,
 references/copy-on-write, and exact native diagnostics.
 The first stream-resource slices are interpreter-only. `fopen("php://memory",
 $mode)` and `fopen("php://temp", $mode)` allocate request-local resource ids
@@ -2371,6 +2391,18 @@ chain from immediate parent to root and returns a PHP-shaped associative array
 of parent class names. This keeps `class_uses()` non-recursive while enabling
 covered userland recursive trait helpers that explicitly combine parent names
 with direct trait metadata.
+`ReflectionClass` is a bounded runtime metadata object for declared
+class-like values. `new ReflectionClass($object_or_class)` accepts object
+values and string names for the current declared class, interface, and trait
+tables, including the existing autoload callback path for string misses. The
+object stores request-local reflection state and dispatches the current
+`getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
+`isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
+`hasMethod($name)` methods directly through the interpreter. This is metadata
+only: it does not create `ReflectionMethod` or `ReflectionProperty` objects,
+does not expose attributes, modifiers, files, line numbers, constructor
+metadata, parameters, default values, doc comments, extension/internal
+metadata, exact exception objects, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

@@ -1,0 +1,5 @@
+autoload:literal|autoload:literal
+autoload:literal:return:alias|autoload:literal:return:alias
+draft:stored|draft:stored|draft:stored
+draft:stored:method:method-alias|draft:stored:method:method-alias
+draft:stored:method:method-alias:stored:static-alias|draft:stored:method:method-alias:stored:static-alias|draft:stored:method:method-alias:stored:static-alias

@@ -2034,6 +2034,27 @@ impl PhpClassTable {
         classes
             .declare_class("PDOStatement")
             .expect("core class table should contain PDO before PDOStatement");
+        let reflection_class_id = classes
+            .declare_class("ReflectionClass")
+            .expect("core class table should contain PDOStatement before ReflectionClass");
+        let reflection_class = classes
+            .get_mut(reflection_class_id)
+            .expect("declared ReflectionClass class id should resolve");
+        for method in [
+            "__construct",
+            "getName",
+            "getShortName",
+            "isInterface",
+            "isTrait",
+            "isInstantiable",
+            "getParentClass",
+            "getInterfaceNames",
+            "hasMethod",
+        ] {
+            reflection_class
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionClass core metadata should not duplicate methods");
+        }
         classes
     }
 
@@ -7634,6 +7655,14 @@ mod tests {
         assert!(pdo_statement.parent_id().is_none());
         assert!(pdo_statement.properties().is_empty());
         assert!(pdo_statement.methods().is_empty());
+
+        let reflection_class = classes.lookup_class("reflectionclass").unwrap();
+        assert_eq!(reflection_class.name(), "ReflectionClass");
+        assert_eq!(reflection_class.id().index(), 7);
+        assert!(reflection_class.parent_id().is_none());
+        assert!(reflection_class.properties().is_empty());
+        assert!(reflection_class.method("getName").is_some());
+        assert!(reflection_class.method("hasMethod").is_some());
     }
 
     #[test]

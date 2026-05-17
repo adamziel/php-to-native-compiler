@@ -825,6 +825,65 @@ $left->probe($right);
 }
 
 #[test]
+fn call_user_func_array_binds_string_keyed_reference_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+function wp_refcow_named_mark(&$value, $suffix = "default") {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+function &wp_refcow_named_pick(&$value, $suffix = "default") {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+class WP_RefCow_Named_Callback {
+    public function &pick(&$value, $suffix = "default") {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+
+    public static function &pickStatic(&$value, $suffix = "default") {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+$option = "autoload";
+echo call_user_func_array("wp_refcow_named_mark", array("suffix" => "literal", "value" => &$option)), "|", $option, "\n";
+
+$alias =& call_user_func_array("wp_refcow_named_pick", array("suffix" => "return", "value" => &$option));
+$alias = $alias . ":alias";
+echo $option, "|", $alias, "\n";
+
+$_REQUEST["mode"] = "draft";
+$request_alias =& $_REQUEST["mode"];
+$stored = [];
+$stored["value"] =& $request_alias;
+$stored["suffix"] = "stored";
+echo call_user_func_array("wp_refcow_named_mark", $stored), "|", $_REQUEST["mode"], "|", $stored["value"], "\n";
+
+$callback = new WP_RefCow_Named_Callback();
+$method_alias =& call_user_func_array(array($callback, "pick"), array("suffix" => "method", "value" => &$request_alias));
+$method_alias = $method_alias . ":method-alias";
+echo $_REQUEST["mode"], "|", $method_alias, "\n";
+
+$static_alias =& call_user_func_array(array("WP_RefCow_Named_Callback", "pickStatic"), $stored);
+$static_alias = $static_alias . ":static-alias";
+echo $_REQUEST["mode"], "|", $stored["value"], "|", $static_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:literal|autoload:literal\nautoload:literal:return:alias|autoload:literal:return:alias\ndraft:stored|draft:stored|draft:stored\ndraft:stored:method:method-alias|draft:stored:method:method-alias\ndraft:stored:method:method-alias:stored:static-alias|draft:stored:method:method-alias:stored:static-alias|draft:stored:method:method-alias:stored:static-alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_is_available_through_function_metadata_builtins() {
     let execution = run_source(
         r#"<?php
@@ -926,20 +985,20 @@ echo call_user_func_array("strlen", array("value" => "four"));
         "unsupported call call_user_func_array(): string-keyed named arguments are not implemented in the current subset"
     );
 
-    let named_reference_args = runtime_error(
+    let unknown_named_reference_args = runtime_error(
         r#"<?php
 function mutate(&$value) {
     $value = "changed";
 }
 $option = "original";
-call_user_func_array("mutate", array("value" => &$option));
+call_user_func_array("mutate", array("missing" => &$option));
 "#,
     );
-    assert_eq!(named_reference_args.line, 6);
-    assert_eq!(named_reference_args.column, 1);
+    assert_eq!(unknown_named_reference_args.line, 6);
+    assert_eq!(unknown_named_reference_args.column, 1);
     assert_eq!(
-        named_reference_args.message,
-        "unsupported call mutate(): call_user_func_array() string-keyed named reference arguments are not implemented in the current subset"
+        unknown_named_reference_args.message,
+        "unsupported call mutate(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
     );
 
     let stored_by_value_args = runtime_error(

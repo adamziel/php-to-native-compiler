@@ -12,7 +12,8 @@ Array
     [4] => mysqli_stmt
     [5] => PDO
     [6] => PDOStatement
-    [7] => App\State\Box
-    [8] => App\State\Mode
-    [9] => App\State\Status
+    [7] => ReflectionClass
+    [8] => App\State\Box
+    [9] => App\State\Mode
+    [10] => App\State\Status
 )

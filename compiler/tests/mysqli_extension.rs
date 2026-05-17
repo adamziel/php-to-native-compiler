@@ -4169,6 +4169,51 @@ echo $timeout_row["option_id"], ":", $timeout_row["option_name"], ":", $timeout_
 }
 
 #[test]
+fn mysqli_reads_current_wordpress_expired_transient_timeout_option_names_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_themes', '250', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_core', '900', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$direct = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '_transient_timeout_%' AND option_value < 300 ORDER BY option_name");
+$direct_first = mysqli_fetch_assoc($direct);
+$direct_second = mysqli_fetch_assoc($direct);
+echo mysqli_num_rows($direct);
+echo ":";
+echo $direct_first["option_name"], ",";
+echo $direct_second["option_name"];
+echo "|";
+$prepared = mysqli_execute_query($handle, "SELECT `option_name` FROM `wp_options` WHERE `option_name` LIKE ? AND `option_value` < ? ORDER BY `option_name` ASC", array("\\_transient\\_timeout\\_%", "300"));
+$prepared_first = mysqli_fetch_assoc($prepared);
+$prepared_second = mysqli_fetch_assoc($prepared);
+echo mysqli_num_fields($prepared);
+echo ":";
+echo $prepared_first["option_name"], ",";
+echo $prepared_second["option_name"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ? ORDER BY option_name");
+mysqli_stmt_execute($stmt, array("_transient_timeout_%", 101));
+$timeout = mysqli_stmt_get_result($stmt);
+$timeout_row = mysqli_fetch_assoc($timeout);
+echo mysqli_num_rows($timeout);
+echo ":";
+echo $timeout_row["option_name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_timeout_update_plugins,_transient_timeout_update_themes|1:_transient_timeout_update_plugins,_transient_timeout_update_themes|1:_transient_timeout_update_plugins"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_row_sets_from_state() {
     let execution = run_source(
         r#"<?php

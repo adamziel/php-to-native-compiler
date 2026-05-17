@@ -7,7 +7,7 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::{run_source, run_source_with_source_file};
 
-const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, offsets/lengths, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior";
+const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads";
 
 fn fixture_source_file() -> String {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -86,6 +86,51 @@ echo file_get_contents("wp_loader.inc", true);
 }
 
 #[test]
+fn file_get_contents_supports_bounded_offset_and_length_reads() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$path = __DIR__ . "/offset_length_payload.inc";
+echo file_get_contents($path, false, null, 3, 5);
+echo "|";
+echo file_get_contents($path, false, null, -5, 4);
+echo "|";
+set_include_path(__DIR__);
+echo file_get_contents("offset_length_payload.inc", true, null, 11, 4);
+"#,
+        "tests/fixtures/milestone1413/file_get_contents_offset_length.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "defgh|wxyz|lmno");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_get_contents_applies_offset_and_length_to_php_input_seed() {
+    let program = php_compiler::parse(
+        r#"<?php
+echo file_get_contents("php://input", false, null, 7, 4);
+echo "|";
+echo file_get_contents("php://input", false, null, -5);
+"#,
+    )
+    .unwrap();
+    let execution = php_compiler::interpreter::run_program_with_options(
+        &program,
+        php_compiler::interpreter::RunOptions {
+            request_body: Some("action=save&token=abc".to_string()),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/x-www-form-urlencoded".to_string()),
+            ..php_compiler::interpreter::RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "save|n=abc");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_get_contents_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nfile_get_contents(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);
@@ -129,14 +174,44 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
         "unsupported call file_get_contents(): use_include_path argument must be bool in the current subset, got int"
     );
 
+    let bad_offset =
+        run_source("<?php\nfile_get_contents('php://input', false, null, '0');\n").unwrap_err();
+    assert_eq!(bad_offset.phase, Phase::Runtime);
+    assert_eq!(bad_offset.line, 2);
+    assert_eq!(bad_offset.column, 1);
+    assert_eq!(
+        bad_offset.message,
+        "unsupported call file_get_contents(): offset argument must be int in the current subset, got string"
+    );
+
+    let bad_length =
+        run_source("<?php\nfile_get_contents('php://input', false, null, 0, -1);\n").unwrap_err();
+    assert_eq!(bad_length.phase, Phase::Runtime);
+    assert_eq!(bad_length.line, 2);
+    assert_eq!(bad_length.column, 1);
+    assert_eq!(
+        bad_length.message,
+        "unsupported call file_get_contents(): max_length argument must be non-negative in the current subset"
+    );
+
+    let bad_negative_offset =
+        run_source("<?php\nfile_get_contents('php://input', false, null, -1);\n").unwrap_err();
+    assert_eq!(bad_negative_offset.phase, Phase::Runtime);
+    assert_eq!(bad_negative_offset.line, 2);
+    assert_eq!(bad_negative_offset.column, 1);
+    assert_eq!(
+        bad_negative_offset.message,
+        "unsupported call file_get_contents(): negative offset before the start of the stream requires warning plus false recovery outside the current subset"
+    );
+
     let too_many =
-        run_source("<?php\nfile_get_contents('php://input', false, null, 0);\n").unwrap_err();
+        run_source("<?php\nfile_get_contents('php://input', false, null, 0, 1, 2);\n").unwrap_err();
     assert_eq!(too_many.phase, Phase::Runtime);
     assert_eq!(too_many.line, 2);
     assert_eq!(too_many.column, 1);
     assert_eq!(
         too_many.message,
-        "arity mismatch for file_get_contents(): expected 1 to 3 argument(s), got 4"
+        "arity mismatch for file_get_contents(): expected 1 to 5 argument(s), got 6"
     );
 }
 

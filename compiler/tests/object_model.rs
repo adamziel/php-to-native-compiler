@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 8);
+    assert_eq!(classes.classes().len(), 9);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -45,6 +45,7 @@ echo "ready\n";
     assert_eq!(classes.classes()[4].name(), "mysqli_stmt");
     assert_eq!(classes.classes()[5].name(), "PDO");
     assert_eq!(classes.classes()[6].name(), "PDOStatement");
+    assert_eq!(classes.classes()[7].name(), "ReflectionClass");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4333,7 +4334,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => Box\n    [8] => Profile\n)\n9|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => Box\n    [9] => Profile\n)\n10|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4354,7 +4355,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => App\\Mode\n    [8] => App\\Status\n)\n9\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => App\\Mode\n    [9] => App\\Status\n)\n10\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4589,6 +4590,65 @@ fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
         autoload_error.message,
         "unsupported call class_parents(): autoload argument must be bool-like scalar in the current subset, got array"
     );
+}
+
+#[test]
+fn reflection_class_reports_bounded_class_interface_and_trait_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface RootContract {
+    public function root();
+}
+
+interface HookContract extends RootContract {
+    public function boot($hook = null);
+}
+
+trait HookTools {
+    public function helper() {
+        return "helper";
+    }
+}
+
+class BasePlugin {
+    public function root() {}
+}
+
+class Plugin extends BasePlugin implements HookContract {
+    use HookTools;
+
+    public function boot($hook = null) {}
+}
+
+$plugin = new Plugin();
+$class = new ReflectionClass($plugin);
+echo $class->getName(), "\n";
+echo $class->getShortName(), "\n";
+echo $class->isInstantiable() ? "instantiable\n" : "not-instantiable\n";
+echo $class->hasMethod("boot") ? "boot-method\n" : "missing-boot\n";
+echo $class->hasMethod("helper") ? "helper-method\n" : "missing-helper\n";
+print_r($class->getInterfaceNames());
+
+$parent = $class->getParentClass();
+echo $parent ? $parent->getName() . "\n" : "no-parent\n";
+
+$interface = new ReflectionClass(HookContract::class);
+echo $interface->isInterface() ? "interface\n" : "not-interface\n";
+echo $interface->hasMethod("root") ? "root-method\n" : "missing-root\n";
+print_r($interface->getInterfaceNames());
+
+$trait = new ReflectionClass(HookTools::class);
+echo $trait->isTrait() ? "trait\n" : "not-trait\n";
+echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Plugin\nPlugin\ninstantiable\nboot-method\nhelper-method\nArray\n(\n    [0] => HookContract\n    [1] => RootContract\n)\nBasePlugin\ninterface\nroot-method\nArray\n(\n    [0] => RootContract\n)\ntrait\ntrait-helper"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
