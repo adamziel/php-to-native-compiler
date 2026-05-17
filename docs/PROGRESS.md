@@ -4,6 +4,209 @@
 
 Implemented:
 
+- Added Milestone 1435, the WordPress-focused queue refresh for the 1431-1434
+  implementation batch. The batch closed bounded `ReflectionProperty`
+  metadata, nested direct `ArrayAccess` reference roots, post-output
+  response-header warnings, and deterministic `wp_options` schema probes over
+  the MySQLi state island. Focused integrated checks passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-integrated-1431-1434
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: targeted Rust tests passed for the
+  four lane features; milestone fixtures 1431-1434 each passed; system PHP
+  comparisons passed for 1431, 1432, and 1433 with `1` comparison and `0`
+  skips each, while the MySQLi state-island fixture 1434 passed with `0`
+  comparisons and `1` documented `phpc-only` skip; `cargo fmt --check`,
+  `cargo check -p phpc`, and `git diff --check` passed. The class-list
+  snapshots in `tests/fixtures/milestone106/get_declared_classes.{stdout,cli}`
+  and `tests/fixtures/milestone708/enum_metadata.{stdout,cli}` were refreshed
+  for the new core `ReflectionProperty` class. The first full-gate run exposed
+  only the older Milestone 832 `SHOW FULL COLUMNS FROM wp_options` placeholder
+  snapshot after the new schema rows became supported; the affected fixture
+  and `milestone1_fixtures_pass` check passed after refreshing that snapshot.
+  Manual full gate then passed before checkpoint with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1431-1435 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1523` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1523` fixture tests
+  passed with `0` failures, `888` system PHP comparisons, and `635`
+  `phpc-only` skipped fixtures.
+
+- Added Milestone 1432, a bounded reference/COW WordPress blocker slice for
+  nested direct `ArrayAccess` reference roots. Direct sources such as
+  `$alias =& $bag["outer"]["slot"]` and literal `call_user_func_array()`
+  reference elements such as `array(&$bag["outer"]["slot"])` now bind through
+  the existing direct-object `ArrayAccess` bridge to the backing property array
+  child slot when public `offsetGet($offset)` returns by reference and its
+  body is exactly `return $this->property[$offset];`. The selected nested slot
+  is materialized when missing and continues to use the existing bounded
+  object-property array alias metadata, including private/protected backing
+  properties reached through the declaring `offsetGet()` context. This does
+  not add real reference containers, by-value `offsetGet()` indirect
+  modification fidelity, broader `offsetGet()` bodies, property-held or
+  dynamic `ArrayAccess` roots, append or stored-array `ArrayAccess` roots,
+  mixed nested `ArrayAccess` chains, broader copy-on-write, or native
+  lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1432 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test functions_and_scopes
+  reference_assignment_array_access_nested_offset_source_binds_bounded_offset_get_root
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  call_user_func_builtin call_user_func_array_binds_array_access_reference_roots
+  -- --test-threads=1` passed with `1` test; direct `phpc run` and direct
+  system `php` over
+  `tests/fixtures/milestone1432/array_access_nested_reference_roots.php`
+  printed matching output; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1432` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1432` passed with `1`
+  comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1432` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1432` reported `1` fixture, `1`
+  CLI exercise, and `0` `.phpc-only` reason gaps; and `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/milestone1432/array_access_nested_reference_roots.php
+  --emit-ir` rejected native lowering at the existing object/class boundary;
+  full affected `cargo test -p phpc --test functions_and_scopes --
+  --test-threads=1` passed with `159` tests; full affected `cargo test -p
+  phpc --test call_user_func_builtin -- --test-threads=1` passed with `26`
+  tests; `cargo fmt --check` passed; `cargo check -p phpc` passed; and
+  scoped `git diff --check` passed.
+  Full expensive `tools/run-tests.sh`, checkpoint, commit, and push were
+  deferred per lane instructions.
+
+- Added Milestone 1433, a bounded request/SAPI response-header warning slice
+  outside the existing `file_get_contents()` recovery path. After unbuffered
+  output starts, `header()`, `header_remove()`, and `setcookie()` now leave
+  the request-local header log unchanged and emit recoverable `E_WARNING`
+  events through the current LIFO `set_error_handler()` stack or stderr
+  fallback; `setcookie()` still returns `false` after output has started. The
+  new `milestone1433` fixture proves user-handler warning dispatch for all
+  three late response mutations, PHP-compatible warning number/line exposure,
+  return values, CLI exercise coverage, and system PHP comparison for the
+  covered handler-observed behavior. This does not add exact PHP warning text,
+  broader warnings/notices/deprecations, active error-handler stack mutation
+  edge cases, session-start late-output warnings, cookie attributes, binary
+  string reads, output-buffer shutdown/fatal/destructor ordering, session or
+  upload persistence, include-path/stat-cache behavior, `open_basedir`, stream
+  filters/wrappers, wrapper-specific stream contexts, request-body lifetime,
+  host filesystem edge cases, or native lowering. Focused verification passed
+  with `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1433 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test header_builtin
+  late_header_mutations_emit_recoverable_warnings_through_error_handler --
+  --test-threads=1` passed with `1` test; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1433/late_header_warnings.php` printed the expected
+  late-warning handler output; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1433` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1433` passed with `1`
+  fixture, `1` system PHP comparison, and `0` skips; `cargo run -q -p phpc --
+  test --compare-php-json tests/fixtures/milestone1433` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1433` reported `1` fixture, `1`
+  CLI exercise, `0` missing expectation sidecars, `0` unrecognized sidecars,
+  and `0` `.phpc-only` reason gaps; affected header fixture directories
+  `milestone730`, `milestone767`, `milestone769`, `milestone1243`,
+  `milestone1248`, `milestone1253`, `milestone1273`, `milestone1368`,
+  `milestone1373`, and `milestone1433` passed after refreshing the
+  `milestone1368` late-header stderr/CLI snapshot; `cargo run -q -p phpc --
+  test --compare-php tests/fixtures/milestone1368` passed with `1` fixture,
+  `0` comparisons, and `1` documented `phpc-only` skip; `cargo test -p phpc --test
+  header_builtin -- --test-threads=1` passed with `29` tests, including the
+  existing header-state native rejection diagnostics; direct `cargo run -q -p
+  phpc -- compile tests/fixtures/milestone1433/late_header_warnings.php
+  --emit-ir` rejected native lowering at the existing user-function
+  declaration boundary; `cargo fmt --check` passed; `cargo check -p phpc`
+  passed; and scoped `git diff --check` passed after `git add -N` exposed the
+  new fixture files. Full expensive `tools/run-tests.sh`, checkpoint, commit,
+  and push were deferred per lane instructions.
+
+- Added Milestone 1434, a bounded WordPress DB/bootstrap evidence slice for
+  deterministic `wp_options` schema probes over the MySQLi state island.
+  `mysqli_query()` and the shared pending-result path now return fixed
+  `mysqli_result` rows for exact `SHOW TABLES LIKE 'wp_options'`,
+  `DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM wp_options`
+  queries. The schema rows expose the current option-table field names, types,
+  primary/unique key markers, `autoload` default, and placeholder utf8mb4
+  collation metadata so bounded install/update probes can inspect table
+  existence and column shape. The new `milestone1434` fixture proves a small
+  `wpdb`-shaped schema probe through `phpc run`. This does not add real MySQL
+  connectivity, mutable schema, `CREATE`/`ALTER TABLE`, dbDelta diffing, host
+  index/collation inspection, arbitrary SQL, exact MySQL metadata fidelity, or
+  native DB lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1434 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_query_exposes_current_wordpress_options_schema_probe_rows --
+  --test-threads=1` passed with `1` test; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1434/wpdb_options_schema_probe.php` printed
+  `table=1:wp_options|describe=6:option_id:bigint(20)
+  unsigned:PRI:auto_increment,option_name:varchar(191):UNI:,option_value:longtext::,autoload:varchar(20)::|autoload=varchar(20):yes:utf8mb4_unicode_ci`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1434` passed with
+  `1` fixture; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1434` passed with `1` fixture, `0` comparisons, and
+  `1` documented `phpc-only` skip; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1434` reported `1` passed
+  fixture, `0` comparisons, and `1` `phpc-only` skip; `cargo run -q -p phpc
+  -- test --list-fixtures tests/fixtures/milestone1434` reported `1`
+  fixture, `1` CLI exercise, `0` missing expectation sidecars, `0`
+  unrecognized sidecars, and `0` `.phpc-only` reason gaps; `cargo run -q -p
+  phpc -- compile tests/fixtures/milestone1434/wpdb_options_schema_probe.php
+  --emit-ir` rejected native lowering at the existing object/class boundary;
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed
+  with `160` tests; `cargo fmt --check` passed; `cargo check -p phpc` passed;
+  and scoped `git diff --check` passed after `git add -N` exposed the new
+  fixture files. Full expensive `tools/run-tests.sh`, checkpoint, commit, and
+  push were deferred per lane instructions.
+
+- Added Milestone 1431, a bounded object/interface WordPress blocker slice for
+  `ReflectionProperty` metadata over declared user classes. The runtime now
+  seeds a core `ReflectionProperty` metadata class and constants, stores
+  request-local property reflection state, supports direct
+  `new ReflectionProperty($object_or_class, $property)` construction for
+  current class/object targets, and dispatches `getName()`,
+  `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
+  `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
+  `hasType()`, and `getType()` for the current untyped property subset.
+  `ReflectionClass` now supports `hasProperty($name)`, `getProperty($name)`,
+  and zero-argument `getProperties()` over current class metadata, including
+  inherited public/protected properties while excluding inherited private
+  properties for child-class reflection. The new `milestone1431` fixture
+  matches system PHP for direct and object-target property reflection, modifier
+  constants, declaring-class metadata, default values, inherited property
+  listing, and untyped property type predicates. This does not add typed
+  properties, property attributes, doc-comment/file/line metadata,
+  extension/internal property metadata, `ReflectionClass::getProperties()`
+  filter masks, reflection value mutation/invocation, exact
+  `ReflectionException` objects, namespace/import alias expansion beyond
+  parsed class-like names, or native lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1431 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  reflection_property_reports_bounded_class_property_metadata --
+  --test-threads=1` passed with `1` test; `cargo test -p php_runtime
+  class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`
+  passed with `1` test; direct `phpc run` and direct system `php` over
+  `tests/fixtures/milestone1431/reflection_property_metadata_probe.php`
+  printed matching output; `cargo run -q -p phpc -- test
+  tests/fixtures/milestone1431` passed with `1` fixture; `cargo run -q -p
+  phpc -- test --compare-php tests/fixtures/milestone1431` passed with `1`
+  fixture, `1` system PHP comparison, and `0` skips; `cargo run -q -p phpc --
+  test --compare-php-json tests/fixtures/milestone1431` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1431` reported `1` fixture, `1` CLI
+  exercise, and `0` `.phpc-only` reason gaps; `cargo run -q -p phpc --
+  compile tests/fixtures/milestone1431/reflection_property_metadata_probe.php
+  --emit-ir` rejected native lowering at the existing object/class boundary;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone106` passed with `1`
+  fixture and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone106` passed with `0` comparisons and `1`
+  documented `phpc-only` skip after refreshing the core class-list snapshot;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone708` passed with `4`
+  fixtures and `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone708` passed with `0` comparisons and `4`
+  documented `phpc-only` skips after refreshing enum class-list snapshots;
+  `cargo test -p phpc --test object_model -- --test-threads=1` passed with
+  `249` tests; `cargo fmt --check` passed; `cargo check -p phpc` passed; and
+  `git diff --check` passed. An initial fixture run exposed only a missing
+  trailing-newline expectation/source mismatch before the fixture was adjusted
+  to match committed stdout style. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
 - Added Milestone 1430, the WordPress-focused queue refresh for the 1426-1429
   implementation batch. The batch closed bounded `ReflectionNamedType`
   metadata for method parameters, direct `ArrayAccess` reference roots, LIFO

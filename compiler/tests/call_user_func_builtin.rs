@@ -932,7 +932,7 @@ fn call_user_func_array_binds_array_access_reference_roots() {
     let execution = run_source(
         r#"<?php
 class WP_RefCow_ArrayAccess_Bag implements ArrayAccess {
-    private $items = ["slot" => "seed"];
+    private $items = ["slot" => "seed", "outer" => ["slot" => "nested"]];
 
     #[ReturnTypeWillChange]
     public function offsetExists($offset) {
@@ -974,14 +974,20 @@ echo call_user_func_array("wp_refcow_array_access_mark", array(&$bag["slot"], "c
 
 $picked =& call_user_func_array("wp_refcow_array_access_pick", array(&$bag["missing"], "return"));
 $picked = $picked . ":picked";
-echo $bag["missing"], "|", $picked;
+echo $bag["missing"], "|", $picked, "\n";
+
+echo call_user_func_array("wp_refcow_array_access_mark", array(&$bag["outer"]["slot"], "nested-callback")), "|", $bag["outer"]["slot"], "\n";
+
+$nested =& call_user_func_array("wp_refcow_array_access_pick", array(&$bag["created"]["leaf"], "nested-return"));
+$nested = $nested . ":nested-alias";
+echo $bag["created"]["leaf"], "|", $nested;
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "seed:alias|seed:alias\nseed:alias:callback|seed:alias:callback\nnull:return:picked|null:return:picked"
+        "seed:alias|seed:alias\nseed:alias:callback|seed:alias:callback\nnull:return:picked|null:return:picked\nnested:nested-callback|nested:nested-callback\nnull:nested-return:nested-alias|null:nested-return:nested-alias"
     );
     assert_eq!(execution.exit_code, 0);
 }

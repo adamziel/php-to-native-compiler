@@ -149,13 +149,15 @@
   properties and private/protected properties reached from a valid method
   visibility context, such as `array(&$this->privateItems["slot"], ...)`.
   Literal callback argument arrays also accept direct `ArrayAccess` reference
-  elements such as `array(&$bag[$key], ...)` when the direct object variable
+  elements such as `array(&$bag[$key], ...)` and nested direct elements such
+  as `array(&$bag["outer"]["slot"], ...)` when the direct object variable
   implements `ArrayAccess`, public `offsetGet($offset)` returns by reference,
   and its body is exactly the current bounded root shape
-  `return $this->property[$offset];`. The selected property array slot is
-  materialized when missing and writes back through the same alias metadata as
-  direct object-property array slots, including private/protected backing
-  properties reached through the declaring `offsetGet()` context.
+  `return $this->property[$offset];`. The selected property array slot or
+  nested child slot is materialized when missing and writes back through the
+  same alias metadata as direct object-property array slots, including
+  private/protected backing properties reached through the declaring
+  `offsetGet()` context.
   If a direct variable element is already routed
   through the covered direct array-offset alias metadata, such as
   `$payload =& $_REQUEST["payload"]; call_user_func_array($callback,
@@ -225,7 +227,7 @@
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
-  reference named-argument path, dynamic, append, or property-held
+  reference named-argument path, dynamic, append, property-held, or stored-array
   `ArrayAccess` bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
@@ -374,18 +376,21 @@
   reference targets, full reference containers, copy-on-write, exact alias
   destruction ordering, exact magic-property notices, and native lowering
   remain unsupported. Direct `ArrayAccess` reference sources
-  such as `$alias =& $bag[$key];` execute for direct object variables whose
+  such as `$alias =& $bag[$key];` and nested direct sources such as
+  `$alias =& $bag["outer"]["slot"];` execute for direct object variables whose
   class implements `ArrayAccess` when public `offsetGet($offset)` returns by
   reference and its body is exactly `return $this->property[$offset];` in the
   current subset. The bridge binds the alias to the backing property array
-  slot, materializes missing slots as `null`, and supports public plus
-  private/protected backing properties through the declaring method context.
+  slot or nested child slot, materializes missing slots as `null`, and supports
+  public plus private/protected backing properties through the declaring
+  method context.
   Normal reads through that same bounded reference-returning `offsetGet()`
   return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
   with side effects or broader return expressions, property-held sources such
-  as `$holder->bag[$key]`, append `ArrayAccess` sources, nested
-  `ArrayAccess` chains, and real runtime reference containers remain
-  unsupported. Direct
+  as `$holder->bag[$key]`, append `ArrayAccess` sources, stored callback
+  argument arrays whose slots were assigned from `ArrayAccess` references,
+  mixed nested `ArrayAccess` chains, and real runtime reference containers
+  remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
@@ -1960,9 +1965,16 @@
   `SELECT option_name, option_value FROM <prefix>options`, plus the reached
   empty option-cache reads using `WHERE option_name IN (...)` and
   `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
-  plus reached empty WordPress metadata probes `SHOW FULL COLUMNS FROM ...`
-  and `DESCRIBE ...`, returning deterministic empty `mysqli_result`
-  placeholders with zero rows and zero fields without executing SQL. For an
+  plus reached generic empty WordPress metadata probes for non-state-island
+  tables, returning deterministic empty `mysqli_result` placeholders with zero
+  rows and zero fields without executing SQL. For the current deterministic
+  option table, exact `SHOW TABLES LIKE 'wp_options'`, `DESCRIBE`/`DESC
+  wp_options`, and `SHOW [FULL] COLUMNS FROM wp_options` probes return fixed
+  result rows for `option_id`, `option_name`, `option_value`, and `autoload`,
+  including the primary/unique key markers, `autoload` default, and placeholder
+  utf8mb4 collation metadata. This does not add mutable schema, CREATE/ALTER
+  TABLE execution, dbDelta comparison, indexes beyond those fixed markers, or
+  host database inspection. For an
   exact current synthetic WordPress option write,
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records a deterministic `option_id`, the string option
@@ -2732,13 +2744,14 @@
   that status from the three-digit code, and `Location:` defaults the status to
   `302` unless the current status is `201` or already in the `3xx` range. A
   zero `$response_code` is treated as no explicit status argument. Once
-  bytes have reached unbuffered stdout, later `header()` calls are ignored
-  without modeling PHP's warning text. This is a WordPress bootstrap/request
-  compatibility boundary only; `Status:` pseudo-header parsing, special status
-  header replacement, reason-phrase handling, whitespace normalization,
-  web-server/SAPI integration, network response emission, exact diagnostics,
-  warning recovery, partial-output behavior, and native lowering remain
-  unsupported.
+  bytes have reached unbuffered stdout, later `header()` calls leave the
+  header log unchanged, emit a bounded `E_WARNING` through the current
+  `set_error_handler()` stack or stderr fallback, and return `null`. This is
+  a WordPress bootstrap/request compatibility boundary only; `Status:`
+  pseudo-header parsing, special status header replacement, reason-phrase
+  handling, whitespace normalization, web-server/SAPI integration, network
+  response emission, exact warning text, partial-output behavior, and native
+  lowering remain unsupported.
   `http_response_code($code = null)` accepts no argument or one integer
   argument. With no argument it returns the current request-local status code,
   or `false` when no status code has been set. With an integer argument it
@@ -2759,18 +2772,20 @@
   it when no argument is provided, and removes entries whose raw header line
   has the same ASCII-case-insensitive field name before the first colon while
   output is still open. After unbuffered output has started, it leaves the log
-  unchanged without modeling PHP's warning text. Whitespace normalization,
-  response-status reset, status-header removal, SAPI/web-server behavior, exact
-  diagnostics, warning recovery, partial-output behavior, and native lowering
-  remain unsupported.
+  unchanged, emits a bounded `E_WARNING` through the current
+  `set_error_handler()` stack or stderr fallback, and returns `null`.
+  Whitespace normalization, response-status reset, status-header removal,
+  SAPI/web-server behavior, exact warning text, partial-output behavior, and
+  native lowering remain unsupported.
   `setcookie($name, $value = "")` accepts a string name and optional string
   value, appends `Set-Cookie: name=value` to the same deterministic CLI header
   log used by `header()`/`headers_list()` while output is still open, and
-  returns `true`. Once unbuffered output has started, it returns `false` and
-  does not append a cookie header. Expiration, path, domain, secure, HttpOnly,
-  SameSite, options arrays, deletion cookies, cookie-name/value encoding,
-  duplicate/replacement policy, SAPI/web-server emission, exact diagnostics,
-  warning recovery, and native lowering remain unsupported.
+  returns `true`. Once unbuffered output has started, it returns `false`,
+  does not append a cookie header, and emits a bounded `E_WARNING` through the
+  current `set_error_handler()` stack or stderr fallback. Expiration, path,
+  domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
+  cookie-name/value encoding, duplicate/replacement policy, SAPI/web-server
+  emission, exact warning text, and native lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
@@ -5660,9 +5675,22 @@
   `ReflectionNamedType` is rejected; these objects are only materialized by the
   supported `ReflectionParameter::getType()` path. Compound union/intersection
   type objects remain unsupported.
+  `new ReflectionProperty($object_or_class, $property)` creates a bounded
+  metadata object for properties declared on current user classes, including
+  inherited public and protected properties. `ReflectionClass::hasProperty()`,
+  `getProperty()`, and zero-argument `getProperties()` use that same class
+  metadata slice and exclude inherited private properties when reflecting a
+  child class. `ReflectionProperty` supports `getName()`,
+  `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
+  `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
+  `hasType()`, and `getType()` for the current untyped property subset;
+  `getType()` returns `null` and `hasType()` returns `false` because typed
+  properties still stop at the existing parser boundary.
   The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
+  The current `ReflectionProperty::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`,
+  and `IS_STATIC` constants are available.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7271,20 +7299,25 @@
 - `ReflectionClass` currently supports only bounded metadata objects over
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
-  `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
-  `hasMethod($name)`. `ReflectionMethod` currently supports only bounded
+  `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
+  `hasMethod($name)`, `hasProperty($name)`, `getProperty($name)`, and
+  zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   modifier, predicate, and parameter-list methods documented above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, scalar/array default expressions accepted by the parser,
   by-reference and variadic flags, and type-presence checks without materialized
-  compound `ReflectionType` objects. `ReflectionProperty`, attributes,
-  file/line/doc-comment metadata, extension/internal method or parameter
-  metadata, parameter attributes, `ReflectionUnionType`/
+  compound `ReflectionType` objects. `ReflectionProperty` currently supports
+  only declared user-class property metadata for the methods documented above;
+  typed properties are unavailable because property type declarations remain a
+  parser boundary. Attributes, file/line/doc-comment metadata,
+  extension/internal method/property/parameter metadata, parameter and property
+  attributes, `ReflectionUnionType`/
   `ReflectionIntersectionType`, default constant-name introspection, function/closure
-  `ReflectionParameter` targets, method invocation through reflection, exact
-  `ReflectionException` behavior, namespace/import alias expansion beyond
-  parsed class-like names, and native lowering remain unsupported.
+  `ReflectionParameter` targets, reflection invocation/value mutation,
+  `ReflectionClass::getProperties()` filter masks, exact `ReflectionException`
+  behavior, namespace/import alias expansion beyond parsed class-like names,
+  and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,
@@ -7567,9 +7600,10 @@
   state with bounded ASCII-case-insensitive replacement when `$replace` is true,
   updating request-local status from explicit non-zero response codes,
   `HTTP/... NNN` status lines, and bounded `Location:` default status behavior,
-  and returning `null`: `Status:` pseudo-header parsing, reason-phrase
+  returning `null`, and routing bounded post-output `E_WARNING` events through
+  the current error-handler stack or stderr fallback: `Status:` pseudo-header parsing, reason-phrase
   handling, special status header replacement, whitespace normalization,
-  output-sent warnings, SAPI/web-server integration, network response emission,
+  exact warning text, SAPI/web-server integration, network response emission,
   exact `ValueError`/`TypeError` diagnostics, partial-output behavior, and
   native lowering beyond function-table introspection
 - `http_response_code()` behavior beyond no-argument reads and integer writes
@@ -7586,19 +7620,19 @@
   introspection
 - `header_remove()` behavior beyond clearing the current deterministic CLI
   header log with no arguments or removing raw colon-delimited entries whose
-  field name ASCII-case-insensitively matches one string argument: whitespace
-  normalization, response-status reset, status-header removal,
-  output-sent warnings, SAPI/web-server behavior, exact diagnostics,
-  partial-output behavior, and native lowering beyond function-table
-  introspection
+  field name ASCII-case-insensitively matches one string argument, plus bounded
+  post-output `E_WARNING` routing through the current error-handler stack or
+  stderr fallback: whitespace normalization, response-status reset,
+  status-header removal, SAPI/web-server behavior, exact warning text,
+  partial-output behavior, and native lowering beyond function-table introspection
 - `setcookie()` behavior beyond accepting a string name and optional string
   value, appending a simple `Set-Cookie: name=value` line to deterministic CLI
   request state before output starts, returning `false` after unbuffered output
-  starts, and returning `true` for accepted pre-output cookies: expiration,
-  path, domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
-  cookie-name/value encoding, duplicate/replacement policy, SAPI/web-server
-  emission, exact diagnostics, warning recovery, and native lowering beyond
-  function-table introspection
+  starts with a bounded `E_WARNING`, and returning `true` for accepted
+  pre-output cookies: expiration, path, domain, secure, HttpOnly, SameSite,
+  options arrays, deletion cookies, cookie-name/value encoding,
+  duplicate/replacement policy, SAPI/web-server emission, exact warning text,
+  and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct-variable filename/line output-argument slice: non-variable output
   arguments, array/object-property output targets, exact warning text, SAPI

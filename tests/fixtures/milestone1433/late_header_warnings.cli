@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+body|warn:2:cannot:started:late_header_warnings.php:12|warn:2:cannot:started:late_header_warnings.php:13|warn:2:cannot:started:late_header_warnings.php:14|returns:null:cookie-false:remove-null
+stderr:

@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 13);
+    assert_eq!(classes.classes().len(), 14);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -50,6 +50,7 @@ echo "ready\n";
     assert_eq!(classes.classes()[9].name(), "ReflectionParameter");
     assert_eq!(classes.classes()[10].name(), "ReflectionType");
     assert_eq!(classes.classes()[11].name(), "ReflectionNamedType");
+    assert_eq!(classes.classes()[12].name(), "ReflectionProperty");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4338,7 +4339,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => Box\n    [13] => Profile\n)\n14|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionProperty\n    [13] => Box\n    [14] => Profile\n)\n15|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4359,7 +4360,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => App\\Mode\n    [13] => App\\Status\n)\n14\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionProperty\n    [13] => App\\Mode\n    [14] => App\\Status\n)\n15\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4787,6 +4788,63 @@ line("direct", new ReflectionParameter(array(new Plugin(), "boot"), "count"), ""
     assert_eq!(
         execution.stdout,
         "hook|ReflectionNamedType|string|0011\ncount|ReflectionNamedType|int|1111\nplugin|ReflectionNamedType|Plugin|1101\nitems|ReflectionNamedType|array|1111\nraw|null|1\ndirect|ReflectionNamedType|int|1111"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_property_reports_bounded_class_property_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $id = "base";
+    protected static $cache = "warm";
+    private $secret = "hidden";
+}
+
+class Plugin extends Base {
+    public $name = "hook";
+    protected $items = array("a" => 1);
+    private static $flag = true;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function default_label($value) {
+    if (is_array($value)) {
+        return "array:" . count($value);
+    }
+    if (is_bool($value)) {
+        return yn($value);
+    }
+    if ($value === null) {
+        return "null";
+    }
+    return $value;
+}
+
+function line($label, $property, $ending = "\n") {
+    echo $label, "|", get_class($property), "|", $property->getName(), "|", $property->getDeclaringClass()->getName(), "|", $property->getModifiers(), "|", yn($property->isPublic()), yn($property->isProtected()), yn($property->isPrivate()), yn($property->isStatic()), "|", yn($property->hasDefaultValue()), "|", default_label($property->getDefaultValue()), "|", yn($property->hasType()), yn($property->getType() === null), $ending;
+}
+
+$rc = new ReflectionClass(Plugin::class);
+echo "constants|", ReflectionProperty::IS_PUBLIC, "|", ReflectionProperty::IS_PROTECTED, "|", ReflectionProperty::IS_PRIVATE, "|", ReflectionProperty::IS_STATIC, "\n";
+echo "has|", yn($rc->hasProperty("items")), yn($rc->hasProperty("secret")), "\n";
+line("direct", new ReflectionProperty(Plugin::class, "name"));
+line("object", new ReflectionProperty(new Plugin(), "cache"));
+line("get", $rc->getProperty("flag"));
+foreach ($rc->getProperties() as $property) {
+    line("list", $property);
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "constants|1|2|4|16\nhas|10\ndirect|ReflectionProperty|name|Plugin|1|1000|1|hook|01\nobject|ReflectionProperty|cache|Base|18|0101|1|warm|01\nget|ReflectionProperty|flag|Plugin|20|0011|1|1|01\nlist|ReflectionProperty|name|Plugin|1|1000|1|hook|01\nlist|ReflectionProperty|items|Plugin|2|0100|1|array:1|01\nlist|ReflectionProperty|flag|Plugin|20|0011|1|1|01\nlist|ReflectionProperty|id|Base|1|1000|1|base|01\nlist|ReflectionProperty|cache|Base|18|0101|1|warm|01\n"
     );
     assert_eq!(execution.exit_code, 0);
 }

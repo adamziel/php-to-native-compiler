@@ -5019,6 +5019,43 @@ echo $first["option_name"], "=", $first["option_value"], ";", $second["option_na
 }
 
 #[test]
+fn mysqli_query_exposes_current_wordpress_options_schema_probe_rows() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$tables = mysqli_query($handle, "SHOW TABLES LIKE 'wp_options'");
+$table = mysqli_fetch_row($tables);
+echo mysqli_num_rows($tables);
+echo ":";
+echo $table[0];
+echo "|";
+$describe = mysqli_query($handle, "DESCRIBE wp_options;");
+echo mysqli_num_fields($describe);
+echo ":";
+$first = mysqli_fetch_assoc($describe);
+echo $first["Field"], ":", $first["Type"], ":", $first["Key"], ":", $first["Extra"];
+echo "|";
+$columns = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_options`");
+echo mysqli_num_rows($columns);
+echo ":";
+while ($column = mysqli_fetch_assoc($columns)) {
+    if ($column["Field"] === "autoload") {
+        echo $column["Type"], ":", $column["Default"], ":", $column["Collation"];
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1:wp_options|6:option_id:bigint(20) unsigned:PRI:auto_increment|4:varchar(20):yes:utf8mb4_unicode_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

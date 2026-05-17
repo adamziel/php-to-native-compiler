@@ -1,0 +1,1 @@
+table=1:wp_options|describe=6:option_id:bigint(20) unsigned:PRI:auto_increment,option_name:varchar(191):UNI:,option_value:longtext::,autoload:varchar(20)::|autoload=varchar(20):yes:utf8mb4_unicode_ci

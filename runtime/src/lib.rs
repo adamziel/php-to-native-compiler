@@ -2050,6 +2050,9 @@ impl PhpClassTable {
             "getParentClass",
             "getInterfaceNames",
             "hasMethod",
+            "hasProperty",
+            "getProperty",
+            "getProperties",
         ] {
             reflection_class
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -2142,6 +2145,35 @@ impl PhpClassTable {
             reflection_named_type
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionNamedType core metadata should not duplicate methods");
+        }
+        let reflection_property_id = classes.declare_class("ReflectionProperty").expect(
+            "core class table should contain ReflectionNamedType before ReflectionProperty",
+        );
+        let reflection_property = classes
+            .get_mut(reflection_property_id)
+            .expect("declared ReflectionProperty class id should resolve");
+        for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_STATIC"] {
+            reflection_property
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ReflectionProperty core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "getName",
+            "getDeclaringClass",
+            "getModifiers",
+            "isPublic",
+            "isProtected",
+            "isPrivate",
+            "isStatic",
+            "hasDefaultValue",
+            "getDefaultValue",
+            "hasType",
+            "getType",
+        ] {
+            reflection_property
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionProperty core metadata should not duplicate methods");
         }
         classes
     }
@@ -7829,6 +7861,14 @@ mod tests {
         assert!(reflection_named_type.properties().is_empty());
         assert!(reflection_named_type.method("getName").is_some());
         assert!(reflection_named_type.method("isBuiltin").is_some());
+
+        let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
+        assert_eq!(reflection_property.name(), "ReflectionProperty");
+        assert_eq!(reflection_property.id().index(), 12);
+        assert!(reflection_property.parent_id().is_none());
+        assert!(reflection_property.properties().is_empty());
+        assert!(reflection_property.constant("IS_PUBLIC").is_some());
+        assert!(reflection_property.method("getDefaultValue").is_some());
     }
 
     #[test]

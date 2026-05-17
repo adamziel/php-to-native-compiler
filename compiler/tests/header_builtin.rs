@@ -332,6 +332,42 @@ echo "|" . count($headers) . "|" . $headers[0] . "|" . ($cookie ? "cookie-true" 
 }
 
 #[test]
+fn late_header_mutations_emit_recoverable_warnings_through_error_handler() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function late_header_warning($errno, $errstr, $errfile, $errline) {
+    echo "|warn:" . $errno;
+    echo ":" . (str_contains($errstr, "Cannot modify header information") ? "cannot" : "other");
+    echo ":" . (str_contains($errstr, "output started at") ? "started" : "missing");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}
+header("X-Before: one");
+set_error_handler("late_header_warning", E_WARNING);
+echo "body";
+$header_result = header("X-Late: two");
+$cookie_result = setcookie("late_cookie", "1");
+$remove_result = header_remove("X-Before");
+$headers = headers_list();
+echo "|returns:" . ($header_result === null ? "null" : "other");
+echo ":" . ($cookie_result ? "cookie-true" : "cookie-false");
+echo ":" . ($remove_result === null ? "remove-null" : "remove-other");
+echo "|headers:" . count($headers) . ":" . $headers[0];
+restore_error_handler();
+"#,
+        "tests/fixtures/milestone1433/late_header_warnings.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "body|warn:2:cannot:started:late_header_warnings.php:12|warn:2:cannot:started:late_header_warnings.php:13|warn:2:cannot:started:late_header_warnings.php:14|returns:null:cookie-false:remove-null|headers:1:X-Before: one"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn headers_list_rejects_forms_outside_current_subset() {
     let too_many = runtime_error(
         r#"<?php

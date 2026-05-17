@@ -2067,14 +2067,14 @@ unchecked work. Current state:
   `$holder->bag[$key] =& $value;` now report a specific structured fatal
   boundary matching PHP's prohibition on assigning by reference to object array
   dimensions.
-- Milestone 1040 is the active checkpoint candidate: bounded `Countable` object
-  protocol support now lets `is_countable($object)` recognize object values
-  whose class metadata records `implements Countable`, and lets
-  `count($object)` dispatch a visible non-static `count()` method that returns
-  an integer. Full interface signature enforcement, magic `__call` fallback,
-  `Traversable`/iterator protocols, inaccessible/static count methods,
-  non-integer count-result coercion, references/copy-on-write, exact
-  diagnostics, and native lowering remain open.
+- Milestones 1431 through 1435 are the active checkpoint candidate:
+  bounded `ReflectionProperty` metadata, nested direct `ArrayAccess`
+  reference roots, post-output header warnings, deterministic `wp_options`
+  schema probes, and the queue/documentation refresh are implemented and
+  verified. Typed properties, property attributes, broad reflection metadata,
+  real reference containers, broader copy-on-write, exact SAPI/session/upload
+  behavior, real database/schema execution, arbitrary SQL, and native lowering
+  remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

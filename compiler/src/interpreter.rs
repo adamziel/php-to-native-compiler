@@ -130,6 +130,7 @@ struct Interpreter {
     reflection_classes: HashMap<i64, ReflectionClassState>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
+    reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
@@ -285,6 +286,15 @@ struct ReflectionParameterState {
     declaring_method: ReflectionMethodState,
     parameter: ReflectionParameterMetadata,
     position: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionPropertyState {
+    declaring_class_name: String,
+    declaring_class_id: ClassId,
+    name: String,
+    visibility: Visibility,
+    is_static: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3005,6 +3015,7 @@ impl Interpreter {
             reflection_classes: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
+            reflection_properties: HashMap::new(),
             reflection_named_types: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
@@ -4080,6 +4091,15 @@ impl Interpreter {
         let line = span.map(|span| span.line).unwrap_or(0);
         let file = self.source_file.clone().unwrap_or_default();
         self.output_start = Some(OutputStart { file, line });
+    }
+
+    fn header_output_started_warning(&self) -> Option<String> {
+        self.output_start.as_ref().map(|start| {
+            format!(
+                "Cannot modify header information - headers already sent by (output started at {}:{})",
+                start.file, start.line
+            )
+        })
     }
 
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
@@ -5694,6 +5714,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionParameter") {
             return self.instantiate_reflection_parameter(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionProperty") {
+            return self.instantiate_reflection_property(args, span, scope);
+        }
         if declared_class_name.eq_ignore_ascii_case("ReflectionType")
             || declared_class_name.eq_ignore_ascii_case("ReflectionNamedType")
         {
@@ -5701,7 +5724,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     declared_class_name,
-                    "reflection type objects are only materialized by ReflectionParameter::getType() in the current subset",
+                    "reflection type objects are only materialized by supported reflection getType() paths in the current subset",
                 ),
             ));
         }
@@ -6205,7 +6228,7 @@ impl Interpreter {
                     if let Some((alias, _)) = self
                         .evaluate_direct_array_access_reference_source_alias(
                             array_name,
-                            key.clone(),
+                            vec![key.clone()],
                             span,
                             scope,
                         )?
@@ -6225,6 +6248,17 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if let Some((alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            array_name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_existing_nested_array_offset(
                         name, array_name, keys, span,
@@ -7056,10 +7090,13 @@ impl Interpreter {
     fn evaluate_direct_array_access_reference_source_alias(
         &mut self,
         object_name: &str,
-        key: ArrayKey,
+        keys: Vec<ArrayKey>,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
         let Some(Value::Object(object)) = scope.read_named(object_name) else {
             return Ok(None);
         };
@@ -7133,10 +7170,7 @@ impl Interpreter {
                 protected_class_ids,
             }
         };
-        let alias = ArrayOffsetAlias {
-            root,
-            keys: vec![key],
-        };
+        let alias = ArrayOffsetAlias { root, keys };
         scope.materialize_array_offset_alias(&alias, span)?;
         let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
             runtime_error(
@@ -9866,6 +9900,104 @@ impl Interpreter {
             .get(class_id)
             .expect("core ReflectionParameter class id should resolve");
         self.reflection_parameters.insert(object_id, state);
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
+    fn instantiate_reflection_property(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionProperty::__construct()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let target = self.evaluate(&args[0], scope)?;
+        let property = self.evaluate(&args[1], scope)?;
+        let Value::String(property_name) = property else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionProperty",
+                    format!(
+                        "property argument must be string in the current subset, got {}",
+                        property.type_name()
+                    ),
+                ),
+            ));
+        };
+        let class = self.resolve_reflection_class_target(&target, span)?;
+        let state = self.resolve_reflection_property_target(&class, &property_name, span)?;
+        self.create_reflection_property_object(state, span)
+    }
+
+    fn resolve_reflection_property_target(
+        &self,
+        class: &ReflectionClassState,
+        property_name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionPropertyState> {
+        let ReflectionClassKind::Class = class.kind else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionProperty",
+                    format!("target {} must name a declared class", class.name),
+                ),
+            ));
+        };
+        let Some(class_id) = class.class_id else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    "ReflectionProperty",
+                    format!("target {} must name a declared class", class.name),
+                ),
+            ));
+        };
+
+        self.resolve_class_property_metadata(class_id, property_name)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "ReflectionProperty",
+                        format!("property {property_name} is not declared on {}", class.name),
+                    ),
+                )
+            })
+    }
+
+    fn create_reflection_property_object(
+        &mut self,
+        state: ReflectionPropertyState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionProperty")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionProperty core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionProperty class id should resolve");
+        self.reflection_properties.insert(object_id, state);
         Ok(Value::Object(PhpObject::from_class_with_id(
             class, object_id,
         )))
@@ -13552,6 +13684,11 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
+        if let Some(result) = wordpress_options_schema_result_for_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            return self.create_mysqli_result_placeholder(span, result.fields, result.rows);
+        }
+
         if is_wordpress_empty_result_query(query) || is_wordpress_empty_options_query(query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
@@ -15061,6 +15198,12 @@ impl Interpreter {
         }
         if object
             .class_name()
+            .eq_ignore_ascii_case("ReflectionProperty")
+        {
+            return self.call_reflection_property_method(object, method_name, args, span);
+        }
+        if object
+            .class_name()
             .eq_ignore_ascii_case("ReflectionNamedType")
         {
             return self.call_reflection_named_type_method(object, method_name, args, span);
@@ -15261,6 +15404,63 @@ impl Interpreter {
                     self.reflection_class_has_method(&state, &method),
                 ))
             }
+            "hasproperty" => {
+                expect_expr_arity("ReflectionClass::hasProperty", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(property) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::hasProperty",
+                            format!(
+                                "property argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::Bool(
+                    state.kind == ReflectionClassKind::Class
+                        && state.class_id.is_some_and(|class_id| {
+                            self.resolve_class_property_metadata(class_id, &property)
+                                .is_some()
+                        }),
+                ))
+            }
+            "getproperty" => {
+                expect_expr_arity("ReflectionClass::getProperty", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(property) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionClass::getProperty",
+                            format!(
+                                "property argument must be string in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let property = self.resolve_reflection_property_target(&state, &property, span)?;
+                self.create_reflection_property_object(property, span)
+            }
+            "getproperties" => {
+                expect_expr_arity("ReflectionClass::getProperties", args.len(), 0, span)?;
+                let mut properties = PhpArray::new();
+                if state.kind == ReflectionClassKind::Class {
+                    if let Some(class_id) = state.class_id {
+                        for property in self.reflection_class_properties(class_id) {
+                            let property =
+                                self.create_reflection_property_object(property, span)?;
+                            properties
+                                .append(property)
+                                .map_err(|error| runtime_error(span, error))?;
+                        }
+                    }
+                }
+                Ok(Value::Array(properties))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionClass::{method_name}()")),
@@ -15292,6 +15492,58 @@ impl Interpreter {
                         .any(|method| method.function.name.eq_ignore_ascii_case(method_name))
                 }),
         }
+    }
+
+    fn resolve_class_property_metadata(
+        &self,
+        class_id: ClassId,
+        property_name: &str,
+    ) -> Option<ReflectionPropertyState> {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(property) = class.property(property_name) {
+                if current_id == class_id || property.visibility() != Visibility::Private {
+                    return Some(ReflectionPropertyState {
+                        declaring_class_name: class.name().to_string(),
+                        declaring_class_id: class.id(),
+                        name: property.name().to_string(),
+                        visibility: property.visibility(),
+                        is_static: property.is_static(),
+                    });
+                }
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+
+    fn reflection_class_properties(&self, class_id: ClassId) -> Vec<ReflectionPropertyState> {
+        let mut properties = Vec::new();
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            for property in class.properties() {
+                if current_id != class_id && property.visibility() == Visibility::Private {
+                    continue;
+                }
+                properties.push(ReflectionPropertyState {
+                    declaring_class_name: class.name().to_string(),
+                    declaring_class_id: class.id(),
+                    name: property.name().to_string(),
+                    visibility: property.visibility(),
+                    is_static: property.is_static(),
+                });
+            }
+            current = class.parent_id();
+        }
+        properties
     }
 
     fn call_reflection_method_method(
@@ -15562,6 +15814,107 @@ impl Interpreter {
                 span,
                 RuntimeError::undefined_function(format!("ReflectionParameter::{method_name}()")),
             )),
+        }
+    }
+
+    fn call_reflection_property_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_properties
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionProperty::{method_name}()"),
+                        "missing ReflectionProperty runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionProperty::__construct()",
+                    "reinitializing ReflectionProperty objects is not implemented",
+                ),
+            )),
+            "getname" => {
+                expect_expr_arity("ReflectionProperty::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.name))
+            }
+            "getdeclaringclass" => {
+                expect_expr_arity("ReflectionProperty::getDeclaringClass", args.len(), 0, span)?;
+                self.create_reflection_class_object(
+                    ReflectionClassState {
+                        name: state.declaring_class_name,
+                        kind: ReflectionClassKind::Class,
+                        class_id: Some(state.declaring_class_id),
+                    },
+                    span,
+                )
+            }
+            "getmodifiers" => {
+                expect_expr_arity("ReflectionProperty::getModifiers", args.len(), 0, span)?;
+                Ok(Value::Int(reflection_property_modifier_mask(&state)))
+            }
+            "ispublic" => {
+                expect_expr_arity("ReflectionProperty::isPublic", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Public))
+            }
+            "isprotected" => {
+                expect_expr_arity("ReflectionProperty::isProtected", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Protected))
+            }
+            "isprivate" => {
+                expect_expr_arity("ReflectionProperty::isPrivate", args.len(), 0, span)?;
+                Ok(Value::Bool(state.visibility == Visibility::Private))
+            }
+            "isstatic" => {
+                expect_expr_arity("ReflectionProperty::isStatic", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_static))
+            }
+            "hasdefaultvalue" => {
+                expect_expr_arity("ReflectionProperty::hasDefaultValue", args.len(), 0, span)?;
+                Ok(Value::Bool(true))
+            }
+            "getdefaultvalue" => {
+                expect_expr_arity("ReflectionProperty::getDefaultValue", args.len(), 0, span)?;
+                Ok(self.reflection_property_default_value(&state))
+            }
+            "hastype" => {
+                expect_expr_arity("ReflectionProperty::hasType", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "gettype" => {
+                expect_expr_arity("ReflectionProperty::getType", args.len(), 0, span)?;
+                Ok(Value::Null)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionProperty::{method_name}()")),
+            )),
+        }
+    }
+
+    fn reflection_property_default_value(&self, state: &ReflectionPropertyState) -> Value {
+        if state.is_static {
+            self.static_properties
+                .get(&(state.declaring_class_id, state.name.clone()))
+                .cloned()
+                .unwrap_or(Value::Null)
+        } else {
+            self.instance_property_defaults
+                .get(&(state.declaring_class_id, state.name.clone()))
+                .cloned()
+                .unwrap_or(Value::Null)
         }
     }
 
@@ -22502,15 +22855,13 @@ impl Interpreter {
             .map(|index| self.evaluate_array_key(index, caller_scope))
             .collect::<CompileResult<Vec<_>>>()?;
 
-        if keys.len() == 1 {
-            if let Some((alias, value)) = self.evaluate_direct_array_access_reference_source_alias(
-                name,
-                keys[0].clone(),
-                arg.span(),
-                caller_scope,
-            )? {
-                return Ok(Some((alias, value)));
-            }
+        if let Some((alias, value)) = self.evaluate_direct_array_access_reference_source_alias(
+            name,
+            keys.clone(),
+            arg.span(),
+            caller_scope,
+        )? {
+            return Ok(Some((alias, value)));
         }
 
         let alias = if name == "GLOBALS" {
@@ -24484,19 +24835,22 @@ impl Interpreter {
             _ => None,
         };
 
-        if self.output_start.is_none() {
-            if replace {
-                if let Some(name) = header_name(&header) {
-                    self.response_headers.retain(|existing| {
-                        header_name(existing)
-                            .map(|existing_name| !header_names_equal(existing_name, name))
-                            .unwrap_or(true)
-                    });
-                }
-            }
-            self.update_response_status_from_header(&header, explicit_response_code);
-            self.response_headers.push(header);
+        if let Some(message) = self.header_output_started_warning() {
+            self.emit_warning("header()", message, span)?;
+            return Ok(Value::Null);
         }
+
+        if replace {
+            if let Some(name) = header_name(&header) {
+                self.response_headers.retain(|existing| {
+                    header_name(existing)
+                        .map(|existing_name| !header_names_equal(existing_name, name))
+                        .unwrap_or(true)
+                });
+            }
+        }
+        self.update_response_status_from_header(&header, explicit_response_code);
+        self.response_headers.push(header);
         Ok(Value::Null)
     }
 
@@ -24584,7 +24938,8 @@ impl Interpreter {
             ));
         }
 
-        if self.output_start.is_some() {
+        if let Some(message) = self.header_output_started_warning() {
+            self.emit_warning("header_remove()", message, span)?;
             return Ok(Value::Null);
         }
 
@@ -24659,7 +25014,8 @@ impl Interpreter {
             None => "",
         };
 
-        if self.output_start.is_some() {
+        if let Some(message) = self.header_output_started_warning() {
+            self.emit_warning("setcookie()", message, span)?;
             return Ok(Value::Bool(false));
         }
 
@@ -30536,6 +30892,26 @@ fn seed_core_class_constant_runtime_tables(
             },
         );
     }
+    let Some(reflection_property_id) = classes.lookup_class_id("ReflectionProperty") else {
+        return;
+    };
+    for (name, value) in [
+        ("IS_PUBLIC", 1),
+        ("IS_PROTECTED", 2),
+        ("IS_PRIVATE", 4),
+        ("IS_STATIC", 16),
+    ] {
+        let span = Span::new(1, 1);
+        class_constants.insert(
+            (reflection_property_id, name.to_string()),
+            ClassConstantDecl {
+                name: name.to_string(),
+                visibility: ClassVisibility::Public,
+                value: Expr::Int(value, span),
+                span,
+            },
+        );
+    }
 }
 
 fn remove_class_member_runtime_tables(
@@ -31655,6 +32031,18 @@ fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {
     }
     if method.is_abstract {
         mask |= 64;
+    }
+    mask
+}
+
+fn reflection_property_modifier_mask(property: &ReflectionPropertyState) -> i64 {
+    let mut mask = match property.visibility {
+        Visibility::Public => 1,
+        Visibility::Protected => 2,
+        Visibility::Private => 4,
+    };
+    if property.is_static {
+        mask |= 16;
     }
     mask
 }
@@ -33160,6 +33548,10 @@ fn mysqli_field_metadata_properties(name: &str) -> Vec<(String, Value)> {
 }
 
 fn mysqli_pending_result_for_query(query: &str) -> Option<MysqliPendingResultState> {
+    if let Some(result) = wordpress_options_schema_result_for_query(query) {
+        return Some(result);
+    }
+
     if is_wordpress_empty_result_query(query) || is_wordpress_empty_options_query(query) {
         return Some(MysqliPendingResultState {
             fields: Vec::new(),
@@ -33222,6 +33614,178 @@ struct WordPressTransientPairDeleteFilter {
     payload_prefix: String,
     timeout_prefix: String,
     threshold: i64,
+}
+
+fn wordpress_options_schema_result_for_query(query: &str) -> Option<MysqliPendingResultState> {
+    let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
+    if matches!(
+        query,
+        "DESCRIBE wp_options" | "DESCRIBE `wp_options`" | "DESC wp_options" | "DESC `wp_options`"
+    ) {
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Field".to_string(),
+                "Type".to_string(),
+                "Null".to_string(),
+                "Key".to_string(),
+                "Default".to_string(),
+                "Extra".to_string(),
+            ],
+            rows: wordpress_options_describe_rows(),
+        });
+    }
+
+    if matches!(
+        query,
+        "SHOW FULL COLUMNS FROM wp_options"
+            | "SHOW FULL COLUMNS FROM `wp_options`"
+            | "SHOW COLUMNS FROM wp_options"
+            | "SHOW COLUMNS FROM `wp_options`"
+    ) {
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Field".to_string(),
+                "Type".to_string(),
+                "Collation".to_string(),
+                "Null".to_string(),
+                "Key".to_string(),
+                "Default".to_string(),
+                "Extra".to_string(),
+                "Privileges".to_string(),
+                "Comment".to_string(),
+            ],
+            rows: wordpress_options_full_column_rows(),
+        });
+    }
+
+    let table_like = query
+        .strip_prefix("SHOW TABLES LIKE ")
+        .and_then(parse_sql_single_quoted_list)
+        .and_then(|values| {
+            if values.len() == 1 {
+                Some(values[0].clone())
+            } else {
+                None
+            }
+        })?;
+    if table_like == "wp_options" {
+        return Some(MysqliPendingResultState {
+            fields: vec!["Tables_in_wordpress (wp_options)".to_string()],
+            rows: vec![vec![(
+                "Tables_in_wordpress (wp_options)".to_string(),
+                Value::String("wp_options".to_string()),
+            )]],
+        });
+    }
+
+    None
+}
+
+fn wordpress_options_describe_rows() -> Vec<Vec<(String, Value)>> {
+    vec![
+        wordpress_options_describe_row(
+            "option_id",
+            "bigint(20) unsigned",
+            "NO",
+            "PRI",
+            Value::Null,
+            "auto_increment",
+        ),
+        wordpress_options_describe_row("option_name", "varchar(191)", "NO", "UNI", Value::Null, ""),
+        wordpress_options_describe_row("option_value", "longtext", "NO", "", Value::Null, ""),
+        wordpress_options_describe_row(
+            "autoload",
+            "varchar(20)",
+            "NO",
+            "",
+            Value::String("yes".to_string()),
+            "",
+        ),
+    ]
+}
+
+fn wordpress_options_describe_row(
+    field: &str,
+    ty: &str,
+    null: &str,
+    key: &str,
+    default: Value,
+    extra: &str,
+) -> Vec<(String, Value)> {
+    vec![
+        ("Field".to_string(), Value::String(field.to_string())),
+        ("Type".to_string(), Value::String(ty.to_string())),
+        ("Null".to_string(), Value::String(null.to_string())),
+        ("Key".to_string(), Value::String(key.to_string())),
+        ("Default".to_string(), default),
+        ("Extra".to_string(), Value::String(extra.to_string())),
+    ]
+}
+
+fn wordpress_options_full_column_rows() -> Vec<Vec<(String, Value)>> {
+    vec![
+        wordpress_options_full_column_row(
+            "option_id",
+            "bigint(20) unsigned",
+            Value::Null,
+            "NO",
+            "PRI",
+            Value::Null,
+            "auto_increment",
+        ),
+        wordpress_options_full_column_row(
+            "option_name",
+            "varchar(191)",
+            Value::String("utf8mb4_unicode_ci".to_string()),
+            "NO",
+            "UNI",
+            Value::Null,
+            "",
+        ),
+        wordpress_options_full_column_row(
+            "option_value",
+            "longtext",
+            Value::String("utf8mb4_unicode_ci".to_string()),
+            "NO",
+            "",
+            Value::Null,
+            "",
+        ),
+        wordpress_options_full_column_row(
+            "autoload",
+            "varchar(20)",
+            Value::String("utf8mb4_unicode_ci".to_string()),
+            "NO",
+            "",
+            Value::String("yes".to_string()),
+            "",
+        ),
+    ]
+}
+
+fn wordpress_options_full_column_row(
+    field: &str,
+    ty: &str,
+    collation: Value,
+    null: &str,
+    key: &str,
+    default: Value,
+    extra: &str,
+) -> Vec<(String, Value)> {
+    vec![
+        ("Field".to_string(), Value::String(field.to_string())),
+        ("Type".to_string(), Value::String(ty.to_string())),
+        ("Collation".to_string(), collation),
+        ("Null".to_string(), Value::String(null.to_string())),
+        ("Key".to_string(), Value::String(key.to_string())),
+        ("Default".to_string(), default),
+        ("Extra".to_string(), Value::String(extra.to_string())),
+        (
+            "Privileges".to_string(),
+            Value::String("select,insert,update,references".to_string()),
+        ),
+        ("Comment".to_string(), Value::String(String::new())),
+    ]
 }
 
 fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, String)> {

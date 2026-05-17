@@ -780,11 +780,17 @@ return `false`. This does not execute SQL, store rows, expose real field
 metadata, or model real result resources.
 
 The reached WordPress options-table and metadata read shapes also return
-deterministic empty `mysqli_result` placeholders through `mysqli_query()`:
+deterministic `mysqli_result` placeholders through `mysqli_query()`:
 autoload/all-options reads, option-name priming reads, single-option reads,
-`SHOW FULL COLUMNS ...`, and `DESCRIBE ...`. These placeholders report zero
-rows and zero fields. They do not read a host database, inspect schema
-metadata, hydrate option rows, or model warning/error fidelity.
+and generic empty metadata probes for non-state-island tables. Exact
+`SHOW TABLES LIKE 'wp_options'`, `DESCRIBE`/`DESC wp_options`, and
+`SHOW [FULL] COLUMNS FROM wp_options` probes return fixed rows for the current
+deterministic option-table schema: `option_id`, `option_name`, `option_value`,
+and `autoload`, including primary/unique key markers, the `autoload` default,
+and placeholder utf8mb4 collation metadata. They do not read a host database,
+execute CREATE/ALTER TABLE, model dbDelta diffs, mutate schema, inspect real
+indexes/collations beyond those fixed markers, or model warning/error
+fidelity.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

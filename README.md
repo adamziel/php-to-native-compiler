@@ -250,9 +250,11 @@ incorrect native code.
   scans and a bounded expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
   timeout-row delete shape, and exact WordPress-shaped transient payload plus
-  timeout pair delete shape;
-  this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
-  full `wpdb`, or native database support
+  timeout pair delete shape, plus deterministic `SHOW TABLES LIKE
+  'wp_options'`, `DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM
+  wp_options` schema probe rows for the current option table;
+  this is not real MySQL connectivity, arbitrary SQL, mutable schema,
+  persistent object cache, full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -383,14 +385,18 @@ incorrect native code.
   for current object values or declared string class names, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, and `hasMethod($name)`, bounded `ReflectionMethod`
+  `getInterfaceNames()`, `hasMethod($name)`, `hasProperty($name)`,
+  `getProperty($name)`, and zero-argument `getProperties()`, bounded
+  `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, and parameter-list inspection, bounded
   `ReflectionParameter` method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
   type-presence predicates plus simple named `ReflectionNamedType`
   metadata through `getType()`, `allowsNull()`, `getName()`, and
-  `isBuiltin()`, declared trait
+  `isBuiltin()`, bounded `ReflectionProperty` metadata for declared
+  user-class properties with declaring-class, visibility/static modifier,
+  default-value, and untyped type-predicate inspection, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -492,7 +498,7 @@ direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionMethod`/`ReflectionParameter`/
-`ReflectionNamedType` metadata table slices, and
+`ReflectionNamedType`/`ReflectionProperty` metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -571,11 +577,13 @@ visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
 object-property array arguments, property-held or dynamic ArrayAccess
-reference roots, broader aliasing, and full copy-on-write remain unsupported.
+reference roots, append or stored-array ArrayAccess reference roots, broader
+aliasing, and full copy-on-write remain unsupported.
 The current interpreter does include a narrow direct ArrayAccess reference
-root bridge for `$alias =& $bag[$key]` and literal callback elements such as
-`array(&$bag[$key])` when public by-reference `offsetGet($offset)` is exactly
-`return $this->property[$offset];`.
+root bridge for `$alias =& $bag[$key]`, nested direct sources such as
+`$alias =& $bag["outer"]["slot"]`, and literal callback elements such as
+`array(&$bag["outer"]["slot"])` when public by-reference
+`offsetGet($offset)` is exactly `return $this->property[$offset];`.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as
@@ -632,7 +640,9 @@ direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()` response header-state calls, including
 interpreter-only `headers_sent()` output-started tracking, direct-variable
 filename/line outputs, bounded ordinary header-name replacement in the
-request-local CLI header log, and bounded request-local status-code state,
+request-local CLI header log, bounded request-local status-code state, and
+bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
+and `setcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,
 direct `is_writable(...)` filesystem writability metadata calls,
 direct `is_link(...)` filesystem symlink metadata calls,

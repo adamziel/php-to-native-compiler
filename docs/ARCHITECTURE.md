@@ -137,13 +137,15 @@ variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
 symbol-table cell, so returned child-slot suffixes remain attached to the
 underlying request/global/array/property slot. Literal callback argument
-arrays can also bind a direct `ArrayAccess` object-variable element when
+arrays can also bind a direct `ArrayAccess` object-variable element, including
+nested direct offset elements, when
 public by-reference `offsetGet($offset)` has the exact bounded
 `return $this->property[$offset];` shape; the interpreter maps that to the
-backing property array alias root instead of creating a real reference
-container. It does not make callback argument arrays, non-public/dynamic
-object-property array bridges, property-held ArrayAccess roots, or stored
-array-offset metadata into general runtime reference containers. By-reference
+backing property array alias root plus any nested child-key suffix instead of
+creating a real reference container. It does not make callback argument arrays,
+non-public/dynamic object-property array bridges, property-held ArrayAccess
+roots, append ArrayAccess roots, or stored array-offset metadata into general
+runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -1675,9 +1677,12 @@ Before output starts, it also updates request-local status state from an
 explicit non-zero integer response-code argument, from bounded `HTTP/... NNN`
 status lines, and from PHP-compatible `Location:` defaulting to `302` unless
 the current status is `201` or already a redirect. A zero response-code
-argument is treated as no explicit status. `http_response_code()` reads or
-writes that request-local status state and preserves PHP's current
-previous-value return shape for the covered integer argument slice.
+argument is treated as no explicit status. After output starts, late
+`header()` calls leave the log/status unchanged and route a bounded
+`E_WARNING` through the current error-handler stack or stderr fallback.
+`http_response_code()` reads or writes that request-local status state and
+preserves PHP's current previous-value return shape for the covered integer
+argument slice.
 `headers_list()` returns that header log as an ordered array of strings. Native
 function-table introspection recognizes the names, while direct native calls
 reject through a header-state boundary until response storage, diagnostics,
@@ -1687,15 +1692,18 @@ runtime model.
 bounded subset: no arguments clear the log, and one string removes entries
 whose raw header line has the same ASCII-case-insensitive field name before
 the first colon. It leaves the log and response status unchanged after
-unbuffered output has started. It still does not model status-header removal,
-whitespace normalization, PHP's warning text, or full SAPI removal behavior.
+unbuffered output has started and routes a bounded `E_WARNING` through the
+current error-handler stack or stderr fallback. It still does not model
+status-header removal, whitespace normalization, exact PHP warning text, or
+full SAPI removal behavior.
 `setcookie()` is another interpreter-only header-state boundary. The current
 slice accepts a string cookie name plus an optional string value, appends a
 simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
 and returns `true` while output is open. After unbuffered output starts it
-returns `false` and leaves the header log unchanged; full cookie attributes,
-encoding, warning recovery, SAPI emission, and native lowering remain outside
-the model.
+returns `false`, leaves the header log unchanged, and routes a bounded
+`E_WARNING` through the current error-handler stack or stderr fallback; full
+cookie attributes, encoding, exact warning text, SAPI emission, and native
+lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
@@ -1783,12 +1791,18 @@ match the matching timeout prefix, and `b.option_name` is the supported
 `CONCAT( '<timeout_prefix>', SUBSTRING( a.option_name, <offset> ) )` timeout
 row whose decimal value is below the direct or prepared threshold. That slice
 deletes both reached payload and timeout rows and updates affected-row
-metadata. It does not model arbitrary multi-table deletes, subqueries,
-collation, locks, indexes, duplicate aliases, malformed `CONCAT`/`SUBSTRING`
-forms, exact MySQL affected-row or insert-ID edge cases, or WordPress cleanup
-against tables outside the deterministic `wp_options` state island;
-it is not a general SQL engine, schema model, host database connection, PDO
-layer, or native database runtime.
+metadata. It also exposes deterministic `SHOW TABLES LIKE 'wp_options'`,
+`DESCRIBE`/`DESC wp_options`, and `SHOW [FULL] COLUMNS FROM wp_options`
+result rows for the current four-column option-table schema so bounded
+install/update probes can inspect table existence, primary/unique key markers,
+and autoload default/collation metadata. It does not model arbitrary
+multi-table deletes, subqueries, mutable schema, dbDelta diffs, CREATE/ALTER
+TABLE execution, charset/collation negotiation, locks, indexes beyond those
+fixed markers, duplicate aliases, malformed `CONCAT`/`SUBSTRING` forms, exact
+MySQL affected-row or insert-ID edge cases, or WordPress cleanup against
+tables outside the deterministic `wp_options` state island; it is not a
+general SQL engine, schema model, host database connection, PDO layer, or
+native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
 registration path: it accepts closure expressions, string user-function
 callbacks, public `"ClassName::method"` static-method string callbacks,
@@ -2451,8 +2465,12 @@ tables, including the existing autoload callback path for string misses. The
 object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
-`hasMethod($name)` methods directly through the interpreter. This is metadata
-only.
+`hasMethod($name)` methods directly through the interpreter. The same
+request-local reflection path now covers declared user-class properties:
+`hasProperty($name)`, `getProperty($name)`, and zero-argument
+`getProperties()` resolve current class metadata, include inherited public and
+protected properties, and exclude inherited private properties when reflecting
+a child class. This is metadata only.
 `ReflectionMethod` uses the same core placeholder class plus request-local
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
@@ -2472,10 +2490,16 @@ stores that object's copied type name, nullable flag, and builtin flag in the
 interpreter. Untyped parameters return `null`; union and intersection types
 stay outside the materialized type-object slice until
 `ReflectionUnionType`/`ReflectionIntersectionType` exist. It does not expose
-`ReflectionProperty`, attributes,
-files, line numbers, doc comments, extension/internal metadata,
+attributes, files, line numbers, doc comments, extension/internal metadata,
 function or closure parameter targets, method invocation, exact exception
 objects, compound type objects, or native lowering.
+`ReflectionProperty` uses a core placeholder class plus request-local state for
+the selected declaring class id/name, property name, visibility, and static
+flag. The interpreter answers name, declaring class, modifier-mask,
+visibility/static predicates, default-value availability and value, and the
+current untyped `hasType()`/`getType()` result. Typed properties still stop at
+the parser boundary, so property type reflection always reports no type in the
+supported slice.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

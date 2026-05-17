@@ -14847,46 +14847,119 @@ handled.
 
 ## Milestone 1431: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: target a larger object/interface blocker such as
-  `ReflectionProperty`, attributes, file/line/doc-comment metadata,
-  extension/internal metadata, function/closure reflection targets,
-  `ReflectionUnionType`/`ReflectionIntersectionType`, default constant-name
-  introspection, magic hooks reached by WordPress, autoload/class-alias
-  lifecycle parity, interface diagnostics, or broader class metadata behavior.
+- [x] Parser/runtime lane: added a bounded `ReflectionProperty` metadata slice
+  for declared user classes. `ReflectionClass` now supports
+  `hasProperty($name)`, `getProperty($name)`, and zero-argument
+  `getProperties()` over current class metadata, and `ReflectionProperty`
+  exposes name, declaring class, visibility/static modifier masks,
+  default-value metadata, and untyped `hasType()`/`getType()` results. This
+  keeps attributes, typed properties, file/line/doc-comment metadata,
+  extension/internal metadata, method/property invocation through reflection,
+  exact `ReflectionException` objects, filter masks for `getProperties()`, and
+  native lowering outside the supported slice.
 
 ## Milestone 1432: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: target a larger reference/COW blocker such as real
-  reference containers, broader `ArrayAccess` reference roots,
-  property-held/dynamic roots, append/nested/stored-array `ArrayAccess` roots,
+- [x] Runtime lane: added a bounded nested direct `ArrayAccess` reference-root
+  bridge on top of the existing direct-object `offsetGet()` bridge. Direct
+  sources such as `$alias =& $bag["outer"]["slot"]` and literal
+  `call_user_func_array()` reference elements such as
+  `array(&$bag["outer"]["slot"])` now bind to the backing property array child
+  slot when the direct object variable implements `ArrayAccess`, public
+  `offsetGet($offset)` returns by reference, and the body is exactly the
+  supported `return $this->property[$offset];` shape. Remaining gaps include
+  real reference containers, by-value `offsetGet()` indirect-modification
+  fidelity, broader `offsetGet()` bodies, property-held or dynamic
+  `ArrayAccess` roots, append/stored-array `ArrayAccess` roots, mixed nested
+  `ArrayAccess` chains, broader COW, and native lowering.
+
+## Milestone 1433: Request/SAPI/Filesystem/Stream Blocker
+
+- [x] Runtime lane: added bounded post-output response-header warnings outside
+  the `file_get_contents()` recovery path. After unbuffered output starts,
+  `header()`, `header_remove()`, and `setcookie()` now leave request-local
+  header state unchanged while emitting recoverable `E_WARNING` events through
+  the current `set_error_handler()` stack or stderr fallback; `setcookie()`
+  still returns `false` in that state. Remaining gaps include exact PHP
+  warning text, broader warning/notice/deprecation surfaces, active
+  error-handler stack mutation edge cases, binary string reads,
+  shutdown/fatal/destructor ordering, session persistence warnings,
+  cookie-attribute formatting, upload state, include-path/stat-cache behavior,
+  `open_basedir`, stream filters/wrappers, wrapper-specific stream contexts,
+  request-body lifetime, host filesystem edge cases, and native lowering.
+
+## Milestone 1434: WordPress DB/Bootstrap Evidence Blocker
+
+- [x] Compatibility/runtime lane: added a bounded executable WordPress
+  schema/bootstrap evidence slice for deterministic `wp_options` table probes.
+  `mysqli_query()` and the shared pending-result path now return fixed rows for
+  exact `SHOW TABLES LIKE 'wp_options'`, `DESCRIBE`/`DESC wp_options`, and
+  `SHOW [FULL] COLUMNS FROM wp_options`, including option table field names,
+  types, primary/unique key markers, `autoload` default, and placeholder
+  utf8mb4 collation metadata. The milestone1434 fixture exercises a small
+  `wpdb`-shaped schema probe through `phpc run`. This remains a deterministic
+  state-island probe only: no real MySQL connectivity, mutable schema,
+  CREATE/ALTER TABLE execution, dbDelta diffing, host index/collation
+  inspection, arbitrary SQL, or native DB lowering.
+
+## Milestone 1435: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1431-1434 landed, refreshed the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; recorded focused verification; and ran the serialized full
+  gate. The first full-gate run exposed one older `milestone832` expectation
+  that still treated `SHOW FULL COLUMNS FROM wp_options` as an empty
+  placeholder; the fixture and `phpc-only` reason were refreshed to the new
+  bounded schema rows. The serialized full gate then passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1431-1435 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1523` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1523` fixture tests
+  passed with `0` failures, `888` system PHP comparisons, and `635`
+  `phpc-only` skipped fixtures.
+
+## Milestone 1436: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: target the next large object/reflection/class
+  metadata blocker, prioritizing typed properties, property attributes,
+  file/line/doc-comment metadata, extension/internal metadata,
+  function/closure reflection targets, `ReflectionUnionType` or
+  `ReflectionIntersectionType`, default constant-name introspection, magic
+  hooks reached by WordPress, autoload/class-alias lifecycle parity, interface
+  diagnostics, or broader class metadata behavior.
+
+## Milestone 1437: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: target the next large reference/COW blocker, prioritizing
+  real reference containers, property-held or dynamic `ArrayAccess` roots,
+  append/stored-array `ArrayAccess` roots, mixed nested `ArrayAccess` chains,
   alias lifetime cleanup across function/include boundaries, broader
   array/object copy-on-write, request/session alias behavior, or variadic and
   named callback-reference semantics that block WordPress.
 
-## Milestone 1433: Request/SAPI/Filesystem/Stream Blocker
+## Milestone 1438: Request/SAPI/Filesystem/Stream Blocker
 
 - [ ] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
-  behavior that blocks real WordPress requests, such as warnings/notices/
-  deprecations outside the current `file_get_contents()` recovery path,
-  active error-handler stack mutation edge cases, binary string reads,
-  output-started/header fidelity, shutdown/fatal/destructor edge ordering,
+  behavior that blocks real WordPress requests, prioritizing broader
+  warnings/notices/deprecations, active error-handler stack mutation edge
+  cases, binary string reads, shutdown/fatal/destructor edge ordering,
   upload/session/cookie persistence, include-path/stat-cache behavior,
   `open_basedir`, stream filters/wrappers, wrapper-specific stream contexts,
-  request-body lifetime, or host filesystem edge cases.
+  request-body lifetime, host filesystem edge cases, or native lowering.
 
-## Milestone 1434: WordPress DB/Bootstrap Evidence Blocker
+## Milestone 1439: WordPress DB/Bootstrap Evidence Blocker
 
 - [ ] Compatibility/runtime lane: target executable WordPress
-  database/bootstrap evidence such as broader `wpdb`/MySQLi result or
+  database/bootstrap evidence, prioritizing broader `wpdb`/MySQLi result or
   mutation behavior, arbitrary prepared option/transient query shapes,
   object-cache/transient persistence, option API state, hooks under realistic
   callback shapes, deterministic plugin/theme loading probes,
   schema/install/update flows, or a bootstrap/request probe that moves past
   its next real blocker.
 
-## Milestone 1435: WordPress-Focused Queue Refresh
+## Milestone 1440: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1431-1434 land, refresh the
+- [ ] Tests/docs lane: after Milestones 1436-1439 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

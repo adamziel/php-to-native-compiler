@@ -1,0 +1,10 @@
+constants|1|2|4|16
+has|10
+direct|ReflectionProperty|name|Plugin|1|1000|1|hook|01
+object|ReflectionProperty|cache|Base|18|0101|1|warm|01
+get|ReflectionProperty|flag|Plugin|20|0011|1|1|01
+list|ReflectionProperty|name|Plugin|1|1000|1|hook|01
+list|ReflectionProperty|items|Plugin|2|0100|1|array:1|01
+list|ReflectionProperty|flag|Plugin|20|0011|1|1|01
+list|ReflectionProperty|id|Base|1|1000|1|base|01
+list|ReflectionProperty|cache|Base|18|0101|1|warm|01

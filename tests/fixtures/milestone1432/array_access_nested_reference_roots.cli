@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1432/array_access_nested_reference_roots.php
+exit: 0
+stdout:
+seed:alias|seed:alias
+seed:alias:callback|seed:alias:callback
+null:return:alias|null:return:alias
+--- stdout end ---
+stderr:
+--- stderr end ---
