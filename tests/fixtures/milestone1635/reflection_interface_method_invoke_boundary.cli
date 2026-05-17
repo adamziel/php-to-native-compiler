@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1635/reflection_interface_method_invoke_boundary.php:16:6: unsupported call ReflectionMethod::invoke: trying to invoke abstract method HookContract::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented
+--- stderr end ---

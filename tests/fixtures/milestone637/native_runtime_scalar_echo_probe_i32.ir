@@ -9,6 +9,7 @@
 %phpc.NativeObjectHandle = type { ptr }
 %phpc.NativeResourceHandle = type { ptr }
 %phpc.NativeReferenceHandle = type { ptr }
+%phpc.NativeRequestStateHandle = type { ptr }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
 @phpc.probe.invalid = private unnamed_addr constant [1 x i8] c"\FF"
@@ -40,6 +41,8 @@ declare %phpc.NativeResourceHandle @phpc_native_resource_null()
 declare i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle)
 declare %phpc.NativeReferenceHandle @phpc_native_reference_null()
 declare i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle)
+declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
+declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)
 
 define i32 @phpc_probe_scalar_echo_len() {
 entry:
@@ -156,4 +159,11 @@ entry:
   %right = and i1 %resource_is_null, %reference_is_null
   %all = and i1 %left, %right
   ret i1 %all
+}
+
+define i1 @phpc_probe_request_state_handle_null_shape() {
+entry:
+  %request_state = call %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
+  %request_state_is_null = call i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle %request_state)
+  ret i1 %request_state_is_null
 }

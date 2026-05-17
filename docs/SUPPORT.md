@@ -2316,7 +2316,15 @@
   identifier-shaped table names, skip missing names, and return rows in
   deterministic table-name order. Table/status rows remain deterministically
   sorted, and patterns without unescaped wildcard characters keep exact
-  matching behavior.
+  matching behavior. One bounded joined metadata query over the same recorded
+  schema is also accepted through `mysqli_execute_query()` and
+  `mysqli_stmt_execute(..., array(...))`: an exact
+  `information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s`
+  shape projecting `Field`, `Type`, `Null`, `Key`, `Key_name`,
+  `Seq_in_index`, and `Sub_part`, with `WHERE c.TABLE_SCHEMA = DATABASE()`
+  and one identifier-shaped `c.TABLE_NAME = ?` parameter. It returns one row
+  per recorded column/index-part match and a null index tuple for recorded
+  columns without index parts, preserving recorded column order.
   `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
@@ -2344,7 +2352,9 @@
   documented `Key_name` equality and `Key_name LIKE` forms,
   prepared schema metadata placeholders beyond the documented single string
   filter parameter, table-identifier metadata probes, and table-status `IN`
-  lists,
+  lists, joined metadata queries beyond the exact documented
+  `COLUMNS`/`STATISTICS` left-join projection, direct literal joined metadata
+  queries, joined metadata predicates beyond one table-name placeholder,
   dbDelta diff generation, real DDL execution, real transactional DDL
   semantics beyond the bounded in-memory snapshot/restore path, host database
   inspection, or native database lowering. For an
@@ -2548,7 +2558,10 @@
   `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists, and bounded
   table-identifier placeholders for `SHOW [FULL] COLUMNS FROM ?` and
   `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS FROM ?` with optional documented
-  field/key filters. This state island is not broad SQL
+  field/key filters. One exact prepared joined
+  `information_schema.COLUMNS`/`information_schema.STATISTICS` metadata query
+  over the same state island returns deterministic column/index rows for one
+  identifier-shaped table-name parameter. This state island is not broad SQL
   parsing, SQL-mode-aware escaping beyond the bounded schema metadata and
   direct option-name literal slices,
   character-set/collation fidelity, arbitrary column alteration beyond the
@@ -2557,7 +2570,9 @@
   `SHOW CREATE TABLE`
   formatting for every column attribute, exact MySQL `SHOW TABLE STATUS`
   counters/timestamps/options, dbDelta diff generation, real transactional DDL
-  behavior beyond bounded in-memory schema snapshots, or real index behavior,
+  behavior beyond bounded in-memory schema snapshots, joined metadata query
+  shapes beyond the exact documented prepared `COLUMNS`/`STATISTICS`
+  left-join projection, direct literal joined metadata queries, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded direct and prepared option-row scan shapes, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2879,9 +2894,10 @@
   `php://input` path returns the current bounded request body seeded from
   `PHPC_REQUEST_BODY`, or an empty string when unset. Local paths and local
   absolute `file://` URLs with an empty host or `localhost` are read from the
-  host filesystem as UTF-8 text. Non-URL local paths share the same current
-  relative path policy as `file_exists`; when the second argument is `true`
-  for a relative local path, lookup also follows the current bounded
+  host filesystem as UTF-8 text after bounded UTF-8 percent-decoding of the
+  URL path portion. Non-URL local paths share the same current relative path
+  policy as `file_exists`; when the second argument is `true` for a relative
+  local path, lookup also follows the current bounded
   `include_path`-then-source-relative candidate order used by
   `include`/`require`. Non-negative
   offsets read from the start, negative offsets read from the end, and a
@@ -2897,8 +2913,8 @@
   return value treats the warning as handled. This is a
   bounded WordPress bootstrap compatibility slice, not full PHP filesystem
   support: binary string byte fidelity, exact PHP warning text or handler
-  `errstr` text,
-  `file://` URL percent-decoding, non-local `file://` hosts, other stream
+  `errstr` text, malformed `file://` percent escapes, decoded NUL bytes,
+  non-UTF-8 percent-decoded paths, non-local `file://` hosts, other stream
   wrappers, context option effects, wrapper-specific context
   behavior, exact byte offsets through non-UTF-8 data, negative offsets before
   the start for stream/resource types outside the current local/`php://input`
@@ -2913,10 +2929,11 @@
   `fopen("php://input", $mode)`, `fopen("file:///absolute/path", $mode)`,
   `fopen("file://localhost/absolute/path", $mode)`, and
   `fopen($localPath, $mode, $use_include_path = false, $context = null)` for
-  local filesystem paths
-  create interpreter-owned stream resources for simple `r`, `w`, `a`, or `c`
-  modes with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the
-  same bounded include-path-then-source-relative lookup flag as
+  local filesystem paths. Bounded local `file://` paths use the same UTF-8
+  percent-decoding policy as `file_get_contents()`. These calls create
+  interpreter-owned stream resources for simple `r`, `w`, `a`, or `c` modes
+  with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the same
+  bounded include-path-then-source-relative lookup flag as
   `file_get_contents()` and accepts, but does not apply, a bounded
   stream-context resource. Local open failures,
   including missing read targets, emit a bounded PHP-style `E_WARNING`, return
@@ -3776,8 +3793,8 @@
   the default include path is `"."`, empty entries are treated as `.`, and
   `PATH_SEPARATOR` is exposed for the host path-list separator. Bounded local
   absolute `file://` URLs with an empty host or `localhost` resolve to the
-  referenced local path for `include`, `include_once`, `require`, and
-  `require_once`. Included files
+  referenced local path after bounded UTF-8 percent-decoding for `include`,
+  `include_once`, `require`, and `require_once`. Included files
   are parsed with `<?php`, register
   top-level functions/classes, and run in the caller symbol table. Statement
   forms ignore top-level include return values.
@@ -3795,8 +3812,9 @@
   local file, including files loaded first through non-once `require`/`include`.
   Failed-include realpath-cache side effects, process-current-working-directory
   edge cases beyond the default `"."` entry and no-source-file fallback,
-  `file://` URL percent-decoding, non-local `file://` hosts, URL includes,
-  `phar://`, opcache behavior, autoload
+  malformed `file://` percent escapes, decoded NUL bytes, non-UTF-8
+  percent-decoded paths, non-local `file://` hosts, URL includes, `phar://`,
+  opcache behavior, autoload
   interaction, declaration-order edge cases, source mapping for
   functions/classes after include, PHP's exact warning-vs-fatal text, fatal
   `Error` object/stack trace shape, shutdown/destructor ordering after fatal,
@@ -5616,6 +5634,14 @@
   direct-variable arguments and direct nested array-offset arguments such as
   `$closure($value)` and `$closure($items["payload"]["slot"])`, using the
   same bounded direct-call copy-in/writeback machinery as user functions.
+  Direct `call_user_func()` also accepts public `[object, method]` instance
+  callbacks and public `["ClassName", "method"]` static callbacks for the
+  current method subset. When a reached method parameter is declared
+  by-reference, supplied arguments are evaluated by value, a bounded
+  `E_WARNING` is routed through the current error-handler stack or stderr
+  fallback, and method writes to that parameter do not mutate the caller
+  argument. Object receiver property writes through `$this` still mutate the
+  receiver object.
   `call_user_func_array()` also accepts closure callbacks whose declared
   by-reference parameters are supplied by covered by-reference argument-array
   elements in the same direct-variable and direct array/property slot subset
@@ -5623,7 +5649,8 @@
   snapshot stored when the closure was created. Arrow implicit capture binding
   and execution, `$this` binding, by-reference capture of array-offset,
   object-property, magic-property, or `ArrayAccess` alias roots, closure
-  reference returns, array-callable `call_user_func()` callbacks, variadic
+  reference returns, array-callable `call_user_func()` forms beyond public
+  object/static method callbacks over by-value arguments, variadic
   reference parameters through `call_user_func()`, typed parameter/return
   enforcement, copy-on-write, static closure binding
   semantics, named closure callback arguments, exact PHP `Closure` object
@@ -6430,8 +6457,11 @@
   `__CLASS__`, `__METHOD__`, `self::class`, `static::class`, and
   `get_called_class()`, and with static `self::method()`/`static::method()`
   calls resolved against executable methods on that reflected trait. Interface
-  methods, non-static trait methods, abstract trait methods, trait class
-  constants, `parent` context behavior, `new self`/`new static` from reflected
+  methods and other abstract reflected methods now stop at a stable
+  `ReflectionMethod::invoke` runtime boundary matching PHP's abstract-method
+  invocation rule at a diagnostic level; exact `ReflectionException` objects,
+  stack traces, and catchability are not implemented. Non-static trait methods,
+  trait class constants, `parent` context behavior, `new self`/`new static` from reflected
   traits, internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
@@ -7277,9 +7307,10 @@
   stderr diagnostic-reporting helper for the documented direct and selected
   string output slices. Linked native execution, binary PHP string value
   handles, diagnostics for stdout writes or arbitrary runtime failures,
-  request-state handles, array/object/resource/reference storage beyond
-  null-only ABI shapes, WordPress host-state ABI, and C fallback assembly helper
-  calls remain unsupported.
+  request-state storage/population beyond the null-only ABI handle shape,
+  array/object/resource/reference storage beyond null-only ABI shapes,
+  WordPress host-state ABI, and C fallback assembly helper calls remain
+  unsupported.
 - Array gaps: array spread elements, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
   non-variable destructuring targets are rejected with stable parse diagnostics.
@@ -8005,8 +8036,9 @@
   scalar-to-int coercion for non-integer operands, arrays, and
   objects so generated code does not imply partial PHP bytewise string,
   coercion, overflow, or complete shift-count semantics.
-- dynamic callables outside the documented string function-name and bounded
-  `call_user_func_array()` array-callable subset, including closure
+- dynamic callables outside the documented string function-name, bounded
+  direct `call_user_func()` public object/static method array-callable subset,
+  and bounded `call_user_func_array()` array-callable subset, including closure
   invocation, `__invoke`, first-class callable syntax, non-public method
   callbacks, by-reference argument propagation, named arguments, and
   namespace/autoload-aware callable resolution

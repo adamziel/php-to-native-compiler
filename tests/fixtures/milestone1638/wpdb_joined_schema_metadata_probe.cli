@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1638/wpdb_joined_schema_metadata_probe.php

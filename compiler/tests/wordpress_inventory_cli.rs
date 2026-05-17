@@ -705,6 +705,83 @@ fn wordpress_inventory_wpdb_identifier_schema_bootstrap_smoke_matches_fixture() 
 }
 
 #[test]
+fn wordpress_inventory_wpdb_joined_schema_bootstrap_smoke_matches_fixture() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let wp_root = std::env::temp_dir().join(format!(
+        "phpc-wordpress-wpdb-joined-schema-{}-{unique}",
+        std::process::id()
+    ));
+    let wp_includes = wp_root.join("wp-includes");
+
+    fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
+    fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\n",
+    )
+    .expect("write front controller");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write wp-config.php");
+    fs::write(
+        wp_root.join("wp-settings.php"),
+        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\nrequire ABSPATH . WPINC . '/class-wpdb.php';\nrequire ABSPATH . WPINC . '/schema.php';\n$wpdb = new wpdb();\necho wp_schema_probe();\n",
+    )
+    .expect("write wp-settings.php");
+    fs::write(wp_includes.join("load.php"), "<?php\n").expect("write load.php");
+    fs::write(
+        wp_includes.join("class-wpdb.php"),
+        "<?php\nclass wpdb {\n    public $dbh;\n\n    public function __construct() {\n        $this->dbh = mysqli_init();\n        mysqli_real_connect($this->dbh, 'localhost', 'user', 'pass', null, 3306, null, 0);\n    }\n\n    public function query($query) {\n        return mysqli_query($this->dbh, $query);\n    }\n\n    public function get_results($query, $params) {\n        $result = mysqli_execute_query($this->dbh, $query, $params);\n        $rows = array();\n        while ($row = mysqli_fetch_assoc($result)) {\n            $rows[] = $row;\n        }\n        return $rows;\n    }\n\n    public function get_results_with_statement($query, $table) {\n        $stmt = mysqli_prepare($this->dbh, $query);\n        mysqli_stmt_execute($stmt, array($table));\n        $result = mysqli_stmt_get_result($stmt);\n        $rows = array();\n        while ($row = mysqli_fetch_assoc($result)) {\n            $rows[] = $row;\n        }\n        return $rows;\n    }\n}\n",
+    )
+    .expect("write class-wpdb.php");
+    fs::write(
+        wp_includes.join("schema.php"),
+        "<?php\nfunction wp_schema_probe() {\n    global $wpdb;\n    $wpdb->query(\"CREATE TABLE wp_joined_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', locale varchar(20) NOT NULL default '', title text NULL, PRIMARY KEY  (id), KEY slug_locale (slug(64), locale)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci\");\n    $query = \"SELECT c.COLUMN_NAME AS Field, c.COLUMN_TYPE AS Type, c.IS_NULLABLE AS `Null`, c.COLUMN_KEY AS `Key`, s.INDEX_NAME AS Key_name, s.SEQ_IN_INDEX AS Seq_in_index, s.SUB_PART AS Sub_part FROM information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s ON s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME AND s.COLUMN_NAME = c.COLUMN_NAME WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION, s.SEQ_IN_INDEX\";\n    $rows = $wpdb->get_results($query, array('wp_joined_probe'));\n    $stmt = $wpdb->get_results_with_statement($query, 'wp_joined_probe');\n    return 'joined=' . count($rows) . ':' . $rows[1]['Field'] . ':' . $rows[1]['Key_name'] . ':' . $rows[1]['Sub_part'] . '|stmt=' . count($stmt);\n}\n",
+    )
+    .expect("write schema.php");
+    fs::write(
+        wp_includes.join("version.php"),
+        "<?php\n$wp_version = '6.9.4';\n",
+    )
+    .expect("write version.php");
+
+    let output = Command::new("sh")
+        .arg(repo_root.join("tools/wordpress-inventory.sh"))
+        .arg("--normalize")
+        .arg(&wp_root)
+        .env("PHPC_BIN", env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(repo_root)
+        .output()
+        .expect("run wordpress inventory");
+
+    let _ = fs::remove_dir_all(&wp_root);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let expected =
+        include_str!("../../tests/fixtures/compat/wordpress/wpdb_joined_schema_bootstrap.expected");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
 fn wordpress_inventory_plugin_theme_loading_smoke_matches_fixture() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

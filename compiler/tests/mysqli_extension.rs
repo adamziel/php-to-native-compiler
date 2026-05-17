@@ -3629,6 +3629,61 @@ mysqli_execute_query($handle, "SHOW FULL COLUMNS FROM ?", array("wp-bad"));
 }
 
 #[test]
+fn mysqli_prepared_joined_schema_metadata_reports_columns_and_indexes() {
+    let execution = run_source(
+        r#"<?php
+function show_value($value) {
+    return $value === null ? "null" : $value;
+}
+
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_joined_probe (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', locale varchar(20) NOT NULL default '', title text NULL, PRIMARY KEY  (id), KEY slug_locale (slug(64), locale)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+$query = "SELECT c.COLUMN_NAME AS Field, c.COLUMN_TYPE AS Type, c.IS_NULLABLE AS `Null`, c.COLUMN_KEY AS `Key`, s.INDEX_NAME AS Key_name, s.SEQ_IN_INDEX AS Seq_in_index, s.SUB_PART AS Sub_part FROM information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s ON s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME AND s.COLUMN_NAME = c.COLUMN_NAME WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION, s.SEQ_IN_INDEX";
+$result = mysqli_execute_query($handle, $query, array("wp_joined_probe"));
+echo "rows=", mysqli_num_rows($result), ":";
+while ($row = mysqli_fetch_assoc($result)) {
+    echo $row["Field"], ":", $row["Type"], ":", $row["Null"], ":", $row["Key"], ":", show_value($row["Key_name"]), ":", show_value($row["Seq_in_index"]), ":", show_value($row["Sub_part"]), ";";
+}
+
+$stmt = mysqli_prepare($handle, $query);
+mysqli_stmt_execute($stmt, array("wp_joined_probe"));
+$stmt_result = mysqli_stmt_get_result($stmt);
+echo "|stmt=", mysqli_num_rows($stmt_result), ":";
+$stmt_row = mysqli_fetch_assoc($stmt_result);
+echo $stmt_row["Field"], ":", $stmt_row["Key_name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "rows=4:id:bigint(20) unsigned:NO:PRI:PRIMARY:1:null;slug:varchar(191):NO:MUL:slug_locale:1:64;locale:varchar(20):NO:MUL:slug_locale:2:null;title:text:YES::null:null:null;|stmt=4:id:PRIMARY"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let bad_identifier = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_joined_probe (id bigint(20) unsigned NOT NULL, PRIMARY KEY  (id)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$query = "SELECT c.COLUMN_NAME AS Field, c.COLUMN_TYPE AS Type, c.IS_NULLABLE AS `Null`, c.COLUMN_KEY AS `Key`, s.INDEX_NAME AS Key_name, s.SEQ_IN_INDEX AS Seq_in_index, s.SUB_PART AS Sub_part FROM information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s ON s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME AND s.COLUMN_NAME = c.COLUMN_NAME WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION, s.SEQ_IN_INDEX";
+mysqli_execute_query($handle, $query, array("wp-bad"));
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_identifier.phase, Phase::Runtime);
+    assert_eq!(bad_identifier.line, 6);
+    assert_eq!(bad_identifier.column, 1);
+    assert_eq!(
+        bad_identifier.message,
+        "unsupported call mysqli_execute_query(): prepared joined schema metadata requires an identifier-shaped table-name parameter in the current subset"
+    );
+}
+
+#[test]
 fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php

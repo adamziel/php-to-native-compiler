@@ -243,6 +243,34 @@ fclose($stream);
 }
 
 #[test]
+fn local_file_url_stream_resources_percent_decode_paths() {
+    let path = temp_stream_path("phpc-file-url-percent stream#resource.txt");
+    fs::write(&path, "decoded-stream").expect("temporary stream file can be seeded");
+    let encoded_path = path
+        .to_string_lossy()
+        .replace(' ', "%20")
+        .replace('#', "%23");
+    let source = format!(
+        r#"<?php
+$url = "file://{}";
+$stream = fopen($url, "r");
+$meta = stream_get_meta_data($stream);
+echo $meta["uri"] === $url ? "same-uri" : "other-uri";
+echo ":";
+echo fread($stream, 7);
+fclose($stream);
+"#,
+        encoded_path
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "same-uri:decoded");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn local_fopen_missing_file_emits_warning_returns_false_and_continues() {
     let path = temp_stream_path("phpc-stream-resource-missing-read.txt");
     let source = format!(

@@ -669,7 +669,7 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
 
 fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
     let rest = path.strip_prefix("file://")?;
-    let path_part = if let Some(localhost_path) = rest.strip_prefix("localhost/") {
+    let encoded_path_part = if let Some(localhost_path) = rest.strip_prefix("localhost/") {
         format!("/{localhost_path}")
     } else if rest.starts_with('/') {
         rest.to_string()
@@ -680,6 +680,10 @@ fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
         ));
     };
 
+    let path_part = match percent_decode_local_file_url_path(&encoded_path_part) {
+        Ok(path) => path,
+        Err(message) => return Some(Err(message)),
+    };
     let path = PathBuf::from(path_part);
     if path.is_absolute() {
         Some(Ok(path))
@@ -687,6 +691,56 @@ fn bounded_local_file_url_path(path: &str) -> Option<Result<PathBuf, String>> {
         Some(Err(
             "file:// URL path must be absolute in the current subset".to_string(),
         ))
+    }
+}
+
+fn percent_decode_local_file_url_path(path: &str) -> Result<String, String> {
+    let bytes = path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return Err(
+                    "file:// URL path percent escapes must use two hexadecimal digits in the current subset"
+                        .to_string(),
+                );
+            }
+            let high = decode_hex_digit(bytes[index + 1]).ok_or_else(|| {
+                "file:// URL path percent escapes must use two hexadecimal digits in the current subset"
+                    .to_string()
+            })?;
+            let low = decode_hex_digit(bytes[index + 2]).ok_or_else(|| {
+                "file:// URL path percent escapes must use two hexadecimal digits in the current subset"
+                    .to_string()
+            })?;
+            let value = (high << 4) | low;
+            if value == 0 {
+                return Err(
+                    "file:// URL path percent-decoded NUL bytes are not supported in the current subset"
+                        .to_string(),
+                );
+            }
+            decoded.push(value);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+
+    String::from_utf8(decoded).map_err(|_| {
+        "file:// URL path percent-decoded bytes must be valid UTF-8 in the current subset"
+            .to_string()
+    })
+}
+
+fn decode_hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -19115,6 +19169,19 @@ impl Interpreter {
         values: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
+        if state.is_abstract {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionMethod::invoke",
+                    format!(
+                        "trying to invoke abstract method {}::{}(); PHP raises ReflectionException, exact ReflectionException objects are not implemented",
+                        state.declaring_class_name, state.name
+                    ),
+                ),
+            ));
+        }
+
         if matches!(state.declaring_kind, ReflectionClassKind::Trait) && state.is_static {
             match target {
                 Value::Null | Value::Object(_) => {}
@@ -22417,13 +22484,15 @@ impl Interpreter {
         let callback_name = match &callback {
             Value::String(name) => name,
             Value::Array(_) => {
-                return Err(runtime_error(
+                let Value::Array(callback) = &callback else {
+                    unreachable!("matched array callback");
+                };
+                return self.call_user_func_array_callable_direct(
+                    callback,
+                    &args[1..],
                     span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func()",
-                        "array callables are not implemented in the current subset",
-                    ),
-                ));
+                    caller_scope,
+                );
             }
             Value::Closure(closure) => {
                 return self.invoke_closure_value_from_call_user_func(
@@ -22473,6 +22542,186 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
         self.call_callable_with_values(callable, values, span)
+    }
+
+    fn call_user_func_array_callable_direct(
+        &mut self,
+        callback: &PhpArray,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                ensure_user_function_arity(function, args.len(), span)?;
+                if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                } else {
+                    ensure_supported_function_metadata(function, span)?;
+                }
+                self.ensure_user_function_call_depth(function, span)?;
+                let values = self.evaluate_call_user_func_value_arguments(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                if function.returns_by_reference {
+                    return self.call_reference_return_function_value_with_checked_values(
+                        function,
+                        values,
+                        Some(object.clone()),
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
+                        caller_scope,
+                    );
+                }
+
+                self.call_user_function_with_checked_values(
+                    function,
+                    values,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                    None,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                ensure_user_function_arity(function, args.len(), span)?;
+                if function.returns_by_reference {
+                    ensure_supported_reference_return_function_metadata(function, span)?;
+                } else {
+                    ensure_supported_function_metadata(function, span)?;
+                }
+                self.ensure_user_function_call_depth(function, span)?;
+                let values = self.evaluate_call_user_func_value_arguments(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                if function.returns_by_reference {
+                    return self.call_reference_return_function_value_with_checked_values(
+                        function,
+                        values,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        Vec::new(),
+                        caller_scope,
+                    );
+                }
+
+                self.call_user_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                    None,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
     }
 
     fn call_user_func_user_function(
@@ -40541,6 +40790,15 @@ fn wordpress_dynamic_prepared_schema_result_for_query(
         }
     }
 
+    if let Some(table_name) =
+        parse_prepared_schema_joined_column_index_metadata_query(query, params, function, span)?
+    {
+        let Some(table) = tables.get(&table_name) else {
+            return Ok(None);
+        };
+        return Ok(Some(joined_schema_column_index_metadata_result(table)));
+    }
+
     if let Some(column_query) = parse_dynamic_prepared_schema_show_columns_query(
         query,
         no_backslash_escapes,
@@ -40614,6 +40872,33 @@ fn wordpress_dynamic_prepared_schema_result_for_query(
     }
 
     Ok(None)
+}
+
+fn parse_prepared_schema_joined_column_index_metadata_query(
+    query: &str,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<String>> {
+    if !matches!(
+        query,
+        "SELECT c.COLUMN_NAME AS Field, c.COLUMN_TYPE AS Type, c.IS_NULLABLE AS `Null`, c.COLUMN_KEY AS `Key`, s.INDEX_NAME AS Key_name, s.SEQ_IN_INDEX AS Seq_in_index, s.SUB_PART AS Sub_part FROM information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s ON s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME AND s.COLUMN_NAME = c.COLUMN_NAME WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION, s.SEQ_IN_INDEX"
+            | "SELECT c.COLUMN_NAME AS Field, c.COLUMN_TYPE AS Type, c.IS_NULLABLE AS `Null`, c.COLUMN_KEY AS `Key`, s.INDEX_NAME AS Key_name, s.SEQ_IN_INDEX AS Seq_in_index, s.SUB_PART AS Sub_part FROM `information_schema`.`COLUMNS` c LEFT JOIN `information_schema`.`STATISTICS` s ON s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME AND s.COLUMN_NAME = c.COLUMN_NAME WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION, s.SEQ_IN_INDEX"
+    ) {
+        return Ok(None);
+    }
+
+    let value = prepared_schema_string_filter_param_at(function, params, 0, span)?;
+    let Some(identifier) = parse_schema_table_identifier(value) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared joined schema metadata requires an identifier-shaped table-name parameter in the current subset",
+            ),
+        ));
+    };
+    Ok(Some(identifier))
 }
 
 fn parse_dynamic_prepared_schema_show_columns_query(
@@ -42235,6 +42520,78 @@ fn dynamic_schema_table_status_row(table: &WordPressSchemaTableState) -> Vec<(St
         ("Checksum".to_string(), Value::Null),
         ("Create_options".to_string(), Value::String(String::new())),
         ("Comment".to_string(), Value::String(String::new())),
+    ]
+}
+
+fn joined_schema_column_index_metadata_result(
+    table: &WordPressSchemaTableState,
+) -> MysqliPendingResultState {
+    let fields = vec![
+        "Field".to_string(),
+        "Type".to_string(),
+        "Null".to_string(),
+        "Key".to_string(),
+        "Key_name".to_string(),
+        "Seq_in_index".to_string(),
+        "Sub_part".to_string(),
+    ];
+    let mut rows = Vec::new();
+    for column in &table.columns {
+        let matched_parts = table
+            .indexes
+            .iter()
+            .flat_map(|index| {
+                index
+                    .parts
+                    .iter()
+                    .enumerate()
+                    .map(move |(part_index, part)| (index, part_index, part))
+            })
+            .filter(|(_, _, part)| part.column_name == column.name)
+            .collect::<Vec<_>>();
+        if matched_parts.is_empty() {
+            rows.push(joined_schema_column_index_metadata_row(table, column, None));
+            continue;
+        }
+        for (index, part_index, part) in matched_parts {
+            rows.push(joined_schema_column_index_metadata_row(
+                table,
+                column,
+                Some((index, part_index, part)),
+            ));
+        }
+    }
+    MysqliPendingResultState { fields, rows }
+}
+
+fn joined_schema_column_index_metadata_row(
+    table: &WordPressSchemaTableState,
+    column: &WordPressSchemaColumnState,
+    index_part: Option<(&WordPressSchemaIndexState, usize, &WordPressSchemaIndexPart)>,
+) -> Vec<(String, Value)> {
+    let (key_name, seq_in_index, sub_part) = index_part
+        .map(|(index, part_index, part)| {
+            (
+                Value::String(index.key_name.clone()),
+                Value::Int((part_index + 1) as i64),
+                part.sub_part.map(Value::Int).unwrap_or(Value::Null),
+            )
+        })
+        .unwrap_or((Value::Null, Value::Null, Value::Null));
+    vec![
+        ("Field".to_string(), Value::String(column.name.clone())),
+        ("Type".to_string(), Value::String(column.ty.clone())),
+        (
+            "Null".to_string(),
+            Value::String(if column.nullable { "YES" } else { "NO" }.to_string()),
+        ),
+        (
+            "Key".to_string(),
+            Value::String(dynamic_schema_column_key(column, table).to_string()),
+        ),
+        ("Key_name".to_string(), key_name),
+        ("Seq_in_index".to_string(), seq_in_index),
+        ("Sub_part".to_string(), sub_part),
     ]
 }
 

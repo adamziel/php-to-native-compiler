@@ -4,6 +4,190 @@
 
 Implemented:
 
+- Integrated Milestones 1635-1640 as one WordPress-focused checkpoint batch.
+  The batch closes bounded slices for abstract reflected method invocation
+  diagnostics, direct `call_user_func()` public array-callable by-reference
+  parameter behavior, local `file://` URL percent-decoding across file/include
+  paths, prepared joined `information_schema.COLUMNS`/`STATISTICS` schema
+  metadata probes, and the null-only native request-state handle ABI boundary.
+  The combined manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1635-1640 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: Rust tests completed
+  successfully, `phpc test` reported `1680` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1680` fixture tests
+  passed with `0` failures, `989` system PHP comparisons, and `691`
+  `phpc-only` skipped fixtures. Remaining WordPress blockers are still large:
+  constructor/destructor/autoload fidelity, real PHP references and broad
+  copy-on-write, shutdown/output/session/header behavior, broader stream/URL
+  wrappers, arbitrary SQL/dbDelta/host database inspection, persistent object
+  cache/transients, and linked native execution with real request/array/object/
+  resource/reference storage.
+
+- Added Milestone 1635, a bounded object/reflection abstract-method invocation
+  boundary for interface methods and abstract class/trait methods reflected
+  through `ReflectionMethod`. `ReflectionMethod::invoke()` and positional
+  `invokeArgs()` now reject abstract reflected methods before dispatch with a
+  stable PHP-shaped diagnostic naming the abstract method and the missing exact
+  `ReflectionException` object behavior. The new `milestone1635` fixture proves
+  the `phpc run` CLI boundary for a WordPress-style hook interface method. This
+  does not add catchable `ReflectionException` objects, PHP stack traces or
+  exception codes, concrete implementation dispatch from interface
+  `ReflectionMethod` objects, non-static trait method execution, broader exact
+  reflection exception text, by-reference invocation, typed parameter/return
+  enforcement during reflection invocation, or native object/reflection
+  lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1635 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  reflection_method_rejects_abstract_method_invocation -- --test-threads=1`;
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1635/reflection_interface_method_invoke_boundary.php`
+  returned exit `1` with the expected runtime diagnostic; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1635`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1635`, which skipped the `phpc-only`
+  fixture for system PHP comparison; and direct fixture `compile --emit-ir` and
+  `--emit-asm` checks rejected at the existing native interface lowering
+  boundary. Full expensive `tools/run-tests.sh`, checkpoint, commit, and push
+  were deferred per lane instructions.
+
+- Added Milestone 1636, a bounded Reference/COW slice for direct
+  `call_user_func()` array-callable reference-parameter parity. Public
+  `[object, method]` instance callbacks and public `["ClassName", "method"]`
+  static callbacks now follow PHP's direct `call_user_func()` behavior for
+  reached non-variadic by-reference method parameters: callback arguments are
+  evaluated by value, a bounded recoverable `E_WARNING` is routed through the
+  current error-handler stack or stderr fallback, method writes to the
+  parameter do not mutate the caller variable or array slot, and object
+  receiver property writes through `$this` still mutate the receiver. The new
+  `milestone1636` fixture proves the `phpc run` CLI path and matches system
+  PHP for object and static array-callable method callbacks. This does not add
+  closure reference returns, by-reference captures of array-offset/property/
+  ArrayAccess alias roots, real PHP reference containers, broader
+  copy-on-write, alias destruction ordering, superglobal reference lifetime
+  breadth, exact warning object/text behavior, variadic reference parameters
+  through direct `call_user_func()`, non-public/magic/malformed array
+  callables, or native callable/reference lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1636 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test call_user_func_builtin
+  call_user_func_array_callables_invoke_reference_parameters_by_value_with_warning
+  -- --test-threads=1`; `cargo test -p phpc --test call_user_func_builtin
+  call_user_func_rejects_forms_outside_current_subset -- --test-threads=1`;
+  full affected `cargo test -p phpc --test call_user_func_builtin --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1636/call_user_func_array_callable_reference_parameter_by_value.php`;
+  direct `php
+  tests/fixtures/milestone1636/call_user_func_array_callable_reference_parameter_by_value.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1636`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1636`, which
+  compared `1` fixture with `0` skips; fixture `compile --emit-ir` and
+  `--emit-asm` checks rejected at the existing native user-function lowering
+  boundary; `cargo fmt`; `cargo fmt --check`; `cargo check -p phpc`; and
+  `git diff --check` passed. Full expensive `tools/run-tests.sh`, checkpoint,
+  commit, and push were deferred per lane instructions.
+
+- Added Milestone 1637, a bounded request/SAPI/filesystem stream-wrapper
+  slice for local `file://` URL percent-decoding. The shared local `file://`
+  resolver now percent-decodes the UTF-8 path portion for empty-host and
+  `localhost` URLs before routing `file_get_contents()`, `fopen()`,
+  `include`, and `require_once` through the existing local filesystem paths,
+  preserving offset/length reads, stream metadata URIs, include return values,
+  realpath-cache population, and `_once` de-duplication. The new
+  `milestone1637` fixture proves the `phpc run` CLI path. It is marked
+  `phpc-only` because the installed system PHP on this host treats these
+  percent escapes literally for local `file://` paths and fatals after the
+  tested `fopen()` call returns `false`. This does not add malformed
+  percent-escape recovery parity, decoded NUL byte paths, non-UTF-8 byte
+  paths, non-local `file://` hosts, Windows drive/UNC URL forms, `phar://`,
+  HTTP/URL wrappers, wrapper-specific context behavior, `open_basedir`, exact
+  warning text, shutdown/destructor ordering after fatal errors,
+  output-buffer/fatal ordering, or native stream/include lowering. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1637
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  file_get_contents_builtin
+  file_get_contents_percent_decodes_bounded_local_file_urls --
+  --test-threads=1`; `cargo test -p phpc --test stream_resource_builtin
+  local_file_url_stream_resources_percent_decode_paths -- --test-threads=1`;
+  `cargo test -p phpc --test include_path_builtin
+  include_and_require_once_percent_decode_bounded_local_file_urls --
+  --test-threads=1`; `cargo test -p phpc --test file_get_contents_builtin
+  file_get_contents_rejects_forms_outside_current_subset --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1637/file_url_percent_decoding.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1637`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1637`, which compared `0` fixtures and skipped `1`
+  `phpc-only` fixture; direct `php
+  tests/fixtures/milestone1637/file_url_percent_decoding.php`, which exited
+  `255` after literal-percent wrapper warnings and a `fread(false, 6)` fatal;
+  `cargo fmt`; `cargo fmt --check`; `cargo check -p phpc`; and
+  `git diff --check` passed. Full expensive `tools/run-tests.sh`, checkpoint,
+  commit, and push were deferred per lane instructions.
+
+- Added Milestone 1639, a bounded native runtime ABI/request-state handle
+  slice. The runtime now exports the null-only opaque
+  `NativeRequestStateHandle` C ABI shape plus
+  `phpc_native_request_state_null()` and
+  `phpc_native_request_state_is_null(...)`. The deterministic native runtime
+  ABI probe declares those helpers and includes a request-state null-shape
+  probe in both the host-width and explicit 32-bit snapshots. A new
+  `milestone1639` CLI fixture proves `phpc compile --emit-ir` still rejects
+  `$_GET` access explicitly at the request-superglobal native boundary instead
+  of pretending that the new null handle is real request storage; direct
+  `--emit-asm` rejects at the same lowering boundary. This does not add linked
+  native execution, request-state allocation or population, generated
+  superglobal reads, SAPI import, session/upload/native host state, WordPress
+  host-state ABI, binary PHP string handles, stdout write diagnostics, C
+  fallback assembly helper calls, or array/object/resource/reference storage
+  beyond existing null-only ABI handles. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-native-abi-1639 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p php_runtime
+  native_container_handle_shapes_are_pointer_sized_and_null_only --
+  --test-threads=1`; `cargo test -p phpc --test native_runtime_abi --
+  --test-threads=1`; `cargo test -p phpc --test superglobals
+  native_request_state_handle_boundary_emit_ir_cli_snapshot_matches_committed_output
+  -- --test-threads=1`; direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1639/native_request_state_handle_boundary.php
+  --emit-ir`, which exited `1` with the expected request-superglobal codegen
+  diagnostic; direct `cargo run -q -p phpc -- compile
+  tests/fixtures/milestone1639/native_request_state_handle_boundary.php
+  --emit-asm`, which exited `1` with the same expected diagnostic; `cargo
+  fmt`; `cargo fmt --check`; `cargo check -p phpc`; and `git diff --check`
+  passed. Full expensive `tools/run-tests.sh`, checkpoint, commit, and push
+  were deferred per lane instructions.
+
+- Added Milestone 1638, a bounded WordPress DB/bootstrap joined schema
+  metadata query slice. The dynamic MySQLi schema-state island now accepts one
+  exact prepared `information_schema.COLUMNS c LEFT JOIN
+  information_schema.STATISTICS s` query through `mysqli_execute_query()` and
+  `mysqli_stmt_execute(..., array(...))`, keyed by one identifier-shaped
+  `c.TABLE_NAME = ?` parameter, and projects deterministic `Field`, `Type`,
+  `Null`, `Key`, `Key_name`, `Seq_in_index`, and `Sub_part` rows from recorded
+  `CREATE TABLE`/`ALTER TABLE` metadata. The new `milestone1638` fixture
+  proves the `phpc run` CLI path through a `wpdb`-shaped wrapper, and the
+  synthetic WordPress inventory probe records a bootstrap path that creates a
+  table and inspects the joined metadata through both one-shot and statement
+  execution. This does not add arbitrary joined metadata SQL, direct literal
+  joined metadata queries, joined predicates beyond one table-name placeholder,
+  host `information_schema` inspection, dbDelta diff execution, persistent
+  object-cache behavior, real MySQL metadata fidelity, or native database
+  lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1638 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test mysqli_extension
+  mysqli_prepared_joined_schema_metadata_reports_columns_and_indexes --
+  --test-threads=1`; adjacent `cargo test -p phpc --test mysqli_extension
+  mysqli_prepared_schema_metadata_accepts_table_identifier_placeholders --
+  --test-threads=1`; `cargo test -p phpc --test wordpress_inventory_cli
+  wordpress_inventory_wpdb_joined_schema_bootstrap_smoke_matches_fixture --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1638/wpdb_joined_schema_metadata_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1638`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1638`, which skipped the `phpc-only` fixture for
+  system PHP comparison; fixture `compile --emit-ir` and `--emit-asm` checks
+  rejected at the existing native object/class lowering boundary; `cargo
+  fmt`; `cargo fmt --check`; `cargo check -p phpc`; and `git diff --check`
+  passed. Full expensive `tools/run-tests.sh`, checkpoint, commit, and push
+  were deferred per lane instructions.
+
 - Added Milestone 1629, a bounded object/reflection trait context slice for
   static `self::method()` and `static::method()` calls while executing static
   trait methods reflected directly from a trait. `ReflectionMethod::invoke()`

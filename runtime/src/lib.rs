@@ -77,6 +77,12 @@ pub struct NativeReferenceHandle {
     ptr: *mut NativeReference,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRequestStateHandle {
+    ptr: *mut NativeRequestState,
+}
+
 #[derive(Debug)]
 struct NativeString {
     bytes: Vec<u8>,
@@ -91,6 +97,7 @@ enum NativeArray {}
 enum NativeObject {}
 enum NativeResource {}
 enum NativeReference {}
+enum NativeRequestState {}
 
 impl NativeByteBuffer {
     pub const fn empty() -> Self {
@@ -244,6 +251,18 @@ impl NativeReferenceHandle {
     }
 }
 
+impl NativeRequestStateHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
 impl NativeScalarValue {
     pub const fn null() -> Self {
         Self {
@@ -356,6 +375,16 @@ pub extern "C" fn phpc_native_reference_null() -> NativeReferenceHandle {
 
 #[no_mangle]
 pub extern "C" fn phpc_native_reference_is_null(handle: NativeReferenceHandle) -> bool {
+    handle.is_null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_null() -> NativeRequestStateHandle {
+    NativeRequestStateHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_is_null(handle: NativeRequestStateHandle) -> bool {
     handle.is_null()
 }
 
@@ -5046,20 +5075,27 @@ mod tests {
             std::mem::size_of::<NativeReferenceHandle>(),
             std::mem::size_of::<*mut ()>()
         );
+        assert_eq!(
+            std::mem::size_of::<NativeRequestStateHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
 
         let array = phpc_native_array_null();
         let object = phpc_native_object_null();
         let resource = phpc_native_resource_null();
         let reference = phpc_native_reference_null();
+        let request_state = phpc_native_request_state_null();
 
         assert!(array.is_null());
         assert!(object.is_null());
         assert!(resource.is_null());
         assert!(reference.is_null());
+        assert!(request_state.is_null());
         assert!(phpc_native_array_is_null(array));
         assert!(phpc_native_object_is_null(object));
         assert!(phpc_native_resource_is_null(resource));
         assert!(phpc_native_reference_is_null(reference));
+        assert!(phpc_native_request_state_is_null(request_state));
     }
 
     #[test]

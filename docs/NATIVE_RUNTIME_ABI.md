@@ -66,6 +66,11 @@ pub struct NativeResourceHandle {
 pub struct NativeReferenceHandle {
     ptr: *mut NativeReference,
 }
+
+#[repr(C)]
+pub struct NativeRequestStateHandle {
+    ptr: *mut NativeRequestState,
+}
 ```
 
 The exported constructor symbols are:
@@ -104,6 +109,8 @@ The first scalar output helper symbols are:
 - `phpc_native_resource_is_null(NativeResourceHandle) -> bool`
 - `phpc_native_reference_null() -> NativeReferenceHandle`
 - `phpc_native_reference_is_null(NativeReferenceHandle) -> bool`
+- `phpc_native_request_state_null() -> NativeRequestStateHandle`
+- `phpc_native_request_state_is_null(NativeRequestStateHandle) -> bool`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
@@ -160,6 +167,12 @@ failures return zero until stdout diagnostics have ABI coverage.
 exported null constructors and predicates pin the pointer-sized C ABI forms for
 future generated code and probes, but they do not allocate storage, expose PHP
 array/object/resource/reference values, or change native lowering support.
+
+`NativeRequestStateHandle` is also a null-only opaque handle shape in this
+slice. Its constructor and predicate pin a pointer-sized request-state ABI form
+for future generated SAPI/request code, but it does not allocate request
+storage, expose superglobals, import host SAPI state, or change native lowering
+support.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -305,12 +318,22 @@ also declares and calls the stderr helper. The current lowerable string payloads
 remain valid UTF-8, so this pins generated failure-path control flow and
 ownership rather than claiming linked native execution.
 
+Milestone 1639 adds the null-only opaque
+`%phpc.NativeRequestStateHandle = type { ptr }` ABI shape plus
+`phpc_native_request_state_null` and
+`phpc_native_request_state_is_null`. The deterministic native runtime ABI probe
+declares those helpers and includes a request-state null-shape probe for both
+host-width and explicit 32-bit snapshots. This is request-state ABI groundwork
+only: generated `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`,
+`$_FILES`, and `$_SESSION` lowering still rejects before emitting misleading
+native code.
+
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
 handles beyond valid UTF-8 byte payloads, diagnostics outside this
-string-to-value conversion helper, request state, arrays, objects, resources,
-references, WordPress host state, and C fallback assembly helper calls remain
-outside this ABI slice. The snapshot uses the selected target's
+string-to-value conversion helper, request-state storage/population, arrays,
+objects, resources, references, WordPress host state, and C fallback assembly
+helper calls remain outside this ABI slice. The snapshot uses the selected target's
 `usize`/pointer-width shape; a real linked native backend still needs full
 target data layout, calling-convention validation, runtime linking, and runtime
 helper emission before broader helper calls can execute truthfully for all
@@ -355,6 +378,9 @@ The tests pin:
 - null-only opaque array/object/resource/reference handle shapes, including
   pointer-sized layout, exported null constructors, exported null predicates,
   and deterministic compiler-side probe declarations/calls.
+- a null-only opaque request-state handle shape, including pointer-sized
+  layout, exported null constructor, exported null predicate, and deterministic
+  compiler-side probe declarations/calls.
 - a deterministic compiler-side diagnostic branch probe that tests a nullable
   value-handle return, clones/reports/frees the diagnostic message on the
   failure branch, and preserves the success branch shape through stdout echo.
@@ -390,13 +416,14 @@ This ABI does not yet provide:
   helper, valid UTF-8 string-handle-to-value helpers, the narrow
   statement-form direct string `echo`/`print` stdout helper path, and the
   narrow selected string-pointer `echo`/`print` stdout helper paths;
-- array, object, resource, reference, or copy-on-write storage/semantics beyond
-  the null-only opaque handle shapes and predicates;
+- array, object, resource, reference, request-state, or copy-on-write
+  storage/semantics beyond the null-only opaque handle shapes and predicates;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
   selected string-pointer `echo`/`print` expressions;
 - symbol tables, stack frames, call lookup, or general diagnostics;
 - a link command or native executable `phpc` mode;
-- PHP request state, WordPress host state, or extension integration.
+- PHP request-state storage/population, WordPress host state, or extension
+  integration.
 
 Those are follow-up ABI and compiler-output milestones.

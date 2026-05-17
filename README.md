@@ -126,8 +126,8 @@ changing that header log. Exact `ValueError` objects/text, cookie name
 validation/encoding, full domain policy, real SAPI emission, and native
 lowering remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
-`php://temp`, `php://input`, local absolute `file://` URL, and local UTF-8
-file stream resources for simple
+`php://temp`, `php://input`, local absolute `file://` URL with bounded UTF-8
+percent-decoded path portions, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
 `fclose()`. `php://input` handles read the deterministic
@@ -144,7 +144,7 @@ params on those contexts. Context resources may be passed to the current
 `file_get_contents()` accepts bounded integer offset plus optional
 non-negative length reads over those UTF-8 payloads. Local absolute `file://`
 URLs with an empty host or `localhost` are also accepted by the current
-include/require resolver.
+include/require resolver after the same bounded UTF-8 percent-decoding.
 Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
 current slice can route those warnings through the top registered string or
@@ -173,8 +173,9 @@ and after the bounded `exit()` path, before object destructors and final
 output-buffer flushing; callbacks registered during shutdown are appended to
 the same queue. Unsupported wrappers beyond the bounded local `file://` and
 documented `php://` subset,
-filters, context option effects, context param effects beyond option merging,
-broader wrapper metadata,
+filters, malformed `file://` percent escapes, decoded NUL bytes, non-UTF-8
+percent-decoded paths, context option effects, context param effects beyond
+option merging, broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, realpath-cache ancestor entries and broader
@@ -199,10 +200,11 @@ emitted. Arrays, objects, class-name constants, `instanceof` relationship
 checks, ArrayAccess object-offset dispatch, clone expressions, include/require
 expression return semantics, functions, general control flow,
 try/catch/finally exception control, references, copy-on-write, and broad PHP
-coercions remain interpreter-only or unsupported for native lowering. Try
-blocks are rejected through a dedicated native diagnostic until catch matching,
-catch variable binding, finally execution, and stack unwinding have native
-semantics.
+coercions remain interpreter-only or unsupported for native lowering. Request
+superglobals remain rejected in native lowering even though the native runtime
+ABI now pins a null-only request-state handle shape. Try blocks are rejected
+through a dedicated native diagnostic until catch matching, catch variable
+binding, finally execution, and stack unwinding have native semantics.
 The compile mode flag is validated before the input file is read, so invalid
 modes such as `--emit-object` report a stable CLI usage error instead of an
 unrelated file, parse, or codegen diagnostic.
@@ -528,7 +530,9 @@ incorrect native code.
   user-class by-value `invoke()`/`invokeArgs()`, plus static trait-method
   by-value invocation with bounded trait `__CLASS__`, `__METHOD__`,
   `self::class`, `static::class`, `get_called_class()`, and static
-  `self::method()`/`static::method()` context,
+  `self::method()`/`static::method()` context, and stable diagnostics for
+  abstract reflected method invocation before exact `ReflectionException`
+  objects exist,
   bounded
   `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
@@ -668,7 +672,8 @@ bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionPar
 and trait method source-file persistence, exact `ReflectionClass::getMethod()`
 and `getMethods()` exception objects/text and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
-method, static trait-method, and named bounded internal function slices, non-public or dynamic
+method, static trait-method, named bounded internal function, and abstract-method
+diagnostic slices, non-public or dynamic
 `ReflectionProperty` value mutation, adapted recursive trait metadata edge
 cases, and
 direct/property-held `ArrayAccess` offsets and

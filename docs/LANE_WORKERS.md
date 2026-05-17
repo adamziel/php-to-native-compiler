@@ -52,14 +52,15 @@ disjoint:
 - Native runtime ABI lane for runtime helper ABI, generated-code helper-call
   probes, owned buffers/handles, and explicit native lowering boundaries.
 
-Current next queue after the 1629-1634 checkpoint:
+Current next queue after the 1635-1640 checkpoint:
 
-- Milestone 1635: object/interface WordPress blocker.
-- Milestone 1636: reference/COW WordPress blocker.
-- Milestone 1637: request/SAPI/filesystem/stream WordPress blocker.
-- Milestone 1638: WordPress DB/bootstrap evidence blocker.
-- Milestone 1639: native runtime ABI/execution blocker.
-- Milestone 1640: tests/docs integration, full gate, checkpoint, and cleanup.
+- Milestone 1641: object lifecycle WordPress blocker.
+- Milestone 1642: reference/COW WordPress blocker.
+- Milestone 1643: request/SAPI/filesystem/stream WordPress blocker.
+- Milestone 1644: WordPress DB/bootstrap evidence blocker.
+- Milestone 1645: native runtime ABI/execution blocker.
+- Milestone 1646: tests/docs integration, full gate, checkpoint, push, and
+  cleanup.
 
 Parser lane:
 

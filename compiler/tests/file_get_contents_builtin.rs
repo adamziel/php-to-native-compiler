@@ -122,6 +122,28 @@ echo file_get_contents($url, false, null, 7, 6);
 }
 
 #[test]
+fn file_get_contents_percent_decodes_bounded_local_file_urls() {
+    let path = std::env::temp_dir().join("phpc-file-url-percent space#payload.txt");
+    fs::write(&path, "decoded-file-url").expect("temporary percent-decoding file can be seeded");
+    let encoded_path = path
+        .to_string_lossy()
+        .replace(' ', "%20")
+        .replace('#', "%23");
+    let source = format!(
+        r#"<?php
+echo file_get_contents("file://{}", false, null, 8, 4);
+"#,
+        encoded_path
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "file");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn file_get_contents_applies_offset_and_length_to_php_input_seed() {
     let program = php_compiler::parse(
         r#"<?php
@@ -332,6 +354,16 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
     assert_eq!(
         stream.message,
         "unsupported call file_get_contents(): only php://input, local file:// URLs, and local file paths are supported in the current stream-wrapper subset"
+    );
+
+    let bad_percent =
+        run_source("<?php\nfile_get_contents('file:///tmp/bad%ZZpath');\n").unwrap_err();
+    assert_eq!(bad_percent.phase, Phase::Runtime);
+    assert_eq!(bad_percent.line, 2);
+    assert_eq!(bad_percent.column, 1);
+    assert_eq!(
+        bad_percent.message,
+        "unsupported call file_get_contents(): file:// URL path percent escapes must use two hexadecimal digits in the current subset"
     );
 
     let bad_use_include_path =

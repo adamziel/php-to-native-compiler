@@ -1,0 +1,1 @@
+native request-state ABI boundary fixture uses current phpc undefined request-superglobal diagnostics; system PHP emits a warning and continues

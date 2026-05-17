@@ -780,6 +780,15 @@ The bridge keeps the local parameter's original cell so mutations before
 `unset($param)` are written back at return, while later writes to a detached
 local name are not. It still does not expose in-call PHP reference-container
 identity.
+Direct `call_user_func()` invocation of public `[object, method]` instance
+callbacks and public `["ClassName", "method"]` static callbacks now mirrors
+the same bounded PHP behavior already used for string user-function and
+ordinary closure callbacks with reached by-reference parameters: each supplied
+argument expression is evaluated by value, the interpreter emits a recoverable
+warning for each reached non-variadic by-reference parameter, and callee writes
+mutate only the callee-local parameter value rather than the caller variable or
+array slot. Object receiver state still mutates through `$this` when the method
+body writes visible properties.
 `call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks, public object-method
 array callbacks, and public class-string static-method array callbacks where
@@ -1293,10 +1302,12 @@ model PHP zvals, symbol-table storage, PHP numeric coercion,
 references/copy-on-write, broad dynamic string-pointer output,
 locale/version-specific float formatting, integer overflow promotion, assembly
 linking/execution, or native PHP error objects. The native runtime ABI probe has
-diagnostic-handle calls and one deterministic failure branch for string-to-value
-conversion failures. Normal generated LLVM for the documented string-output
-slices branches on that helper's nullable value-handle result and reports the
-diagnostic message to stderr on the failure path before cleanup.
+diagnostic-handle calls, one deterministic failure branch for string-to-value
+conversion failures, and a null-only request-state handle probe. Normal
+generated LLVM for the documented string-output slices branches on that helper's
+nullable value-handle result and reports the diagnostic message to stderr on the
+failure path before cleanup. Request-state handles are ABI shape only; native
+superglobal storage/population still rejects at the request-state boundary.
 Finite same-type float arithmetic and finite float unary-minus results are
 bounded and tracked only for later scalar folds such as strict identity when
 all possible results are proven. Float overflow, `INF`, and `NAN`
@@ -1994,9 +2005,10 @@ runtime state.
 Direct native reads, indexed reads, `isset(...)`, and `empty(...)` over the
 current request superglobals `$_SERVER`, `$_COOKIE`, `$_GET`, `$_POST`,
 `$_REQUEST`, and `$_FILES` reject through a request-state codegen boundary
-until generated code has request storage, SAPI population, `variables_order`
-policy, upload metadata, references/copy-on-write, and exact diagnostics. This
-avoids folding unassigned request bags as ordinary missing native variables.
+until generated code has request storage beyond the null-only request-state ABI
+handle, SAPI population, `variables_order` policy, upload metadata,
+references/copy-on-write, and exact diagnostics. This avoids folding unassigned
+request bags as ordinary missing native variables.
 `abs()` is an interpreter-only bounded numeric builtin for current integer and
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
@@ -2111,7 +2123,12 @@ and return rows in deterministic table-name order. The same path accepts
 bounded table-identifier placeholders for `SHOW [FULL] COLUMNS FROM ?` and
 `SHOW INDEX`/`SHOW KEYS FROM ?`, including the documented optional
 `Field`/`Key_name` equality or `LIKE` filter placeholder as the next
-parameter; it does not substitute arbitrary SQL parameters. The same placeholder
+parameter. One exact prepared
+`information_schema.COLUMNS c LEFT JOIN information_schema.STATISTICS s`
+query also projects recorded column and index-part metadata as `Field`,
+`Type`, `Null`, `Key`, `Key_name`, `Seq_in_index`, and `Sub_part` rows for a
+single identifier-shaped `c.TABLE_NAME = ?` parameter; it does not substitute
+arbitrary SQL parameters. The same placeholder
 transaction and savepoint helpers that
 snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
@@ -2128,7 +2145,8 @@ filters, prepared option-name prefix scans, prepared option-row `ESCAPE`
 clauses, and schema metadata filters, exact MySQL
 affected-row or insert-ID edge cases, prepared schema placeholders beyond the
 documented single string filter parameter, table-identifier metadata probes,
-and table-status `IN` lists, real
+table-status `IN` lists, and the exact joined `COLUMNS`/`STATISTICS`
+metadata projection, real
 transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
@@ -2234,7 +2252,8 @@ reject under the function-call boundary.
 the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
 read. Non-URL local paths use the same process-path-then-repo-root relative
 path policy as the filesystem metadata builtins. Local absolute `file://` URLs
-with an empty host or `localhost` map directly to the referenced local path.
+with an empty host or `localhost` map to the referenced local path after the
+bounded UTF-8 path portion is percent-decoded.
 The current bounded second argument accepts a bool include-path flag; when true
 for relative local paths, lookup follows the same include-path-then-source-
 relative candidate order used by current `include`/`require` resolution. The
@@ -2253,8 +2272,9 @@ through to the stderr warning path when `error_reporting()` still includes
 `E_WARNING`, while other return values suppress the fallback. This is
 intentionally a local recovery
 path, not the general PHP warning/error-handler system. It does not model PHP
-binary strings, exact PHP warning or handler `errstr` text, `file://` URL
-percent-decoding, non-local `file://` hosts, stream context
+binary strings, exact PHP warning or handler `errstr` text, non-local
+`file://` hosts, malformed percent escapes, decoded NUL bytes, non-UTF-8
+percent-decoded paths, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
 non-UTF-8 data, warning recovery for other stream/resource paths,
 handler stack mutation edge cases during active handler dispatch, `open_basedir`,
@@ -2906,8 +2926,9 @@ source direct-variable cell, and closure invocation prebinds that cell into the
 closure local scope so closure writes update the captured variable even after
 the creating user-function scope has returned. The function path intentionally
 rejects other internal functions, by-reference capture of array-offset/property/
-ArrayAccess alias roots, array-callable `call_user_func()` callbacks,
-variadic reference parameters through `call_user_func()`, typed
+ArrayAccess alias roots, array-callable `call_user_func()` forms beyond the
+bounded public object/static method by-value slice, variadic reference
+parameters through `call_user_func()`, typed
 parameter/return declarations during invocation,
 named closure callback arguments, and reference returns until those callable
 execution and aliasing sources exist, and doc-comment association does not yet
@@ -2924,9 +2945,12 @@ execute through the by-value argument path when the target is `null` or an
 object, with a narrow trait reflection context for `__CLASS__`, `__METHOD__`,
 `self::class`, `static::class`, `get_called_class()`, and static
 `self::method()`/`static::method()` calls that resolve to executable methods
-on the reflected trait. Interface methods, non-static trait methods, abstract
-trait methods, trait class constants, `parent` context behavior, `new self`/
-`new static` from reflected traits, internal methods, by-reference invocation,
+on the reflected trait. Interface methods and other abstract reflected methods
+stop at a stable `ReflectionMethod::invoke` runtime boundary before dispatch,
+mirroring PHP's abstract-method invocation rule without materializing exact
+`ReflectionException` objects. Non-static trait methods, trait class constants,
+`parent` context behavior, `new self`/`new static` from reflected traits,
+internal methods, by-reference invocation,
 reference returns, typed parameter/return declarations during invocation, and
 native lowering remain outside this bounded reflection
 invocation path. Method `invokeArgs()` has the same positional-only array
@@ -3074,9 +3098,9 @@ local files in statement and expression position. It uses these rules:
   directory of the file containing the construct; the default include path is
   `"."`, path-list entries use `PATH_SEPARATOR`, and empty entries are treated
   as `.`
-- bounded local absolute `file://` URLs with an empty host or `localhost` map
-  directly to the referenced local path for include/require execution and
-  `_once` de-duplication
+- bounded local absolute `file://` URLs with an empty host or `localhost`
+  percent-decode the UTF-8 path portion and map to the referenced local path
+  for include/require execution and `_once` de-duplication
 - included files are parsed as PHP files with `<?php`, register top-level
   function/class declarations into the active interpreter, and execute in the
   caller scope
@@ -3105,7 +3129,8 @@ local files in statement and expression position. It uses these rules:
 Unsupported include/require behavior remains: process-current-working-directory
 behavior beyond the default `"."` include path entry and fallback used when no
 source file is available, failed-include realpath-cache side effects,
-`file://` URL percent-decoding, non-local `file://` hosts, `phar://`, URL includes,
+malformed `file://` percent escapes, decoded NUL bytes, non-UTF-8
+percent-decoded paths, non-local `file://` hosts, `phar://`, URL includes,
 autoload interaction, opcache behavior, declaration-order dependencies such as
 a required file declaring `class Child extends Base` only after requiring the
 base class, exact source mapping for declarations after include, and exact

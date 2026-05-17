@@ -162,6 +162,48 @@ echo call_user_func($callback, $option, "closure"), "|", $option, "|", $counter;
 }
 
 #[test]
+fn call_user_func_array_callables_invoke_reference_parameters_by_value_with_warning() {
+    let execution = run_source(
+        r#"<?php
+function milestone1636_warning($errno, $errstr) {
+    echo "warning:" . $errno . ":" . (str_contains($errstr, "must be passed by reference") ? "ref" : "other") . "\n";
+    return true;
+}
+
+class Milestone1636_Filter {
+    public $seen = "seed";
+
+    public function mark(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        $this->seen = $this->seen . ":" . $suffix;
+        return $value . ":" . $this->seen;
+    }
+
+    public static function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+set_error_handler("milestone1636_warning", E_WARNING);
+$filter = new Milestone1636_Filter();
+$option = "autoload";
+$items = array("payload" => array("slot" => "start"));
+echo call_user_func(array($filter, "mark"), $option, "object"), "|", $option, "|", $filter->seen, "\n";
+echo call_user_func(array("Milestone1636_Filter", "tag"), $items["payload"]["slot"], "static"), "|", $items["payload"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:ref\nautoload:object:seed:object|autoload|seed:object\nwarning:2:ref\nstart:static|start"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_literal_reference_arguments_for_user_callbacks() {
     let execution = run_source(
         r#"<?php
@@ -1439,16 +1481,16 @@ echo call_user_func(42);
         "unsupported call call_user_func(): callback must evaluate to string in the current subset, got int"
     );
 
-    let array_callable = runtime_error(
+    let malformed_array_callable = runtime_error(
         r#"<?php
-echo call_user_func(["ClassName", "method"]);
+echo call_user_func(["ClassName"]);
 "#,
     );
-    assert_eq!(array_callable.line, 2);
-    assert_eq!(array_callable.column, 6);
+    assert_eq!(malformed_array_callable.line, 2);
+    assert_eq!(malformed_array_callable.column, 6);
     assert_eq!(
-        array_callable.message,
-        "unsupported call call_user_func(): array callables are not implemented in the current subset"
+        malformed_array_callable.message,
+        "unsupported call call_user_func(): array callback must be [object-or-class, method] in the current subset"
     );
 
     let unknown = runtime_error(

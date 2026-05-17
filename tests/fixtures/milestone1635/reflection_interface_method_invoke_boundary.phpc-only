@@ -1,0 +1,1 @@
+phpc reports a stable ReflectionMethod invocation boundary for abstract interface methods; PHP raises ReflectionException, while exact ReflectionException objects, stack traces, and catchability are not implemented.

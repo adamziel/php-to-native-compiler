@@ -701,6 +701,37 @@ fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() 
 }
 
 #[test]
+fn native_request_state_handle_boundary_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone1639/native_request_state_handle_boundary.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = std::fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone1639/native_request_state_handle_boundary_emit_ir.cli"),
+    )
+    .expect("native request-state CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn globals_direct_string_offsets_route_function_scope_writes_to_root() {
     let execution = run_source(
         r#"<?php

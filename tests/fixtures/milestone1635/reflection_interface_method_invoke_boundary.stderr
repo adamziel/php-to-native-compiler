@@ -1,0 +1,2 @@
+runtime error at 16:6: unsupported call ReflectionMethod::invoke: trying to invoke abstract method HookContract::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented
+

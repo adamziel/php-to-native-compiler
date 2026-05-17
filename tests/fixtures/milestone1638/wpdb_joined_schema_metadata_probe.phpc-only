@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for a bounded prepared information_schema column/index metadata join; system PHP needs a real database connection and host information_schema state.

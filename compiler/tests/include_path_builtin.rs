@@ -186,6 +186,28 @@ echo "|again=" . ($again === true ? "true" : "other");
 }
 
 #[test]
+fn include_and_require_once_percent_decode_bounded_local_file_urls() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$base = realpath(__DIR__);
+$include_result = include "file://" . $base . "/file%20url%20include%20%23encoded.inc";
+echo "include=" . $include_result . ":" . $included_from_percent_url;
+$require_result = require_once "file://" . $base . "/file%20url%20required%20%2Bencoded.inc";
+echo "|require=" . $require_result . ":" . $required_from_percent_url;
+"#,
+        "tests/fixtures/milestone1637/file_url_percent_decoding.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "include=percent-include-return:percent-include|require=percent-require-return:percent-require"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn include_path_builtins_reject_forms_outside_current_subset() {
     let get_too_many = runtime_error("<?php\necho get_include_path('extra');\n");
     assert_eq!(get_too_many.line, 2);
