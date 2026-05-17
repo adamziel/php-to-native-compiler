@@ -168,10 +168,18 @@
   dynamic property reads through a visible public `__get($name)` method that
   returns by reference are also executable for the same bounded direct-variable
   reference-return body shape; the read snapshots the returned cell by value
-  and does not bind the read result as an alias. This does not add mixed
-  nested `ArrayAccess` chains, general magic-property reference containers,
-  arbitrary reference expressions, broader `__get()` return body shapes, or a
-  general in-call PHP reference container. String
+  and does not bind the read result as an alias. Statement-form reference
+  assignment to a direct variable now also accepts direct named and dynamic
+  object-property array-offset sources below those magic properties, such as
+  `$alias =& $object->missing["slot"];` and
+  `$alias =& $object->{$name}["outer"]["slot"];`, when visible public
+  `__get($name)` returns a direct variable by reference; the assigned alias
+  binds to the selected slot under the returned array cell. This does not add
+  append-offset sources below magic properties, non-direct magic-property
+  holder expressions, mixed nested `ArrayAccess` chains, general
+  magic-property reference containers, arbitrary reference expressions,
+  broader `__get()` return body shapes, or a general in-call PHP reference
+  container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -2567,7 +2575,13 @@
   deterministic row sets for one string pattern parameter, including
   backticked table/column spellings, `%` wildcards, `_` single-character
   wildcards, and backslash-escaped `%`, `_`, and `\` literals such as
-  `\_transient\_%`. These prepared LIKE scans also accept an exact
+  `\_transient\_%`. Those same prepared read projections also accept a
+  bounded pattern-list form whose `WHERE` clause is only parenthesized or
+  unparenthesized `option_name LIKE ? OR option_name LIKE ?` predicates, with
+  one string pattern parameter per predicate, default backslash escaping,
+  optional backticked table/column spelling, sorted/de-duplicated option-name
+  rows, and the existing trailing `ORDER BY option_name`/`ASC` suffix. These
+  prepared LIKE scans also accept an exact
   single-character `ESCAPE '<char>'` clause before the supported trailing
   `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
   `ASC`, and return rows in the existing deterministic ascending option-name
@@ -2579,9 +2593,10 @@
   remains bounded to the documented option-row projections. Direct SQL
   literal option-name `LIKE` scans and deletes use the same bounded matcher
   for explicit `ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES` in the
-  documented projection/delete shapes. Prepared pattern lists, `DESC`
-  ordering, arbitrary `ORDER BY` expressions, collation fidelity, and host
-  database execution remain unsupported. The
+  documented projection/delete shapes. Prepared pattern-list mutation queries,
+  mixed `AND`/`OR` predicate groups, per-pattern `ESCAPE` clauses in pattern
+  lists, `DESC` ordering, arbitrary `ORDER BY` expressions, collation
+  fidelity, and host database execution remain unsupported. The
   exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
@@ -2959,7 +2974,8 @@
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
   entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, and pre-existing local `fopen()` target paths,
+  `file_get_contents()`, pre-existing local `fopen()` target paths, and
+  successful local include/require reads,
   broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
@@ -2970,9 +2986,10 @@
   unresolved local paths return `false`. Successful resolutions populate a
   bounded request-local `realpath_cache_get()` entry keyed by the resolved path
   with `key`, `is_dir`, `realpath`, and `expires` fields. Successful local
-  `file_get_contents()` reads and local `fopen()` calls for paths that existed
-  before opening also populate one bounded cache entry for the resolved target
-  path. `clearstatcache(false)` leaves those entries intact,
+  `file_get_contents()` reads, local `fopen()` calls for paths that existed
+  before opening, and successful local include/require reads also populate one
+  bounded cache entry for the resolved target path. `clearstatcache(false)`
+  leaves those entries intact,
   `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
   `clearstatcache(true)` clears all bounded realpath entries.
@@ -2987,8 +3004,9 @@
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
   stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries, cache
   entries from filesystem operations beyond successful `realpath()`, local
-  `file_get_contents()`, and pre-existing local `fopen()` target paths, exact
-  realpath-cache `key` hash values and expiration policy, exact
+  `file_get_contents()`, pre-existing local `fopen()` target paths, and
+  successful local include/require reads, exact realpath-cache `key` hash
+  values and expiration policy, exact
   `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
   partial-output behavior, and native lowering remain unsupported. Native
   function-table introspection can
@@ -3398,8 +3416,8 @@
   `get_parent_class` returns the immediate parent class name for supported
   object/declared-string inputs with parent metadata and false otherwise,
   `get_declared_classes` returns a zero-indexed array containing metadata-only
-  core class seeds followed by classes declared in the current program and then
-  declared unit enums,
+  core class seeds including `ReflectionException`, followed by classes
+  declared in the current program and then declared unit enums,
   `get_declared_interfaces` returns a zero-indexed array of interfaces
   declared in the current program in declaration order,
   `get_declared_traits` returns a zero-indexed array of traits declared in the
@@ -4582,12 +4600,13 @@
   frees the handles. Statement-form `echo` and `print` of a selected
   string-pointer expression whose possible string values all have the same byte
   length use that same runtime-helper path with the selected pointer and known
-  length. Mixed-length selected string-pointer output still uses the older
-  null-terminated direct `printf` path until native lowering carries dynamic
-  byte lengths. This does not yet cover arbitrary dynamic string-pointer
-  expression output, binary PHP string values beyond valid UTF-8 byte payloads,
-  diagnostics handles for failed stdout writes, linked native execution, or the
-  C fallback assembly helper-call path.
+  length. Statement-form `echo` and `print` of a selected string-pointer
+  expression whose possible string values have different byte lengths now emit
+  a selected `usize` byte-length value and pass that selected length with the
+  selected pointer to the same runtime-helper path. This does not yet cover
+  arbitrary dynamic string-pointer expression output, binary PHP string values
+  beyond valid UTF-8 byte payloads, diagnostics handles for failed stdout
+  writes, linked native execution, or the C fallback assembly helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
@@ -7406,6 +7425,10 @@
   `Exception` is seeded as a metadata-only built-in class: `class_exists`,
   `get_declared_classes`, no-argument `new Exception()`, and user classes
   extending `Exception` work through the current object metadata model.
+  `ReflectionException` is also seeded as metadata-only and records
+  `Exception` as its parent for `class_exists()`, `get_declared_classes()`,
+  `get_parent_class()`, `is_a()`, `is_subclass_of()`, and `ReflectionClass`
+  metadata checks.
   `Throwable` interface metadata, `Exception` constructor state (`message`,
   `code`, previous exception), `Exception` methods such as `getMessage()`,
   stack unwinding, catch matching, catch variable binding, multi-catch
@@ -8100,9 +8123,10 @@
   `ReflectionClass::getMethod()`/`getMethods()` exception objects/text for
   missing methods, non-string names, non-int filter arguments, and exact
   `getMethods()` ordering for adapted trait method compositions,
-  recursive trait conflict/adaptation edge cases, exact
-  `ReflectionException` behavior, namespace/import alias expansion beyond
-  parsed class-like names, and native lowering remain unsupported.
+  recursive trait conflict/adaptation edge cases, exact `ReflectionException`
+  object construction, throwing, catching, messages/codes/stack traces, and
+  missing-reflection-member exception text, namespace/import alias expansion
+  beyond parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

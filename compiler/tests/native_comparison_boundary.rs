@@ -614,8 +614,8 @@ echo ($text >= $text) ? 1 : 0;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        5,
-        "untracked source string expression should stay emitted through selects:\n{ir}"
+        8,
+        "untracked source string expression should stay emitted through pointer and length selects:\n{ir}"
     );
     assert!(
         !ir.contains("@strcmp"),
@@ -762,13 +762,15 @@ echo $right >= "alpha-10";
         "{ir}"
     );
     assert!(
-        ir.contains("%tmp3 = select i1 %tmp1, ptr @.str.2, ptr @.str.3"),
+        ir.contains("%tmp4 = select i1 %tmp1, ptr @.str.2, ptr @.str.3"),
         "{ir}"
     );
+    assert!(ir.contains("%tmp3 = select i1 %tmp1, i64 7, i64 6"), "{ir}");
+    assert!(ir.contains("%tmp5 = select i1 %tmp1, i64 8, i64 7"), "{ir}");
     assert_eq!(ir.matches("call i32 @strcmp").count(), 3, "{ir}");
     assert!(ir.contains("icmp eq i32"), "{ir}");
     assert!(ir.contains("icmp sgt i32"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 5, "{ir}");
+    assert_eq!(ir.matches("select i1").count(), 7, "{ir}");
 }
 
 #[test]
@@ -806,14 +808,14 @@ echo ($ambiguous === true) ? 1 : 0;
         "known false string comparison should fold before boolean identity:\n{ir}"
     );
     assert!(
-        ir.contains("%tmp3 = select i1 %tmp1, ptr @.str.4, ptr @.str.5"),
+        ir.contains("%tmp4 = select i1 %tmp1, ptr @.str.4, ptr @.str.5"),
         "{ir}"
     );
     assert!(
-        ir.contains("%tmp4 = call i32 @strcmp(ptr %tmp2, ptr %tmp3)"),
+        ir.contains("%tmp5 = call i32 @strcmp(ptr %tmp2, ptr %tmp4)"),
         "{ir}"
     );
-    assert!(ir.contains("%tmp5 = icmp eq i32 %tmp4, 0"), "{ir}");
+    assert!(ir.contains("%tmp6 = icmp eq i32 %tmp5, 0"), "{ir}");
     assert!(
         !ir.contains("icmp eq i1"),
         "known true string comparison result should feed later boolean identity:\n{ir}"
@@ -823,7 +825,7 @@ echo ($ambiguous === true) ? 1 : 0;
         "known false string comparison result should feed later boolean identity:\n{ir}"
     );
     assert!(
-        ir.contains("%tmp10 = select i1 %tmp5, i64 1, i64 0"),
+        ir.contains("%tmp11 = select i1 %tmp6, i64 1, i64 0"),
         "ambiguous string comparison result should feed boolean-literal identity without an extra comparison:\n{ir}"
     );
 }
@@ -1528,13 +1530,13 @@ echo $word !== "gamma", "x";
         "{ir}"
     );
     assert!(
-        ir.contains("%tmp3 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)"),
+        ir.contains("%tmp4 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)"),
         "{ir}"
     );
-    assert!(ir.contains("%tmp4 = icmp eq i32 %tmp3, 0"), "{ir}");
+    assert!(ir.contains("%tmp5 = icmp eq i32 %tmp4, 0"), "{ir}");
     assert_eq!(ir.matches("call i32 @strcmp").count(), 1, "{ir}");
     assert!(!ir.contains("gamma"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
+    assert_eq!(ir.matches("select i1").count(), 3, "{ir}");
     assert!(ir.contains("c\"1\\00\""), "{ir}");
     assert!(ir.contains("c\"\\00\""), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
@@ -1618,7 +1620,7 @@ echo "x", $word === 1, "y";
         "{ir}"
     );
     assert!(!ir.contains("@strcmp"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 1, "{ir}");
+    assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
     assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");

@@ -173,13 +173,14 @@ echo "" . $text;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        5,
-        "untracked source string expression should stay emitted through selects:\n{ir}"
+        8,
+        "untracked source string expression should stay emitted through pointer and length selects:\n{ir}"
     );
     assert_eq!(
-        ir.matches("@printf(ptr @.fmt_str, ptr %tmp7)").count(),
+        ir.matches("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)")
+            .count(),
         2,
-        "empty-string concatenation should reuse the string pointer expression:\n{ir}"
+        "empty-string concatenation should reuse the string pointer and length expression:\n{ir}"
     );
     assert!(
         !ir.contains("c\"alpha\\00\\00\""),

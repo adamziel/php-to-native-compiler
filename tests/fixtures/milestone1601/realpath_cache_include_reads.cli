@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1601/realpath_cache_include_reads.php
+exit: 0
+stdout:
+known|empty|included|include-cached|include-sized|cleared
+--- stdout end ---
+stderr:
+--- stderr end ---

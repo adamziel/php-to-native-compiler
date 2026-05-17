@@ -1,0 +1,5 @@
+exists
+extends
+Exception
+ReflectionException|Exception|1
+declared

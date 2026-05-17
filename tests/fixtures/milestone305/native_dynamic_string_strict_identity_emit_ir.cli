@@ -28,21 +28,22 @@ entry:
   %tmp0 = add i64 1, 2
   %tmp1 = icmp eq i64 %tmp0, 3
   %tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1
-  %tmp3 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)
-  %tmp4 = icmp eq i32 %tmp3, 0
-  %tmp5 = select i1 %tmp4, ptr @.str.3, ptr @.str.4
-  call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp5)
-  %tmp6 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.5, i64 1)
-  %tmp7 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp6)
-  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp7)
-  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp7)
-  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp6)
+  %tmp3 = select i1 %tmp1, i64 5, i64 4
+  %tmp4 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)
+  %tmp5 = icmp eq i32 %tmp4, 0
+  %tmp6 = select i1 %tmp5, ptr @.str.3, ptr @.str.4
+  call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp6)
+  %tmp7 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.5, i64 1)
+  %tmp8 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp7)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp8)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp8)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp7)
   call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.6)
-  %tmp8 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.7, i64 1)
-  %tmp9 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp8)
-  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp9)
-  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp9)
-  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp8)
+  %tmp9 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.7, i64 1)
+  %tmp10 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp9)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp10)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp10)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp9)
   ret i32 0
 }
 --- stdout end ---

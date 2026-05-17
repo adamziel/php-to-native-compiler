@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1599/reflection_exception_core_metadata.php
+exists
+extends
+Exception
+ReflectionException|Exception|1
+declared

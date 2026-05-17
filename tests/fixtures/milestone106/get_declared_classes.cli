@@ -9,19 +9,20 @@ Array
     [4] => mysqli_stmt
     [5] => PDO
     [6] => PDOStatement
-    [7] => ReflectionClass
-    [8] => ReflectionFunction
-    [9] => ReflectionMethod
-    [10] => ReflectionParameter
-    [11] => ReflectionType
-    [12] => ReflectionNamedType
-    [13] => ReflectionUnionType
-    [14] => ReflectionIntersectionType
-    [15] => ReflectionProperty
-    [16] => Box
-    [17] => Profile
+    [7] => ReflectionException
+    [8] => ReflectionClass
+    [9] => ReflectionFunction
+    [10] => ReflectionMethod
+    [11] => ReflectionParameter
+    [12] => ReflectionType
+    [13] => ReflectionNamedType
+    [14] => ReflectionUnionType
+    [15] => ReflectionIntersectionType
+    [16] => ReflectionProperty
+    [17] => Box
+    [18] => Profile
 )
-18|Exception|stdClass|mysqli
+19|Exception|stdClass|mysqli
 Exception|stdClass|mysqli--- stdout end ---
 stderr:
 --- stderr end ---

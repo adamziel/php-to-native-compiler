@@ -746,11 +746,16 @@ inaccessible declared magic properties when visible public `__get()` returns a
 direct variable by reference. Normal named and dynamic property reads through
 that same bounded reference-returning `__get()` direct-variable body shape now
 borrow the returned cell long enough to produce a by-value snapshot, without
-recording alias metadata for the read result. General magic-property
-containers, broader `__get()` return bodies such as properties, offsets,
-expressions, or nested-control-flow returns, and arbitrary reference-return
-invocations still report stable runtime boundaries before any by-value return
-is produced.
+recording alias metadata for the read result. Direct-variable reference
+assignment from named and dynamic array offsets below those magic properties
+temporarily roots the returned cell in the symbol table and reuses the
+existing array-offset alias metadata for the selected slot. That is still a
+bounded alias bridge, not a general runtime reference container. Append
+offsets below magic properties, non-direct magic-property holders, broader
+`__get()` return bodies such as properties, offsets, expressions, or
+nested-control-flow returns, mixed nested `ArrayAccess` chains, and arbitrary
+reference-return invocations still report stable runtime boundaries before any
+by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
@@ -2247,9 +2252,10 @@ returns a UTF-8 resolved host path for existing local paths, and returns
 `false` for unresolved local paths. Successful resolutions also populate a
 bounded request-local `realpath_cache_get()` table keyed by resolved path with
 the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields.
-Successful local `file_get_contents()` reads and local `fopen()` calls for
-paths that existed before opening also populate one bounded entry for the
-resolved target path. `clearstatcache(false)` leaves that table intact,
+Successful local `file_get_contents()` reads, local `fopen()` calls for paths
+that existed before opening, and successful local include/require reads also
+populate one bounded entry for the resolved target path. `clearstatcache(false)`
+leaves that table intact,
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
 cached resolved-path key, and one-argument `clearstatcache(true)` clears all
 bounded realpath entries. `realpath_cache_size()` returns a deterministic
@@ -2259,8 +2265,9 @@ empty/non-empty and clear/invalidation probes. Stream wrappers are rejected
 instead of being modeled. Symlink policy differences, exact warning plus
 `false` fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths,
 realpath-cache ancestor entries, cache entries from filesystem operations
-beyond successful `realpath()`, local `file_get_contents()`, and pre-existing
-local `fopen()` paths, exact realpath-cache key hashes and expiration policy,
+beyond successful `realpath()`, local `file_get_contents()`, pre-existing local
+`fopen()` paths, and successful local include/require reads, exact
+realpath-cache key hashes and expiration policy,
 exact `realpath_cache_size()` memory-byte accounting, and native filesystem
 lowering remain out of scope.
 Native function-table introspection recognizes the names, while direct native
@@ -2990,6 +2997,10 @@ local files in statement and expression position. It uses these rules:
 - included files are parsed as PHP files with `<?php`, register top-level
   function/class declarations into the active interpreter, and execute in the
   caller scope
+- successful local include/require reads populate the bounded request-local
+  realpath cache entry for the resolved target path, matching the same
+  empty/non-empty and clear behavior exposed by `realpath_cache_get()` and
+  `realpath_cache_size()`
 - `require_once` and `include_once` de-duplicate by resolved local file,
   including files first loaded through non-once `require` or `include`
 - top-level `return` in an included file returns to the including file

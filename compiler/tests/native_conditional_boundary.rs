@@ -417,12 +417,23 @@ echo $second, "!";
         ir.contains("%tmp3 = select i1 %tmp1, ptr @.str.0, ptr @.str.1"),
         "{ir}"
     );
+    assert!(ir.contains("%tmp4 = select i1 %tmp1, i64 5, i64 4"), "{ir}");
     assert!(
-        ir.contains("%tmp4 = select i1 %tmp2, ptr @.str.2, ptr %tmp3"),
+        ir.contains("%tmp5 = select i1 %tmp2, ptr @.str.2, ptr %tmp3"),
         "{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_str, ptr %tmp3)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_str, ptr %tmp4)"), "{ir}");
+    assert!(
+        ir.contains("%tmp6 = select i1 %tmp2, i64 5, i64 %tmp4"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("@phpc_native_string_from_bytes(ptr %tmp3, i64 %tmp4)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("@phpc_native_string_from_bytes(ptr %tmp5, i64 %tmp6)"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -618,15 +629,15 @@ echo $text ?: $text;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        5,
-        "untracked source string expression should stay emitted through selects:\n{ir}"
+        8,
+        "untracked source string expression should stay emitted through pointer and length selects:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_str, ptr %tmp7)"),
-        "identical short ternary should reuse the string pointer expression:\n{ir}"
+        ir.contains("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)"),
+        "identical short ternary should reuse the string pointer and length expression:\n{ir}"
     );
     assert!(
-        !ir.contains("select i1 %tmp7"),
+        !ir.contains("select i1 %tmp9"),
         "short ternary should not invent pointer truthiness lowering:\n{ir}"
     );
 }
@@ -657,15 +668,15 @@ echo $text ? $text : $text;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        5,
-        "untracked source string expression should stay emitted through selects only:\n{ir}"
+        8,
+        "untracked source string expression should stay emitted through pointer and length selects only:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_str, ptr %tmp7)"),
-        "identical full ternary should reuse the string pointer expression:\n{ir}"
+        ir.contains("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)"),
+        "identical full ternary should reuse the string pointer and length expression:\n{ir}"
     );
     assert!(
-        !ir.contains("select i1 %tmp7"),
+        !ir.contains("select i1 %tmp9"),
         "full ternary should not invent pointer truthiness lowering:\n{ir}"
     );
 }
@@ -846,12 +857,14 @@ echo $falsey ?: "falsey";
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(ir.contains("%tmp2 = select i1 %tmp1"), "{ir}");
     assert!(ir.contains("%tmp3 = select i1 %tmp1"), "{ir}");
+    assert!(ir.contains("%tmp4 = select i1 %tmp1"), "{ir}");
+    assert!(ir.contains("%tmp5 = select i1 %tmp1"), "{ir}");
     assert!(ir.contains("c\"literal\\00\""), "{ir}");
     assert!(ir.contains("c\"empty\\00\""), "{ir}");
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
     assert!(ir.contains("c\"falsey\\00\""), "{ir}");
     assert!(
-        ir.contains("@printf(ptr @.fmt_str, ptr %tmp2)"),
+        ir.contains("@phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"),
         "known-truthy string expression should be reused as the short ternary result:\n{ir}"
     );
     assert!(
@@ -1004,12 +1017,14 @@ echo $falsey ? "bad" : "falsey";
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(ir.contains("%tmp2 = select i1 %tmp1"), "{ir}");
     assert!(ir.contains("%tmp3 = select i1 %tmp1"), "{ir}");
+    assert!(ir.contains("%tmp4 = select i1 %tmp1"), "{ir}");
+    assert!(ir.contains("%tmp5 = select i1 %tmp1"), "{ir}");
     assert!(ir.contains("c\"one\\00\""), "{ir}");
     assert!(ir.contains("c\"empty\\00\""), "{ir}");
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
     assert!(ir.contains("c\"falsey\\00\""), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
+    assert_eq!(ir.matches("select i1").count(), 4, "{ir}");
 
     let error = emit_ir_source(
         r#"<?php

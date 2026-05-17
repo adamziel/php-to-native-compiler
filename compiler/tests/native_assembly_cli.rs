@@ -16332,9 +16332,9 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp4 = select i1 %tmp2, ptr @.str.2, ptr %tmp3'*) : ;;\n\
+  *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp4 = select i1 %tmp1, i64 5, i64 4'*'%tmp5 = select i1 %tmp2, ptr @.str.2, ptr %tmp3'*'%tmp6 = select i1 %tmp2, i64 5, i64 %tmp4'*) : ;;\n\
   *)\n\
-  printf '%s\\n' 'fake clang missing string ternary select operations' >&2\n\
+  printf '%s\\n' 'fake clang missing string ternary pointer and length select operations' >&2\n\
   exit 225\n\
   ;;\n\
 esac\n\
@@ -16346,9 +16346,9 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'@printf(ptr @.fmt_str, ptr %tmp3)'*'@printf(ptr @.fmt_str, ptr %tmp4)'*) : ;;\n\
+  *'@phpc_native_string_from_bytes(ptr %tmp3, i64 %tmp4)'*'@phpc_native_string_from_bytes(ptr %tmp5, i64 %tmp6)'*'@phpc_native_value_echo_stdout'*) : ;;\n\
   *)\n\
-  printf '%s\\n' 'fake clang missing string ternary printf calls' >&2\n\
+  printf '%s\\n' 'fake clang missing string ternary runtime helper calls' >&2\n\
   exit 227\n\
   ;;\n\
 esac\n\
@@ -17774,18 +17774,18 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'declare i32 @strcmp(ptr, ptr)'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp3 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)'*'%tmp4 = icmp eq i32 %tmp3, 0'*'call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.6)'*) : ;;\n\
+  *'declare i32 @strcmp(ptr, ptr)'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp3 = select i1 %tmp1, i64 5, i64 4'*'%tmp4 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)'*'%tmp5 = icmp eq i32 %tmp4, 0'*'call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.6)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic string strict-identity comparison or folded output' >&2\n\
   exit 195\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp4'*'gamma'*)\n\
+  *'select i1 %tmp5'*'gamma'*)\n\
   printf '%s\\n' 'fake clang found unfolded bounded string strict-identity comparison' >&2\n\
   exit 196\n\
   ;;\n\
-  *'select i1 %tmp4'*) : ;;\n\
+  *'select i1 %tmp5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic string boolean echo selects' >&2\n\
   exit 199\n\

@@ -4287,6 +4287,47 @@ echo $escaped_row["option_name"], "=", $escaped_row["option_value"];
 }
 
 #[test]
+fn mysqli_statement_applies_prepared_wordpress_option_like_pattern_lists() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_plugins', 'site-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '123', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$rows = mysqli_execute_query($handle, "SELECT option_name, option_value FROM wp_options WHERE (option_name LIKE ? OR option_name LIKE ?) ORDER BY option_name", array("\\_transient\\_%", "\\_site\\_transient\\_%"));
+$first = mysqli_fetch_assoc($rows);
+$second = mysqli_fetch_assoc($rows);
+$third = mysqli_fetch_assoc($rows);
+echo mysqli_num_rows($rows), ":";
+echo $first["option_name"], "=", $first["option_value"], ",";
+echo $second["option_name"], "=", $second["option_value"], ",";
+echo $third["option_name"], "=", $third["option_value"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE (`option_name` LIKE ? OR `option_name` LIKE ?) ORDER BY `option_name` ASC");
+$timeout = "\\_transient\\_timeout\\_%";
+$site = "\\_site\\_transient\\_%";
+mysqli_stmt_bind_param($stmt, "ss", $timeout, $site);
+mysqli_stmt_execute($stmt);
+$bound = mysqli_stmt_get_result($stmt);
+$bound_first = mysqli_fetch_assoc($bound);
+$bound_second = mysqli_fetch_assoc($bound);
+echo mysqli_num_fields($bound), ":";
+echo $bound_first["option_name"], "=", $bound_first["option_value"], ":", $bound_first["autoload"], ",";
+echo $bound_second["option_name"], "=", $bound_second["option_value"], ":", $bound_second["autoload"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3:_site_transient_update_plugins=site-payload,_transient_timeout_update_plugins=123,_transient_update_plugins=plugin-payload|3:_site_transient_update_plugins=site-payload:no,_transient_timeout_update_plugins=123:no"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_prepared_option_like_scans_apply_escape_clause() {
     let execution = run_source(
         r#"<?php

@@ -511,6 +511,7 @@ struct LlvmGenerator {
     known_ints: HashMap<String, KnownInt>,
     known_floats: HashMap<String, KnownFloat>,
     known_strings: HashMap<String, KnownString>,
+    string_lengths: HashMap<String, String>,
     known_bools: HashMap<String, KnownBool>,
     next_string: usize,
     next_temp: usize,
@@ -3118,10 +3119,26 @@ impl LlvmGenerator {
                     }
                     let if_true = self.string_pointer_operand(if_true);
                     let if_false = self.string_pointer_operand(if_false);
+                    let if_true_len = self.string_pointer_byte_len_operand(&if_true);
+                    let if_false_len = self.string_pointer_byte_len_operand(&if_false);
                     let temp = self.next_temp();
                     self.body.push(format!(
                         "{temp} = select i1 {condition}, ptr {if_true}, ptr {if_false}"
                     ));
+                    match (if_true_len, if_false_len) {
+                        (Some(if_true_len), Some(if_false_len)) if if_true_len == if_false_len => {
+                            self.string_lengths.insert(temp.clone(), if_true_len);
+                        }
+                        (Some(if_true_len), Some(if_false_len)) => {
+                            let len_temp = self.next_temp();
+                            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+                            self.body.push(format!(
+                                "{len_temp} = select i1 {condition}, {usize_type} {if_true_len}, {usize_type} {if_false_len}"
+                            ));
+                            self.string_lengths.insert(temp.clone(), len_temp);
+                        }
+                        _ => {}
+                    }
                     if let Some(result) = result {
                         self.known_strings.insert(temp.clone(), result);
                     }
@@ -3344,8 +3361,8 @@ impl LlvmGenerator {
             }
             IrValue::String(value) => self.emit_native_value_string_stdout(&value),
             IrValue::StringPtr(value) => {
-                if let Some(len) = self.known_string_pointer_byte_len(&value) {
-                    self.emit_native_value_string_ptr_stdout(&value, len);
+                if let Some(len) = self.known_string_pointer_byte_len_operand(&value) {
+                    self.emit_native_value_string_ptr_stdout(&value, &len);
                 } else {
                     self.body.push(format!(
                         "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {value})"
@@ -3368,11 +3385,11 @@ impl LlvmGenerator {
         self.emit_native_value_string_pointer_stdout(
             &format!("@{global}"),
             usize_type,
-            value.len(),
+            &value.len().to_string(),
         );
     }
 
-    fn emit_native_value_string_ptr_stdout(&mut self, value: &str, len: usize) {
+    fn emit_native_value_string_ptr_stdout(&mut self, value: &str, len: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         self.emit_native_value_string_pointer_stdout(value, usize_type, len);
     }
@@ -3381,7 +3398,7 @@ impl LlvmGenerator {
         &mut self,
         value: &str,
         usize_type: &str,
-        len: usize,
+        len: &str,
     ) {
         let string = self.next_temp();
         let runtime_value = self.next_temp();
@@ -3413,12 +3430,28 @@ impl LlvmGenerator {
             .then_some(first)
     }
 
+    fn known_string_pointer_byte_len_operand(&self, value: &str) -> Option<String> {
+        self.known_string_pointer_byte_len(value)
+            .map(|len| len.to_string())
+            .or_else(|| self.string_lengths.get(value).cloned())
+    }
+
+    fn string_pointer_byte_len_operand(&self, value: &str) -> Option<String> {
+        self.known_string_values(value)
+            .and_then(|values| known_strings_have_uniform_byte_length(&values))
+            .map(|len| len.to_string())
+            .or_else(|| self.string_lengths.get(value).cloned())
+    }
+
     fn string_pointer_operand(&mut self, value: IrValue) -> String {
         match value {
             IrValue::String(value) => {
                 let name = format!("@{}", self.add_string(&value));
                 self.known_strings
                     .insert(name.clone(), KnownString::one(value));
+                if let Some(len) = self.known_string_pointer_byte_len(&name) {
+                    self.string_lengths.insert(name.clone(), len.to_string());
+                }
                 name
             }
             IrValue::StringPtr(value) => value,

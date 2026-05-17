@@ -21,6 +21,13 @@ fn fixture_source_file() -> String {
         .to_string()
 }
 
+fn milestone1601_fixture_source_file() -> String {
+    workspace_root()
+        .join("tests/fixtures/milestone1601/realpath_cache_include_reads.php")
+        .display()
+        .to_string()
+}
+
 fn target_path() -> PathBuf {
     workspace_root().join("tests/fixtures/milestone1207/realpath_target.txt")
 }
@@ -204,6 +211,34 @@ echo array_key_exists($target, $cache) ? "fopen-cached" : "fopen-missing";
     .unwrap();
 
     assert_eq!(execution.stdout, "read|fgc-cached|fopen-cached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn successful_local_includes_populate_bounded_realpath_cache_entries() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$target = __DIR__ . "/realpath_cache_include_target.inc";
+$cache_key = realpath($target);
+clearstatcache(true);
+include $target;
+$cache = realpath_cache_get();
+echo "|";
+echo array_key_exists($cache_key, $cache) ? "include-cached" : "include-missing";
+echo "|";
+echo realpath_cache_size() > 0 ? "include-sized" : "include-empty";
+clearstatcache(true);
+echo "|";
+echo realpath_cache_size() === 0 ? "cleared" : "still-sized";
+"#,
+        milestone1601_fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "included|include-cached|include-sized|cleared"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

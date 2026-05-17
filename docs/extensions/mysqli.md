@@ -516,6 +516,13 @@ and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
 deterministic row sets for one string pattern parameter, including backticked
 table/column spellings, `%` wildcards, `_` single-character wildcards, and
 backslash-escaped `%`, `_`, and `\` literals such as `\_transient\_%`.
+Those same prepared read projections also accept a bounded pattern-list form
+whose `WHERE` clause is only parenthesized or unparenthesized
+`option_name LIKE ? OR option_name LIKE ?` predicates, with one string pattern
+parameter per predicate, default backslash escaping, optional backticked
+table/column spelling, and the existing trailing `ORDER BY option_name`/`ASC`
+suffix. Matching rows are sorted by option name and de-duplicated when multiple
+patterns match the same option.
 Direct literal option-name `LIKE` scans use the same bounded matcher and now
 keep explicit `ESCAPE '\\'` semantics under `NO_BACKSLASH_ESCAPES` for the
 documented projection shapes.
@@ -528,8 +535,10 @@ placeholder handle's bounded `NO_BACKSLASH_ESCAPES` branch, while explicit
 custom single-character `ESCAPE '<char>'` clauses such as `ESCAPE '!'`, plus
 explicit `ESCAPE '\\'`, keep using the declared escape character. This
 prepared path is still bounded to the documented option-row projections and
-does not support prepared pattern lists, `DESC` ordering, arbitrary `ORDER BY`
-expressions, collation fidelity, or host database execution. The exact
+does not support prepared pattern-list mutation queries, mixed `AND`/`OR`
+predicate groups, per-pattern `ESCAPE` clauses in pattern lists, `DESC`
+ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
+database execution. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

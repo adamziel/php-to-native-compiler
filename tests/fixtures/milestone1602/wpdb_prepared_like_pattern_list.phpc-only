@@ -1,0 +1,1 @@
+Uses phpc's deterministic MySQLi wp_options state island for prepared WordPress option-name LIKE pattern-list reads without a real MySQL server or database.

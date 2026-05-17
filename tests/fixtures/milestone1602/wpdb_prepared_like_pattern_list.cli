@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1602/wpdb_prepared_like_pattern_list.php
+exit: 0
+stdout:
+execute=3:_site_transient_update_plugins=site-payload;_transient_timeout_update_plugins=123;_transient_update_plugins=plugin-payload;|bound=3:2:_site_transient_update_plugins=site-payload:no;_transient_timeout_update_plugins=123:no;
+--- stdout end ---
+stderr:
+--- stderr end ---

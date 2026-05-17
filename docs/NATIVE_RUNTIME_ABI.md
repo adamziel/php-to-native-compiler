@@ -194,15 +194,24 @@ selected string pointers still use the older direct null-terminated `printf`
 fallback until native lowering can carry a selected byte length alongside the
 selected pointer.
 
+Milestone 1603 closes that selected-length gap for the same bounded selected
+string-pointer expression family. When the selected string pointer has a
+statically known set of possible PHP string values with different byte lengths,
+normal generated LLVM now emits a parallel `usize` `select` for the byte length
+and passes the selected pointer plus selected length through
+`phpc_native_string_from_bytes`, `phpc_native_value_from_string`,
+`phpc_native_value_echo_stdout`, and the handle free helpers for statement-form
+`echo` and `print`.
+
 This is still not linked native execution. Dynamic string-pointer expression
-output beyond the known same-byte-length selected string-pointer slice, binary
-PHP string value handles beyond valid UTF-8 byte payloads, diagnostics handles,
-request state, arrays, objects, resources, references, WordPress host state,
-and C fallback assembly helper calls remain outside this ABI slice. The
-snapshot uses the selected target's `usize`/pointer-width shape; a real linked
-native backend still needs full target data layout, calling-convention
-validation, runtime linking, and runtime helper emission before broader helper
-calls can execute truthfully for all supported targets.
+output beyond the known selected string-pointer slices, binary PHP string value
+handles beyond valid UTF-8 byte payloads, diagnostics handles, request state,
+arrays, objects, resources, references, WordPress host state, and C fallback
+assembly helper calls remain outside this ABI slice. The snapshot uses the
+selected target's `usize`/pointer-width shape; a real linked native backend
+still needs full target data layout, calling-convention validation, runtime
+linking, and runtime helper emission before broader helper calls can execute
+truthfully for all supported targets.
 
 ## Verification
 
@@ -244,6 +253,9 @@ The tests pin:
 - the normal generated `--emit-ir` CLI path for same-byte-length selected
   string-pointer `echo` and `print` expressions through the runtime
   string/value stdout helpers.
+- the normal generated `--emit-ir` CLI path for mixed-byte-length selected
+  string-pointer `echo` and `print` expressions through a selected `usize`
+  byte length and the runtime string/value stdout helpers.
 
 ## Explicit Non-Support
 
@@ -255,11 +267,11 @@ This ABI does not yet provide:
   owned-byte helper, copied raw-byte buffer helper, opaque copied string-handle
   helper, valid UTF-8 string-handle-to-value helper, the narrow statement-form
   direct string `echo`/`print` stdout helper path, and the narrow
-  same-byte-length selected string-pointer `echo`/`print` stdout helper path;
+  selected string-pointer `echo`/`print` stdout helper paths;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR beyond direct
-  compile-time string `echo`/`print` statements and same-byte-length selected
-  string-pointer `echo`/`print` expressions;
+  compile-time string `echo`/`print` statements and the currently known
+  selected string-pointer `echo`/`print` expressions;
 - symbol tables, stack frames, call lookup, or diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

@@ -362,7 +362,8 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
 }
 
 #[test]
-fn mixed_length_string_pointer_emit_ir_keeps_direct_printf_until_length_abi_exists() {
+fn mixed_length_string_pointer_emit_ir_lowers_selected_length_through_runtime_value_stdout_helper()
+{
     let ir = emit_ir_source(
         "<?php\n$flag = (1 + 2) === 3;\n$label = $flag ? \"alpha\" : \"beta\";\necho $label;\n",
     )
@@ -372,12 +373,19 @@ fn mixed_length_string_pointer_emit_ir_keeps_direct_printf_until_length_abi_exis
         ir.contains("select i1 %tmp1, ptr @.str.0, ptr @.str.1"),
         "{ir}"
     );
+    assert!(ir.contains("select i1 %tmp1, i64 5, i64 4"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp2)"),
+        ir.contains(
+            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"
+        ),
         "{ir}"
     );
     assert!(
-        !ir.contains("call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %tmp2"),
+        ir.contains("call i64 @phpc_native_value_echo_stdout"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp2)"),
         "{ir}"
     );
 }
@@ -486,6 +494,50 @@ fn known_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout_he
         "{actual}"
     );
     assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
+}
+
+#[test]
+fn selected_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join(
+        "tests/fixtures/milestone1603/native_selected_length_string_pointer_runtime_helper.php",
+    );
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone1603/native_selected_length_string_pointer_runtime_helper.cli",
+    ))
+    .expect("native selected-length string-pointer runtime helper CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+    assert!(
+        actual.contains("@phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("@phpc_native_string_from_bytes(ptr %tmp8, i64 %tmp9)"),
+        "{actual}"
+    );
+    assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
+    assert!(
+        !actual.contains("@printf(ptr @.fmt_str, ptr %tmp2)"),
+        "{actual}"
+    );
 }
 
 fn render_cli_snapshot(output: &Output) -> String {

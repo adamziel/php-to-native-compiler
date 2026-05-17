@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 17);
+    assert_eq!(classes.classes().len(), 18);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -45,15 +45,16 @@ echo "ready\n";
     assert_eq!(classes.classes()[4].name(), "mysqli_stmt");
     assert_eq!(classes.classes()[5].name(), "PDO");
     assert_eq!(classes.classes()[6].name(), "PDOStatement");
-    assert_eq!(classes.classes()[7].name(), "ReflectionClass");
-    assert_eq!(classes.classes()[8].name(), "ReflectionFunction");
-    assert_eq!(classes.classes()[9].name(), "ReflectionMethod");
-    assert_eq!(classes.classes()[10].name(), "ReflectionParameter");
-    assert_eq!(classes.classes()[11].name(), "ReflectionType");
-    assert_eq!(classes.classes()[12].name(), "ReflectionNamedType");
-    assert_eq!(classes.classes()[13].name(), "ReflectionUnionType");
-    assert_eq!(classes.classes()[14].name(), "ReflectionIntersectionType");
-    assert_eq!(classes.classes()[15].name(), "ReflectionProperty");
+    assert_eq!(classes.classes()[7].name(), "ReflectionException");
+    assert_eq!(classes.classes()[8].name(), "ReflectionClass");
+    assert_eq!(classes.classes()[9].name(), "ReflectionFunction");
+    assert_eq!(classes.classes()[10].name(), "ReflectionMethod");
+    assert_eq!(classes.classes()[11].name(), "ReflectionParameter");
+    assert_eq!(classes.classes()[12].name(), "ReflectionType");
+    assert_eq!(classes.classes()[13].name(), "ReflectionNamedType");
+    assert_eq!(classes.classes()[14].name(), "ReflectionUnionType");
+    assert_eq!(classes.classes()[15].name(), "ReflectionIntersectionType");
+    assert_eq!(classes.classes()[16].name(), "ReflectionProperty");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -1122,6 +1123,65 @@ echo $dynamicCopy, "|", $dynamicBox->{$property};
             "get:dynamicSecret\n",
             "dynamic-initial|get:dynamicSecret\n",
             "dynamic-changed",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_binds_magic_get_array_offset_source() {
+    let source = r#"<?php
+$store = ["slot" => "initial", "nested" => ["leaf" => "nested-initial"]];
+$dynamicStore = ["slot" => "dynamic-initial"];
+
+class RefMagicArraySlotBox {
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $store;
+        return $store;
+    }
+}
+
+class RefMagicDynamicArraySlotBox {
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $dynamicStore;
+        return $dynamicStore;
+    }
+}
+
+$box = new RefMagicArraySlotBox();
+$alias =& $box->missing["slot"];
+$alias = "from-alias";
+echo $store["slot"], "|";
+$store["slot"] = "from-store";
+echo $alias, "\n";
+
+$nested =& $box->missing["nested"]["leaf"];
+$nested = "from-nested";
+echo $store["nested"]["leaf"], "|";
+$store["nested"]["leaf"] = "from-store-nested";
+echo $nested, "\n";
+
+$property = "dynamicMissing";
+$dynamicBox = new RefMagicDynamicArraySlotBox();
+$dynamic =& $dynamicBox->{$property}["slot"];
+$dynamic = "from-dynamic";
+echo $dynamicStore["slot"], "|";
+$dynamicStore["slot"] = "from-dynamic-store";
+echo $dynamic;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:missing\n",
+            "from-alias|from-store\n",
+            "get:missing\n",
+            "from-nested|from-store-nested\n",
+            "get:dynamicMissing\n",
+            "from-dynamic|from-dynamic-store",
         )
     );
     assert_eq!(execution.exit_code, 0);
@@ -4536,7 +4596,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionFunction\n    [9] => ReflectionMethod\n    [10] => ReflectionParameter\n    [11] => ReflectionType\n    [12] => ReflectionNamedType\n    [13] => ReflectionUnionType\n    [14] => ReflectionIntersectionType\n    [15] => ReflectionProperty\n    [16] => Box\n    [17] => Profile\n)\n18|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionFunction\n    [10] => ReflectionMethod\n    [11] => ReflectionParameter\n    [12] => ReflectionType\n    [13] => ReflectionNamedType\n    [14] => ReflectionUnionType\n    [15] => ReflectionIntersectionType\n    [16] => ReflectionProperty\n    [17] => Box\n    [18] => Profile\n)\n19|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4557,7 +4617,29 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionFunction\n    [9] => ReflectionMethod\n    [10] => ReflectionParameter\n    [11] => ReflectionType\n    [12] => ReflectionNamedType\n    [13] => ReflectionUnionType\n    [14] => ReflectionIntersectionType\n    [15] => ReflectionProperty\n    [16] => App\\Mode\n    [17] => App\\Status\n)\n18\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionFunction\n    [10] => ReflectionMethod\n    [11] => ReflectionParameter\n    [12] => ReflectionType\n    [13] => ReflectionNamedType\n    [14] => ReflectionUnionType\n    [15] => ReflectionIntersectionType\n    [16] => ReflectionProperty\n    [17] => App\\Mode\n    [18] => App\\Status\n)\n19\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn core_reflection_exception_metadata_is_declared_and_extends_exception() {
+    let execution = run_source(
+        r#"<?php
+echo class_exists("ReflectionException") ? "exists\n" : "missing\n";
+echo is_subclass_of("ReflectionException", "Exception") ? "extends\n" : "no-parent\n";
+echo get_parent_class("ReflectionException"), "\n";
+$reflection = new ReflectionClass("ReflectionException");
+echo $reflection->getName(), "|", $reflection->getParentClass()->getName(), "|", ($reflection->isInstantiable() ? "1" : "0"), "\n";
+$classes = get_declared_classes();
+echo array_search("ReflectionException", $classes, true);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exists\nextends\nException\nReflectionException|Exception|1\n7"
     );
     assert_eq!(execution.exit_code, 0);
 }

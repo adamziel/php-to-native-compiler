@@ -34,42 +34,45 @@ entry:
   %tmp0 = add i64 1, 2
   %tmp1 = icmp eq i64 %tmp0, 3
   %tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1
-  %tmp3 = select i1 %tmp1, ptr @.str.2, ptr @.str.3
-  %tmp4 = call i32 @strcmp(ptr %tmp2, ptr %tmp3)
-  %tmp5 = icmp sgt i32 %tmp4, 0
-  %tmp6 = select i1 %tmp1, ptr @.str.5, ptr @.str.6
-  %tmp7 = call i32 @strcmp(ptr %tmp2, ptr %tmp6)
-  %tmp8 = icmp eq i32 %tmp7, 0
-  %tmp9 = call i32 @strcmp(ptr %tmp2, ptr %tmp3)
-  %tmp10 = icmp sgt i32 %tmp9, 0
-  %tmp11 = select i1 %tmp10, ptr @.str.7, ptr @.str.8
-  call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp11)
-  %tmp12 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.9, i64 1)
-  %tmp13 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp12)
-  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp13)
-  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp13)
-  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp12)
+  %tmp3 = select i1 %tmp1, i64 7, i64 6
+  %tmp4 = select i1 %tmp1, ptr @.str.2, ptr @.str.3
+  %tmp5 = select i1 %tmp1, i64 8, i64 7
+  %tmp6 = call i32 @strcmp(ptr %tmp2, ptr %tmp4)
+  %tmp7 = icmp sgt i32 %tmp6, 0
+  %tmp8 = select i1 %tmp1, ptr @.str.5, ptr @.str.6
+  %tmp9 = select i1 %tmp1, i64 7, i64 5
+  %tmp10 = call i32 @strcmp(ptr %tmp2, ptr %tmp8)
+  %tmp11 = icmp eq i32 %tmp10, 0
+  %tmp12 = call i32 @strcmp(ptr %tmp2, ptr %tmp4)
+  %tmp13 = icmp sgt i32 %tmp12, 0
+  %tmp14 = select i1 %tmp13, ptr @.str.7, ptr @.str.8
+  call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp14)
+  %tmp15 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.9, i64 1)
+  %tmp16 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp15)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp16)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp16)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp15)
   call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.10)
-  %tmp14 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.11, i64 1)
-  %tmp15 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp14)
-  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp15)
-  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp15)
-  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp14)
-  %tmp16 = select i1 %tmp5, i64 1, i64 0
-  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp16)
-  %tmp17 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.12, i64 1)
+  %tmp17 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.11, i64 1)
   %tmp18 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp17)
   call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp18)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp18)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp17)
+  %tmp19 = select i1 %tmp7, i64 1, i64 0
+  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp19)
+  %tmp20 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.12, i64 1)
+  %tmp21 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp20)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp21)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp21)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp20)
   call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 1)
-  %tmp19 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.13, i64 1)
-  %tmp20 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp19)
-  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp20)
-  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp20)
-  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp19)
-  %tmp21 = select i1 %tmp8, i64 1, i64 0
-  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp21)
+  %tmp22 = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.13, i64 1)
+  %tmp23 = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %tmp22)
+  call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %tmp23)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %tmp23)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %tmp22)
+  %tmp24 = select i1 %tmp11, i64 1, i64 0
+  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp24)
   ret i32 0
 }
 --- stdout end ---

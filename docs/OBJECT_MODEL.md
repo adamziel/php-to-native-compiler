@@ -185,8 +185,11 @@ The model follows the PHP lookup rules needed by the first object slice:
 - static properties are stored per declaring class outside object slots and
   inherited static property reads/writes share the declaring class slot unless
   a child redeclares the property;
-- the core class table seeds metadata-only `Exception`, `stdClass`, `PDO`, and
-  `PDOStatement` entries, with `PDO` exposing a bounded public integer
+- the core class table seeds metadata-only `Exception`, `ReflectionException`,
+  `stdClass`, `PDO`, and `PDOStatement` entries. `ReflectionException` records
+  `Exception` as its parent for current metadata and relationship checks, while
+  exact exception construction, throwing, catching, message/code state, and
+  stack traces remain unsupported. `PDO` exposes a bounded public integer
   constant catalog for current metadata checks;
 - object values initialize inherited and exact-class non-static instance
   properties to `null` while preserving declaring class id/name for each slot;

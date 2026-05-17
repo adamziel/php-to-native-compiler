@@ -5468,6 +5468,7 @@ impl Interpreter {
                 ),
             )
         })?;
+        self.cache_bounded_realpath_entry_for_local_path(&path.read_path);
         let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
         self.required_once.insert(include_key);
 
@@ -7088,6 +7089,16 @@ impl Interpreter {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
+                    if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
+                        object,
+                        property,
+                        vec![key.clone()],
+                        span,
+                        scope,
+                    )? {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -7117,6 +7128,16 @@ impl Interpreter {
                             scope,
                         )?
                     {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
+                    if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
+                        object,
+                        &property,
+                        vec![key.clone()],
+                        span,
+                        scope,
+                    )? {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
@@ -7154,6 +7175,16 @@ impl Interpreter {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
+                    if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
+                        object,
+                        property,
+                        keys.clone(),
+                        span,
+                        scope,
+                    )? {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -7181,6 +7212,16 @@ impl Interpreter {
                             scope,
                         )?
                     {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
+                    if let Some((alias, _)) = self.evaluate_magic_get_array_reference_source_alias(
+                        object,
+                        &property,
+                        keys.clone(),
+                        span,
+                        scope,
+                    )? {
                         scope.bind_static_to_array_offset_alias(name, alias);
                         return Ok(());
                     }
@@ -7944,7 +7985,18 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
-                self.evaluate_object_property_array_access_reference_source_alias(
+                if let Some(alias) = self
+                    .evaluate_object_property_array_access_reference_source_alias(
+                        object,
+                        property,
+                        vec![key.clone()],
+                        span,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(alias));
+                }
+                self.evaluate_magic_get_array_reference_source_alias(
                     object,
                     property,
                     vec![key],
@@ -7960,7 +8012,18 @@ impl Interpreter {
             } => {
                 let property = self.evaluate_dynamic_property_name(property, span, scope)?;
                 let key = self.evaluate_array_key(index, scope)?;
-                self.evaluate_object_property_array_access_reference_source_alias(
+                if let Some(alias) = self
+                    .evaluate_object_property_array_access_reference_source_alias(
+                        object,
+                        &property,
+                        vec![key.clone()],
+                        span,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(alias));
+                }
+                self.evaluate_magic_get_array_reference_source_alias(
                     object,
                     &property,
                     vec![key],
@@ -7978,7 +8041,18 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                self.evaluate_object_property_array_access_reference_source_alias(
+                if let Some(alias) = self
+                    .evaluate_object_property_array_access_reference_source_alias(
+                        object,
+                        property,
+                        keys.clone(),
+                        span,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(alias));
+                }
+                self.evaluate_magic_get_array_reference_source_alias(
                     object, property, keys, span, scope,
                 )
             }
@@ -7993,7 +8067,18 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                self.evaluate_object_property_array_access_reference_source_alias(
+                if let Some(alias) = self
+                    .evaluate_object_property_array_access_reference_source_alias(
+                        object,
+                        &property,
+                        keys.clone(),
+                        span,
+                        scope,
+                    )?
+                {
+                    return Ok(Some(alias));
+                }
+                self.evaluate_magic_get_array_reference_source_alias(
                     object, &property, keys, span, scope,
                 )
             }
@@ -8273,6 +8358,52 @@ impl Interpreter {
             scope,
         )
         .map(Some)
+    }
+
+    fn evaluate_magic_get_array_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, property, span)?
+                else {
+                    return Ok(None);
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.bind_static_to_cell(&temp_name, cell);
+                let alias = ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::StaticArray { name: temp_name },
+                    keys,
+                };
+                scope.materialize_array_offset_alias(&alias, span)?;
+                let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind missing magic __get array offset reference source"
+                                .to_string(),
+                        ),
+                    )
+                })?;
+                Ok(Some((alias, value)))
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
     }
 
     fn evaluate_array_access_reference_source_alias_for_object(
@@ -39273,6 +39404,7 @@ enum WordPressOptionsRowFilter {
     Autoload,
     AutoloadValues(Vec<String>),
     OptionNameLike(WordPressSchemaNameFilter),
+    OptionNameLikeAny(Vec<WordPressSchemaNameFilter>),
     OptionNameLikeValueLessThan(WordPressSchemaNameFilter, i64),
     Names(Vec<String>),
 }
@@ -41805,6 +41937,15 @@ fn is_wordpress_option_prepared_name_value_select_autoload_query(query: &str) ->
 
 fn is_wordpress_option_prepared_name_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_name, option_value FROM wp_options WHERE ",
+        "SELECT `option_name`, `option_value` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -41838,6 +41979,15 @@ fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str
 
 fn is_wordpress_option_prepared_name_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_name, autoload FROM wp_options WHERE ",
+        "SELECT `option_name`, `autoload` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -41871,6 +42021,15 @@ fn is_wordpress_option_prepared_name_select_autoloads_query(query: &str) -> bool
 
 fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_name FROM wp_options WHERE ",
+        "SELECT `option_name` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -41919,6 +42078,15 @@ fn is_wordpress_option_prepared_value_select_autoloads_query(query: &str) -> boo
 
 fn is_wordpress_option_prepared_value_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_value FROM wp_options WHERE ",
+        "SELECT `option_value` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -41952,6 +42120,15 @@ fn is_wordpress_option_prepared_name_value_autoload_select_autoloads_query(query
 
 fn is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_name, option_value, autoload FROM wp_options WHERE ",
+        "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -41985,6 +42162,15 @@ fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(qu
 
 fn is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE ",
+        "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -42009,6 +42195,15 @@ fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
 
 fn is_wordpress_option_prepared_star_select_prefix_query(query: &str) -> bool {
     let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    if wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT * FROM wp_options WHERE ",
+        "SELECT * FROM `wp_options` WHERE ",
+    )
+    .is_some()
+    {
+        return true;
+    }
     let Some((query, _escape_char, _explicit_escape)) =
         strip_wordpress_option_prepared_like_escape_suffix(query)
     else {
@@ -42049,6 +42244,33 @@ fn parse_wordpress_option_prepared_placeholder_names<'a>(
             }
             saw_placeholder.then_some(values)
         })
+}
+
+fn wordpress_option_prepared_like_any_placeholder_count(
+    query: &str,
+    plain_prefix: &str,
+    quoted_prefix: &str,
+) -> Option<usize> {
+    let mut predicates = query
+        .strip_prefix(plain_prefix)
+        .or_else(|| query.strip_prefix(quoted_prefix))?
+        .trim();
+    predicates = predicates
+        .strip_prefix('(')
+        .and_then(|inner| inner.strip_suffix(')'))
+        .unwrap_or(predicates)
+        .trim();
+    let mut count = 0;
+    for predicate in predicates.split(" OR ") {
+        if !matches!(
+            predicate.trim(),
+            "option_name LIKE ?" | "`option_name` LIKE ?"
+        ) {
+            return None;
+        }
+        count += 1;
+    }
+    (count > 1).then_some(count)
 }
 
 fn wordpress_option_names_from_prepared_params(
@@ -42100,6 +42322,42 @@ fn wordpress_option_name_like_filter_from_prepared_params(
     span: Span,
     no_backslash_escapes: bool,
 ) -> CompileResult<WordPressOptionsRowFilter> {
+    if let Some(pattern_count) = wordpress_option_prepared_like_any_filter_count(query) {
+        if params.len() != pattern_count {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared wp_options option-name LIKE pattern-list select requires one string pattern parameter per LIKE predicate in the current subset",
+                ),
+            ));
+        }
+        let mut filters = Vec::with_capacity(pattern_count);
+        for parameter in params {
+            let Value::String(pattern) = parameter else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "prepared wp_options option-name LIKE pattern-list select requires string pattern parameters in the current subset",
+                    ),
+                ));
+            };
+            let Some(filter) = parse_schema_like_pattern(pattern, '\\', no_backslash_escapes)
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "prepared wp_options option-name LIKE pattern-list select contains an unterminated escape sequence in the current subset",
+                    ),
+                ));
+            };
+            filters.push(filter);
+        }
+        return Ok(WordPressOptionsRowFilter::OptionNameLikeAny(filters));
+    }
+
     let [Value::String(pattern)] = params else {
         return Err(runtime_error(
             span,
@@ -42125,6 +42383,57 @@ fn wordpress_option_name_like_filter_from_prepared_params(
         ));
     };
     Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
+}
+
+fn wordpress_option_prepared_like_any_filter_count(query: &str) -> Option<usize> {
+    let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    wordpress_option_prepared_like_any_placeholder_count(
+        query,
+        "SELECT option_name, option_value FROM wp_options WHERE ",
+        "SELECT `option_name`, `option_value` FROM `wp_options` WHERE ",
+    )
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT option_value FROM wp_options WHERE ",
+            "SELECT `option_value` FROM `wp_options` WHERE ",
+        )
+    })
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT option_name FROM wp_options WHERE ",
+            "SELECT `option_name` FROM `wp_options` WHERE ",
+        )
+    })
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT option_name, autoload FROM wp_options WHERE ",
+            "SELECT `option_name`, `autoload` FROM `wp_options` WHERE ",
+        )
+    })
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT option_name, option_value, autoload FROM wp_options WHERE ",
+            "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE ",
+        )
+    })
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE ",
+            "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE ",
+        )
+    })
+    .or_else(|| {
+        wordpress_option_prepared_like_any_placeholder_count(
+            query,
+            "SELECT * FROM wp_options WHERE ",
+            "SELECT * FROM `wp_options` WHERE ",
+        )
+    })
 }
 
 fn wordpress_option_prepared_option_name_like_escape_char(query: &str) -> Option<(char, bool)> {
@@ -42994,6 +43303,19 @@ fn wordpress_option_names_for_filter(
             let mut names: Vec<_> = options
                 .keys()
                 .filter(|name| wordpress_schema_name_matches_filter(name, filter))
+                .cloned()
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::OptionNameLikeAny(filters) => {
+            let mut names: Vec<_> = options
+                .keys()
+                .filter(|name| {
+                    filters
+                        .iter()
+                        .any(|filter| wordpress_schema_name_matches_filter(name, filter))
+                })
                 .cloned()
                 .collect();
             names.sort();
