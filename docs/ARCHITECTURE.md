@@ -185,15 +185,20 @@ qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 declarations, and native trait lowering remain explicit boundaries.
 
 Top-level interface declarations are parsed as metadata for public method
-signatures. The current inheritance slice accepts one or more already-declared
-user parent interfaces, such as `interface Child extends Parent, OtherParent`,
-and flattens those parent names into concrete class `implements` relationship
-metadata. Class registration enforces public method presence for child and
-parent interface methods, including methods supplied by the current public
-trait composition and alias subset. Interface constants, forward
-parent-interface resolution, full variance/signature enforcement,
-built-in/internal interface inheritance catalogs, exact PHP diagnostics, and
-native lowering remain explicit boundaries.
+signatures and public constants. The current inheritance slice accepts one or
+more already-declared user parent interfaces, such as
+`interface Child extends Parent, OtherParent`, and flattens those parent names
+into concrete class `implements` relationship metadata. Class registration
+enforces public method presence for child and parent interface methods,
+including methods supplied by the current public trait composition and alias
+subset. Public interface constants declared as `const NAME = ...` or
+`public const NAME = ...` use the current class-constant expression subset and
+resolve through interface names, parent-interface inheritance, and
+implementing-class class-constant lookup. Forward parent-interface resolution,
+typed/static/non-public/abstract/final or multi-constant interface
+declarations, full variance/signature enforcement, built-in/internal interface
+inheritance catalogs, exact PHP diagnostics, and native lowering remain
+explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -488,18 +493,17 @@ instance-method, named static method, `self::` static method, and late-bound
 `static::` static method dispatch paths, without exposing in-call PHP
 reference-container identity.
 `call_user_func_array()` reuses that same
-direct cell binding for narrow string user-callbacks and public object-method
-array callbacks where the argument array is an unkeyed literal containing
-`&$directVariable` elements for reached by-reference parameters. The same
-callback path can also copy in and write back direct public object-property
-array-offset elements such as `&$object->items[$group][$key]`, using the
-bounded output-parameter bridge rather than in-call reference-container
-identity. This deliberately does not model full PHP reference containers,
-stored reference arrays, keyed reference argument arrays, non-public or
-dynamic property callback arguments, dynamic static receiver or `parent::`
-object-property array arguments, static method array-callable reference
-parameters, broader reference returns, exact by-reference `foreach`, or
-copy-on-write.
+direct cell binding for narrow string user-callbacks, public object-method
+array callbacks, and public class-string static-method array callbacks where
+the argument array is an unkeyed literal containing `&$directVariable`
+elements for reached by-reference parameters. The same callback path can also
+copy in and write back direct public object-property array-offset elements
+such as `&$object->items[$group][$key]`, using the bounded output-parameter
+bridge rather than in-call reference-container identity. This deliberately
+does not model full PHP reference containers, stored reference arrays, keyed
+reference argument arrays, non-public or dynamic property callback arguments,
+dynamic static receiver or `parent::` object-property array arguments, broader
+reference returns, exact by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1405,16 +1409,20 @@ insertion order with either an empty default separator or a string separator.
 Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
-`ob_start()`, `ob_get_level()`, `ob_get_contents()`, and `ob_get_clean()` are
+`ob_start()`, `ob_get_level()`, `ob_get_contents()`, `ob_get_clean()`,
+`ob_clean()`, `ob_flush()`, `ob_end_clean()`, and `ob_end_flush()` are
 interpreter-only output-buffer boundaries for the current WordPress
 request/rendering path. The interpreter keeps a stack of string buffers;
 PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
 peeks at that buffer without closing it, `ob_get_clean()` pops and returns that
-buffer, and remaining buffers flush outward to stdout when execution completes
-or the bounded `exit()` path returns. Native function-table introspection
-recognizes the names, while direct native calls reject until generated code has
-stdout capture buffers, shutdown flushing, output-started/header interaction,
-SAPI integration, and exact diagnostics.
+buffer, `ob_clean()` clears the innermost buffer, `ob_flush()` moves its
+contents outward while keeping it active, `ob_end_clean()` closes and discards
+it, `ob_end_flush()` closes it and flushes its contents outward, and remaining
+buffers flush outward to stdout when execution completes or the bounded
+`exit()` path returns. Native function-table introspection recognizes the
+names, while direct native calls reject until generated code has stdout capture
+buffers, shutdown flushing, output-started/header interaction, SAPI
+integration, and exact diagnostics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, appends the raw header line to deterministic in-process CLI request

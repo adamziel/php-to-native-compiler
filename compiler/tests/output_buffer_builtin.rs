@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), and ob_get_clean() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -105,12 +105,91 @@ echo ob_get_contents() === false ? "false" : "not-false";
 }
 
 #[test]
+fn ob_flush_and_ob_end_flush_move_nested_buffer_output_outward() {
+    let execution = run_source(
+        r#"<?php
+ob_start();
+echo "outer:";
+ob_start();
+echo "inner";
+$flushed = ob_flush();
+echo "|after-inner";
+$ended = ob_end_flush();
+echo "|after-end";
+$outer = ob_get_clean();
+echo "outer=[" . $outer . "]";
+echo "|flushed=" . ($flushed ? "true" : "false");
+echo "|ended=" . ($ended ? "true" : "false");
+echo "|level=" . ob_get_level();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "outer=[outer:inner|after-inner|after-end]|flushed=true|ended=true|level=0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ob_clean_and_ob_end_clean_discard_active_buffer_contents() {
+    let execution = run_source(
+        r#"<?php
+ob_start();
+echo "keep";
+ob_start();
+echo "discard";
+$cleaned = ob_clean();
+echo "inner-after-clean";
+$ended = ob_end_clean();
+echo "|outer-after-discard";
+$outer = ob_get_clean();
+echo "outer=[" . $outer . "]";
+echo "|cleaned=" . ($cleaned ? "true" : "false");
+echo "|ended=" . ($ended ? "true" : "false");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "outer=[keep|outer-after-discard]|cleaned=true|ended=true"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn output_buffer_flush_and_end_without_active_buffer_return_false() {
+    let execution = run_source(
+        r#"<?php
+echo ob_clean() === false ? "clean=false" : "clean=true";
+echo "|";
+echo ob_flush() === false ? "flush=false" : "flush=true";
+echo "|";
+echo ob_end_clean() === false ? "end-clean=false" : "end-clean=true";
+echo "|";
+echo ob_end_flush() === false ? "end-flush=false" : "end-flush=true";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "clean=false|flush=false|end-clean=false|end-flush=false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn output_buffer_builtins_are_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
 $start = "ob_start";
 $level = "ob_get_level";
 $contents = "ob_get_contents";
+$flush = "ob_flush";
+$end_flush = "ob_end_flush";
 $clean = "ob_get_clean";
 echo function_exists($start) ? "yes" : "no";
 echo "|";
@@ -118,6 +197,11 @@ echo is_callable($level) ? "callable" : "missing";
 echo "|";
 $start();
 echo "captured";
+$start();
+echo "|inner";
+$flush();
+echo "|after-flush";
+$ended = $end_flush();
 echo "|";
 echo $level();
 $peek = $contents();
@@ -126,13 +210,14 @@ echo "clean=";
 echo $captured;
 echo "|peek=";
 echo $peek;
+echo "|ended=" . ($ended ? "true" : "false");
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|clean=captured|1|peek=captured|1"
+        "yes|callable|clean=captured|inner|after-flush|1|peek=captured|inner|after-flush|1|ended=true"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -186,6 +271,54 @@ echo ob_get_contents(1);
         contents_arg.message,
         "arity mismatch for ob_get_contents(): expected 0 argument(s), got 1"
     );
+
+    let clean_buffer_arg = runtime_error(
+        r#"<?php
+echo ob_clean(1);
+"#,
+    );
+    assert_eq!(clean_buffer_arg.line, 2);
+    assert_eq!(clean_buffer_arg.column, 6);
+    assert_eq!(
+        clean_buffer_arg.message,
+        "arity mismatch for ob_clean(): expected 0 argument(s), got 1"
+    );
+
+    let flush_arg = runtime_error(
+        r#"<?php
+echo ob_flush(1);
+"#,
+    );
+    assert_eq!(flush_arg.line, 2);
+    assert_eq!(flush_arg.column, 6);
+    assert_eq!(
+        flush_arg.message,
+        "arity mismatch for ob_flush(): expected 0 argument(s), got 1"
+    );
+
+    let end_clean_arg = runtime_error(
+        r#"<?php
+echo ob_end_clean(1);
+"#,
+    );
+    assert_eq!(end_clean_arg.line, 2);
+    assert_eq!(end_clean_arg.column, 6);
+    assert_eq!(
+        end_clean_arg.message,
+        "arity mismatch for ob_end_clean(): expected 0 argument(s), got 1"
+    );
+
+    let end_flush_arg = runtime_error(
+        r#"<?php
+echo ob_end_flush(1);
+"#,
+    );
+    assert_eq!(end_flush_arg.line, 2);
+    assert_eq!(end_flush_arg.column, 6);
+    assert_eq!(
+        end_flush_arg.message,
+        "arity mismatch for ob_end_flush(): expected 0 argument(s), got 1"
+    );
 }
 
 #[test]
@@ -220,11 +353,19 @@ echo function_exists("ob_get_contents") ? "1" : "0";
 echo is_callable("ob_get_contents") ? "1" : "0";
 echo function_exists("ob_get_clean") ? "1" : "0";
 echo is_callable("ob_get_clean") ? "1" : "0";
+echo function_exists("ob_clean") ? "1" : "0";
+echo is_callable("ob_clean") ? "1" : "0";
+echo function_exists("ob_flush") ? "1" : "0";
+echo is_callable("ob_flush") ? "1" : "0";
+echo function_exists("ob_end_clean") ? "1" : "0";
+echo is_callable("ob_end_clean") ? "1" : "0";
+echo function_exists("ob_end_flush") ? "1" : "0";
+echo is_callable("ob_end_flush") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 8, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 16, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

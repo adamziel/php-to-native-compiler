@@ -1464,10 +1464,10 @@ fn emit_ir_rejects_instanceof_expression_at_codegen_boundary() {
 fn unsupported_interface_declaration_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\ninterface Renderable {\n    const NAME = \"view\";\n}\n",
+            "<?php\ninterface Renderable {\n    public const string NAME = \"view\";\n}\n",
             3,
-            5,
-            "unsupported interface constant declaration: interface constants are not implemented",
+            18,
+            "unsupported interface constant declaration: typed interface constants are not implemented",
         ),
         (
             "<?php\ninterface Renderable {\n    protected function render();\n}\n",

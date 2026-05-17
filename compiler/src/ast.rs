@@ -527,6 +527,7 @@ pub struct ClassDecl {
 pub struct InterfaceDecl {
     pub name: String,
     pub parents: Vec<String>,
+    pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<InterfaceMethodDecl>,
     pub span: Span,
 }

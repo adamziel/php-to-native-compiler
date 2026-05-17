@@ -1,1 +1,1 @@
-phpc intentionally rejects interface constants before interface constant metadata and implementation execution exist.
+phpc intentionally rejects typed interface constants while the implemented interface-constant slice stays untyped/public.

@@ -1,2 +1,2 @@
-parse error at 3:5: unsupported interface constant declaration: interface constants are not implemented
+parse error at 3:18: unsupported interface constant declaration: typed interface constants are not implemented
 

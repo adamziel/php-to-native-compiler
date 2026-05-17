@@ -239,6 +239,19 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1269, that synthetic add-option smoke also preflights option
+insertion with the exact
+`SELECT option_name FROM wp_options WHERE option_name = ... LIMIT 1` shape and
+prints the reinserted row name after the duplicate add is rejected. The
+generated bootstrap shim and front-controller path prove the row name is still
+`blogdescription`, emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db|added-db:no|id=2|name=blogdescription`
+(`stdout_bytes: 122` in normalized output). This is executable evidence for
+one bounded option-name preflight/read only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -289,18 +302,22 @@ options arrays, deletion cookies, cookie encoding fidelity, output-started
 tracking, web-server/SAPI network emission, exact warnings, or native
 header-state lowering.
 
-After Milestone 1263, `phpc run` has a bounded interpreter-owned output-buffer
-stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`, and
-`ob_get_clean()`: echoed and printed output is captured while a buffer is
+After Milestone 1268, `phpc run` has a bounded interpreter-owned output-buffer
+stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`,
+`ob_get_clean()`, `ob_clean()`, `ob_flush()`, `ob_end_clean()`, and
+`ob_end_flush()`: echoed and printed output is captured while a buffer is
 active, `ob_get_contents()` returns the innermost captured string without
 closing that buffer, `ob_get_clean()` returns the innermost captured string and
-closes that buffer, and unclosed buffers are flushed outward when execution
-completes. This supports small WordPress-shaped bootstrap/rendering paths that
-capture or inspect generated markup in the current CLI scaffold only. It does
-not implement callbacks, chunk sizes, flags, flush/end/status/list variants,
-output handler nesting semantics, output-started/header interaction,
-fatal-error cleanup, exact warnings, SAPI network emission, or native
-output-buffer lowering.
+closes that buffer, `ob_clean()` clears the innermost buffer, `ob_flush()`
+flushes the innermost buffer to the next outer buffer or stdout while keeping
+it active, `ob_end_clean()` closes and discards the innermost buffer, and
+`ob_end_flush()` closes and flushes the innermost buffer outward. Unclosed
+buffers are flushed outward when execution completes. This supports small
+WordPress-shaped bootstrap/rendering paths that capture, discard, or flush
+generated markup in the current CLI scaffold only. It does not implement
+callbacks, chunk sizes, flags, handler status/list APIs, output handler
+nesting semantics, output-started/header interaction, fatal-error cleanup,
+exact warnings, SAPI network emission, or native output-buffer lowering.
 
 ## Current Probe Status
 
@@ -835,11 +852,13 @@ historical blockers and remaining full-support gaps include:
   corresponding to `$l10n[ $domain ] = &$noop_translations;` in
   `wp-includes/l10n.php:1428`. Current later milestones add bounded
   `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks plus
-  multiple already-declared user parent interface inheritance, but this is
-  still not broad interface method enforcement, interface constants,
-  forward parent-interface resolution, built-in/internal interface catalogs,
-  variance/signature checks, autoload-triggered interface discovery, exact PHP
-  fatal behavior, native lowering, or WordPress bootstrap support.
+  multiple already-declared user parent interface inheritance and bounded
+  public interface constants, but this is still not broad interface method
+  enforcement, typed/static/non-public/abstract/final or multi-constant
+  interface declarations, forward parent-interface resolution,
+  built-in/internal interface catalogs, variance/signature checks,
+  autoload-triggered interface discovery, exact PHP fatal behavior, native
+  lowering, or WordPress bootstrap support.
   Milestone 762 implements the bounded object-handle `=&` slice needed for
   that `NOOP_Translations` path: direct variable sources holding current object
   values can be assigned into direct variable or direct array-offset targets.

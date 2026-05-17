@@ -746,19 +746,81 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::LBrace, "expected interface body")?;
+        let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("interface member");
-            methods.push(self.parse_interface_method()?);
+            if self.check_interface_constant_declaration() {
+                constants.push(self.parse_interface_constant()?);
+            } else {
+                methods.push(self.parse_interface_method()?);
+            }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after interface body")?;
 
         Ok(Stmt::Interface(InterfaceDecl {
             name,
             parents,
+            constants,
             methods,
             span,
         }))
+    }
+
+    fn parse_interface_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        self.match_identifier("const");
+        let const_span = self.previous().span;
+        if modifiers.is_static {
+            return Err(self.error_at(
+                const_span,
+                "unsupported interface constant declaration: static interface constants are not implemented",
+            ));
+        }
+        if modifiers.is_abstract || modifiers.is_final {
+            return Err(self.error_at(
+                modifiers.abstract_or_final_span().unwrap_or(const_span),
+                "unsupported interface constant declaration: abstract/final interface constants are not implemented",
+            ));
+        }
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
+            return Err(self.error_at(
+                const_span,
+                "unsupported interface constant declaration: only public interface constants are implemented",
+            ));
+        }
+        if matches!(self.peek().kind, TokenKind::Identifier(_))
+            && matches!(self.peek_next().kind, TokenKind::Identifier(_))
+        {
+            return Err(self.error_at(
+                self.peek().span,
+                "unsupported interface constant declaration: typed interface constants are not implemented",
+            ));
+        }
+        let (name, name_span) =
+            self.consume_identifier_with_span("expected interface constant name after const")?;
+        self.consume_keyword(
+            TokenKind::Equal,
+            "expected '=' after interface constant name",
+        )?;
+        let value = self.parse_expression()?;
+        self.ensure_supported_const_declaration_expr(&value)?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported interface constant declaration: multiple interface constants in one declaration are not implemented",
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after interface constant declaration",
+        )?;
+        Ok(ClassConstantDecl {
+            name,
+            visibility: ClassVisibility::Public,
+            value,
+            span: name_span,
+        })
     }
 
     fn parse_interface_method(&mut self) -> CompileResult<InterfaceMethodDecl> {
@@ -775,13 +837,6 @@ impl Parser {
                 unsupported_static_interface_method_message(),
             ));
         }
-        if self.match_identifier("const") {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_interface_constant_message(),
-            ));
-        }
-
         let span = self
             .consume_keyword(TokenKind::Function, "expected interface method declaration")?
             .span;
@@ -6450,10 +6505,6 @@ fn unsupported_nested_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: only top-level interface declarations are implemented"
 }
 
-fn unsupported_interface_constant_message() -> &'static str {
-    "unsupported interface constant declaration: interface constants are not implemented"
-}
-
 fn unsupported_interface_method_visibility_message() -> &'static str {
     "unsupported interface method declaration: only public interface methods are implemented"
 }
@@ -6580,6 +6631,14 @@ impl Parser {
     }
 
     fn check_trait_constant_declaration(&self) -> bool {
+        self.check_class_like_constant_declaration()
+    }
+
+    fn check_interface_constant_declaration(&self) -> bool {
+        self.check_class_like_constant_declaration()
+    }
+
+    fn check_class_like_constant_declaration(&self) -> bool {
         let mut index = self.current;
         while index < self.tokens.len() {
             match &self.tokens[index].kind {

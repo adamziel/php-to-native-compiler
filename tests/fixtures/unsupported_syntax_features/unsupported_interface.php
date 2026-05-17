@@ -1,4 +1,4 @@
 <?php
 interface Renderable {
-    const NAME = "view";
+    public const string NAME = "view";
 }

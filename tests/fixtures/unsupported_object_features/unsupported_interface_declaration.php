@@ -1,4 +1,4 @@
 <?php
 interface Logger {
-    const NAME = "logger";
+    public const string NAME = "logger";
 }

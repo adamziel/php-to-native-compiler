@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1267/static_array_callable_reference_parameter.php
+> stdout
+start:direct
+start:direct|cold:static
+> stderr
+
+> exit
+0

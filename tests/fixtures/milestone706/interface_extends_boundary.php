@@ -1,4 +1,4 @@
 <?php
 interface Child extends Parent {
-    const NAME = "child";
+    public const string NAME = "child";
 }

@@ -136,6 +136,17 @@ gate above is satisfied.
 - Unsupported native lowering must continue to be explicit and tested until
   the runtime ABI exists for the feature being lowered.
 
+### Current Parallel Focus
+
+The latest WordPress-focused batch closed small slices of public interface
+constants, static array-callable reference arguments, output-buffer flush/end
+operations, and exact option-name reads over the placeholder `wp_options`
+state. Those are useful compatibility steps, but they do not change the larger
+project shape: the next lanes should keep attacking forward interface/object
+semantics, real reference/COW behavior, request/SAPI/stream breadth, and
+executable WordPress database/bootstrap evidence until those areas become
+coherent subsystems instead of reached slices.
+
 ## What We Have Been Doing
 
 The work so far has been building the substrate for compatibility without lying

@@ -78,8 +78,9 @@
   copied into the callee parameter, and written back to the same slot when the
   callee returns normally or with `return`. This
   object-property argument path does not expose a general in-call PHP
-  reference container. String user-function callbacks and public
-  `[object, method]` instance callbacks invoked through
+  reference container. String user-function callbacks, public
+  `[object, method]` instance callbacks, and public
+  `["ClassName", "method"]` static callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` also support
   by-reference direct variable elements through the same direct-variable cell
   binding. The callback path additionally accepts by-reference direct public
@@ -89,8 +90,8 @@
   parameter name; later local writes do not mutate the caller variable or write
   back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, dynamic static receiver, `parent::`, static method array-callable, and
-  reference-returning function or method forms remain unsupported for
+  array, dynamic static receiver, `parent::`, keyed callback argument arrays,
+  and reference-returning function or method forms remain unsupported for
   object-property array reference arguments. This is still a bounded
   direct-variable alias and public object-property output path, not full PHP
   reference containers or copy-on-write.
@@ -665,11 +666,17 @@
   interface parameter to a different type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
-  the same return type text case-insensitively. Full PHP method signature variance,
+  the same return type text case-insensitively. Public interface constants
+  declared as `const NAME = ...` or `public const NAME = ...` with the current
+  class-constant expression subset resolve through `InterfaceName::CONST`,
+  inherited parent-interface lookup, `ClassName::CONST` on implementing
+  classes, `self::CONST`/`static::CONST` in implementing class methods, and
+  `defined()`/`constant()` string lookups. Full PHP method signature variance,
   class/interface return covariance and type subtyping, type aliases,
   union/intersection canonicalization, forward parent-interface resolution,
-  interface constants, broad built-in/internal interface inheritance catalogs,
-  named arguments,
+  typed/static/non-public/abstract/final or multi-constant interface
+  declarations, exact PHP ambiguous-interface-constant diagnostics, broad
+  built-in/internal interface inheritance catalogs, named arguments,
   trait composition beyond the current public-method and simple-alias slice,
   exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -880,7 +887,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -938,7 +945,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -1647,6 +1654,9 @@
   `SELECT option_id FROM wp_options WHERE option_name = ... LIMIT 1` returns
   the recorded deterministic option id through that same placeholder
   result/fetch path. The exact
+  `SELECT option_name FROM wp_options WHERE option_name = ... LIMIT 1` returns
+  the recorded option name through that same placeholder result/fetch path for
+  the current WordPress-shaped `add_option()` preflight probe. The exact
   `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
   shape returns the recorded value and autoload columns together
   through the same placeholder result/fetch path.
@@ -1665,7 +1675,7 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  arbitrary projection beyond exact option id/value/autoload/name-value shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/name-value shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -1684,6 +1694,11 @@
   query also returns a recorded option-name/option-value row for string
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
+  `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
+  returns a recorded option-name row for string option-name parameters on the
+  same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array($name))`; missing names return
+  an empty zero-field placeholder result. The exact
   `SELECT option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
   query returns recorded option-value/autoload rows for string option-name
   parameters on the same handle through
@@ -1956,11 +1971,20 @@
   arguments and returns the innermost active buffer contents without closing
   that buffer, or `false` when no buffer is active. `ob_get_clean()` accepts no
   arguments, pops the innermost buffer, and returns its captured string, or
+  `false` when no buffer is active. `ob_clean()` accepts no arguments, clears
+  the innermost active buffer, and returns `true`, or `false` when no buffer is
+  active. `ob_flush()` accepts no arguments, appends the innermost active
+  buffer contents to the next outer buffer or stdout, clears that active
+  buffer, and returns `true`, or `false` when no buffer is active.
+  `ob_end_clean()` accepts no arguments, discards and closes the innermost
+  buffer, and returns `true`, or `false` when no buffer is active.
+  `ob_end_flush()` accepts no arguments, closes the innermost buffer, appends
+  its contents to the next outer buffer or stdout, and returns `true`, or
   `false` when no buffer is active. Any buffers still active at normal program
   completion or bounded `exit()` are flushed outward to stdout. Callbacks,
-  chunk sizes, flags, flush/end variants, nested buffer handler semantics,
-  output-started interaction with headers, fatal-error cleanup, exact warning
-  behavior, and native lowering remain unsupported.
+  chunk sizes, flags, handler status/list APIs, output handler nesting
+  semantics, output-started interaction with headers, fatal-error cleanup,
+  exact warning behavior, and native lowering remain unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for `UTC`, and returns `false` for other identifiers without PHP's
   notice machinery. Full timezone database validation, global timezone state,
@@ -2244,8 +2268,8 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent class `extends` and already-declared interface parent lists,
-  interface constants, non-public or
-  static interface methods, trait properties,
+  typed/static/non-public/abstract/final or multi-constant interface
+  declarations, non-public or static interface methods, trait properties,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
   static/abstract/final or non-public trait methods, adaptation blocks beyond the current simple
@@ -3965,7 +3989,8 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
-  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `mysqli_connect`,
+  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`,
+  `ob_end_clean`, `ob_end_flush`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -3998,7 +4023,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
@@ -4129,7 +4154,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4177,7 +4202,8 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
-  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
+  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`,
+  `ob_end_clean`, `ob_end_flush`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
@@ -4468,7 +4494,8 @@
   `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/`mysqli_poll(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
-  `ob_start`, `ob_get_level`, `ob_get_contents`, and `ob_get_clean` accept the same current
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`,
+  `ob_flush`, `ob_end_clean`, and `ob_end_flush` accept the same current
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
   recognizes the names.
@@ -4597,8 +4624,9 @@
   recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
   integer-keyed positional argument-array, and unkeyed literal direct-variable
-  by-reference string/function or public object-method callback argument subset
-  as the builtin section above;
+  or direct public object-property array-offset by-reference string/function,
+  public object-method, or public class-string static-method callback argument
+  subset as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
@@ -5250,8 +5278,10 @@
   instance `__construct` and explicit parent calls,
   typed/default property compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
-  interface constants, interface implementation enforcement, interface
-  inheritance, built-in/internal interface catalogs,
+  typed/static/non-public/abstract/final or multi-constant interface
+  declarations, interface implementation enforcement beyond the current
+  bounded method checks, forward parent-interface resolution,
+  built-in/internal interface catalogs,
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
   trait/class constants, static/abstract/final and non-public trait methods,
@@ -5523,9 +5553,10 @@
   constructors, and static constructors currently fail with stable runtime
   diagnostics
 - unsupported class forms including nested/conditional declarations, broader
-  inheritance rules beyond the current single-parent metadata chain, multiple
-  interface inheritance, interface constants, full interface signature enforcement,
-  built-in/internal interface catalogs, trait
+  inheritance rules beyond the current single-parent metadata chain,
+  typed/static/non-public/abstract/final or multi-constant interface
+  declarations, forward parent-interface resolution, full interface signature
+  enforcement, built-in/internal interface catalogs, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
   autoload-triggered parent class resolution,
@@ -6565,9 +6596,10 @@
   shim: filename/line output arguments, output-started tracking, output
   buffers, SAPI differences, exact warnings, and native lowering beyond
   function-table introspection
-- `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()` behavior beyond the current
+- `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/`ob_clean()`/
+  `ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current
   no-argument interpreter-owned buffer stack: callbacks, chunk sizes, flags,
-  flush/end/status/list variants, output handler nesting semantics,
+  handler status/list APIs, output handler nesting semantics,
   output-started/header interaction, fatal-error cleanup, exact warnings, and
   native lowering beyond function-table introspection
 - `php_sapi_name()` behavior beyond the current no-argument deterministic

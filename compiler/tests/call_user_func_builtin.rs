@@ -133,6 +133,35 @@ echo $cache->cache["options"]["alloptions"];
 }
 
 #[test]
+fn call_user_func_array_writes_back_static_array_callable_reference_arguments() {
+    let execution = run_source(
+        r#"<?php
+class WP_Object_Cache {
+    public $cache = [];
+}
+
+class Cache_Marker {
+    public static function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+$option = "start";
+echo call_user_func_array(array("Cache_Marker", "tag"), array(&$option, "direct")), "\n";
+call_user_func_array(array("Cache_Marker", "tag"), array(&$cache->cache["options"]["alloptions"], "static"));
+echo $option, "|", $cache->cache["options"]["alloptions"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "start:direct\nstart:direct|cold:static");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php

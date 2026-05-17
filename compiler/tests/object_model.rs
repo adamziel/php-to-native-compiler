@@ -2532,6 +2532,126 @@ class Plugin implements PluginContract {
 }
 
 #[test]
+fn interface_constants_resolve_through_interfaces_and_implementing_classes() {
+    let source = r#"<?php
+interface HookDefaults {
+    public const ACTION = "init";
+    const PRIORITY = 10;
+}
+
+interface ChildDefaults extends HookDefaults {
+    const GROUP = "plugins";
+}
+
+class Plugin implements ChildDefaults {
+    public static function summary() {
+        return self::ACTION . ":" . static::GROUP . ":" . static::PRIORITY;
+    }
+}
+
+class OverridePlugin extends Plugin {
+    public const PRIORITY = 20;
+}
+
+echo HookDefaults::ACTION, "\n";
+echo ChildDefaults::ACTION, "\n";
+echo Plugin::ACTION, "\n";
+echo Plugin::GROUP, "\n";
+echo Plugin::summary(), "\n";
+echo OverridePlugin::summary(), "\n";
+echo defined("ChildDefaults::PRIORITY") ? "defined\n" : "missing\n";
+echo constant("Plugin::ACTION"), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "init\ninit\ninit\nplugins\ninit:plugins:10\ninit:plugins:20\ndefined\ninit\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn interface_constant_boundaries_are_stable() {
+    let typed = parse_error(
+        r#"<?php
+interface Logger {
+    public const string NAME = "logger";
+}
+"#,
+    );
+    assert_eq!(typed.line, 3);
+    assert_eq!(typed.column, 18);
+    assert_eq!(
+        typed.message,
+        "unsupported interface constant declaration: typed interface constants are not implemented"
+    );
+
+    let non_public = parse_error(
+        r#"<?php
+interface Logger {
+    protected const NAME = "logger";
+}
+"#,
+    );
+    assert_eq!(non_public.line, 3);
+    assert_eq!(non_public.column, 15);
+    assert_eq!(
+        non_public.message,
+        "unsupported interface constant declaration: only public interface constants are implemented"
+    );
+
+    let duplicate = runtime_error(
+        r#"<?php
+interface Logger {
+    const NAME = "logger";
+    public const NAME = "duplicate";
+}
+"#,
+    );
+    assert_eq!(duplicate.line, 4);
+    assert_eq!(duplicate.column, 18);
+    assert_eq!(
+        duplicate.message,
+        "class Logger already defines constant NAME"
+    );
+
+    let ambiguous = runtime_error(
+        r#"<?php
+interface Primary {
+    const NAME = "primary";
+}
+interface Secondary {
+    const NAME = "secondary";
+}
+class Plugin implements Primary, Secondary {}
+echo Plugin::NAME;
+"#,
+    );
+    assert_eq!(
+        ambiguous.message,
+        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+    );
+
+    let ambiguous_defined = runtime_error(
+        r#"<?php
+interface Primary {
+    const NAME = "primary";
+}
+interface Secondary {
+    const NAME = "secondary";
+}
+class Plugin implements Primary, Secondary {}
+var_dump(defined("Plugin::NAME"));
+"#,
+    );
+    assert_eq!(
+        ambiguous_defined.message,
+        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+    );
+}
+
+#[test]
 fn core_interface_catalog_reports_bounded_internal_interfaces() {
     let execution = run_source(
         r#"<?php
@@ -7513,12 +7633,12 @@ trait Logs {
         (
             r#"<?php
 interface Logger {
-    const NAME = "logger";
+    public const string NAME = "logger";
 }
 "#,
             3,
-            5,
-            "unsupported interface constant declaration: interface constants are not implemented",
+            18,
+            "unsupported interface constant declaration: typed interface constants are not implemented",
         ),
         (
             r#"<?php

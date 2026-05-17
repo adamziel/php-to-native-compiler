@@ -1048,6 +1048,46 @@ echo $direct_row["option_name"], "=", $direct_row["option_value"];
 }
 
 #[test]
+fn mysqli_statement_reads_current_wordpress_option_name_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$stmt = mysqli_prepare($handle, "SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1");
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "s", $name);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+$result = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($result);
+echo ":";
+echo mysqli_num_fields($result);
+echo "|";
+$row = mysqli_fetch_assoc($result);
+echo $row["option_name"];
+$name = "home";
+echo "|";
+echo mysqli_stmt_execute($stmt) ? "missing-executed" : "failed";
+$missing = mysqli_stmt_get_result($stmt);
+echo "|";
+echo mysqli_num_rows($missing), ":", mysqli_num_fields($missing);
+echo "|";
+$direct = mysqli_execute_query($handle, "SELECT `option_name` FROM `wp_options` WHERE `option_name` = ? LIMIT 1", array("siteurl"));
+$direct_row = mysqli_fetch_assoc($direct);
+echo $direct_row["option_name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "executed|1:1|siteurl|missing-executed|0:0|siteurl"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_inserts_current_wordpress_option_state() {
     let execution = run_source(
         r#"<?php
@@ -2993,6 +3033,36 @@ echo mysqli_num_rows($missing);
         execution.stdout,
         "0|inserted|1|1|duplicate-rejected|0|1|https://example.test|0"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_query_reads_current_wordpress_option_name_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$result = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["option_name"];
+echo "|";
+echo mysqli_num_rows($result);
+echo "|";
+echo mysqli_affected_rows($handle);
+echo "|";
+$missing = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name = 'home' LIMIT 1");
+echo mysqli_num_rows($missing);
+echo "|";
+mysqli_query($handle, "INSERT INTO `wp_options` (`option_name`, `option_value`, `autoload`) VALUES ('home', 'https://home.test', 'auto-on')");
+$home = mysqli_query($handle, "SELECT `option_name` FROM `wp_options` WHERE `option_name` = 'home' LIMIT 1");
+$home_row = mysqli_fetch_assoc($home);
+echo $home_row["option_name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "siteurl|1|0|0|home");
     assert_eq!(execution.exit_code, 0);
 }
 

@@ -73,8 +73,12 @@ enums in the current class-like metadata slice.
 interfaces and top-level traits in declaration order. A declared interface may
 extend one or more already-declared user interfaces; concrete implementors of
 the child interface must expose the child and all parent public method names,
-and relationship checks also recognize the parent interfaces. Simple public instance
-methods from already-declared traits may be composed into a class with
+and relationship checks also recognize the parent interfaces. Public interface
+constants declared as `const NAME = ...` or `public const NAME = ...` resolve
+through `InterfaceName::CONST`, inherited parent interfaces, implementing
+classes, `self::CONST`/`static::CONST` in implementing class methods, and
+`defined()`/`constant()` string lookups. Simple public instance methods from
+already-declared traits may be composed into a class with
 `use TraitName;`, repeated simple trait-use declarations, or
 `use TraitA, TraitB;` and called through ordinary object method dispatch.
 Simple public aliases, including same-use qualified forms such as
@@ -403,8 +407,9 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, interface constants, full interface signature
-enforcement,
+conditional class declarations, typed/static/non-public/abstract/final or
+multi-constant interface declarations, forward parent-interface resolution,
+full interface signature enforcement,
 trait properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,

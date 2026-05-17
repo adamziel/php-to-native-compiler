@@ -8,10 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use php_runtime::{
-    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
-    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
-    PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError,
-    RuntimeErrorKind, RuntimeResult, Value, Visibility,
+    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison,
+    ObjectProperty, PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure,
+    PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
+    PhpPropertyMetadata, RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -131,6 +131,26 @@ struct Interpreter {
     output_buffers: Vec<String>,
     stdout: String,
     exit_signal: Option<i32>,
+}
+
+enum ConstantResolution {
+    Found(ResolvedConstant),
+    Ambiguous(Vec<String>),
+    Missing,
+}
+
+struct ResolvedConstant {
+    declaring_class_id: Option<ClassId>,
+    declaring_name: String,
+    visibility: Visibility,
+    value: Expr,
+    kind: ConstantOwnerKind,
+}
+
+#[derive(Clone, Copy)]
+enum ConstantOwnerKind {
+    Class,
+    Interface,
 }
 
 #[derive(Debug, Clone)]
@@ -2518,6 +2538,15 @@ impl Interpreter {
     fn flush_output_buffers(&mut self) {
         while let Some(output) = self.output_buffers.pop() {
             self.append_output(&output);
+        }
+    }
+
+    fn append_output_below_active_buffer(&mut self, output: &str) {
+        if self.output_buffers.len() >= 2 {
+            let parent_index = self.output_buffers.len() - 2;
+            self.output_buffers[parent_index].push_str(output);
+        } else {
+            self.stdout.push_str(output);
         }
     }
 
@@ -8210,6 +8239,33 @@ impl Interpreter {
 
         if matches!(
             query,
+            "SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `option_name` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
+            if let Some(option_name) = match (connection_handle_id, params) {
+                (Some(handle_id), [Value::String(option_name)]) => self
+                    .mysqli_wp_options
+                    .get(&handle_id)
+                    .and_then(|options| options.get(option_name))
+                    .map(|_| option_name.clone()),
+                _ => None,
+            } {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string()],
+                    rows: vec![vec![(
+                        "option_name".to_string(),
+                        Value::String(option_name),
+                    )]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if matches!(
+            query,
             "SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1"
                 | "SELECT `option_id` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
         ) {
@@ -9092,6 +9148,26 @@ impl Interpreter {
                     vec![vec![(
                         "option_value".to_string(),
                         Value::String(option_value),
+                    )]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(option_name) = parse_wordpress_option_name_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .is_some()
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec!["option_name".to_string()],
+                    vec![vec![(
+                        "option_name".to_string(),
+                        Value::String(option_name),
                     )]],
                 );
             }
@@ -11784,22 +11860,66 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        let class_id = self
-            .classes
-            .lookup_class_id(class_name)
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
-        self.evaluate_resolved_class_constant(class_id, class_name, constant, span)
+        if let Some(class_id) = self.classes.lookup_class_id(class_name) {
+            return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
+        }
+
+        let Some(interface) = self
+            .interface_lookup
+            .get(&class_name.to_ascii_lowercase())
+            .cloned()
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_class(class_name),
+            ));
+        };
+        self.evaluate_interface_constant(&interface, constant, span)
     }
 
-    fn class_constant_lookup_string_is_defined(&self, class_name: &str, constant: &str) -> bool {
-        let Some(class_id) = self.classes.lookup_class_id(class_name) else {
-            return false;
+    fn class_constant_lookup_string_is_defined(
+        &self,
+        class_name: &str,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if let Some(class_id) = self.classes.lookup_class_id(class_name) {
+            return match self.resolve_class_constant(class_id, constant) {
+                ConstantResolution::Found(resolved) => {
+                    Ok(matches!(resolved.visibility, Visibility::Public))
+                }
+                ConstantResolution::Ambiguous(owners) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::{constant}"),
+                        format!(
+                            "interface constant resolution is ambiguous between {}",
+                            owners.join(", ")
+                        ),
+                    ),
+                )),
+                ConstantResolution::Missing => Ok(false),
+            };
+        }
+
+        let Some(interface) = self.interface_lookup.get(&class_name.to_ascii_lowercase()) else {
+            return Ok(false);
         };
 
-        matches!(
-            self.resolve_class_constant(class_id, constant),
-            Some((_, _, Visibility::Public, _))
-        )
+        match self.resolve_interface_constant(interface, constant) {
+            ConstantResolution::Found(_) => Ok(true),
+            ConstantResolution::Ambiguous(owners) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{constant}"),
+                    format!(
+                        "interface constant resolution is ambiguous between {}",
+                        owners.join(", ")
+                    ),
+                ),
+            )),
+            ConstantResolution::Missing => Ok(false),
+        }
     }
 
     fn evaluate_self_class_constant(&mut self, constant: &str, span: Span) -> CompileResult<Value> {
@@ -11891,32 +12011,51 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        let Some((declaring_class_id, declaring_class_name, visibility, value)) =
-            self.resolve_class_constant(class_id, constant)
-        else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
-            ));
+        let resolved = match self.resolve_class_constant(class_id, constant) {
+            ConstantResolution::Found(resolved) => resolved,
+            ConstantResolution::Ambiguous(owners) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::{constant}"),
+                        format!(
+                            "interface constant resolution is ambiguous between {}",
+                            owners.join(", ")
+                        ),
+                    ),
+                ));
+            }
+            ConstantResolution::Missing => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            }
         };
 
-        self.ensure_class_constant_visible(
-            declaring_class_id,
-            &declaring_class_name,
-            constant,
-            visibility,
-            span,
-        )?;
+        if let Some(declaring_class_id) = resolved.declaring_class_id {
+            self.ensure_class_constant_visible(
+                declaring_class_id,
+                &resolved.declaring_name,
+                constant,
+                resolved.visibility,
+                span,
+            )?;
+        }
 
         let mut constant_scope = SymbolTable::new();
-        let value = self.evaluate(&value, &mut constant_scope)?;
+        let value = self.evaluate(&resolved.value, &mut constant_scope)?;
         if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
+            let owner_kind = match resolved.kind {
+                ConstantOwnerKind::Class => "class",
+                ConstantOwnerKind::Interface => "interface",
+            };
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{constant}"),
+                    format!("{}::{constant}", resolved.declaring_name),
                     format!(
-                        "class constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                        "{owner_kind} constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
                     ),
                 ),
             ));
@@ -11925,11 +12064,51 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn resolve_class_constant(
-        &self,
-        class_id: ClassId,
+    fn evaluate_interface_constant(
+        &mut self,
+        interface: &InterfaceDecl,
         constant: &str,
-    ) -> Option<(ClassId, String, Visibility, Expr)> {
+        span: Span,
+    ) -> CompileResult<Value> {
+        let resolved = match self.resolve_interface_constant(interface, constant) {
+            ConstantResolution::Found(resolved) => resolved,
+            ConstantResolution::Ambiguous(owners) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{}::{constant}", interface.name),
+                        format!(
+                            "interface constant resolution is ambiguous between {}",
+                            owners.join(", ")
+                        ),
+                    ),
+                ));
+            }
+            ConstantResolution::Missing => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{}::{constant}", interface.name)),
+                ));
+            }
+        };
+
+        let mut constant_scope = SymbolTable::new();
+        let value = self.evaluate(&resolved.value, &mut constant_scope)?;
+        if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{constant}", resolved.declaring_name),
+                    format!(
+                        "interface constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                    ),
+                ),
+            ));
+        }
+        Ok(value)
+    }
+
+    fn resolve_class_constant(&self, class_id: ClassId, constant: &str) -> ConstantResolution {
         let mut current = Some(class_id);
         while let Some(current_id) = current {
             let class = self
@@ -11943,17 +12122,113 @@ impl Interpreter {
                     .expect("class constant metadata should have stored value")
                     .value
                     .clone();
-                return Some((
-                    current_id,
-                    class.name().to_string(),
-                    metadata.visibility(),
+                return ConstantResolution::Found(ResolvedConstant {
+                    declaring_class_id: Some(current_id),
+                    declaring_name: class.name().to_string(),
+                    visibility: metadata.visibility(),
                     value,
-                ));
+                    kind: ConstantOwnerKind::Class,
+                });
             }
             current = class.parent_id();
         }
 
-        None
+        self.resolve_class_interface_constant(class_id, constant)
+    }
+
+    fn resolve_class_interface_constant(
+        &self,
+        class_id: ClassId,
+        constant: &str,
+    ) -> ConstantResolution {
+        let mut matches = Vec::new();
+        let mut shadowed_parent_keys = HashSet::new();
+
+        for interface_name in implemented_interface_names(&self.classes, class_id) {
+            let key = interface_name.to_ascii_lowercase();
+            let Some(interface) = self.interface_lookup.get(&key) else {
+                continue;
+            };
+
+            if shadowed_parent_keys.contains(&key) {
+                continue;
+            }
+
+            if let Some(constant_decl) = interface
+                .constants
+                .iter()
+                .find(|item| item.name == constant)
+            {
+                matches.push(ResolvedConstant {
+                    declaring_class_id: None,
+                    declaring_name: interface.name.clone(),
+                    visibility: Visibility::Public,
+                    value: constant_decl.value.clone(),
+                    kind: ConstantOwnerKind::Interface,
+                });
+                collect_parent_interface_keys(
+                    &self.interface_lookup,
+                    interface,
+                    &mut shadowed_parent_keys,
+                );
+            }
+        }
+
+        match matches.len() {
+            0 => ConstantResolution::Missing,
+            1 => ConstantResolution::Found(matches.remove(0)),
+            _ => ConstantResolution::Ambiguous(
+                matches
+                    .into_iter()
+                    .map(|resolved| format!("{}::{constant}", resolved.declaring_name))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn resolve_interface_constant(
+        &self,
+        interface: &InterfaceDecl,
+        constant: &str,
+    ) -> ConstantResolution {
+        if let Some(constant_decl) = interface
+            .constants
+            .iter()
+            .find(|item| item.name == constant)
+        {
+            return ConstantResolution::Found(ResolvedConstant {
+                declaring_class_id: None,
+                declaring_name: interface.name.clone(),
+                visibility: Visibility::Public,
+                value: constant_decl.value.clone(),
+                kind: ConstantOwnerKind::Interface,
+            });
+        }
+
+        let mut matches = Vec::new();
+        for parent_name in &interface.parents {
+            let Some(parent) = self.interface_lookup.get(&parent_name.to_ascii_lowercase()) else {
+                continue;
+            };
+            match self.resolve_interface_constant(parent, constant) {
+                ConstantResolution::Found(resolved) => matches.push(resolved),
+                ConstantResolution::Ambiguous(owners) => {
+                    return ConstantResolution::Ambiguous(owners);
+                }
+                ConstantResolution::Missing => {}
+            }
+        }
+
+        match matches.len() {
+            0 => ConstantResolution::Missing,
+            1 => ConstantResolution::Found(matches.remove(0)),
+            _ => ConstantResolution::Ambiguous(
+                matches
+                    .into_iter()
+                    .map(|resolved| format!("{}::{constant}", resolved.declaring_name))
+                    .collect(),
+            ),
+        }
     }
 
     fn ensure_class_constant_visible(
@@ -15156,6 +15431,43 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_ob_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_clean", args, 0, span)?;
+        let Some(buffer) = self.output_buffers.last_mut() else {
+            return Ok(Value::Bool(false));
+        };
+        buffer.clear();
+        Ok(Value::Bool(true))
+    }
+
+    fn call_ob_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_flush", args, 0, span)?;
+        let Some(buffer) = self.output_buffers.last_mut() else {
+            return Ok(Value::Bool(false));
+        };
+        let output = std::mem::take(buffer);
+        self.append_output_below_active_buffer(&output);
+        Ok(Value::Bool(true))
+    }
+
+    fn call_ob_end_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_end_clean", args, 0, span)?;
+        Ok(self
+            .output_buffers
+            .pop()
+            .map(|_| Value::Bool(true))
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_ob_end_flush(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_end_flush", args, 0, span)?;
+        let Some(output) = self.output_buffers.pop() else {
+            return Ok(Value::Bool(false));
+        };
+        self.append_output(&output);
+        Ok(Value::Bool(true))
+    }
+
     fn call_header(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -15623,9 +15935,9 @@ impl Interpreter {
                         if let Some((class_name, constant)) =
                             normalize_runtime_class_constant_lookup_name(name)
                         {
-                            return Ok(Value::Bool(
-                                self.class_constant_lookup_string_is_defined(class_name, constant),
-                            ));
+                            return Ok(Value::Bool(self.class_constant_lookup_string_is_defined(
+                                class_name, constant, span,
+                            )?));
                         }
 
                         let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
@@ -17173,6 +17485,10 @@ impl Interpreter {
             "ob_get_level" => self.call_ob_get_level(&args, span),
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
+            "ob_clean" => self.call_ob_clean(&args, span),
+            "ob_flush" => self.call_ob_flush(&args, span),
+            "ob_end_clean" => self.call_ob_end_clean(&args, span),
+            "ob_end_flush" => self.call_ob_end_flush(&args, span),
             "header" => self.call_header(&args, span),
             "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
@@ -18116,12 +18432,75 @@ impl Interpreter {
                 )
             }
             Value::String(_) => {
-                let positional_args = self.evaluate_call_user_func_array_arguments(
-                    argument_expr,
+                let Value::String(class_name) = target else {
+                    unreachable!("array_callable_parts restricts callback targets");
+                };
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
                     span,
-                    caller_scope,
                 )?;
-                self.call_array_callable_with_values(callback, positional_args, span)
+                let function = function.as_ref();
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_checked_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    reference_bindings,
+                    Some(caller_scope),
+                )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
         }
@@ -19892,6 +20271,20 @@ fn register_interface_name(
         }
     }
 
+    let mut constant_names = HashSet::new();
+    for constant in &interface.constants {
+        if !constant_names.insert(constant.name.clone()) {
+            return Err(runtime_error(
+                constant.span,
+                RuntimeError::duplicate_class_member(
+                    interface.name.clone(),
+                    ClassMemberKind::Constant,
+                    constant.name.clone(),
+                ),
+            ));
+        }
+    }
+
     let interface = Rc::new(interface.clone());
     interfaces.push(interface.clone());
     interface_lookup.insert(key, interface);
@@ -20378,6 +20771,22 @@ fn push_interface_with_parents(
     };
     for parent_name in &interface.parents {
         push_interface_with_parents(interface_lookup, parent_name, names, seen);
+    }
+}
+
+fn collect_parent_interface_keys(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    keys: &mut HashSet<String>,
+) {
+    for parent_name in &interface.parents {
+        let key = parent_name.to_ascii_lowercase();
+        if !keys.insert(key.clone()) {
+            continue;
+        }
+        if let Some(parent) = interface_lookup.get(&key) {
+            collect_parent_interface_keys(interface_lookup, parent, keys);
+        }
     }
 }
 
@@ -21665,6 +22074,10 @@ fn is_builtin(name: &str) -> bool {
             | "ob_get_level"
             | "ob_get_contents"
             | "ob_get_clean"
+            | "ob_clean"
+            | "ob_flush"
+            | "ob_end_clean"
+            | "ob_end_flush"
             | "header"
             | "header_remove"
             | "headers_list"
@@ -22186,6 +22599,22 @@ fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT option_value FROM `wp_options` WHERE option_name = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
+fn parse_wordpress_option_name_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name FROM wp_options WHERE option_name = ")
+        .or_else(|| query.strip_prefix("SELECT option_name FROM `wp_options` WHERE option_name = "))
+        .or_else(|| {
+            query.strip_prefix("SELECT `option_name` FROM `wp_options` WHERE `option_name` = ")
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1")?;
     let values = parse_sql_single_quoted_list(rest)?;
     if values.len() != 1 {
         return None;
