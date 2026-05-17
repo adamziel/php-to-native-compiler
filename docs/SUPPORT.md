@@ -122,7 +122,19 @@
   copied into the callee parameter, and written back to the same slot when the
   callee returns normally or with `return`. This
   direct array-offset and object-property argument path does not expose a
-  general in-call PHP reference container. String user-function callbacks,
+  general in-call PHP reference container. Direct user-function by-reference
+  calls also accept non-direct holder property-held `ArrayAccess` offset
+  arguments such as `handler($holders["bag"]->store["outer"]["slot"])` and
+  dynamic selected properties such as
+  `handler($holders["bag"]->{$name}["outer"]["slot"])` when the evaluated
+  holder object exposes the selected visible property, that property holds an
+  `ArrayAccess` object, and public by-reference `offsetGet($offset)` has the
+  exact bounded body `return $this->property[$offset];`; the holder expression
+  is evaluated once and writes route through the backing property array slot.
+  This does not add plain non-direct object-property array references, mixed
+  nested `ArrayAccess` chains, magic-property reference containers, arbitrary
+  reference expressions, or a general in-call PHP reference container. String
+  user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
   `["ClassName", "method"]` static callbacks invoked through
@@ -2420,7 +2432,7 @@
   counters/timestamps/options, dbDelta diff generation, real transactional DDL
   behavior beyond bounded in-memory schema snapshots, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
-  bounded trailing-percent option-name prefix shape, autoload mutation beyond
+  bounded direct and prepared option-row scan shapes, autoload mutation beyond
   the exact insert and update shapes listed above,
   arbitrary projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id/star-projection shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
@@ -2471,15 +2483,18 @@
   `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
   `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
   and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
-  deterministic row sets for one string trailing-percent prefix pattern,
-  including backticked table/column spellings and escaped transient prefixes
-  such as `\_transient\_%`. These prepared prefix scans also accept an exact
+  deterministic row sets for one string pattern parameter, including
+  backticked table/column spellings, `%` wildcards, `_` single-character
+  wildcards, and backslash-escaped `%`, `_`, and `\` literals such as
+  `\_transient\_%`. These prepared LIKE scans also accept an exact
   trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
   optional `ASC`, and return rows in the existing deterministic ascending
-  option-name order. This prepared path remains a bounded prefix matcher, not
-  general SQL `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
+  option-name order. This prepared path remains bounded to the documented
+  option-row projections and does not support prepared `ESCAPE` clauses,
+  SQL-mode-aware `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists,
   `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
-  host database execution. The exact prepared
+  host database execution. Prepared LIKE deletes and expired-timeout
+  predicates remain prefix-only. The exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
   trailing option-name `ORDER BY` suffix, returns deterministic expired
@@ -2821,29 +2836,35 @@
   paths, returns the host file byte length as an integer for existing regular
   files, and returns `false` for missing paths or non-file paths such as
   directories. It shares the same current relative path policy as
-  `file_exists`. This is a bounded WordPress request/filesystem metadata
-  slice, not full PHP filesystem support: include-path lookup, stream
-  wrappers, stat-cache behavior, `open_basedir`, warning behavior,
-  non-string coercions, non-UTF-8 paths, oversized file handling beyond the
-  current signed 64-bit integer subset, partial-output behavior, and native
-  lowering remain unsupported.
+  `file_exists`. Successful metadata reads are cached by resolved local path
+  until `clearstatcache()` clears all entries or
+  `clearstatcache(false, $path)` removes the matching entry. This is a
+  bounded WordPress request/filesystem metadata slice, not full PHP filesystem
+  support: include-path lookup, stream wrappers, full PHP stat-cache breadth,
+  `open_basedir`, warning behavior, non-string coercions, non-UTF-8 paths,
+  oversized file handling beyond the current signed 64-bit integer subset,
+  partial-output behavior, and native lowering remain unsupported.
   `filemtime($path)` accepts one string local path, rejects stream-wrapper
   paths, returns the host modification time as a Unix-timestamp integer for
   existing local filesystem entries, and returns `false` for missing paths. It
-  shares the same current relative path policy as `file_exists`. This is a
-  bounded WordPress request/filesystem stat metadata slice, not full PHP
-  filesystem support: include-path lookup, stream wrappers, PHP stat-cache
-  behavior, `open_basedir`, warning behavior, non-string coercions, non-UTF-8
-  paths, pre-Unix-epoch timestamps, oversized timestamps beyond the current
-  signed 64-bit integer subset, partial-output behavior, and native lowering
-  remain unsupported.
+  shares the same current relative path policy as `file_exists`. Successful
+  metadata reads share the same bounded `clearstatcache()`-managed cache as
+  `filesize()`. This is a bounded WordPress request/filesystem stat metadata
+  slice, not full PHP filesystem support: include-path lookup, stream
+  wrappers, full PHP stat-cache breadth, `open_basedir`, warning behavior,
+  non-string coercions, non-UTF-8 paths, pre-Unix-epoch timestamps, oversized
+  timestamps beyond the current signed 64-bit integer subset, partial-output
+  behavior, and native lowering remain unsupported.
   `clearstatcache($clear_realpath_cache = false, $filename = "")` accepts no
-  arguments, one bool argument, or a bool plus string path. It returns `null`
-  and is a bounded no-op because the current `phpc run` filesystem metadata
-  builtins perform direct host lookups instead of maintaining a PHP stat cache
-  or realpath cache. This is a small WordPress filesystem compatibility slice,
-  not full PHP stat-cache support: actual stat-cache entries, realpath-cache
-  entries, per-path invalidation effects, broader scalar coercions, exact
+  arguments, one bool argument, or a bool plus string path. It returns `null`.
+  The current request-local stat cache stores successful host metadata reads
+  for `filesize()` and `filemtime()` by resolved local path; no-argument
+  `clearstatcache()` clears that bounded cache, and the filename form removes
+  the matching local-path entry. This is a small WordPress filesystem
+  compatibility slice, not full PHP stat-cache support: cached metadata for
+  `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
+  `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
+  entries, broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
   behavior, and native lowering remain unsupported.
@@ -5936,7 +5957,7 @@
   behavior, include_path/open_basedir policy, stream-wrapper handling,
   references/copy-on-write, and exact native diagnostics exist, while native
   function-table introspection recognizes the name.
-  `clearstatcache` accepts the same bounded no-cache stat-cache mutation slice
+  `clearstatcache` accepts the same bounded stat-cache mutation slice
   as the builtin section above; direct native `clearstatcache(...)` calls stop
   at a dedicated stat-cache mutation boundary until native filesystem metadata
   caches, realpath cache state, per-path invalidation, include_path/open_basedir
@@ -6171,6 +6192,17 @@
   `getDocComment()` returns the directly preceding `/** ... */` docblock or
   `false`, including inherited public and protected properties resolved by
   `ReflectionProperty` or `ReflectionClass::getProperties()`.
+  `ReflectionProperty::getValue($object)` and
+  `ReflectionProperty::setValue($object, $value)` read and mutate public
+  declared instance properties when `$object` is an instance of the declaring
+  class; inherited public properties and typed-property coercion reuse the
+  current object-property write rules. Public static properties support
+  `getValue()` with zero or one ignored object argument and `setValue($value)`
+  or `setValue($object, $value)`, returning `null` after mutation. Non-public
+  property value access, dynamic properties, exact `ReflectionException` and
+  `TypeError` text, property aliases/references/COW side effects, readonly or
+  property-hook behavior, and native lowering remain unsupported for
+  reflection property value access.
   The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
@@ -7828,16 +7860,18 @@
   scalar/array default expressions accepted by the parser,
   by-reference and variadic flags, and simple named, bounded union, and bounded
   pure intersection type metadata. `ReflectionProperty` currently supports
-  only declared user-class property metadata for the methods documented above,
-  plus simple named, bounded union, and bounded pure intersection typed
-  property metadata with bounded uninitialized-slot state for properties
-  without explicit defaults. Runtime typed-property enforcement is limited to
+  declared user-class property metadata for the methods documented above,
+  public instance/static value read and mutation through `getValue()` and
+  `setValue()`, plus simple named, bounded union, and bounded pure
+  intersection typed property metadata with bounded uninitialized-slot state
+  for properties without explicit defaults. Runtime typed-property enforcement is limited to
   the named and compound property type subset documented in the object/class
   model section, including weak scalar coercions and inherited class-name plus
   declared user-interface object assignment checks; broader built-in/internal
   interface catalog behavior, exact PHP union scalar coercion preference rules,
-  parenthesized DNF property types, complex reference/COW interactions, and
-  native lowering remain unsupported. Property file/line metadata and
+  parenthesized DNF property types, non-public reflection property value
+  access, dynamic reflection property value access, complex reference/COW
+  interactions, and native lowering remain unsupported. Property file/line metadata and
   parameter source-file, line, or doc-comment metadata remain unsupported.
   Parameter/return type reflection remains metadata only and does not enforce
   call arguments or return values.
@@ -7849,7 +7883,7 @@
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation beyond declared
   user functions and public non-static user-class methods, typed declaration
   enforcement during reflection invocation, `invokeArgs()` named-argument
-  semantics, `ReflectionProperty` value mutation,
+  semantics, non-public or dynamic `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, trait-use metadata inside
   trait declarations, exact `ReflectionException`
   behavior, namespace/import alias expansion beyond parsed class-like names,

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1544/wpdb_prepared_like_wildcard_probe.php

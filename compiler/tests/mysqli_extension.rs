@@ -4249,6 +4249,44 @@ echo $custom_row["option_name"];
 }
 
 #[test]
+fn mysqli_statement_applies_mysql_like_wildcards_to_wordpress_option_reads() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'plugin-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-update-plugins', 'wildcard-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_update_plugins', 'site-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$wildcard = mysqli_execute_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ?", array("_transient_%"));
+$wildcard_first = mysqli_fetch_assoc($wildcard);
+$wildcard_second = mysqli_fetch_assoc($wildcard);
+echo mysqli_num_rows($wildcard);
+echo ":";
+echo $wildcard_first["option_name"], ",";
+echo $wildcard_second["option_name"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE ?");
+$escaped = "\\_transient\\_%";
+mysqli_stmt_bind_param($stmt, "s", $escaped);
+mysqli_stmt_execute($stmt);
+$escaped_rows = mysqli_stmt_get_result($stmt);
+$escaped_row = mysqli_fetch_assoc($escaped_rows);
+echo mysqli_num_rows($escaped_rows);
+echo ":";
+echo $escaped_row["option_name"], "=", $escaped_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_update_plugins,xtransient-update-plugins|1:_transient_update_plugins=plugin-payload"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_prepared_transient_prefix_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

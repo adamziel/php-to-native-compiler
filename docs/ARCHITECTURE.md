@@ -124,8 +124,17 @@ slot is materialized and copied into the callee parameter, then the final
 parameter value is written back to the visible property slot after normal
 return. Public slots use public alias metadata; private/protected slots use
 context-aware alias metadata when reached from a valid method visibility
-context. That bridge intentionally does not provide in-call
-reference-container identity.
+context. Direct user-function calls also accept non-direct holder
+property-held `ArrayAccess` offset arguments, such as
+`handler($holders["bag"]->store["outer"]["slot"])`, when evaluating the
+holder once yields an object whose visible selected property holds an
+`ArrayAccess` object using the exact bounded by-reference
+`offsetGet($offset) { return $this->property[$offset]; }` bridge. That path
+uses the existing private temporary object root and writes back through the
+backing property array alias metadata. These bridges intentionally do not
+provide in-call reference-container identity and do not cover plain
+non-direct object-property arrays, mixed nested `ArrayAccess` chains, magic
+property references, or arbitrary reference expressions.
 Direct object-variable clone assignments also mirror public object-property
 alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
@@ -2147,21 +2156,25 @@ builtin name.
 runtime. It uses the same process-path-then-repo-root relative path policy as
 the other local metadata builtins, returns the host regular-file byte length
 as an integer, and returns `false` for missing paths or non-file paths such as
-directories. It rejects stream wrappers instead of modeling wrapper metadata.
-Include-path lookup, PHP stat-cache semantics, `open_basedir`, exact warnings,
-non-UTF-8 paths, oversized file handling beyond the current signed 64-bit
-integer subset, and native filesystem lowering remain out of scope. Native
-function-table introspection recognizes the name, while direct native calls
-reject under the function-call boundary.
+directories. Successful host metadata reads are cached by resolved local path
+until `clearstatcache()` clears all entries or `clearstatcache(false, $path)`
+removes the matching entry. It rejects stream wrappers instead of modeling
+wrapper metadata. Include-path lookup, full PHP stat-cache breadth,
+`open_basedir`, exact warnings, non-UTF-8 paths, oversized file handling
+beyond the current signed 64-bit integer subset, and native filesystem
+lowering remain out of scope. Native function-table introspection recognizes
+the name, while direct native calls reject under the function-call boundary.
 `filemtime()` is interpreter-only for one string local path in the current
 runtime. It uses the same process-path-then-repo-root relative path policy as
 the other local metadata builtins, returns the host filesystem modification
 time as a Unix-timestamp integer for existing local entries, and returns
-`false` for missing paths. It rejects stream wrappers instead of modeling
-wrapper metadata. Include-path lookup, PHP stat-cache semantics,
-`open_basedir`, exact warnings, non-UTF-8 paths, pre-Unix-epoch timestamps,
-oversized timestamp handling beyond the current signed 64-bit integer subset,
-and native filesystem lowering remain out of scope. Native function-table
+`false` for missing paths. Successful host metadata reads share the same
+bounded `clearstatcache()`-managed cache as `filesize()`. It rejects stream
+wrappers instead of modeling wrapper metadata. Include-path lookup, full PHP
+stat-cache breadth, `open_basedir`, exact warnings, non-UTF-8 paths,
+pre-Unix-epoch timestamps, oversized timestamp handling beyond the current
+signed 64-bit integer subset, and native filesystem lowering remain out of
+scope. Native function-table
 introspection recognizes the name, while direct native calls reject under the
 function-call boundary.
 `realpath()` is interpreter-only for one string local path. It uses the same

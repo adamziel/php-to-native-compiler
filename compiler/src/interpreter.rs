@@ -158,6 +158,7 @@ struct Interpreter {
     default_stream_context_id: Option<i64>,
     directories: HashMap<i64, DirectoryResource>,
     uploaded_file_paths: HashSet<PathBuf>,
+    stat_cache: HashMap<PathBuf, fs::Metadata>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -3328,6 +3329,7 @@ impl Interpreter {
             default_stream_context_id: None,
             directories: HashMap::new(),
             uploaded_file_paths: HashSet::new(),
+            stat_cache: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -5471,6 +5473,22 @@ impl Interpreter {
         }
 
         local_filesystem_metadata_path(path.to_string_lossy().as_ref())
+    }
+
+    fn cached_local_metadata(&mut self, path: &str) -> Option<fs::Metadata> {
+        let metadata_path = local_filesystem_metadata_path(path);
+        if let Some(metadata) = self.stat_cache.get(&metadata_path) {
+            return Some(metadata.clone());
+        }
+
+        let metadata = fs::metadata(&metadata_path).ok()?;
+        self.stat_cache.insert(metadata_path, metadata.clone());
+        Some(metadata)
+    }
+
+    fn clear_stat_cache_path(&mut self, path: &str) {
+        let metadata_path = local_filesystem_metadata_path(path);
+        self.stat_cache.remove(&metadata_path);
     }
 
     fn resolve_required_path(
@@ -13356,15 +13374,11 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_value_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
-                .map(|options| {
-                    wordpress_option_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
-                })
+                .map(|options| wordpress_option_rows_for_filter(options, &filter))
                 .unwrap_or_default();
             if !rows.is_empty() {
                 return Ok(Some(MysqliPendingResultState {
@@ -13426,15 +13440,11 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_value_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
-                .map(|options| {
-                    wordpress_option_value_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
-                })
+                .map(|options| wordpress_option_value_rows_for_filter(options, &filter))
                 .unwrap_or_default();
             if !rows.is_empty() {
                 return Ok(Some(MysqliPendingResultState {
@@ -13496,15 +13506,11 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_autoload_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
-                .map(|options| {
-                    wordpress_option_name_autoload_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
-                })
+                .map(|options| wordpress_option_name_autoload_rows_for_filter(options, &filter))
                 .unwrap_or_default();
             if !rows.is_empty() {
                 return Ok(Some(MysqliPendingResultState {
@@ -13566,15 +13572,11 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
-                .map(|options| {
-                    wordpress_option_name_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
-                })
+                .map(|options| wordpress_option_name_rows_for_filter(options, &filter))
                 .unwrap_or_default();
             if !rows.is_empty() {
                 return Ok(Some(MysqliPendingResultState {
@@ -13664,14 +13666,12 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_name_value_autoload_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
-                    wordpress_option_name_value_autoload_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
+                    wordpress_option_name_value_autoload_rows_for_filter(options, &filter)
                 })
                 .unwrap_or_default();
             if !rows.is_empty() {
@@ -13748,14 +13748,12 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_id_name_value_autoload_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
-                    wordpress_option_id_name_value_autoload_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
+                    wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter)
                 })
                 .unwrap_or_default();
             if !rows.is_empty() {
@@ -13811,14 +13809,12 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_star_select_prefix_query(query) {
-            let prefix = wordpress_option_name_prefix_from_prepared_params(function, params, span)?;
+            let filter =
+                wordpress_option_name_like_filter_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                 .map(|options| {
-                    wordpress_option_id_name_value_autoload_rows_for_filter(
-                        options,
-                        &WordPressOptionsRowFilter::OptionNamePrefix(prefix),
-                    )
+                    wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter)
                 })
                 .unwrap_or_default();
             return Ok(Some(MysqliPendingResultState {
@@ -17076,7 +17072,13 @@ impl Interpreter {
             .class_name()
             .eq_ignore_ascii_case("ReflectionProperty")
         {
-            return self.call_reflection_property_method(object, method_name, args, span);
+            return self.call_reflection_property_method(
+                object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            );
         }
         if object
             .class_name()
@@ -18202,6 +18204,7 @@ impl Interpreter {
         method_name: &str,
         args: &[Expr],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let state = self
             .reflection_properties
@@ -18295,11 +18298,164 @@ impl Interpreter {
                 };
                 self.create_reflection_named_type_object(type_state, span)
             }
+            "getvalue" => self.reflection_property_get_value(&state, args, span, caller_scope),
+            "setvalue" => self.reflection_property_set_value(&state, args, span, caller_scope),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionProperty::{method_name}()")),
             )),
         }
+    }
+
+    fn reflection_property_get_value(
+        &mut self,
+        state: &ReflectionPropertyState,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        self.ensure_reflection_property_public(state, "ReflectionProperty::getValue", span)?;
+        if state.is_static {
+            if args.len() > 1 {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "ReflectionProperty::getValue()",
+                        ArityExpectation::Between { min: 0, max: 1 },
+                        args.len(),
+                    ),
+                ));
+            }
+            if let Some(arg) = args.first() {
+                let _ = self.evaluate(arg, caller_scope)?;
+            }
+            return self.reflection_property_static_value(state, span);
+        }
+
+        expect_expr_arity("ReflectionProperty::getValue", args.len(), 1, span)?;
+        let target = self.evaluate(&args[0], caller_scope)?;
+        let object = self.reflection_property_instance_target(state, target, span)?;
+        object
+            .read_public_property(&state.name)
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn reflection_property_set_value(
+        &mut self,
+        state: &ReflectionPropertyState,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        self.ensure_reflection_property_public(state, "ReflectionProperty::setValue", span)?;
+        if state.is_static {
+            if !(1..=2).contains(&args.len()) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "ReflectionProperty::setValue()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                ));
+            }
+            if args.len() == 2 {
+                let _ = self.evaluate(&args[0], caller_scope)?;
+            }
+            let value = self.evaluate(
+                args.last()
+                    .expect("static ReflectionProperty::setValue has a value argument"),
+                caller_scope,
+            )?;
+            self.write_resolved_static_property(
+                state.declaring_class_id,
+                &state.declaring_class_name,
+                &state.name,
+                value,
+                span,
+            )?;
+            return Ok(Value::Null);
+        }
+
+        expect_expr_arity("ReflectionProperty::setValue", args.len(), 2, span)?;
+        let target = self.evaluate(&args[0], caller_scope)?;
+        let value = self.evaluate(&args[1], caller_scope)?;
+        let object = self.reflection_property_instance_target(state, target, span)?;
+        object
+            .write_public_property(&state.name, value)
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Null)
+    }
+
+    fn ensure_reflection_property_public(
+        &self,
+        state: &ReflectionPropertyState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if state.visibility == Visibility::Public {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{method_name}()"),
+                "non-public ReflectionProperty value access is not implemented in the current subset",
+            ),
+        ))
+    }
+
+    fn reflection_property_static_value(
+        &self,
+        state: &ReflectionPropertyState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        self.static_properties
+            .get(&(state.declaring_class_id, state.name.clone()))
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::uninitialized_typed_property(
+                        state.declaring_class_name.clone(),
+                        &state.name,
+                    ),
+                )
+            })
+    }
+
+    fn reflection_property_instance_target(
+        &self,
+        state: &ReflectionPropertyState,
+        target: Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let Value::Object(object) = target else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionProperty value access",
+                    format!(
+                        "instance property target must be object in the current subset, got {}",
+                        target.type_name()
+                    ),
+                ),
+            ));
+        };
+        if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionProperty value access",
+                    format!(
+                        "object of class {} is not an instance of {}",
+                        object.class_name(),
+                        state.declaring_class_name
+                    ),
+                ),
+            ));
+        }
+        Ok(object)
     }
 
     fn reflection_property_default_value(&self, state: &ReflectionPropertyState) -> Value {
@@ -25634,15 +25790,81 @@ impl Interpreter {
             );
         }
 
-        let Some((object, property, indices)) =
+        if let Some((object, property, indices)) =
             Self::dynamic_object_property_array_argument_parts(arg)
-        else {
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+            return self.evaluate_object_property_array_reference_argument(
+                object,
+                property,
+                indices,
+                arg,
+                caller_scope,
+                false,
+            );
+        }
+
+        let Expr::Index { target, index, .. } = arg else {
             return Ok(None);
         };
-        let property = self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+
+        if let Some((holder, property, indices)) =
+            Self::collect_object_property_array_index_path(target, index)
+        {
+            return self.evaluate_non_direct_holder_array_access_reference_argument(
+                holder,
+                property,
+                indices,
+                arg,
+                caller_scope,
+            );
+        }
+
+        if let Some((holder, property, indices)) =
+            Self::collect_dynamic_object_property_array_index_path(target, index)
+        {
+            let property =
+                self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+            return self.evaluate_non_direct_holder_array_access_reference_argument(
+                holder,
+                &property,
+                indices,
+                arg,
+                caller_scope,
+            );
+        }
+
+        Ok(None)
+    }
+
+    fn evaluate_non_direct_holder_array_access_reference_argument(
+        &mut self,
+        holder: &Expr,
+        property: &str,
+        indices: Vec<&Expr>,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let holder_value = self.evaluate(holder, caller_scope)?;
+        let holder_object = match holder_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let temp_name = self.next_foreach_temporary_array_name();
+        caller_scope.write_static(&temp_name, Value::Object(holder_object));
         self.evaluate_object_property_array_reference_argument(
-            object,
-            property,
+            temp_name,
+            property.to_string(),
             indices,
             arg,
             caller_scope,
@@ -30098,8 +30320,7 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
-                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                        let Some(metadata) = self.cached_local_metadata(path) else {
                             return Ok(Value::Bool(false));
                         };
                         if !metadata.is_file() {
@@ -30141,8 +30362,7 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata_path = local_filesystem_metadata_path(path);
-                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                        let Some(metadata) = self.cached_local_metadata(path) else {
                             return Ok(Value::Bool(false));
                         };
                         let modified = metadata.modified().map_err(|error| {
@@ -30211,8 +30431,9 @@ impl Interpreter {
                         ));
                     }
                 }
-                if let Some(filename) = args.get(1) {
-                    if !matches!(filename, Value::String(_)) {
+                match args.get(1) {
+                    Some(Value::String(filename)) => self.clear_stat_cache_path(filename),
+                    Some(filename) => {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
@@ -30224,6 +30445,7 @@ impl Interpreter {
                             ),
                         ));
                     }
+                    None => self.stat_cache.clear(),
                 }
                 Ok(Value::Null)
             }
@@ -40094,30 +40316,30 @@ fn wordpress_option_autoloads_from_prepared_params(
     Ok(autoload_values)
 }
 
-fn wordpress_option_name_prefix_from_prepared_params(
+fn wordpress_option_name_like_filter_from_prepared_params(
     function: &str,
     params: &[Value],
     span: Span,
-) -> CompileResult<String> {
+) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern)] = params else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options option-name LIKE prefix select requires one string pattern parameter in the current subset",
+                "prepared wp_options option-name LIKE select requires one string pattern parameter in the current subset",
             ),
         ));
     };
-    let pattern = pattern.replace("\\_", "_");
-    parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
-        runtime_error(
+    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+        return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options option-name LIKE prefix select supports only a trailing-percent prefix pattern in the current subset",
+                "prepared wp_options option-name LIKE select contains an unterminated escape sequence in the current subset",
             ),
-        )
-    })
+        ));
+    };
+    Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
 fn wordpress_option_name_delete_prefix_from_prepared_params(

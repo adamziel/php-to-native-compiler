@@ -4,6 +4,154 @@
 
 Implemented:
 
+- Added Milestone 1545, the WordPress-focused queue refresh for the
+  1541-1544 implementation batch. The batch closed public
+  `ReflectionProperty::getValue()`/`setValue()` mutation for declared
+  instance/static properties, by-reference user-function parameters supplied
+  from non-direct holder property-held `ArrayAccess` offset roots, bounded
+  request-local stat-cache behavior for successful `filesize()` and
+  `filemtime()` metadata reads, and prepared deterministic `wp_options`
+  option-name `LIKE ?` wildcard scans. Focused integrated checks are recorded
+  in the milestone entries below. Manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1541-1545 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1609` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1609` fixture tests
+  passed with `0` failures, `940` system PHP comparisons, and `669`
+  `phpc-only` skipped fixtures.
+
+- Added Milestone 1544, a bounded WordPress DB/bootstrap slice for prepared
+  `wp_options` option-name `LIKE` wildcard scans over the deterministic MySQLi
+  option-state island. Exact prepared option-row projections with
+  `WHERE option_name LIKE ?` now use the same bounded MySQL-like wildcard
+  matcher as direct option reads, so `%`, `_`, and backslash-escaped wildcard
+  literals are distinguished for `mysqli_stmt_execute()`/`mysqli_stmt_get_result()`
+  and `mysqli_execute_query()`. The new `milestone1544` fixture proves a
+  WordPress-shaped `wpdb` prepared scan through the `phpc run` CLI path and is
+  marked `phpc-only` because system PHP needs a real database connection.
+  Prepared LIKE deletes, expired-transient predicates, prepared `ESCAPE`
+  clauses, SQL-mode-aware option reads, arbitrary prepared SQL, host DB
+  execution, collation fidelity, persistent object cache/transients, full
+  WordPress option APIs, and native DB lowering remain unsupported. Focused
+  verification used `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1544
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  mysqli_extension mysqli_statement_applies_mysql_like_wildcards_to_wordpress_option_reads
+  -- --test-threads=1`; full affected `cargo test -p phpc --test
+  mysqli_extension -- --test-threads=1` passed with `181` tests; direct `cargo
+  run -q -p phpc -- run
+  tests/fixtures/milestone1544/wpdb_prepared_like_wildcard_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1544`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1544` passed with
+  `0` comparisons and `1` documented `phpc-only` skip; `cargo run -q -p phpc
+  -- test --compare-php-json tests/fixtures/milestone1544`; `cargo run -q -p
+  phpc -- test --list-fixtures tests/fixtures/milestone1544`; `cargo run -q
+  -p phpc -- compile
+  tests/fixtures/milestone1544/wpdb_prepared_like_wildcard_probe.php --emit-ir`
+  and `--emit-asm` both rejected at the existing explicit native object/class
+  lowering boundary; `cargo fmt`; `cargo fmt --check`; `cargo check -p phpc`;
+  and scoped `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1543, a bounded request/SAPI/filesystem/stream slice for
+  actual request-local stat-cache behavior on successful local `filesize()`
+  and `filemtime()` metadata reads. `phpc run` now caches successful metadata
+  by resolved local path for those two builtins, keeps stale `filesize()`
+  values visible after a local `fopen()`/`fwrite()` rewrite, clears all cached
+  entries with no-argument `clearstatcache()`, and invalidates one resolved
+  local path with `clearstatcache(false, $path)`. The new `milestone1543`
+  fixture proves the CLI path and matches system PHP. This does not add
+  realpath-cache entries, stat-cache coverage for `file_exists()`,
+  `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`, `is_link()`,
+  `fstat()`, directory or wrapper metadata, include_path/open_basedir cache
+  policy, stream-wrapper cache interaction, cross-request cache state, exact
+  warning/`ValueError`/`TypeError` text, or native stat-cache lowering.
+  Focused verification used `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1543
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: full affected `cargo test -p phpc
+  --test clearstatcache_builtin -- --test-threads=1` passed with `5` tests;
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1543/stat_cache_invalidation.php`; direct `php
+  tests/fixtures/milestone1543/stat_cache_invalidation.php`; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1543`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1543` passed with `1` comparison and
+  `0` skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1543`; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1543`; `cargo run -q -p phpc --
+  compile tests/fixtures/milestone1543/stat_cache_invalidation.php --emit-ir`
+  and `--emit-asm` both rejected at the existing explicit native
+  stream-resource boundary; `cargo fmt --check`; `cargo check -p phpc`; and
+  scoped `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1542, a bounded reference/COW slice for by-reference
+  user-function parameters supplied from non-direct holder property-held
+  `ArrayAccess` offset roots. Calls such as
+  `handler($holders["bag"]->store["outer"]["slot"])` and dynamic selected
+  property forms such as `handler($holders["bag"]->{$name}["outer"]["slot"])`
+  now evaluate the holder once into a private temporary object root, reuse the
+  existing exact public by-reference
+  `offsetGet($offset) { return $this->property[$offset]; }` bridge, and write
+  callee mutations back through the backing property array slot. The new
+  `milestone1542` fixture proves the `phpc run` CLI path and matches system
+  PHP. This does not add plain non-direct object-property array references,
+  mixed nested `ArrayAccess` chains, magic-property reference containers,
+  arbitrary reference expressions, invisible selected dynamic properties,
+  broader reference containers or copy-on-write, exact alias destruction
+  ordering, object/Traversable by-reference iteration, superglobal reference
+  lifetime, or native reference/COW lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1542 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test functions_and_scopes
+  reference_parameter_accepts_non_direct_holder_array_access_source --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  functions_and_scopes -- --test-threads=1`; direct `cargo run -q -p phpc --
+  run tests/fixtures/milestone1542/non_direct_holder_array_access_reference_parameter.php`;
+  direct `php
+  tests/fixtures/milestone1542/non_direct_holder_array_access_reference_parameter.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1542`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1542` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1542`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1542`; `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/milestone1542/non_direct_holder_array_access_reference_parameter.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt`; `cargo fmt --check`; `cargo
+  check -p phpc`; and scoped `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1541, a bounded object/reflection slice for
+  `ReflectionProperty` value access and mutation. `ReflectionProperty` now
+  supports `getValue()` and `setValue()` for public declared instance
+  properties when the supplied object is an instance of the declaring class,
+  including inherited public properties, and for public static properties with
+  the PHP-shaped one- or two-argument static `setValue()` forms. Writes reuse
+  the current typed-property coercion rules. The new `milestone1541` fixture
+  proves the `phpc run` CLI path and matches system PHP. This does not add
+  non-public reflection property value access, dynamic reflection properties,
+  exact `ReflectionException`/`TypeError` text, property alias/reference/COW
+  side effects, readonly or property-hook behavior, internal property
+  reflection, or native reflection/object lowering. Focused verification used
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1541 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  reflection_property_get_value_and_set_value_mutate_public_declared_properties
+  -- --test-threads=1`; full affected `cargo test -p phpc --test
+  object_model -- --test-threads=1` passed with `271` tests; direct `cargo
+  run -q -p phpc -- run
+  tests/fixtures/milestone1541/reflection_property_value_mutation.php`;
+  direct `php
+  tests/fixtures/milestone1541/reflection_property_value_mutation.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1541`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1541` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1541`; `cargo run -q -p phpc --
+  test --list-fixtures tests/fixtures/milestone1541`; `cargo run -q -p phpc
+  -- compile
+  tests/fixtures/milestone1541/reflection_property_value_mutation.php
+  --emit-ir` and `--emit-asm` both rejected at the existing explicit native
+  object/class lowering boundary; `cargo fmt --check`; `cargo check -p phpc`;
+  and scoped `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
 - Added Milestone 1540, the WordPress-focused queue refresh for the
   1536-1539 implementation batch. The batch closed reflection invocation for
   declared user functions and public non-static declared methods,

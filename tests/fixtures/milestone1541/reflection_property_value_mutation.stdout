@@ -1,0 +1,8 @@
+name|get|hook|hook
+name|set|save|save
+name|coerce|string:123
+base|Base|inherited|inherited
+log|array:2|2
+static|get|1|1
+static|set1|41|41
+static|set2|42|42

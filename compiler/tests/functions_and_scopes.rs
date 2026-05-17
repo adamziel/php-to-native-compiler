@@ -2762,6 +2762,48 @@ echo $holder->bag["created"]["leaf"], "|", $missing;
 }
 
 #[test]
+fn reference_parameter_accepts_non_direct_holder_array_access_source() {
+    let execution = run_source(
+        r#"<?php
+class Bag implements ArrayAccess {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public function offsetExists($offset) { return isset($this->items[$offset]); }
+    public function &offsetGet($offset) { return $this->items[$offset]; }
+    public function offsetSet($offset, $value) { $this->items[$offset] = $value; }
+    public function offsetUnset($offset) { unset($this->items[$offset]); }
+}
+
+class Holder {
+    public $bag;
+    public $dynamicBag;
+}
+
+function touch_slot(&$value) {
+    $value = $value . ":touched";
+}
+
+$holders = [];
+$primary = new Holder();
+$primary->bag = new Bag();
+$holders["primary"] = $primary;
+touch_slot($holders["primary"]->bag["outer"]["slot"]);
+echo $primary->bag["outer"]["slot"], "\n";
+
+$dynamic = new Holder();
+$dynamic->dynamicBag = new Bag();
+$holders["dynamic"] = $dynamic;
+$property = "dynamicBag";
+touch_slot($holders["dynamic"]->{$property}["outer"]["slot"]);
+echo $dynamic->dynamicBag["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:touched\nseed:touched");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
     let execution = run_source(
         r#"<?php

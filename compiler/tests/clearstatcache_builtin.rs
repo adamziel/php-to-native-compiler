@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source_with_source_file};
 
-const LLVM_CLEARSTATCACHE_REJECTION: &str = "LLVM clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded no-cache clearstatcache behavior";
+const LLVM_CLEARSTATCACHE_REJECTION: &str = "LLVM clearstatcache lowering rejects stat-cache mutation until native filesystem metadata caches, realpath cache state, per-path invalidation, include_path/open_basedir policy, stream wrappers, request-local filesystem state, references/COW, and exact native diagnostics exist; phpc run handles current bounded stat-cache clearstatcache behavior";
 
 fn fixture_source_file() -> String {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -19,8 +19,12 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn php_single_quoted(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 #[test]
-fn clearstatcache_is_bounded_noop_for_current_metadata_model() {
+fn clearstatcache_is_available_and_returns_null() {
     let execution = run_source_with_source_file(
         r#"<?php
 echo function_exists("clearstatcache") ? "known" : "missing";
@@ -48,6 +52,58 @@ echo filesize(__FILE__) > 0 ? "size-positive" : "size-empty";
         execution.stdout,
         "known|callable|first-null|second-null|exists|mtime-int|size-positive"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn clearstatcache_invalidates_bounded_filesize_stat_cache_by_path() {
+    let path = std::env::temp_dir().join(format!(
+        "phpc-stat-cache-{}-{}.txt",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos()
+    ));
+    let path_string = path
+        .to_str()
+        .expect("temporary stat-cache fixture path is UTF-8");
+    let path_literal = php_single_quoted(path_string);
+    let source = format!(
+        r#"<?php
+$path = '{path_literal}';
+$h = fopen($path, "w");
+fwrite($h, "abc");
+fclose($h);
+$first = filesize($path);
+$h = fopen($path, "w");
+fwrite($h, "abcdef");
+fclose($h);
+$cached = filesize($path);
+clearstatcache(false, $path);
+$cleared = filesize($path);
+$h = fopen($path, "w");
+fwrite($h, "abcdefghi");
+fclose($h);
+$cached_again = filesize($path);
+clearstatcache();
+$cleared_all = filesize($path);
+echo $first;
+echo "|";
+echo $cached;
+echo "|";
+echo $cleared;
+echo "|";
+echo $cached_again;
+echo "|";
+echo $cleared_all;
+"#
+    );
+
+    let execution = run_source_with_source_file(&source, fixture_source_file()).unwrap();
+    let _ = std::fs::remove_file(path);
+
+    assert_eq!(execution.stdout, "3|3|6|6|9");
     assert_eq!(execution.exit_code, 0);
 }
 

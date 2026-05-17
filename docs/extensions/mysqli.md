@@ -480,15 +480,18 @@ autoload-list/equality slice. Exact prepared
 `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
 `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name LIKE ?`,
 and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
-deterministic row sets for one string trailing-percent prefix pattern,
-including backticked table/column spellings and escaped transient prefixes
-such as `\_transient\_%`. These prepared prefix scans also accept an exact
+deterministic row sets for one string pattern parameter, including backticked
+table/column spellings, `%` wildcards, `_` single-character wildcards, and
+backslash-escaped `%`, `_`, and `\` literals such as `\_transient\_%`.
+These prepared LIKE scans also accept an exact
 trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
 optional `ASC`, and keep the existing deterministic ascending option-name row
-order. This prepared path is still a bounded prefix matcher, not general SQL
-`LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses, `DESC`
-ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
-database execution. The exact
+order. This prepared path is still bounded to the documented option-row
+projections and does not support prepared `ESCAPE` clauses, SQL-mode-aware
+`NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists, `DESC` ordering,
+arbitrary `ORDER BY` expressions, collation fidelity, or host database
+execution. Prepared LIKE deletes and expired-timeout predicates remain
+prefix-only. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

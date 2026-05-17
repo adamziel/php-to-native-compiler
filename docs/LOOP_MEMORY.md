@@ -26,6 +26,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T19:23:58+02:00
+
+- Checkpoint before this task:
+  `9477fd2d runtime: advance WordPress reflection refs statcache and option like`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1541-1545, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: public `ReflectionProperty::getValue()`/`setValue()`
+  mutation for declared instance/static properties; by-reference
+  user-function parameters over non-direct holder property-held `ArrayAccess`
+  offset roots; bounded request-local stat-cache behavior for successful
+  `filesize()` and `filemtime()` metadata reads plus global/per-path
+  `clearstatcache()` invalidation; prepared deterministic `wp_options`
+  option-name `LIKE ?` wildcard scans; milestone fixtures 1541-1544; MySQLi
+  extension docs; support, architecture, README, queue, progress,
+  loop-memory, goal, and lane-worker docs.
+- Tests run and result: focused integration checks passed for the named
+  object/reflection, reference-parameter, clearstatcache/stat-cache, and
+  MySQLi prepared wildcard tests; milestone fixtures 1541-1544 all passed,
+  with system PHP comparisons for 1541, 1542, and 1543 and a documented
+  `phpc-only` skip for 1544. Manual full gate passed before checkpoint:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1541-1545 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1609` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1609` fixture tests
+  passed with `0` failures, `940` system PHP comparisons, and `669` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: constructor/destructor and magic-hook fidelity,
+  class alias/autoload lifecycle, closure/internal reflection targets,
+  static/non-public reflection invocation, exact reflection exceptions,
+  readonly/property-hook behavior, real reference containers, by-reference
+  returns and assignment, broad copy-on-write, magic-property and superglobal
+  reference lifetime, realpath-cache behavior, wider stat-cache coverage,
+  exact SAPI/session/upload/stream behavior, exact cookie
+  `ValueError`/encoding/request-time parity, prepared LIKE deletes,
+  expired-transient predicates, prepared `ESCAPE` clauses, real mysqlnd
+  transfer, arbitrary SQL/database/schema execution, dbDelta, persistent
+  cache/transients, WordPress plugin/theme/admin/REST/front-controller flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: checkpoint with `tools/checkpoint.sh`, push the
+  checkpoint, clean dedicated target directories, close completed workers, then
+  start Milestones 1546-1549 in separate worktrees.
+
 ## Loop Event 2026-05-17T19:03:23+02:00
 
 - Checkpoint before this task:

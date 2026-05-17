@@ -208,38 +208,41 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1541 targets inherited interface
+- Object/interface lane: Milestone 1546 targets inherited interface
   compatibility, constructor/destructor fidelity, magic hooks reached by
   WordPress, class alias/autoload lifecycle, parameter/source reflection
   metadata, closure/internal reflection targets, attributes/docblock
   association, exact reflection exceptions, static/non-public reflection
   invocation, `ReflectionProperty` value mutation, readonly/property hooks,
   broader recursive trait adaptations, or broader class/object semantics.
-- Reference/COW lane: Milestone 1542 targets general reference containers,
+- Reference/COW lane: Milestone 1547 targets general reference containers,
   by-reference parameters and returns, reference assignment, magic-property
   reference containers, arbitrary reference expressions, invisible selected
   dynamic properties, mixed nested `ArrayAccess` chains, broader array/object
   copy-on-write, exact alias destruction ordering, object/Traversable
   by-reference iteration, superglobal reference lifetime, or native lowering
   diagnostics.
-- Request/SAPI/filesystem/stream lane: Milestone 1543 targets actual PHP
-  stat-cache or realpath-cache entries, per-path invalidation,
+- Request/SAPI/filesystem/stream lane: Milestone 1548 targets realpath-cache
+  entries, stat-cache coverage beyond `filesize()`/`filemtime()`,
   include_path/open_basedir policy, stream-wrapper cache interaction,
   cookie-name encoding, exact request-time and `ValueError` parity,
   session/cache/header behavior, output buffering,
   shutdown/fatal/destructor ordering, request-body lifetime, uploads, host
   filesystem edge cases, real SAPI emission, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1544 targets prepared option-name
-  LIKE scans, option-name LIKE deletes, expired-transient predicates, real
+- WordPress DB/bootstrap lane: Milestone 1549 targets prepared option-name
+  LIKE deletes, expired-transient predicates, prepared `ESCAPE` clauses, real
   mysqlnd unbuffered transfer behavior, arbitrary prepared SQL, broader
   SQL-mode and MySQL wildcard parity, dbDelta-relevant schema diffing, host
   database inspection, arbitrary query/result behavior,
   charset/collation/error fidelity, persistent object-cache/transients, hook
   callback shapes, plugin/theme probes, or REST/admin/front-controller
   bootstrap progress.
-- Tests/docs lane: Milestone 1545 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 1550 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
+Milestones 1541 through 1544 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1545 refreshed the queue and recorded the
+full-gate result.
 Milestones 1536 through 1539 closed the latest four WordPress-focused
 implementation lanes, and Milestone 1540 refreshed the queue and recorded the
 full-gate result.

@@ -126,9 +126,9 @@ public array-callable `set_error_handler()` handler before the stderr fallback,
 with `restore_error_handler()` restoring the previous bounded handler.
 `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
-accepts the PHP-shaped zero-, one-, or two-argument forms as a bounded no-op
-because the current interpreter performs direct host metadata lookups instead
-of maintaining a PHP stat cache. Bounded
+accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
+bounded request-local successful metadata cache used by `filesize()` and
+`filemtime()`, either globally or for one local path. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -481,8 +481,9 @@ incorrect native code.
   user-class properties with declaring-class, visibility/static modifier,
   direct property doc-comment metadata, default-value, simple named typed-property inspection through
   `ReflectionNamedType`, bounded compound property type inspection through
-  `ReflectionUnionType`/`ReflectionIntersectionType`, and bounded
-  uninitialized typed-property slots for
+  `ReflectionUnionType`/`ReflectionIntersectionType`, bounded public
+  instance/static `getValue()`/`setValue()` mutation with current
+  typed-property coercions, and bounded uninitialized typed-property slots for
   properties without explicit defaults, with runtime typed-property writes
   accepting inherited class-name objects and declared user-interface
   implementors in the current object metadata model, declared trait
@@ -601,7 +602,8 @@ beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
 and trait method source-file persistence, reflection invocation beyond the
-current by-value user function/public method slice, recursive trait metadata reflection, and
+current by-value user function/public method slice, non-public or dynamic
+`ReflectionProperty` value mutation, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
