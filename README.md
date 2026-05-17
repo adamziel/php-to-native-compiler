@@ -62,10 +62,13 @@ with `error=0` as bounded local upload provenance. `PHPC_REQUEST_BODY` also
 seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 direct function-scope reads/writes route through that session root, including
-covered nested reference aliases. Starting a session after unbuffered output
+covered nested reference aliases. `session_start(["read_and_close" => true])`
+materializes that root and immediately closes the bounded active status while
+keeping `$_SESSION` visible. Starting a session after unbuffered output
 returns `false` and emits a bounded `E_WARNING` through the current
 `set_error_handler()` stack or stderr fallback. Session persistence, locking,
-save handlers, and cookie emission remain unsupported. `fopen()` can create bounded
+save handlers, option effects beyond `read_and_close`, and cookie emission
+remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -400,8 +403,9 @@ incorrect native code.
   metadata through `getType()`, `allowsNull()`, `getName()`, and
   `isBuiltin()`, bounded `ReflectionProperty` metadata for declared
   user-class properties with declaring-class, visibility/static modifier,
-  default-value, and simple named typed-property inspection through
-  `ReflectionNamedType` when an explicit constant default is present, declared trait
+  default-value, simple named typed-property inspection through
+  `ReflectionNamedType`, and bounded uninitialized typed-property slots for
+  properties without explicit defaults, declared trait
   metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
@@ -488,9 +492,9 @@ full method signature compatibility beyond the current inherited/interface
 required-parameter and same-text type metadata checks, visibility enforcement
 beyond the current public and same-declaring-class private-property, protected-property,
 protected-method, constructor, method inheritance
-visibility/staticness/signature-count/type-text, and class-constant slice, typed
-property compatibility beyond exact same-text inherited metadata, typed
-property storage/enforcement, uninitialized typed properties,
+visibility/staticness/signature-count/type-text, and class-constant slice,
+typed property compatibility beyond exact same-text inherited metadata, weak
+scalar coercions and inherited class-name checks for typed property writes,
 compound/DNF-shaped typed property declarations, readonly property metadata
 and write-once enforcement, promoted constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic

@@ -2067,12 +2067,14 @@ unchecked work. Current state:
   `$holder->bag[$key] =& $value;` now report a specific structured fatal
   boundary matching PHP's prohibition on assigning by reference to object array
   dimensions.
-- Milestones 1436 through 1440 are the active checkpoint candidate:
-  bounded typed-property reflection metadata, property-held `ArrayAccess`
-  reference roots, late-output `session_start()` warnings, deterministic
-  `wp_options` index probes, and the queue/documentation refresh are
-  implemented and verified. Typed property read/write enforcement,
-  uninitialized typed property slots, compound type objects, real reference
+- Milestones 1441 through 1445 are the active checkpoint candidate:
+  uninitialized simple typed-property slots with bounded write enforcement,
+  stored argument-array `ArrayAccess` reference roots,
+  `session_start(["read_and_close" => true])` lifecycle behavior,
+  deterministic MySQLi schema-state probes for bounded `CREATE TABLE` and
+  `ALTER TABLE ... ADD ...` flows, and the queue/documentation refresh are
+  implemented and verified. Weak typed-property scalar coercions, inherited
+  class-name assignment checks, compound type objects, real reference
   containers, broader copy-on-write, exact SAPI/session/upload behavior, real
   database/schema execution, arbitrary SQL, and native lowering remain open.
 - The hard compatibility lanes remain open in parallel: PHP value semantics

@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1442/stored_array_access_reference_roots.php
+exit: 0
+stdout:
+seed:stored|seed:stored
+nested:nested:alias|nested:nested:alias|nested:nested:alias
+null:held|null:held
+--- stdout end ---
+stderr:
+--- stderr end ---

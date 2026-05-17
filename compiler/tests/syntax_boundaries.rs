@@ -1260,12 +1260,6 @@ fn unsupported_abstract_final_class_constant_declarations_have_stable_parse_erro
 fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
     let cases = [
         (
-            "<?php\nclass Value {\n    public string $id;\n}\n",
-            3,
-            19,
-            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
-        ),
-        (
             "<?php\nclass Value {\n    public int|string $id = 1;\n}\n",
             3,
             12,

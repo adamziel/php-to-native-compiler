@@ -58,6 +58,35 @@ echo $_SESSION["stage"];
 }
 
 #[test]
+fn session_start_read_and_close_option_closes_after_materializing_session() {
+    let execution = run_source(
+        r#"<?php
+session_id("phpcreadclose");
+$out = array();
+$out[] = session_start(["read_and_close" => true]) ? "started" : "failed";
+$out[] = session_status() === PHP_SESSION_NONE ? "closed" : "active";
+$out[] = session_id();
+$_SESSION["after"] = "visible";
+$out[] = $_SESSION["after"];
+$out[] = session_start(["read_and_close" => false]) ? "again-started" : "again-failed";
+$out[] = session_status() === PHP_SESSION_ACTIVE ? "active" : "closed";
+$_SESSION["during"] = "open";
+session_write_close();
+$out[] = session_status() === PHP_SESSION_NONE ? "closed" : "active";
+$out[] = $_SESSION["during"];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "started|closed|phpcreadclose|visible|again-started|active|closed|open"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_superglobal_reference_aliases_survive_function_scope_writes() {
     let execution = run_source(
         r#"<?php

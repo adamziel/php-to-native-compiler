@@ -9,9 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use php_runtime::{
-    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison,
-    ObjectProperty, PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure,
-    PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
+    coerce_property_value, ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId,
+    ClassMemberKind, Comparison, ObjectProperty, PhpArray, PhpClassConstantMetadata, PhpClassTable,
+    PhpClosure, PhpClosureCapture, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
     PhpPropertyMetadata, RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
@@ -123,6 +123,7 @@ struct Interpreter {
     mysqli_pending_result_queues: HashMap<i64, VecDeque<MysqliMultiResultSlot>>,
     mysqli_options: HashMap<i64, HashMap<i64, Value>>,
     mysqli_wp_options: HashMap<i64, HashMap<String, WordPressOptionState>>,
+    mysqli_schema_tables: HashMap<i64, HashMap<String, WordPressSchemaTableState>>,
     mysqli_transactions: HashMap<i64, MysqliTransactionState>,
     mysqli_affected_rows: HashMap<i64, i64>,
     mysqli_insert_ids: HashMap<i64, i64>,
@@ -231,6 +232,30 @@ struct WordPressOptionState {
 }
 
 #[derive(Clone)]
+struct WordPressSchemaTableState {
+    name: String,
+    columns: Vec<WordPressSchemaColumnState>,
+    indexes: Vec<WordPressSchemaIndexState>,
+    collation: String,
+}
+
+#[derive(Clone)]
+struct WordPressSchemaColumnState {
+    name: String,
+    ty: String,
+    nullable: bool,
+    default: Option<String>,
+    auto_increment: bool,
+}
+
+#[derive(Clone)]
+struct WordPressSchemaIndexState {
+    key_name: String,
+    column_name: String,
+    non_unique: bool,
+}
+
+#[derive(Clone)]
 struct MysqliTransactionState {
     wp_options_snapshot: Option<HashMap<String, WordPressOptionState>>,
     wp_option_savepoints: HashMap<String, Option<HashMap<String, WordPressOptionState>>>,
@@ -295,6 +320,7 @@ struct ReflectionPropertyState {
     name: String,
     visibility: Visibility,
     is_static: bool,
+    has_default: bool,
     type_decl: Option<String>,
 }
 
@@ -3009,6 +3035,7 @@ impl Interpreter {
             mysqli_pending_result_queues: HashMap::new(),
             mysqli_options: HashMap::new(),
             mysqli_wp_options: HashMap::new(),
+            mysqli_schema_tables: HashMap::new(),
             mysqli_transactions: HashMap::new(),
             mysqli_affected_rows: HashMap::new(),
             mysqli_insert_ids: HashMap::new(),
@@ -6442,7 +6469,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     let target_alias = if name == "GLOBALS" {
@@ -6536,7 +6563,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     if name == "GLOBALS" {
@@ -6592,7 +6619,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     let keys = indices
@@ -6652,7 +6679,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_array_access_reference_target_if_needed(name, span, scope)?;
                     let keys = indices
@@ -6704,7 +6731,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
@@ -6755,7 +6782,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if let Some((source_alias, value)) =
-                    self.evaluate_append_reference_source_alias(source, span, scope)?
+                    self.evaluate_storable_reference_source_alias(source, span, scope)?
                 {
                     self.reject_object_property_array_access_reference_target_if_needed(
                         object, property, span, scope,
@@ -6955,6 +6982,72 @@ impl Interpreter {
                 Ok(Some((alias, value)))
             }
             _ => Ok(None),
+        }
+    }
+
+    fn evaluate_storable_reference_source_alias(
+        &mut self,
+        source: &ReferenceSource,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        match source {
+            ReferenceSource::ArrayIndex {
+                name: array_name,
+                index,
+                ..
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                self.evaluate_direct_array_access_reference_source_alias(
+                    array_name,
+                    vec![key],
+                    span,
+                    scope,
+                )
+            }
+            ReferenceSource::NestedArrayIndex {
+                name: array_name,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.evaluate_direct_array_access_reference_source_alias(
+                    array_name, keys, span, scope,
+                )
+            }
+            ReferenceSource::ObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                ..
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                self.evaluate_object_property_array_access_reference_source_alias(
+                    object,
+                    property,
+                    vec![key],
+                    span,
+                    scope,
+                )
+            }
+            ReferenceSource::ObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.evaluate_object_property_array_access_reference_source_alias(
+                    object, property, keys, span, scope,
+                )
+            }
+            _ => self.evaluate_append_reference_source_alias(source, span, scope),
         }
     }
 
@@ -13320,6 +13413,30 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
+        if let Some(table) = parse_wordpress_schema_create_table_query(query) {
+            self.mysqli_schema_tables
+                .entry(handle_id)
+                .or_default()
+                .insert(table.name.clone(), table);
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            return Ok(Value::Bool(true));
+        }
+
+        if let Some(alter) = parse_wordpress_schema_alter_table_query(query) {
+            let tables = self.mysqli_schema_tables.entry(handle_id).or_default();
+            let table = tables.entry(alter.table_name.clone()).or_insert_with(|| {
+                WordPressSchemaTableState {
+                    name: alter.table_name.clone(),
+                    columns: Vec::new(),
+                    indexes: Vec::new(),
+                    collation: "utf8mb4_unicode_ci".to_string(),
+                }
+            });
+            apply_wordpress_schema_alter(table, alter);
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            return Ok(Value::Bool(true));
+        }
+
         if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_insert_on_duplicate_query(query)
         {
@@ -13783,7 +13900,7 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(result) = wordpress_options_schema_result_for_query(query) {
+        if let Some(result) = self.wordpress_schema_result_for_query(handle_id, query) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             return self.create_mysqli_result_placeholder(span, result.fields, result.rows);
         }
@@ -13870,6 +13987,22 @@ impl Interpreter {
                 ),
             ),
         ))
+    }
+
+    fn wordpress_schema_result_for_query(
+        &self,
+        handle_id: i64,
+        query: &str,
+    ) -> Option<MysqliPendingResultState> {
+        if let Some(result) = self
+            .mysqli_schema_tables
+            .get(&handle_id)
+            .and_then(|tables| wordpress_dynamic_schema_result_for_query(query, tables))
+        {
+            return Some(result);
+        }
+
+        wordpress_options_schema_result_for_query(query)
     }
 
     fn call_mysqli_real_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -15612,6 +15745,8 @@ impl Interpreter {
                         name: property.name().to_string(),
                         visibility: property.visibility(),
                         is_static: property.is_static(),
+                        has_default: self
+                            .reflection_property_metadata_has_default(class.id(), property),
                         type_decl: property.type_decl().map(str::to_string),
                     });
                 }
@@ -15639,12 +15774,30 @@ impl Interpreter {
                     name: property.name().to_string(),
                     visibility: property.visibility(),
                     is_static: property.is_static(),
+                    has_default: self
+                        .reflection_property_metadata_has_default(class.id(), property),
                     type_decl: property.type_decl().map(str::to_string),
                 });
             }
             current = class.parent_id();
         }
         properties
+    }
+
+    fn reflection_property_metadata_has_default(
+        &self,
+        declaring_class_id: ClassId,
+        property: &PhpPropertyMetadata,
+    ) -> bool {
+        if property.is_static() {
+            self.static_properties
+                .contains_key(&(declaring_class_id, property.name().to_string()))
+        } else {
+            property.type_decl().is_none()
+                || self
+                    .instance_property_defaults
+                    .contains_key(&(declaring_class_id, property.name().to_string()))
+        }
     }
 
     fn call_reflection_method_method(
@@ -15984,7 +16137,7 @@ impl Interpreter {
             }
             "hasdefaultvalue" => {
                 expect_expr_arity("ReflectionProperty::hasDefaultValue", args.len(), 0, span)?;
-                Ok(Value::Bool(true))
+                Ok(Value::Bool(state.has_default))
             }
             "getdefaultvalue" => {
                 expect_expr_arity("ReflectionProperty::getDefaultValue", args.len(), 0, span)?;
@@ -16863,13 +17016,18 @@ impl Interpreter {
             _ => unreachable!("static property target helper called for non-static target"),
         };
 
-        let (declaring_class_id, _declaring_class_name) =
+        let (declaring_class_id, declaring_class_name) =
             self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
         let value = self
             .static_properties
             .get(&(declaring_class_id, property.clone()))
             .cloned()
-            .unwrap_or(Value::Null);
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::uninitialized_typed_property(declaring_class_name, &property),
+                )
+            })?;
 
         Ok((declaring_class_id, property, value))
     }
@@ -16982,14 +17140,21 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        let (declaring_class_id, _declaring_class_name) =
+        let (declaring_class_id, declaring_class_name) =
             self.resolve_static_property_storage(class_id, class_name, property, span)?;
 
-        Ok(self
+        if let Some(value) = self
             .static_properties
             .get(&(declaring_class_id, property.to_string()))
             .cloned()
-            .unwrap_or(Value::Null))
+        {
+            return Ok(value);
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::uninitialized_typed_property(declaring_class_name, property),
+        ))
     }
 
     fn read_resolved_static_property_for_isset(
@@ -17028,12 +17193,40 @@ impl Interpreter {
         value: Value,
         span: Span,
     ) -> CompileResult<Value> {
-        let (declaring_class_id, _declaring_class_name) =
+        let (declaring_class_id, declaring_class_name) =
             self.resolve_static_property_storage(class_id, class_name, property, span)?;
+        let value = self.coerce_static_property_value(
+            declaring_class_id,
+            &declaring_class_name,
+            property,
+            value,
+            span,
+        )?;
 
         self.static_properties
             .insert((declaring_class_id, property.to_string()), value.clone());
         Ok(value)
+    }
+
+    fn coerce_static_property_value(
+        &self,
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(type_decl) = self
+            .classes
+            .get(declaring_class_id)
+            .and_then(|class| class.property(property))
+            .and_then(|property| property.type_decl())
+        else {
+            return Ok(value);
+        };
+
+        coerce_property_value(type_decl, value, declaring_class_name, property)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn resolve_static_property_storage(
@@ -25187,6 +25380,14 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         }
 
+        let read_and_close = args
+            .first()
+            .and_then(|value| match value {
+                Value::Array(options) => options.get(ArrayKey::String("read_and_close".into())),
+                _ => None,
+            })
+            .is_some_and(Value::is_truthy);
+
         if self.session_status != PHP_SESSION_ACTIVE {
             self.session_status = PHP_SESSION_ACTIVE;
             if self.session_id.is_empty() {
@@ -25196,6 +25397,10 @@ impl Interpreter {
                 .borrow_mut()
                 .entry("_SESSION".to_string())
                 .or_insert_with(|| value_cell(Value::Array(PhpArray::new())));
+        }
+
+        if read_and_close {
+            self.session_status = PHP_SESSION_NONE;
         }
 
         Ok(Value::Bool(true))
@@ -28003,7 +28208,8 @@ impl Interpreter {
                 [Value::Object(object)] => {
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
-                        if property.visibility() == Visibility::Public {
+                        if property.visibility() == Visibility::Public && property.is_initialized()
+                        {
                             properties.insert(
                                 ArrayKey::from(property.name()),
                                 property.value().clone(),
@@ -28032,6 +28238,9 @@ impl Interpreter {
                 [Value::Object(object)] => {
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
+                        if !property.is_initialized() {
+                            continue;
+                        }
                         properties.insert(
                             ArrayKey::String(property.mangled_name()),
                             property.value().clone(),
@@ -30955,7 +31164,9 @@ fn register_class_member_runtime_tables(
                 class_constants.insert((class_id, constant.name.clone()), constant.clone());
             }
             ClassMember::Property(property) if property.is_static => {
-                static_properties.insert((class_id, property.name.clone()), Value::Null);
+                if property.type_decl.is_none() || property.default.is_some() {
+                    static_properties.insert((class_id, property.name.clone()), Value::Null);
+                }
             }
             ClassMember::Method(method) => {
                 let key = (class_id, method.function.name.to_ascii_lowercase());
@@ -33782,6 +33993,492 @@ struct WordPressTransientPairDeleteFilter {
     threshold: i64,
 }
 
+struct WordPressSchemaAlter {
+    table_name: String,
+    columns: Vec<WordPressSchemaColumnState>,
+    indexes: Vec<WordPressSchemaIndexState>,
+}
+
+fn wordpress_dynamic_schema_result_for_query(
+    query: &str,
+    tables: &HashMap<String, WordPressSchemaTableState>,
+) -> Option<MysqliPendingResultState> {
+    let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
+
+    if let Some(table_like) = query
+        .strip_prefix("SHOW TABLES LIKE ")
+        .and_then(parse_sql_single_quoted_list)
+        .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
+    {
+        if tables.contains_key(&table_like) {
+            return Some(MysqliPendingResultState {
+                fields: vec![format!("Tables_in_wordpress ({table_like})")],
+                rows: vec![vec![(
+                    format!("Tables_in_wordpress ({table_like})"),
+                    Value::String(table_like),
+                )]],
+            });
+        }
+        return None;
+    }
+
+    let describe_table = query
+        .strip_prefix("DESCRIBE ")
+        .or_else(|| query.strip_prefix("DESC "))
+        .and_then(parse_schema_table_identifier);
+    if let Some(table_name) = describe_table {
+        let table = tables.get(&table_name)?;
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Field".to_string(),
+                "Type".to_string(),
+                "Null".to_string(),
+                "Key".to_string(),
+                "Default".to_string(),
+                "Extra".to_string(),
+            ],
+            rows: table
+                .columns
+                .iter()
+                .map(|column| dynamic_schema_describe_row(column, table))
+                .collect(),
+        });
+    }
+
+    let show_columns_table = query
+        .strip_prefix("SHOW FULL COLUMNS FROM ")
+        .or_else(|| query.strip_prefix("SHOW COLUMNS FROM "))
+        .and_then(parse_schema_table_identifier);
+    if let Some(table_name) = show_columns_table {
+        let table = tables.get(&table_name)?;
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Field".to_string(),
+                "Type".to_string(),
+                "Collation".to_string(),
+                "Null".to_string(),
+                "Key".to_string(),
+                "Default".to_string(),
+                "Extra".to_string(),
+                "Privileges".to_string(),
+                "Comment".to_string(),
+            ],
+            rows: table
+                .columns
+                .iter()
+                .map(|column| dynamic_schema_full_column_row(column, table))
+                .collect(),
+        });
+    }
+
+    let show_index_table = query
+        .strip_prefix("SHOW INDEX FROM ")
+        .or_else(|| query.strip_prefix("SHOW INDEXES FROM "))
+        .or_else(|| query.strip_prefix("SHOW KEYS FROM "))
+        .and_then(parse_schema_table_identifier);
+    if let Some(table_name) = show_index_table {
+        let table = tables.get(&table_name)?;
+        return Some(MysqliPendingResultState {
+            fields: vec![
+                "Table".to_string(),
+                "Non_unique".to_string(),
+                "Key_name".to_string(),
+                "Seq_in_index".to_string(),
+                "Column_name".to_string(),
+                "Collation".to_string(),
+                "Cardinality".to_string(),
+                "Sub_part".to_string(),
+                "Packed".to_string(),
+                "Null".to_string(),
+                "Index_type".to_string(),
+                "Comment".to_string(),
+                "Index_comment".to_string(),
+                "Visible".to_string(),
+                "Expression".to_string(),
+            ],
+            rows: table
+                .indexes
+                .iter()
+                .map(|index| dynamic_schema_index_row(&table.name, index))
+                .collect(),
+        });
+    }
+
+    None
+}
+
+fn parse_wordpress_schema_create_table_query(query: &str) -> Option<WordPressSchemaTableState> {
+    let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
+    let rest = query
+        .strip_prefix("CREATE TABLE IF NOT EXISTS ")
+        .or_else(|| query.strip_prefix("CREATE TABLE "))?;
+    let open = rest.find('(')?;
+    let close = rest.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let table_name = parse_schema_table_identifier(rest[..open].trim())?;
+    let body = &rest[open + 1..close];
+    let suffix = &rest[close + 1..];
+    let mut table = WordPressSchemaTableState {
+        name: table_name,
+        columns: Vec::new(),
+        indexes: Vec::new(),
+        collation: parse_schema_collation(suffix),
+    };
+
+    for part in split_sql_top_level_commas(body) {
+        parse_schema_definition_part(part.trim(), &mut table)?;
+    }
+
+    Some(table)
+}
+
+fn parse_wordpress_schema_alter_table_query(query: &str) -> Option<WordPressSchemaAlter> {
+    let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
+    let rest = query.strip_prefix("ALTER TABLE ")?;
+    let mut pieces = rest.splitn(2, char::is_whitespace);
+    let table_name = parse_schema_table_identifier(pieces.next()?.trim())?;
+    let operations = pieces.next()?.trim();
+    let mut scratch = WordPressSchemaTableState {
+        name: table_name.clone(),
+        columns: Vec::new(),
+        indexes: Vec::new(),
+        collation: "utf8mb4_unicode_ci".to_string(),
+    };
+
+    for part in split_sql_top_level_commas(operations) {
+        let part = part.trim();
+        let definition = part
+            .strip_prefix("ADD COLUMN ")
+            .or_else(|| part.strip_prefix("ADD "))
+            .unwrap_or(part)
+            .trim();
+        parse_schema_definition_part(definition, &mut scratch)?;
+    }
+
+    Some(WordPressSchemaAlter {
+        table_name,
+        columns: scratch.columns,
+        indexes: scratch.indexes,
+    })
+}
+
+fn apply_wordpress_schema_alter(
+    table: &mut WordPressSchemaTableState,
+    alter: WordPressSchemaAlter,
+) {
+    for column in alter.columns {
+        if let Some(existing) = table
+            .columns
+            .iter_mut()
+            .find(|existing| existing.name == column.name)
+        {
+            *existing = column;
+        } else {
+            table.columns.push(column);
+        }
+    }
+    for index in alter.indexes {
+        table
+            .indexes
+            .retain(|existing| existing.key_name != index.key_name);
+        table.indexes.push(index);
+    }
+}
+
+fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableState) -> Option<()> {
+    let upper = part.to_ascii_uppercase();
+    if upper.starts_with("PRIMARY KEY") {
+        let column_name = parse_schema_index_column(part)?;
+        table.indexes.push(WordPressSchemaIndexState {
+            key_name: "PRIMARY".to_string(),
+            column_name,
+            non_unique: false,
+        });
+        return Some(());
+    }
+
+    if upper.starts_with("UNIQUE KEY ") || upper.starts_with("UNIQUE INDEX ") {
+        let rest = part
+            .strip_prefix("UNIQUE KEY ")
+            .or_else(|| part.strip_prefix("UNIQUE INDEX "))?;
+        let (key_name, column_name) = parse_schema_named_index(rest)?;
+        table.indexes.push(WordPressSchemaIndexState {
+            key_name,
+            column_name,
+            non_unique: false,
+        });
+        return Some(());
+    }
+
+    if upper.starts_with("KEY ") || upper.starts_with("INDEX ") {
+        let rest = part
+            .strip_prefix("KEY ")
+            .or_else(|| part.strip_prefix("INDEX "))?;
+        let (key_name, column_name) = parse_schema_named_index(rest)?;
+        table.indexes.push(WordPressSchemaIndexState {
+            key_name,
+            column_name,
+            non_unique: true,
+        });
+        return Some(());
+    }
+
+    table.columns.push(parse_schema_column_definition(part)?);
+    Some(())
+}
+
+fn parse_schema_column_definition(part: &str) -> Option<WordPressSchemaColumnState> {
+    let mut split = part.splitn(2, char::is_whitespace);
+    let name = parse_schema_table_identifier(split.next()?.trim())?;
+    let rest = split.next()?.trim();
+    let ty_len = rest
+        .char_indices()
+        .scan(0_i32, |depth, (idx, ch)| {
+            match ch {
+                '(' => *depth += 1,
+                ')' => *depth -= 1,
+                _ => {}
+            }
+            Some((idx, ch, *depth))
+        })
+        .find_map(|(idx, ch, depth)| (depth == 0 && ch.is_whitespace()).then_some(idx))
+        .unwrap_or(rest.len());
+    let mut ty = rest[..ty_len].trim().to_string();
+    let mut attributes = rest[ty_len..].trim();
+    if let Some(after_unsigned) = attributes
+        .strip_prefix("unsigned ")
+        .or_else(|| attributes.strip_prefix("UNSIGNED "))
+    {
+        ty.push_str(" unsigned");
+        attributes = after_unsigned.trim();
+    }
+    let upper = attributes.to_ascii_uppercase();
+    let nullable = !upper.contains("NOT NULL");
+    let auto_increment = upper.contains("AUTO_INCREMENT");
+    Some(WordPressSchemaColumnState {
+        name,
+        ty,
+        nullable,
+        default: parse_schema_default(attributes),
+        auto_increment,
+    })
+}
+
+fn parse_schema_named_index(rest: &str) -> Option<(String, String)> {
+    let open = rest.find('(')?;
+    let key_name = parse_schema_table_identifier(rest[..open].trim())?;
+    let column_name = parse_schema_index_column(rest)?;
+    Some((key_name, column_name))
+}
+
+fn parse_schema_index_column(part: &str) -> Option<String> {
+    let open = part.find('(')?;
+    let close = part[open + 1..].find(')')? + open + 1;
+    let first = part[open + 1..close].split(',').next()?.trim();
+    let first = first.split_whitespace().next()?.trim();
+    parse_schema_table_identifier(first)
+}
+
+fn parse_schema_table_identifier(identifier: &str) -> Option<String> {
+    let identifier = identifier.trim();
+    if identifier.is_empty() {
+        return None;
+    }
+    let identifier = identifier
+        .strip_prefix('`')
+        .and_then(|value| value.strip_suffix('`'))
+        .unwrap_or(identifier);
+    if identifier.is_empty()
+        || !identifier
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(identifier.to_string())
+}
+
+fn parse_schema_collation(suffix: &str) -> String {
+    suffix
+        .split_whitespace()
+        .find_map(|part| {
+            part.strip_prefix("COLLATE=")
+                .or_else(|| part.strip_prefix("COLLATE "))
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| "utf8mb4_unicode_ci".to_string())
+}
+
+fn parse_schema_default(attributes: &str) -> Option<String> {
+    let default_sql = attributes
+        .split_once("DEFAULT ")
+        .or_else(|| attributes.split_once("default "))?
+        .1
+        .trim();
+    if let Some(value) = default_sql.strip_prefix('\'') {
+        return value
+            .split_once('\'')
+            .map(|(value, _)| value.replace("\\'", "'"));
+    }
+    default_sql
+        .split_whitespace()
+        .next()
+        .filter(|value| !value.eq_ignore_ascii_case("NULL"))
+        .map(str::to_string)
+}
+
+fn split_sql_top_level_commas(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '\'' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '\'' => in_string = true,
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(input[start..idx].trim());
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(input[start..].trim());
+    parts
+}
+
+fn dynamic_schema_describe_row(
+    column: &WordPressSchemaColumnState,
+    table: &WordPressSchemaTableState,
+) -> Vec<(String, Value)> {
+    vec![
+        ("Field".to_string(), Value::String(column.name.clone())),
+        ("Type".to_string(), Value::String(column.ty.clone())),
+        (
+            "Null".to_string(),
+            Value::String(if column.nullable { "YES" } else { "NO" }.to_string()),
+        ),
+        (
+            "Key".to_string(),
+            Value::String(dynamic_schema_column_key(column, table).to_string()),
+        ),
+        (
+            "Default".to_string(),
+            column
+                .default
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "Extra".to_string(),
+            Value::String(
+                if column.auto_increment {
+                    "auto_increment"
+                } else {
+                    ""
+                }
+                .to_string(),
+            ),
+        ),
+    ]
+}
+
+fn dynamic_schema_full_column_row(
+    column: &WordPressSchemaColumnState,
+    table: &WordPressSchemaTableState,
+) -> Vec<(String, Value)> {
+    let mut row = dynamic_schema_describe_row(column, table);
+    row.insert(
+        2,
+        (
+            "Collation".to_string(),
+            if dynamic_schema_column_has_collation(column) {
+                Value::String(table.collation.clone())
+            } else {
+                Value::Null
+            },
+        ),
+    );
+    row.push((
+        "Privileges".to_string(),
+        Value::String("select,insert,update,references".to_string()),
+    ));
+    row.push(("Comment".to_string(), Value::String(String::new())));
+    row
+}
+
+fn dynamic_schema_column_key(
+    column: &WordPressSchemaColumnState,
+    table: &WordPressSchemaTableState,
+) -> &'static str {
+    table
+        .indexes
+        .iter()
+        .find(|index| index.column_name == column.name)
+        .map(|index| {
+            if index.key_name == "PRIMARY" {
+                "PRI"
+            } else if index.non_unique {
+                "MUL"
+            } else {
+                "UNI"
+            }
+        })
+        .unwrap_or("")
+}
+
+fn dynamic_schema_column_has_collation(column: &WordPressSchemaColumnState) -> bool {
+    let ty = column.ty.to_ascii_lowercase();
+    ty.contains("char") || ty.contains("text")
+}
+
+fn dynamic_schema_index_row(
+    table_name: &str,
+    index: &WordPressSchemaIndexState,
+) -> Vec<(String, Value)> {
+    vec![
+        ("Table".to_string(), Value::String(table_name.to_string())),
+        (
+            "Non_unique".to_string(),
+            Value::Int(if index.non_unique { 1 } else { 0 }),
+        ),
+        (
+            "Key_name".to_string(),
+            Value::String(index.key_name.clone()),
+        ),
+        ("Seq_in_index".to_string(), Value::Int(1)),
+        (
+            "Column_name".to_string(),
+            Value::String(index.column_name.clone()),
+        ),
+        ("Collation".to_string(), Value::String("A".to_string())),
+        ("Cardinality".to_string(), Value::Int(0)),
+        ("Sub_part".to_string(), Value::Null),
+        ("Packed".to_string(), Value::Null),
+        ("Null".to_string(), Value::String(String::new())),
+        ("Index_type".to_string(), Value::String("BTREE".to_string())),
+        ("Comment".to_string(), Value::String(String::new())),
+        ("Index_comment".to_string(), Value::String(String::new())),
+        ("Visible".to_string(), Value::String("YES".to_string())),
+        ("Expression".to_string(), Value::Null),
+    ]
+}
+
 fn wordpress_options_schema_result_for_query(query: &str) -> Option<MysqliPendingResultState> {
     let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
     if matches!(
@@ -35807,7 +36504,7 @@ fn is_mysqli_mutation_query(query: &str) -> bool {
         .is_some_and(|keyword| {
             matches!(
                 keyword.to_ascii_uppercase().as_str(),
-                "INSERT" | "UPDATE" | "DELETE" | "REPLACE"
+                "INSERT" | "UPDATE" | "DELETE" | "REPLACE" | "CREATE" | "ALTER" | "DROP"
             )
         })
 }

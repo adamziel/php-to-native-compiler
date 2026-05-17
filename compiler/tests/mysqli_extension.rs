@@ -5066,6 +5066,40 @@ echo mysqli_num_rows($keys);
 }
 
 #[test]
+fn mysqli_query_tracks_bounded_wordpress_schema_create_alter_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo mysqli_query($handle, "CREATE TABLE wp_phptest (id bigint(20) unsigned NOT NULL auto_increment, slug varchar(191) NOT NULL default '', payload longtext NOT NULL, PRIMARY KEY  (id), KEY slug (slug)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci") ? "created" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+mysqli_query($handle, "ALTER TABLE wp_phptest ADD COLUMN checksum varchar(64) NOT NULL default '', ADD UNIQUE KEY checksum (checksum)");
+$tables = mysqli_query($handle, "SHOW TABLES LIKE 'wp_phptest'");
+$table = mysqli_fetch_row($tables);
+echo "|table=", mysqli_num_rows($tables), ":", $table[0];
+$describe = mysqli_query($handle, "DESCRIBE `wp_phptest`");
+echo "|describe=", mysqli_num_fields($describe), ":";
+while ($column = mysqli_fetch_assoc($describe)) {
+    echo $column["Field"], ":", $column["Type"], ":", $column["Key"], ":", $column["Default"], ";";
+}
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_phptest");
+echo "|index=", mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ":", $index["Non_unique"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "created:0|table=1:wp_phptest|describe=6:id:bigint(20) unsigned:PRI:;slug:varchar(191):MUL:;payload:longtext::;checksum:varchar(64):UNI:;|index=3:PRIMARY:id:0;slug:slug:1;checksum:checksum:0;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

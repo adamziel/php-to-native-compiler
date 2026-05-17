@@ -4915,6 +4915,106 @@ foreach ($properties as $index => $property) {
 }
 
 #[test]
+fn typed_properties_track_uninitialized_slots_and_enforce_simple_writes() {
+    let execution = run_source(
+        r#"<?php
+class Peer {}
+class ChildPeer extends Peer {}
+class Box {
+    public int $id;
+    public ?string $name;
+    public float $ratio;
+    public Peer $peer;
+    public static bool $ready;
+    public static ?string $label;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($label, $property) {
+    echo $label, "|", yn($property->hasDefaultValue()), "|", yn($property->hasType()), "|", ($property->getDefaultValue() === null ? "null" : "value"), "\n";
+}
+
+$box = new Box();
+echo "isset-empty|", yn(isset($box->id)), yn(empty($box->id)), yn(isset(Box::$ready)), yn(empty(Box::$ready)), "\n";
+line("prop", new ReflectionProperty(Box::class, "id"));
+line("static", new ReflectionProperty(Box::class, "ready"));
+
+$box->id = 42;
+$box->name = null;
+$box->ratio = 2;
+$box->peer = new Peer();
+Box::$ready = true;
+Box::$label = null;
+echo "values|", $box->id, "|", ($box->name === null ? "null" : $box->name), "|", $box->ratio, "|", get_class($box->peer), "|", yn(Box::$ready), "|", (Box::$label === null ? "null" : Box::$label), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "isset-empty|0101\nprop|0|1|null\nstatic|0|1|null\nvalues|42|null|2|Peer|1|null\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let read_error = runtime_error(
+        r#"<?php
+class Box { public int $id; }
+$box = new Box();
+echo $box->id;
+"#,
+    );
+    assert_eq!(read_error.line, 4);
+    assert_eq!(read_error.column, 6);
+    assert_eq!(
+        read_error.message,
+        "typed property Box::$id must not be accessed before initialization"
+    );
+
+    let static_read_error = runtime_error(
+        r#"<?php
+class Box { public static int $id; }
+echo Box::$id;
+"#,
+    );
+    assert_eq!(static_read_error.line, 3);
+    assert_eq!(static_read_error.column, 9);
+    assert_eq!(
+        static_read_error.message,
+        "typed property Box::$id must not be accessed before initialization"
+    );
+
+    let write_error = runtime_error(
+        r#"<?php
+class Box { public int $id; }
+$box = new Box();
+$box->id = "nope";
+"#,
+    );
+    assert_eq!(write_error.line, 4);
+    assert_eq!(write_error.column, 1);
+    assert_eq!(
+        write_error.message,
+        "invalid property access: typed property Box::$id expects int, got string"
+    );
+
+    let static_write_error = runtime_error(
+        r#"<?php
+class Box { public static bool $ready; }
+Box::$ready = "yes";
+"#,
+    );
+    assert_eq!(static_write_error.line, 3);
+    assert_eq!(static_write_error.column, 4);
+    assert_eq!(
+        static_write_error.message,
+        "invalid property access: typed property Box::$ready expects bool, got string"
+    );
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;
@@ -9116,52 +9216,12 @@ if (true) {
         (
             r#"<?php
 class Box {
-    public string $name;
-}
-"#,
-            3,
-            19,
-            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
-        ),
-        (
-            r#"<?php
-class Box {
-    public ?string $name;
-}
-"#,
-            3,
-            20,
-            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
-        ),
-        (
-            r#"<?php
-class Box {
     public int|string $id;
 }
 "#,
             3,
             12,
             "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support",
-        ),
-        (
-            r#"<?php
-class Box {
-    public static int $count;
-}
-"#,
-            3,
-            23,
-            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
-        ),
-        (
-            r#"<?php
-class Box {
-    private static ?string $name;
-}
-"#,
-            3,
-            28,
-            "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors",
         ),
         (
             r#"<?php

@@ -227,6 +227,16 @@ impl RuntimeError {
         })
     }
 
+    pub fn uninitialized_typed_property(
+        class_name: impl Into<String>,
+        property_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UninitializedTypedProperty {
+            class_name: class_name.into(),
+            property_name: property_name.into(),
+        })
+    }
+
     pub fn unsupported_property_access(reason: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::UnsupportedPropertyAccess {
             reason: reason.into(),
@@ -372,6 +382,10 @@ pub enum RuntimeErrorKind {
     InvalidPropertyAccess {
         reason: String,
     },
+    UninitializedTypedProperty {
+        class_name: String,
+        property_name: String,
+    },
     UnsupportedPropertyAccess {
         reason: String,
     },
@@ -513,6 +527,14 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::InvalidPropertyAccess { reason } => {
             format!("invalid property access: {reason}")
+        }
+        RuntimeErrorKind::UninitializedTypedProperty {
+            class_name,
+            property_name,
+        } => {
+            format!(
+                "typed property {class_name}::${property_name} must not be accessed before initialization"
+            )
         }
         RuntimeErrorKind::UnsupportedPropertyAccess { reason } => {
             format!("unsupported object property access: {reason}")
@@ -2714,6 +2736,7 @@ impl PhpObject {
                 initializer.declaring_class_name.clone(),
                 initializer.property.name(),
                 initializer.property.visibility(),
+                initializer.property.type_decl().map(str::to_string),
             );
         }
 
@@ -2728,6 +2751,7 @@ impl PhpObject {
                 class.name().to_string(),
                 property.name(),
                 property.visibility(),
+                property.type_decl().map(str::to_string),
             );
         }
 
@@ -2745,12 +2769,15 @@ impl PhpObject {
         declaring_class_name: String,
         name: &str,
         visibility: Visibility,
+        type_decl: Option<String>,
     ) {
         if visibility != Visibility::Private {
             if let Some(property) = properties.iter_mut().find(|property| {
                 property.name == name && property.visibility != Visibility::Private
             }) {
                 property.visibility = visibility;
+                property.type_decl = type_decl;
+                property.initialized = property.type_decl.is_none();
                 return;
             }
         }
@@ -2760,7 +2787,9 @@ impl PhpObject {
             declaring_class_name,
             name: name.to_string(),
             visibility,
+            type_decl: type_decl.clone(),
             value: Value::Null,
+            initialized: type_decl.is_none(),
         });
     }
 
@@ -2797,7 +2826,7 @@ impl PhpObject {
         let properties = self.properties.borrow();
         let property = self.public_property_or_error(&properties, name)?;
 
-        Ok(property.value.clone())
+        Ok(property.initialized_value()?.clone())
     }
 
     pub fn read_property_from_context(
@@ -2810,7 +2839,7 @@ impl PhpObject {
         let property =
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
 
-        Ok(property.value.clone())
+        Ok(property.initialized_value()?.clone())
     }
 
     pub fn property_visibility_from_context(
@@ -2832,7 +2861,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(!matches!(property.value, Value::Null))
+        Ok(property.initialized && !matches!(property.value, Value::Null))
     }
 
     pub fn is_property_set_from_context(
@@ -2852,7 +2881,7 @@ impl PhpObject {
             return Ok(false);
         };
 
-        Ok(!matches!(property.value, Value::Null))
+        Ok(property.initialized && !matches!(property.value, Value::Null))
     }
 
     pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
@@ -2860,6 +2889,10 @@ impl PhpObject {
         let Some(property) = self.public_property_or_none(&properties, name)? else {
             return Ok(None);
         };
+
+        if !property.initialized {
+            return Ok(None);
+        }
 
         Ok(Some(property.value.clone()))
     }
@@ -2881,6 +2914,10 @@ impl PhpObject {
             return Ok(None);
         };
 
+        if !property.initialized {
+            return Ok(None);
+        }
+
         Ok(Some(property.value.clone()))
     }
 
@@ -2889,7 +2926,7 @@ impl PhpObject {
             .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .map(|property| property.value.clone())
+            .and_then(|property| property.initialized.then(|| property.value.clone()))
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
@@ -2897,6 +2934,10 @@ impl PhpObject {
         let Some(property) = self.public_property_or_none(&properties, name)? else {
             return Ok(true);
         };
+
+        if !property.initialized {
+            return Ok(true);
+        }
 
         Ok(!property.value.is_truthy())
     }
@@ -2918,6 +2959,10 @@ impl PhpObject {
             return Ok(true);
         };
 
+        if !property.initialized {
+            return Ok(true);
+        }
+
         Ok(!property.value.is_truthy())
     }
 
@@ -2925,7 +2970,8 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
-        property.value = value;
+        property.value = coerce_typed_property_value(property, value)?;
+        property.initialized = true;
         Ok(())
     }
 
@@ -2934,7 +2980,9 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            let value = coerce_typed_property_value(&properties[index], value)?;
             properties[index].value = value;
+            properties[index].initialized = true;
             return Ok(());
         }
 
@@ -2960,7 +3008,9 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            type_decl: None,
             value,
+            initialized: true,
         });
         Ok(())
     }
@@ -2985,7 +3035,8 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
-        property.value = value;
+        property.value = coerce_typed_property_value(property, value)?;
+        property.initialized = true;
         Ok(())
     }
 
@@ -3125,7 +3176,9 @@ pub struct ObjectProperty {
     declaring_class_name: String,
     name: String,
     visibility: Visibility,
+    type_decl: Option<String>,
     value: Value,
+    initialized: bool,
 }
 
 impl ObjectProperty {
@@ -3149,6 +3202,10 @@ impl ObjectProperty {
         &self.value
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
     pub fn mangled_name(&self) -> String {
         match self.visibility {
             Visibility::Public => self.name.clone(),
@@ -3168,6 +3225,97 @@ impl ObjectProperty {
             Visibility::Protected => protected_class_ids.contains(&self.declaring_class_id),
         }
     }
+
+    fn initialized_value(&self) -> RuntimeResult<&Value> {
+        if self.initialized {
+            Ok(&self.value)
+        } else {
+            Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ))
+        }
+    }
+}
+
+fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> RuntimeResult<Value> {
+    let Some(type_decl) = property.type_decl.as_deref() else {
+        return Ok(value);
+    };
+    coerce_property_value(
+        type_decl,
+        value,
+        &property.declaring_class_name,
+        &property.name,
+    )
+}
+
+pub fn coerce_property_value(
+    type_decl: &str,
+    value: Value,
+    class_name: &str,
+    property_name: &str,
+) -> RuntimeResult<Value> {
+    let without_nullable = type_decl.strip_prefix('?').unwrap_or(type_decl);
+    let normalized = without_nullable
+        .strip_prefix('\\')
+        .unwrap_or(without_nullable)
+        .to_ascii_lowercase();
+    let allows_null = type_decl.starts_with('?') || normalized == "mixed" || normalized == "null";
+
+    if matches!(value, Value::Null) {
+        if allows_null {
+            return Ok(value);
+        }
+        return Err(typed_property_type_error(
+            class_name,
+            property_name,
+            type_decl,
+            "null",
+        ));
+    }
+
+    let compatible = match (&value, normalized.as_str()) {
+        (_, "mixed") => true,
+        (Value::String(_), "string") => true,
+        (Value::Int(_), "int") => true,
+        (Value::Int(_), "float") => true,
+        (Value::Float(_), "float") => true,
+        (Value::Bool(true), "bool" | "true") => true,
+        (Value::Bool(false), "bool" | "false") => true,
+        (Value::Array(_), "array") => true,
+        (Value::Object(_), "object") => true,
+        (Value::Object(object), type_name) => object.class_name().eq_ignore_ascii_case(type_name),
+        _ => false,
+    };
+
+    if !compatible {
+        return Err(typed_property_type_error(
+            class_name,
+            property_name,
+            type_decl,
+            value.type_name(),
+        ));
+    }
+
+    if normalized == "float" {
+        if let Value::Int(value) = value {
+            return Ok(Value::Float(value as f64));
+        }
+    }
+
+    Ok(value)
+}
+
+fn typed_property_type_error(
+    class_name: &str,
+    property_name: &str,
+    type_decl: &str,
+    actual: &str,
+) -> RuntimeError {
+    RuntimeError::invalid_property_access(format!(
+        "typed property {class_name}::${property_name} expects {type_decl}, got {actual}"
+    ))
 }
 
 fn normalize_string_key(value: String) -> ArrayKey {

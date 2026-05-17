@@ -185,7 +185,13 @@
   `$args["value"] =& $object->items[]`; the append source is materialized as
   `null`, then the stored callback slot and appended source slot share the
   same bounded alias group for callback writeback and supported
-  reference-return binding. It also covers normal
+  reference-return binding. Stored argument-array slots may also be assigned
+  by reference from direct and property-held `ArrayAccess` sources such as
+  `$args[0] =& $bag["slot"]`, `$args["value"] =& $bag["outer"]["slot"]`,
+  and `$args[] =& $holder->bag["created"]["leaf"]` when the same bounded
+  public by-reference `offsetGet($offset) { return $this->property[$offset]; }`
+  bridge applies; callback writeback and reference-return binding reuse the
+  backing property array alias metadata. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
   callables declared as returning by reference when the callback writes through
   reached by-reference parameters. Statement-form reference assignment from
@@ -230,8 +236,9 @@
   callback argument names beyond the stable diagnostic path, positional
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
-  reference named-argument path, dynamic, append, or stored-array
-  `ArrayAccess` bridges for
+  reference named-argument path, dynamic `ArrayAccess` roots, append-offset
+  `ArrayAccess` source roots such as `$bag[]`, `ArrayAccess` bridges outside
+  the documented direct/property-held stored-array source path for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
   forms remain unsupported for direct
@@ -1981,9 +1988,22 @@
   wp_options`, and `SHOW [FULL] COLUMNS FROM wp_options` probes return fixed
   result rows for `option_id`, `option_name`, `option_value`, and `autoload`,
   including the primary/unique key markers, `autoload` default, and placeholder
-  utf8mb4 collation metadata. This does not add mutable schema, CREATE/ALTER
-  TABLE execution, dbDelta comparison, indexes beyond those fixed markers, or
-  host database inspection. For an
+  utf8mb4 collation metadata. `mysqli_query()` also has a bounded
+  per-placeholder-handle schema-state island for WordPress/dbDelta-style
+  probes: exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` statements with
+  direct column definitions, `PRIMARY KEY`, `KEY`/`INDEX`, and
+  `UNIQUE KEY`/`UNIQUE INDEX` entries record a deterministic table shape, and
+  exact `ALTER TABLE <table> ADD COLUMN ...`, `ADD KEY ...`, `ADD INDEX ...`,
+  `ADD UNIQUE KEY ...`, or `ADD PRIMARY KEY ...` entries mutate that recorded
+  table. Later exact `SHOW TABLES LIKE '<table>'`, `DESCRIBE`/`DESC <table>`,
+  `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
+  `SHOW KEYS FROM <table>` probes read that recorded shape, including
+  primary/unique/non-unique key markers, simple defaults, auto-increment
+  extras, and placeholder collation metadata for character/text columns. This
+  does not add real SQL parsing, dropped/renamed/changed columns,
+  multi-column indexes, index sub-parts, dbDelta diff generation, real DDL
+  execution, transactions for schema state, host database inspection, or
+  native database lowering. For an
   exact current synthetic WordPress option write,
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records a deterministic `option_id`, the string option
@@ -2140,8 +2160,16 @@
   `option_id` index and unique `option_name` index so bounded install/update
   and dbDelta inspection probes can read key names, sequence numbers, column
   names, uniqueness markers, `BTREE` type, visibility, and null sub-parts.
+  A separate bounded schema-state island for direct `mysqli_query()` accepts
+  exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` definitions with direct
+  columns and simple primary/unique/non-unique indexes, plus exact
+  `ALTER TABLE <table> ADD ...` column/index mutations, then exposes that
+  recorded shape through the same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
+  `SHOW [FULL] COLUMNS`, and `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` probes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
-  character-set/collation fidelity, mutable schema or real index behavior,
+  character-set/collation fidelity, dropped/renamed/changed columns,
+  multi-column indexes, sub-part index lengths, dbDelta diff generation,
+  schema transaction rollback, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2380,9 +2408,10 @@
   deterministic `true` as a liveness-check boundary without probing a real
   connection or reconnecting.
   Mutation SQL passed to `mysqli_query()` outside the exact `wp_options`
-  insert/update/delete state island, currently recognized by leading `INSERT`,
-  `UPDATE`, `DELETE`, or `REPLACE`, reports an explicit unsupported diagnostic
-  instead of changing connection or table state.
+  insert/update/delete state island and bounded schema-state DDL shapes,
+  currently recognized by leading `INSERT`, `UPDATE`, `DELETE`, `REPLACE`,
+  `CREATE`, `ALTER`, or `DROP`, reports an explicit unsupported diagnostic
+  instead of changing connection row or table state.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
@@ -2806,10 +2835,14 @@
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
-  root superglobal when no unbuffered output has started. If unbuffered output
-  has already started, it returns `false` and emits a bounded `E_WARNING`
-  through the current `set_error_handler()` stack or stderr fallback. Option
-  values are currently accepted only as an array shape and are otherwise
+  root superglobal when no unbuffered output has started. The
+  `read_and_close` option is recognized with PHP truthiness: when truthy, the
+  session is materialized and then immediately closed back to
+  `PHP_SESSION_NONE` while leaving `$_SESSION` visible for the rest of the
+  request. If unbuffered output has already started, `session_start()` returns
+  `false` and emits a bounded `E_WARNING` through the current
+  `set_error_handler()` stack or stderr fallback before applying options.
+  Other option keys are accepted only as array entries and are otherwise
   ignored. `session_status()` accepts no arguments and returns
   `PHP_SESSION_NONE` or `PHP_SESSION_ACTIVE` for the current request.
   `session_id($id = null)` returns the current id; before a session is active,
@@ -2820,9 +2853,10 @@
   data visible for the rest of the request, and returns `true`. Session
   persistence, session file locking, save handlers, `session_name()`,
   `session_destroy()`, `session_abort()`, `session_reset()`, `session_unset()`,
-  `session_cache_*()`, strict id validation, session cookies/cache headers,
-  garbage collection, exact warning text, active-session restart notices, and
-  native lowering remain unsupported.
+  `session_cache_*()`, strict id validation, option effects beyond
+  `read_and_close`, session cookies/cache headers, garbage collection, exact
+  warning text, active-session restart notices, and native lowering remain
+  unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3097,10 +3131,8 @@
   declarations before readonly metadata, initialization rules, write-once
   enforcement, reflection behavior, and native lowering exist,
   asymmetric PHP 8 property set-visibility modifiers such as `private(set)`
-  and `protected(set)` before property visibility metadata, typed-property
-  storage/enforcement, reflection behavior, and native lowering exist,
-  typed instance property declarations, typed static property declarations
-  before typed metadata/uninitialized state/write enforcement exist,
+  and `protected(set)` before property visibility metadata, broader
+  typed-property write rules, reflection behavior, and native lowering exist,
   PHP property hook declarations such as `public string $name { get => ...; }`
   before hook metadata, backing/virtual property behavior, typed-property
   storage/enforcement, references, reflection, and native lowering exist,
@@ -3268,13 +3300,19 @@
   Name {} }` can safely avoid repeated redeclaration in the current subset.
   The accepted member subset records untyped properties with optional
   constant-expression defaults, plus bounded simple named typed properties
-  only when they declare explicit constant-expression defaults. Property type
-  declarations are metadata-only in this slice: reads, writes, constructor
-  initialization, and static property mutation do not enforce the declared
-  type. Typed properties without explicit defaults remain unsupported because
-  uninitialized property state and access errors are not modeled. Compound
-  union/intersection/DNF property type objects remain unsupported until
-  `ReflectionUnionType`/`ReflectionIntersectionType` exist. Methods
+  with or without explicit constant-expression defaults. Typed properties
+  without defaults start in an uninitialized slot for instance and static
+  storage: direct reads fail with a stable runtime error, while `isset(...)`
+  reports false and `empty(...)` reports true. Direct writes to declared typed
+  instance and static properties enforce the current simple named type subset
+  for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
+  nullable `?T`, literal `true`/`false`, and exact class-name object values;
+  integer writes to `float` are stored as floats. Weak PHP scalar coercions
+  such as string-to-int, inherited class-name assignment checks, references,
+  property writes through complex alias paths, and native lowering remain
+  unsupported. Compound union/intersection/DNF property type objects remain
+  unsupported until `ReflectionUnionType`/`ReflectionIntersectionType` exist.
+  Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
   ClassName(...)` looks up declared classes case-insensitively, initializes
@@ -5710,10 +5748,13 @@
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
   `hasType()`, and `getType()` for current untyped properties and bounded
-  simple named typed properties with explicit defaults. For those typed
+  simple named typed properties with or without explicit defaults. For those typed
   properties, `getType()` returns a request-local `ReflectionNamedType` object
   with `getName()`, `allowsNull()`, and `isBuiltin()` support; untyped
-  properties still return `null`.
+  properties still return `null`. `hasDefaultValue()` reports false for
+  uninitialized typed properties without explicit defaults, and
+  `getDefaultValue()` returns `null` for that bounded PHP-compatible metadata
+  path.
   The current
   `ReflectionMethod::IS_PUBLIC`, `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`,
   `IS_FINAL`, and `IS_ABSTRACT` constants are available.
@@ -7337,9 +7378,12 @@
   by-reference and variadic flags, and type-presence checks without materialized
   compound `ReflectionType` objects. `ReflectionProperty` currently supports
   only declared user-class property metadata for the methods documented above,
-  plus simple named typed property metadata when the property has an explicit
-  constant-expression default. It does not enforce typed property reads or
-  writes and does not model uninitialized typed property slots. Attributes,
+  plus simple named typed property metadata with bounded uninitialized-slot
+  state for properties without explicit defaults. Runtime typed-property
+  enforcement is limited to the simple named type subset documented in the
+  object/class model section; weak scalar coercions, inherited class-name
+  checks, union/intersection type objects, complex reference/COW interactions,
+  and native lowering remain unsupported. Attributes,
   file/line/doc-comment metadata,
   extension/internal method/property/parameter metadata, parameter and property
   attributes, `ReflectionUnionType`/

@@ -1063,7 +1063,7 @@ impl Parser {
                 self.ensure_supported_typed_property_default_expr(&type_decl, &expr)?;
                 Some(expr)
             } else {
-                return Err(self.error_at(span, unsupported_uninitialized_typed_property_message()));
+                None
             };
             if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 return Err(self.error_at(
@@ -6316,10 +6316,6 @@ fn unsupported_property_type_message() -> &'static str {
 
 fn unsupported_compound_property_type_message() -> &'static str {
     "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support"
-}
-
-fn unsupported_uninitialized_typed_property_message() -> &'static str {
-    "unsupported typed property declaration: typed properties without explicit defaults require uninitialized property state and access errors"
 }
 
 fn unsupported_readonly_property_message() -> &'static str {

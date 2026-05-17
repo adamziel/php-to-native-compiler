@@ -1,0 +1,2 @@
+$ cargo run -q -p phpc -- run tests/fixtures/milestone1443/session_read_and_close.php
+started|closed|phpcmilestone1443|visible|again-started|active|closed|open

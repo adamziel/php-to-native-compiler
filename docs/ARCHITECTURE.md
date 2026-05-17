@@ -714,7 +714,9 @@ execution past unknown or duplicate string-keyed callback argument names,
 positional arguments after a string-keyed named argument, variadic named
 callback arguments, dynamic key expressions in the literal reference
 named-argument path,
-dynamic, append, or stored-array ArrayAccess reference roots, non-public property roots outside the current valid
+dynamic ArrayAccess reference roots, append-offset ArrayAccess source roots,
+stored-array ArrayAccess roots outside the current direct/property-held
+`offsetGet()` reference bridge, non-public property roots outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
 by-reference `foreach`, or copy-on-write.
@@ -1709,12 +1711,15 @@ cookie attributes, encoding, exact warning text, SAPI emission, and native
 lowering remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
-in-memory `$_SESSION` root and marks the session active; after unbuffered
-output it returns `false`, leaves session status/data unchanged, and routes a
-bounded `E_WARNING` through the current error-handler stack or stderr
-fallback. Session cookie/cache-header emission, persistence, locking, save
-handlers, exact warning text, active-session restart notices, and native
-lowering remain outside the model.
+in-memory `$_SESSION` root and marks the session active; the recognized
+`read_and_close` option then immediately closes the bounded status back to
+`PHP_SESSION_NONE` while keeping the in-memory session array visible. After
+unbuffered output it returns `false`, leaves session status/data unchanged,
+and routes a bounded `E_WARNING` through the current error-handler stack or
+stderr fallback before applying options. Session cookie/cache-header emission,
+persistence, locking, save handlers, option effects beyond `read_and_close`,
+exact warning text, active-session restart notices, and native lowering remain
+outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost

@@ -1,0 +1,1 @@
+created:0:0|table=1:wp_phptest|columns=6:id:bigint(20) unsigned:PRI:,slug:varchar(191):MUL:,payload:longtext::,checksum:varchar(64):UNI:|indexes=3:PRIMARY:id:0:YES,slug:slug:1:YES,checksum:checksum:0:YES

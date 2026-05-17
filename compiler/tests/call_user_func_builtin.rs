@@ -991,14 +991,26 @@ $holder->bag = new WP_RefCow_ArrayAccess_Bag();
 echo call_user_func_array("wp_refcow_array_access_mark", array(&$holder->bag["outer"]["slot"], "held-callback")), "|", $holder->bag["outer"]["slot"], "\n";
 $held =& call_user_func_array("wp_refcow_array_access_pick", array(&$holder->bag["held"]["leaf"], "held-return"));
 $held = $held . ":held-alias";
-echo $holder->bag["held"]["leaf"], "|", $held;
+echo $holder->bag["held"]["leaf"], "|", $held, "\n";
+
+$stored = [];
+$stored[0] =& $bag["stored"];
+$stored[1] = "stored-callback";
+call_user_func_array("wp_refcow_array_access_mark", $stored);
+echo $bag["stored"], "|", $stored[0], "\n";
+
+$heldStored = [];
+$heldStored[] =& $holder->bag["heldStored"]["leaf"];
+$heldStored[] = "held-stored";
+call_user_func_array("wp_refcow_array_access_mark", $heldStored);
+echo $holder->bag["heldStored"]["leaf"], "|", $heldStored[0];
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "seed:alias|seed:alias\nseed:alias:callback|seed:alias:callback\nnull:return:picked|null:return:picked\nnested:nested-callback|nested:nested-callback\nnull:nested-return:nested-alias|null:nested-return:nested-alias\nnested:held-callback|nested:held-callback\nnull:held-return:held-alias|null:held-return:held-alias"
+        "seed:alias|seed:alias\nseed:alias:callback|seed:alias:callback\nnull:return:picked|null:return:picked\nnested:nested-callback|nested:nested-callback\nnull:nested-return:nested-alias|null:nested-return:nested-alias\nnested:held-callback|nested:held-callback\nnull:held-return:held-alias|null:held-return:held-alias\nnull:stored-callback|null:stored-callback\nnull:held-stored|null:held-stored"
     );
     assert_eq!(execution.exit_code, 0);
 }
