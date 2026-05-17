@@ -311,6 +311,46 @@ echo $value;
 }
 
 #[test]
+fn foreach_by_reference_mutates_string_keyed_globals_array_root() {
+    let source = r#"<?php
+$GLOBALS["bag"] = ["one" => "a", "two" => "b"];
+
+foreach ($GLOBALS["bag"] as $key => &$value) {
+    $value = $value . ":" . $key;
+    if ($key === "one") {
+        $GLOBALS["bag"]["three"] = "c";
+    }
+}
+
+echo $GLOBALS["bag"]["one"], "|", $GLOBALS["bag"]["two"], "|", $GLOBALS["bag"]["three"], "|", $value, "|", $key, "\n";
+$GLOBALS["bag"]["three"] = "direct";
+echo $value, "|";
+$value = "tail";
+echo $GLOBALS["bag"]["three"], "|", $value, "\n";
+unset($value);
+
+function mutate_global_bag() {
+    foreach ($GLOBALS["bag"] as $key => &$value) {
+        if ($key === "one") {
+            $value = "fn";
+        }
+    }
+    unset($value);
+}
+
+mutate_global_bag();
+echo $GLOBALS["bag"]["one"], "|", $GLOBALS["bag"]["two"], "|", $GLOBALS["bag"]["three"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "a:one|b:two|c:three|c:three|three\ndirect|tail|tail\nfn|b:two|tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_rejects_nested_lvalue_iterables_as_stable_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -325,7 +365,7 @@ foreach ($items[0] as &$item) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable or temporary array expression"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression"
     );
 }
 
@@ -348,7 +388,7 @@ foreach (items() as &$item) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable or temporary array expression"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression"
     );
 }
 

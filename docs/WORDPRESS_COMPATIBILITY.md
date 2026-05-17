@@ -347,6 +347,19 @@ connectivity, broad `wpdb`, persistent cache, full WordPress option APIs,
 plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
 support.
 
+After Milestone 1309, that prepared no-placeholder row-set path also covers
+the exact alloptions-style
+`SELECT option_name, option_value FROM wp_options ...` projection, including
+all rows, autoload-filtered rows, literal `option_name IN (...)` lists, and
+the current backticked column/table spelling. A committed `wpdb`-shaped
+fixture proves a prepared `get_results()` wrapper can read deterministic
+option-name/value rows for the placeholder option state island. This is
+executable evidence for one bounded prepared result-set shape only; it does
+not claim arbitrary SQL, arbitrary projections beyond the documented exact
+option shapes, real database connectivity, broad `wpdb`, persistent cache,
+full WordPress option APIs, plugins/themes, request/SAPI fidelity,
+references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

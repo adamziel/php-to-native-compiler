@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T06:50:00Z
+
+- Checkpoint before this task:
+  `2729e284 runtime: advance WordPress signatures refs include paths and db rows`,
+  pushed to `origin/master`.
+- Task attempted: Milestones 1306-1310, four WordPress-focused implementation
+  lanes plus queue refresh, all drawn from the `GOAL.MD` compatibility ledger
+  and focused on large missing subsystems.
+- Files changed so far: bounded declared class/interface method variance for
+  simple class/interface type names; bounded by-reference `foreach` over
+  direct string-keyed `$GLOBALS` roots; bounded local `filesize()` metadata;
+  prepared alloptions-style `wp_options` option-name/value row-set reads over
+  the placeholder MySQLi state island; milestone fixtures 1306-1309; support,
+  architecture, object-model, WordPress compatibility, MySQLi extension,
+  README, queue, progress, lane-worker, loop-memory, and goal docs.
+- Tests run and result: focused integration checks passed for object-model
+  variance, `$GLOBALS` by-reference foreach, `filesize()` metadata, MySQLi
+  WordPress option row-set reads, and milestone fixture comparisons/manifests.
+  Manual full gate passed before checkpoint: `cargo test` completed
+  successfully, `phpc test` reported `1424` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1424` fixture tests passed
+  with `0` failures, `817` system PHP comparisons, and `607` skipped
+  `phpc-only` fixtures.
+- Remaining semantic gaps: broad object/interface/trait compatibility, full
+  PHP reference containers, broad copy-on-write, dynamic lookup and magic
+  methods, stream/resource handling, real web-server SAPI state, filesystem
+  fidelity, real database behavior, WordPress plugin/theme/admin/REST flows,
+  and native runtime integration remain explicit project blockers.
+- Next concrete task: run the serialized checkpoint gate, push the checkpoint,
+  clean dedicated target directories, close completed workers, then start
+  Milestones 1311-1314 in separate worktrees.
+
 ## Loop Event 2026-05-17T05:45:00Z
 
 - Checkpoint before this task:

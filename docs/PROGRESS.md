@@ -4,6 +4,167 @@
 
 Implemented:
 
+- Added Milestone 1310, the WordPress-focused queue refresh after the
+  integrated Milestones 1306-1309 batch. `GOAL.MD` now keeps the current
+  parallel focus on the newly closed slices: declared class/interface method
+  variance, by-reference `foreach` over direct string-keyed `$GLOBALS` roots,
+  local `filesize()` metadata, and prepared alloptions-style `wp_options`
+  name/value row-set reads over the placeholder MySQLi state island.
+  `docs/NEXT_TASKS.md` opens Milestones 1311-1314 for the next four
+  implementation lanes and Milestone 1315 for the next queue refresh;
+  `docs/LANE_WORKERS.md` points workers at the same larger missing
+  subsystems: object/interface semantics, general references/COW,
+  request/SAPI/filesystem/stream behavior, and executable WordPress
+  database/bootstrap evidence. Manual full gate passed before checkpoint:
+  `cargo test` completed successfully, `phpc test` reported `1424` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1424` fixture tests passed with `0` failures, `817` system PHP
+  comparisons, and `607` skipped `phpc-only` fixtures.
+
+- Added Milestone 1309, a bounded WordPress database/bootstrap evidence slice.
+  The placeholder MySQLi `wp_options` state island now supports prepared
+  no-placeholder row-set reads for the exact alloptions-style
+  `SELECT option_name, option_value FROM wp_options ...` projection, including
+  all rows, autoload-filtered rows, literal `option_name IN (...)` lists, and
+  the current backticked column/table spelling. The same result path is
+  available through `mysqli_stmt_execute()` plus `mysqli_stmt_get_result()` and
+  through `mysqli_execute_query($handle, $query)`. A committed Milestone 1309
+  `wpdb`-shaped fixture proves a prepared `get_results()` wrapper can read
+  deterministic option-name/value rows from the placeholder state island. This
+  does not add real MySQL connectivity, arbitrary SQL, arbitrary projections
+  beyond the documented exact option shapes, persistent object cache, broad
+  `wpdb`, full WordPress option APIs, plugin/theme loading, request/SAPI
+  fidelity, references/copy-on-write, or native lowering. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1309-wpdb CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  mysqli_extension
+  mysqli_statement_reads_current_wordpress_option_name_value_row_sets_from_state
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  mysqli_extension wordpress_option -- --test-threads=1` passed with `31`
+  tests; `cargo run -q -p phpc -- test tests/fixtures/milestone1309` passed
+  with `1` fixture; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1309/mysqli_wp_options_prepared_name_value_row_sets_state.php`
+  printed
+  `all=home=https://home.test,siteurl=https://example.test,theme_mods=theme-db|autoload=siteurl=https://example.test,theme_mods=theme-db|named=2:theme_mods=theme-db,home=https://home.test`;
+  `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1309` reported `1` passed fixture, `0` PHP
+  comparisons, and `1` `.phpc-only` skip; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1309` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; and `cargo fmt --check` passed after
+  formatting. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1308, a bounded WordPress request/filesystem host metadata
+  slice. `phpc run` now exposes `filesize($path)` for one string local path,
+  using the existing process-path-then-repository-root local path policy and
+  returning the host regular-file byte length as an integer. Missing paths and
+  non-file paths such as directories return `false`, stream-wrapper paths are
+  rejected with a stable runtime boundary, string-valued dynamic calls can
+  resolve `filesize`, and native function-table introspection recognizes the
+  name while direct native calls still reject under the existing function-call
+  lowering boundary. The committed Milestone 1308 fixture proves the supported
+  existing-file path against system PHP. This does not implement include-path
+  lookup for metadata, stream-wrapper metadata, `php://temp`, stream
+  resources, PHP stat-cache behavior, `open_basedir`, warning fidelity for
+  missing/non-file paths, non-UTF-8 paths, oversized files beyond the current
+  signed 64-bit integer subset, references/copy-on-write, or native
+  filesystem metadata lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=target/focused-1308-sapi CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  filesize_builtin -- --test-threads=1` passed with `5` tests; `cargo run -q
+  -p phpc -- test tests/fixtures/milestone1308` passed with `1` fixture;
+  direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1308/filesize_local_metadata.php` printed
+  `size-ok|yes|callable|repeat`; `cargo run -q -p phpc -- test
+  --compare-php tests/fixtures/milestone1308` passed with `1` system PHP
+  comparison and `0` skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1308` reported `1` passed fixture, `1` comparison,
+  and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1308` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps. `cargo fmt` was applied after `cargo fmt --check`
+  reported the new test needed formatting; the follow-up `cargo fmt --check`
+  passed, and `git diff --check -- compiler/src/interpreter.rs
+  compiler/src/codegen.rs compiler/tests/filesize_builtin.rs README.md
+  docs/ARCHITECTURE.md docs/NEXT_TASKS.md docs/PROGRESS.md docs/SUPPORT.md
+  tests/fixtures/milestone1308` passed. Full gate/checkpoint deferred until
+  integration.
+
+- Added Milestone 1307, a bounded reference/COW WordPress blocker slice for
+  by-reference iteration over direct string-keyed `$GLOBALS` roots. The
+  interpreter by-reference `foreach` path now recognizes
+  `foreach ($GLOBALS["bag"] as $key => &$value)` as a root-global array
+  iterable, routes the loop value variable to the selected global array slot
+  through the existing bounded alias metadata, visits appended tail entries,
+  preserves PHP-shaped post-loop lingering reference behavior, and works from
+  function scope against the real root symbol table. The committed
+  `milestone1307` fixture proves loop-body mutation, appended element
+  visitation, post-loop lingering alias mutation, `unset($value)` detachment,
+  and function-scope `$GLOBALS` mutation against system PHP. This does not
+  implement nested lvalue iterables such as `$GLOBALS["bag"]["child"]`,
+  non-string `$GLOBALS` roots, by-reference object/`Traversable` iteration,
+  offset/property loop variables, full reference containers, broad
+  copy-on-write, exact warnings, or native lowering. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1307-refcow
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p
+  phpc --test foreach foreach_by_reference_mutates_string_keyed_globals_array_root
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  foreach -- --test-threads=1` passed with `19` tests; `cargo run -q -p phpc
+  -- test tests/fixtures/milestone1307` passed with `1` fixture; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1307/globals_by_reference_foreach_alias.php` printed
+  `a:one|b:two|c:three|c:three|three`, `direct|tail|tail`, and
+  `fn|b:two|tail`; `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1307` passed with `1` system PHP comparison and `0`
+  skips; `cargo run -q -p phpc -- test --compare-php-json
+  tests/fixtures/milestone1307` reported `1` passed fixture, `1` comparison,
+  and `0` skips; `cargo run -q -p phpc -- test --list-fixtures
+  tests/fixtures/milestone1307` reported `1` fixture, `1` CLI exercise, `0`
+  missing expectation sidecars, `0` unrecognized sidecars, and `0`
+  `.phpc-only` reason gaps; `cargo fmt` was applied; `cargo fmt --check`
+  passed; and `git diff --check -- compiler/src/interpreter.rs
+  compiler/tests/foreach.rs docs/ARCHITECTURE.md docs/NEXT_TASKS.md
+  docs/PROGRESS.md docs/SUPPORT.md README.md tests/fixtures/milestone1307`
+  passed. Full gate/checkpoint deferred until integration.
+
+- Added Milestone 1306, a bounded parser/runtime object/interface signature
+  compatibility slice for WordPress-facing class metadata. Inherited method
+  compatibility, concrete interface implementation checks, child-interface
+  redeclarations, and simple multi-parent interface method conflicts now
+  accept simple declared class/interface variance when both type names resolve
+  through current metadata: overriding/implementing parameters may use a
+  broader declared class or parent interface, and overriding/implementing
+  returns may use a narrower declared class or child interface. Existing exact
+  type-text checks remain for scalar and unsupported type shapes, and
+  unrelated declared class/interface substitutions still fail with the stable
+  unsupported inheritance diagnostics. This does not implement namespace-aware
+  type-name resolution for signatures, `self`/`parent`/`static` type
+  resolution, union/intersection/DNF canonicalization, full PHP variance,
+  runtime type enforcement, exact PHP diagnostics, references/copy-on-write,
+  autoload-triggered type discovery, or native lowering. Focused verification
+  passed with `CARGO_TARGET_DIR=target/focused-1306-object CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1`: `cargo test -p phpc --test
+  object_model inherited_and_interface_method_class_type_variance_is_bounded
+  -- --test-threads=1` passed with `1` test; `cargo test -p phpc --test
+  object_model -- --test-threads=1` passed with `232` tests; `cargo run -q -p
+  phpc -- test tests/fixtures/milestone1306` passed with `1` fixture; direct
+  `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1306/object_interface_signature_variance.php`
+  printed
+  `inherited:registered`, `interface:registered`, and
+  `child-interface:registered`, and `interface-parent:registered`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1306` passed with
+  `1` system PHP comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1306` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1306` reported `1` fixture, `1` CLI
+  exercise, `0` missing expectation sidecars, `0` unrecognized sidecars, and
+  `0` `.phpc-only` reason gaps; `cargo fmt --check` passed; and `git diff
+  --check -- compiler/src/interpreter.rs compiler/tests/object_model.rs
+  README.md docs/SUPPORT.md docs/OBJECT_MODEL.md docs/ARCHITECTURE.md
+  docs/NEXT_TASKS.md docs/PROGRESS.md tests/fixtures/milestone1306` passed. Full
+  gate/checkpoint deferred until integration.
+
 - Added Milestone 1305, the WordPress-focused queue refresh after the
   integrated Milestones 1301-1304 batch. `GOAL.MD` now keeps the current
   parallel focus on the newly closed slices: inherited method signature

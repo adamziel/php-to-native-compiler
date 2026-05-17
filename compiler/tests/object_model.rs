@@ -7882,6 +7882,116 @@ class Child extends Base {
 }
 
 #[test]
+fn inherited_and_interface_method_class_type_variance_is_bounded() {
+    let execution = run_source(
+        r#"<?php
+interface HookTarget {}
+interface ChildHookTarget extends HookTarget {}
+class BaseTarget implements HookTarget {}
+class ChildTarget extends BaseTarget implements ChildHookTarget {}
+
+interface ParentResolver {
+    public function bind(ChildHookTarget $target): HookTarget;
+}
+
+interface ChildResolver extends ParentResolver {
+    public function bind(HookTarget $target): ChildHookTarget;
+}
+
+interface Resolver {
+    public function resolve(ChildTarget $target): BaseTarget;
+}
+
+class BaseResolver {
+    public function resolve(ChildTarget $target): BaseTarget {
+        return $target;
+    }
+}
+
+class PluginResolver extends BaseResolver implements Resolver {
+    public function resolve(BaseTarget $target): ChildTarget {
+        return new ChildTarget();
+    }
+}
+
+class InterfaceResolver implements Resolver {
+    public function resolve(HookTarget $target): ChildTarget {
+        return new ChildTarget();
+    }
+}
+
+class InterfaceParentResolver {
+    public function bind(ChildHookTarget $target): HookTarget {
+        return $target;
+    }
+}
+
+class InterfaceChildResolver extends InterfaceParentResolver {
+    public function bind(HookTarget $target): ChildHookTarget {
+        return new ChildTarget();
+    }
+}
+
+echo method_exists(new PluginResolver(), "resolve") ? "inherited:registered\n" : "inherited:missing\n";
+echo method_exists(new InterfaceResolver(), "resolve") ? "interface:registered\n" : "interface:missing\n";
+echo interface_exists("ChildResolver") ? "child-interface:registered\n" : "child-interface:missing\n";
+echo method_exists(new InterfaceChildResolver(), "bind") ? "interface-parent:registered" : "interface-parent:missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "inherited:registered\ninterface:registered\nchild-interface:registered\ninterface-parent:registered"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let invalid_parameter_error = runtime_error(
+        r#"<?php
+class BaseTarget {}
+class ChildTarget extends BaseTarget {}
+class OtherTarget {}
+
+class BaseResolver {
+    public function resolve(ChildTarget $target) {}
+}
+
+class PluginResolver extends BaseResolver {
+    public function resolve(OtherTarget $target) {}
+}
+"#,
+    );
+    assert_eq!(invalid_parameter_error.line, 11);
+    assert_eq!(invalid_parameter_error.column, 12);
+    assert_eq!(
+        invalid_parameter_error.message,
+        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() parameter $target type OtherTarget is incompatible with inherited method BaseResolver::resolve() parameter type ChildTarget"
+    );
+
+    let invalid_return_error = runtime_error(
+        r#"<?php
+class BaseTarget {}
+class ChildTarget extends BaseTarget {}
+class OtherTarget {}
+
+interface Resolver {
+    public function resolve(): BaseTarget;
+}
+
+class PluginResolver implements Resolver {
+    public function resolve(): OtherTarget {}
+}
+"#,
+    );
+    assert_eq!(invalid_return_error.line, 10);
+    assert_eq!(invalid_return_error.column, 1);
+    assert_eq!(
+        invalid_return_error.message,
+        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() return type OtherTarget is incompatible with interface method Resolver::resolve() return type BaseTarget"
+    );
+}
+
+#[test]
 fn nested_method_visibility_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php

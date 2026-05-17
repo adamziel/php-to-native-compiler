@@ -6949,6 +6949,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "filesize"
             | "realpath"
             | "getcwd"
             | "is_dir"

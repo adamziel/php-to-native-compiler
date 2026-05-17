@@ -177,9 +177,15 @@ struct ParameterSignature {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ActiveForeachReference {
-    array_name: String,
+    root: ForeachArrayRoot,
     value_name: String,
     key: ArrayKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ForeachArrayRoot {
+    Static(String),
+    Global(String),
 }
 
 #[derive(Clone)]
@@ -884,6 +890,24 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_existing_global_array_offset(
+        &mut self,
+        target: &str,
+        global_name: &str,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::GlobalArray {
+                name: global_name.to_string(),
+            },
+            keys: vec![key],
+        };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_existing_nested_array_offset(
         &mut self,
         target: &str,
@@ -1078,6 +1102,24 @@ impl SymbolTable {
                     root: ArrayOffsetAliasRoot::StaticArray { name },
                     keys,
                 } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+            ))
+        )
+    }
+
+    fn is_static_bound_to_global_array_offset(
+        &self,
+        target: &str,
+        global_name: &str,
+        key: &ArrayKey,
+    ) -> bool {
+        matches!(
+            self.array_offset_aliases.get(target),
+            Some(aliases) if aliases.iter().any(|alias| matches!(
+                alias,
+                ArrayOffsetAlias {
+                    root: ArrayOffsetAliasRoot::GlobalArray { name },
+                    keys,
+                } if name == global_name && keys.as_slice() == std::slice::from_ref(key)
             ))
         )
     }
@@ -2161,12 +2203,19 @@ fn value_cell(value: Value) -> VariableCell {
 fn bind_foreach_lingering_reference(
     scope: &mut SymbolTable,
     value: &str,
-    array_name: &str,
+    root: &ForeachArrayRoot,
     key: Option<ArrayKey>,
     span: Span,
 ) -> CompileResult<()> {
     if let Some(key) = key {
-        scope.bind_static_to_existing_array_offset(value, array_name, key, span)?;
+        match root {
+            ForeachArrayRoot::Static(array_name) => {
+                scope.bind_static_to_existing_array_offset(value, array_name, key, span)?;
+            }
+            ForeachArrayRoot::Global(global_name) => {
+                scope.bind_static_to_existing_global_array_offset(value, global_name, key, span)?;
+            }
+        }
     }
     Ok(())
 }
@@ -2324,7 +2373,7 @@ impl Interpreter {
                 _ => {}
             }
         }
-        validate_interface_parent_relationships(&interface_lookup, &interfaces)?;
+        validate_interface_parent_relationships(&classes, &interface_lookup, &interfaces)?;
 
         for stmt in &program.statements {
             if let Stmt::Class(class) = stmt {
@@ -2627,7 +2676,11 @@ impl Interpreter {
                 _ => {}
             }
         }
-        validate_interface_parent_relationships(&self.interface_lookup, &self.interfaces)?;
+        validate_interface_parent_relationships(
+            &self.classes,
+            &self.interface_lookup,
+            &self.interfaces,
+        )?;
 
         for stmt in &program.statements {
             let Stmt::Class(class) = stmt else {
@@ -3118,8 +3171,26 @@ impl Interpreter {
                 span,
             } => {
                 if *by_reference {
-                    let array_name = match iterable {
-                        Expr::Variable(name, _) => name.clone(),
+                    let root = match iterable {
+                        Expr::Variable(name, _) => ForeachArrayRoot::Static(name.clone()),
+                        Expr::Index {
+                            target,
+                            index,
+                            span: index_span,
+                        } if matches!(target.as_ref(), Expr::Variable(name, _) if name == "GLOBALS") =>
+                        {
+                            let key = self.evaluate_array_key(index, scope)?;
+                            let Some(global_name) = globals_offset_name(&key) else {
+                                return Err(runtime_error(
+                                    *index_span,
+                                    RuntimeError::unsupported_call(
+                                        "$GLOBALS",
+                                        "by-reference foreach currently requires a string-keyed direct $GLOBALS root",
+                                    ),
+                                ));
+                            };
+                            ForeachArrayRoot::Global(global_name.to_string())
+                        }
                         expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
                             let value = self.evaluate(expr, scope)?;
                             let Value::Array(array) = value else {
@@ -3133,49 +3204,102 @@ impl Interpreter {
                             };
                             let temp_name = self.next_foreach_temporary_array_name();
                             scope.write_static(&temp_name, Value::Array(array));
-                            temp_name
+                            ForeachArrayRoot::Static(temp_name)
                         }
                         _ => {
                             return Err(runtime_error(
                                 *span,
                                 RuntimeError::unsupported_call(
                                     "foreach",
-                                    "by-reference iteration currently requires a direct array variable or temporary array expression",
+                                    "by-reference iteration currently requires a direct array variable, string-keyed $GLOBALS root, or temporary array expression",
                                 ),
                             ));
                         }
                     };
-                    match scope.read_static(&array_name, *span)? {
-                        Value::Array(_) => {}
-                        other => {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::invalid_foreach(format!(
-                                    "can only iterate arrays in the current subset, got {}",
-                                    other.type_name()
-                                )),
-                            ));
+                    match &root {
+                        ForeachArrayRoot::Static(array_name) => {
+                            match scope.read_static(array_name, *span)? {
+                                Value::Array(_) => {}
+                                other => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                    ));
+                                }
+                            }
                         }
-                    };
+                        ForeachArrayRoot::Global(global_name) => {
+                            match scope.read_global_name(global_name) {
+                                Some(Value::Array(_)) => {}
+                                Some(other) => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                    ));
+                                }
+                                None => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::undefined_variable(global_name),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                     let mut position = 0usize;
                     let mut lingering_reference_key = None;
 
                     loop {
-                        let entry_key = match scope.read_static(&array_name, *span)? {
-                            Value::Array(array) => {
-                                let Some(entry) = array.entries().get(position) else {
-                                    break;
-                                };
-                                entry.key.clone()
+                        let entry_key = match &root {
+                            ForeachArrayRoot::Static(array_name) => {
+                                match scope.read_static(array_name, *span)? {
+                                    Value::Array(array) => {
+                                        let Some(entry) = array.entries().get(position) else {
+                                            break;
+                                        };
+                                        entry.key.clone()
+                                    }
+                                    other => {
+                                        return Err(runtime_error(
+                                            *span,
+                                            RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                        ));
+                                    }
+                                }
                             }
-                            other => {
-                                return Err(runtime_error(
-                                    *span,
-                                    RuntimeError::invalid_foreach(format!(
-                                        "can only iterate arrays in the current subset, got {}",
-                                        other.type_name()
-                                    )),
-                                ));
+                            ForeachArrayRoot::Global(global_name) => {
+                                match scope.read_global_name(global_name) {
+                                    Some(Value::Array(array)) => {
+                                        let Some(entry) = array.entries().get(position) else {
+                                            break;
+                                        };
+                                        entry.key.clone()
+                                    }
+                                    Some(other) => {
+                                        return Err(runtime_error(
+                                            *span,
+                                            RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                        ));
+                                    }
+                                    None => {
+                                        return Err(runtime_error(
+                                            *span,
+                                            RuntimeError::undefined_variable(global_name),
+                                        ));
+                                    }
+                                }
                             }
                         };
                         self.tick(*span)?;
@@ -3183,14 +3307,26 @@ impl Interpreter {
                         if let Some(key) = key {
                             scope.write_static(key, value_from_array_key(&entry_key));
                         }
-                        scope.bind_static_to_existing_array_offset(
-                            value,
-                            &array_name,
-                            entry_key.clone(),
-                            *span,
-                        )?;
+                        match &root {
+                            ForeachArrayRoot::Static(array_name) => {
+                                scope.bind_static_to_existing_array_offset(
+                                    value,
+                                    array_name,
+                                    entry_key.clone(),
+                                    *span,
+                                )?;
+                            }
+                            ForeachArrayRoot::Global(global_name) => {
+                                scope.bind_static_to_existing_global_array_offset(
+                                    value,
+                                    global_name,
+                                    entry_key.clone(),
+                                    *span,
+                                )?;
+                            }
+                        }
                         self.active_foreach_references.push(ActiveForeachReference {
-                            array_name: array_name.clone(),
+                            root: root.clone(),
                             value_name: value.clone(),
                             key: entry_key.clone(),
                         });
@@ -3198,40 +3334,94 @@ impl Interpreter {
                         self.active_foreach_references.pop();
                         let flow = flow_result?;
 
-                        let value_still_bound =
-                            scope.is_static_bound_to_array_offset(value, &array_name, &entry_key);
-                        let next_position = match scope.read_static(&array_name, *span)? {
-                            Value::Array(array) => {
-                                let current_position = array
-                                    .entries()
-                                    .iter()
-                                    .position(|entry| entry.key == entry_key);
-                                lingering_reference_key =
-                                    if value_still_bound && current_position.is_some() {
-                                        Some(entry_key.clone())
-                                    } else {
-                                        None
-                                    };
-                                match current_position {
-                                    Some(current_position) if current_position > position => {
-                                        position
-                                    }
-                                    Some(current_position) => current_position + 1,
-                                    None => {
-                                        lingering_reference_key = None;
-                                        position
+                        let value_still_bound = match &root {
+                            ForeachArrayRoot::Static(array_name) => {
+                                scope.is_static_bound_to_array_offset(value, array_name, &entry_key)
+                            }
+                            ForeachArrayRoot::Global(global_name) => scope
+                                .is_static_bound_to_global_array_offset(
+                                    value,
+                                    global_name,
+                                    &entry_key,
+                                ),
+                        };
+                        let next_position = match &root {
+                            ForeachArrayRoot::Static(array_name) => match scope
+                                .read_static(array_name, *span)?
+                            {
+                                Value::Array(array) => {
+                                    let current_position = array
+                                        .entries()
+                                        .iter()
+                                        .position(|entry| entry.key == entry_key);
+                                    lingering_reference_key =
+                                        if value_still_bound && current_position.is_some() {
+                                            Some(entry_key.clone())
+                                        } else {
+                                            None
+                                        };
+                                    match current_position {
+                                        Some(current_position) if current_position > position => {
+                                            position
+                                        }
+                                        Some(current_position) => current_position + 1,
+                                        None => {
+                                            lingering_reference_key = None;
+                                            position
+                                        }
                                     }
                                 }
-                            }
-                            other => {
-                                return Err(runtime_error(
-                                    *span,
-                                    RuntimeError::invalid_foreach(format!(
-                                        "can only iterate arrays in the current subset, got {}",
-                                        other.type_name()
-                                    )),
-                                ));
-                            }
+                                other => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                    ));
+                                }
+                            },
+                            ForeachArrayRoot::Global(global_name) => match scope
+                                .read_global_name(global_name)
+                            {
+                                Some(Value::Array(array)) => {
+                                    let current_position = array
+                                        .entries()
+                                        .iter()
+                                        .position(|entry| entry.key == entry_key);
+                                    lingering_reference_key =
+                                        if value_still_bound && current_position.is_some() {
+                                            Some(entry_key.clone())
+                                        } else {
+                                            None
+                                        };
+                                    match current_position {
+                                        Some(current_position) if current_position > position => {
+                                            position
+                                        }
+                                        Some(current_position) => current_position + 1,
+                                        None => {
+                                            lingering_reference_key = None;
+                                            position
+                                        }
+                                    }
+                                }
+                                Some(other) => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::invalid_foreach(format!(
+                                            "can only iterate arrays in the current subset, got {}",
+                                            other.type_name()
+                                        )),
+                                    ));
+                                }
+                                None => {
+                                    return Err(runtime_error(
+                                        *span,
+                                        RuntimeError::undefined_variable(global_name),
+                                    ));
+                                }
+                            },
                         };
                         position = next_position;
 
@@ -3245,7 +3435,7 @@ impl Interpreter {
                                 bind_foreach_lingering_reference(
                                     scope,
                                     value,
-                                    &array_name,
+                                    &root,
                                     lingering_reference_key,
                                     *span,
                                 )?;
@@ -3262,7 +3452,7 @@ impl Interpreter {
                                 bind_foreach_lingering_reference(
                                     scope,
                                     value,
-                                    &array_name,
+                                    &root,
                                     lingering_reference_key,
                                     *span,
                                 )?;
@@ -3278,7 +3468,7 @@ impl Interpreter {
                                 bind_foreach_lingering_reference(
                                     scope,
                                     value,
-                                    &array_name,
+                                    &root,
                                     lingering_reference_key,
                                     *span,
                                 )?;
@@ -3296,7 +3486,7 @@ impl Interpreter {
                     bind_foreach_lingering_reference(
                         scope,
                         value,
-                        &array_name,
+                        &root,
                         lingering_reference_key,
                         *span,
                     )?;
@@ -3941,7 +4131,9 @@ impl Interpreter {
             .active_foreach_references
             .iter()
             .rev()
-            .find(|active| active.array_name == name && active.key == key)
+            .find(|active| {
+                active.root == ForeachArrayRoot::Static(name.to_string()) && active.key == key
+            })
             .and_then(|active| {
                 scope
                     .is_static_bound_to_array_offset(&active.value_name, name, &key)
@@ -8895,6 +9087,23 @@ impl Interpreter {
         }
 
         if params.is_empty() {
+            if let Some(filter) = parse_wordpress_options_row_select_query(query) {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| wordpress_option_rows_for_filter(options, &filter))
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec!["option_name".to_string(), "option_value".to_string()],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
+
             if let Some(filter) =
                 parse_wordpress_options_id_name_value_autoload_row_select_query(query)
             {
@@ -18839,6 +19048,49 @@ impl Interpreter {
                     )),
                 }
             }
+            "filesize" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filesize()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        if !metadata.is_file() {
+                            return Ok(Value::Bool(false));
+                        }
+                        let size = i64::try_from(metadata.len()).map_err(|_| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "filesize()",
+                                    "file size exceeds the current signed 64-bit integer subset",
+                                ),
+                            )
+                        })?;
+                        Ok(Value::Int(size))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "filesize()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "realpath" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -21909,13 +22161,14 @@ fn register_interface_name(
 }
 
 fn validate_interface_parent_relationships(
+    classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interfaces: &[Rc<InterfaceDecl>],
 ) -> CompileResult<()> {
     for interface in interfaces {
         let mut path = HashSet::new();
         validate_interface_parent_relationship(interface_lookup, interface, &mut path)?;
-        validate_interface_method_inheritance(interface_lookup, interface)?;
+        validate_interface_method_inheritance(classes, interface_lookup, interface)?;
     }
     Ok(())
 }
@@ -21961,6 +22214,7 @@ fn validate_interface_parent_relationship(
 }
 
 fn validate_interface_method_inheritance(
+    classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
 ) -> CompileResult<()> {
@@ -21979,7 +22233,12 @@ fn validate_interface_method_inheritance(
     }
 
     for methods in inherited_methods.values() {
-        validate_inherited_interface_method_conflicts(interface, methods)?;
+        validate_inherited_interface_method_conflicts(
+            classes,
+            interface_lookup,
+            interface,
+            methods,
+        )?;
     }
 
     for method in &interface.methods {
@@ -21989,6 +22248,8 @@ fn validate_interface_method_inheritance(
         };
         for (parent_interface_name, parent_method) in parent_methods {
             validate_child_interface_method_compatibility(
+                classes,
+                interface_lookup,
                 interface,
                 &interface.name,
                 method,
@@ -22002,6 +22263,8 @@ fn validate_interface_method_inheritance(
 }
 
 fn validate_inherited_interface_method_conflicts(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
     methods: &[(String, &InterfaceMethodDecl)],
 ) -> CompileResult<()> {
@@ -22011,6 +22274,8 @@ fn validate_inherited_interface_method_conflicts(
                 continue;
             }
             validate_parent_interface_method_pair(
+                classes,
+                interface_lookup,
                 interface,
                 left_interface,
                 left_method,
@@ -22023,6 +22288,8 @@ fn validate_inherited_interface_method_conflicts(
 }
 
 fn validate_parent_interface_method_pair(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
     left_interface: &str,
     left_method: &InterfaceMethodDecl,
@@ -22033,6 +22300,8 @@ fn validate_parent_interface_method_pair(
     let right_required = required_param_count(&right_method.function);
     if left_required > right_required {
         return validate_child_interface_method_compatibility(
+            classes,
+            interface_lookup,
             interface,
             left_interface,
             left_method,
@@ -22042,6 +22311,8 @@ fn validate_parent_interface_method_pair(
     }
     if right_required > left_required {
         return validate_child_interface_method_compatibility(
+            classes,
+            interface_lookup,
             interface,
             right_interface,
             right_method,
@@ -22062,6 +22333,8 @@ fn validate_parent_interface_method_pair(
         match (left_type, right_type) {
             (Some(_), None) => {
                 return validate_child_interface_method_compatibility(
+                    classes,
+                    interface_lookup,
                     interface,
                     left_interface,
                     left_method,
@@ -22071,6 +22344,8 @@ fn validate_parent_interface_method_pair(
             }
             (None, Some(_)) => {
                 return validate_child_interface_method_compatibility(
+                    classes,
+                    interface_lookup,
                     interface,
                     right_interface,
                     right_method,
@@ -22078,8 +22353,17 @@ fn validate_parent_interface_method_pair(
                     left_method,
                 );
             }
-            (Some(left), Some(right)) if !left.eq_ignore_ascii_case(right) => {
+            (Some(left), Some(right))
+                if !is_compatible_parameter_type_override(
+                    classes,
+                    interface_lookup,
+                    right,
+                    left,
+                ) =>
+            {
                 return validate_child_interface_method_compatibility(
+                    classes,
+                    interface_lookup,
                     interface,
                     left_interface,
                     left_method,
@@ -22102,8 +22386,10 @@ fn validate_parent_interface_method_pair(
         .as_ref()
         .map(|decl| decl.text.as_str());
     if let (Some(left), Some(right)) = (left_return, right_return) {
-        if !left.eq_ignore_ascii_case(right) {
+        if !is_compatible_return_type_override(classes, interface_lookup, right, left) {
             return validate_child_interface_method_compatibility(
+                classes,
+                interface_lookup,
                 interface,
                 left_interface,
                 left_method,
@@ -22117,6 +22403,8 @@ fn validate_parent_interface_method_pair(
 }
 
 fn validate_child_interface_method_compatibility(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
     child_interface_name: &str,
     child_method: &InterfaceMethodDecl,
@@ -22173,7 +22461,12 @@ fn validate_child_interface_method_compatibility(
                 ));
             }
             (Some(parent_type), Some(child_type))
-                if !child_type.eq_ignore_ascii_case(parent_type) =>
+                if !is_compatible_parameter_type_override(
+                    classes,
+                    interface_lookup,
+                    parent_type,
+                    child_type,
+                ) =>
             {
                 return Err(runtime_error(
                     interface.span,
@@ -22222,7 +22515,14 @@ fn validate_child_interface_method_compatibility(
                 ),
             ),
         )),
-        (Some(parent_type), Some(child_type)) if !child_type.eq_ignore_ascii_case(parent_type) => {
+        (Some(parent_type), Some(child_type))
+            if !is_compatible_return_type_override(
+                classes,
+                interface_lookup,
+                parent_type,
+                child_type,
+            ) =>
+        {
             Err(runtime_error(
                 interface.span,
                 RuntimeError::unsupported_class_inheritance(
@@ -22463,6 +22763,7 @@ fn register_class_members(
             .map_err(|error| runtime_error(method.span, error))?;
         validate_inherited_method_signature_compatibility(
             classes,
+            interface_lookup,
             method_signatures,
             id,
             &class.name,
@@ -22519,6 +22820,7 @@ fn register_class_members(
                 .map_err(|error| runtime_error(method.span, error))?;
                 validate_inherited_method_signature_compatibility(
                     classes,
+                    interface_lookup,
                     method_signatures,
                     id,
                     &class.name,
@@ -22910,6 +23212,8 @@ fn validate_interface_method_implementation(
                 &lookup_name,
             );
             validate_interface_parameter_type_compatibility(
+                classes,
+                interface_lookup,
                 &class.name,
                 &method_interface_name,
                 method,
@@ -22918,6 +23222,8 @@ fn validate_interface_method_implementation(
                 class_signature.as_ref(),
             )?;
             validate_interface_return_type_compatibility(
+                classes,
+                interface_lookup,
                 &class.name,
                 &method_interface_name,
                 method,
@@ -23131,6 +23437,8 @@ fn validate_core_interface_required_methods(
 }
 
 fn validate_interface_parameter_type_compatibility(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
     interface_name: &str,
     interface_method: &InterfaceMethodDecl,
@@ -23169,7 +23477,12 @@ fn validate_interface_parameter_type_compatibility(
                 ));
             }
             (Some(interface_type), Some(class_type))
-                if !class_type.eq_ignore_ascii_case(interface_type) =>
+                if !is_compatible_parameter_type_override(
+                    classes,
+                    interface_lookup,
+                    interface_type,
+                    class_type,
+                ) =>
             {
                 return Err(RuntimeError::unsupported_class_inheritance(
                     class_name,
@@ -23193,6 +23506,8 @@ fn validate_interface_parameter_type_compatibility(
 }
 
 fn validate_interface_return_type_compatibility(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
     interface_name: &str,
     interface_method: &InterfaceMethodDecl,
@@ -23224,7 +23539,12 @@ fn validate_interface_return_type_compatibility(
             ),
         )),
         (Some(interface_type), Some(class_type))
-            if !class_type.eq_ignore_ascii_case(interface_type) =>
+            if !is_compatible_return_type_override(
+                classes,
+                interface_lookup,
+                interface_type,
+                class_type,
+            ) =>
         {
             Err(RuntimeError::unsupported_class_inheritance(
                 class_name,
@@ -23627,6 +23947,7 @@ fn method_static_name(is_static: bool) -> &'static str {
 
 fn validate_inherited_method_signature_compatibility(
     classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class_id: ClassId,
     class_name: &str,
@@ -23700,7 +24021,12 @@ fn validate_inherited_method_signature_compatibility(
                         ));
                     }
                     (Some(parent_type), Some(child_type))
-                        if !child_type.eq_ignore_ascii_case(parent_type) =>
+                        if !is_compatible_parameter_type_override(
+                            classes,
+                            interface_lookup,
+                            parent_type,
+                            child_type,
+                        ) =>
                     {
                         return Err(RuntimeError::unsupported_class_inheritance(
                             class_name,
@@ -23742,7 +24068,12 @@ fn validate_inherited_method_signature_compatibility(
                     ));
                 }
                 (Some(parent_type), Some(child_type))
-                    if !child_type.eq_ignore_ascii_case(parent_type) =>
+                    if !is_compatible_return_type_override(
+                        classes,
+                        interface_lookup,
+                        parent_type,
+                        child_type,
+                    ) =>
                 {
                     return Err(RuntimeError::unsupported_class_inheritance(
                         class_name,
@@ -23767,6 +24098,112 @@ fn validate_inherited_method_signature_compatibility(
     }
 
     Ok(())
+}
+
+fn is_compatible_parameter_type_override(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    inherited_type: &str,
+    override_type: &str,
+) -> bool {
+    type_name_is_subtype_of(classes, interface_lookup, inherited_type, override_type)
+}
+
+fn is_compatible_return_type_override(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    inherited_type: &str,
+    override_type: &str,
+) -> bool {
+    type_name_is_subtype_of(classes, interface_lookup, override_type, inherited_type)
+}
+
+fn type_name_is_subtype_of(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    if subtype.eq_ignore_ascii_case(supertype) {
+        return true;
+    }
+
+    let Some(subtype) = simple_class_like_signature_type(subtype) else {
+        return false;
+    };
+    let Some(supertype) = simple_class_like_signature_type(supertype) else {
+        return false;
+    };
+
+    let subtype_class_id = classes.lookup_class_id(subtype);
+    let supertype_class_id = classes.lookup_class_id(supertype);
+    if let (Some(subtype_class_id), Some(supertype_class_id)) =
+        (subtype_class_id, supertype_class_id)
+    {
+        return classes.is_subclass_of(subtype_class_id, supertype_class_id);
+    }
+
+    let supertype_interface_key = supertype.to_ascii_lowercase();
+    if let Some(subtype_class_id) = subtype_class_id {
+        return interface_lookup.contains_key(&supertype_interface_key)
+            && classes.implements_interface(subtype_class_id, supertype);
+    }
+
+    if interface_lookup.contains_key(&subtype.to_ascii_lowercase())
+        && interface_lookup.contains_key(&supertype_interface_key)
+    {
+        return interface_extends_interface(interface_lookup, subtype, supertype);
+    }
+
+    false
+}
+
+fn simple_class_like_signature_type(type_name: &str) -> Option<&str> {
+    if type_name.starts_with('?')
+        || type_name.contains('|')
+        || type_name.contains('&')
+        || matches!(
+            type_name.to_ascii_lowercase().as_str(),
+            "array"
+                | "bool"
+                | "boolean"
+                | "callable"
+                | "false"
+                | "float"
+                | "double"
+                | "int"
+                | "integer"
+                | "iterable"
+                | "mixed"
+                | "never"
+                | "null"
+                | "object"
+                | "parent"
+                | "self"
+                | "static"
+                | "string"
+                | "true"
+                | "void"
+        )
+    {
+        return None;
+    }
+
+    let stripped = type_name.strip_prefix('\\').unwrap_or(type_name);
+    (!stripped.is_empty()).then_some(stripped)
+}
+
+fn interface_extends_interface(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    let Some(interface) = interface_lookup.get(&subtype.to_ascii_lowercase()) else {
+        return false;
+    };
+    let mut parent_keys = HashSet::new();
+    collect_parent_interface_keys(interface_lookup, interface, &mut parent_keys);
+    parent_keys.contains(&supertype.to_ascii_lowercase())
 }
 
 fn validate_inherited_property_compatibility(
@@ -24157,6 +24594,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_init"
             | "file_exists"
             | "file_get_contents"
+            | "filesize"
             | "realpath"
             | "getcwd"
             | "is_dir"
@@ -24925,12 +25363,15 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_name, option_value FROM wp_options")
-        .or_else(|| query.strip_prefix("SELECT option_name, option_value FROM `wp_options`"))?;
+        .or_else(|| query.strip_prefix("SELECT option_name, option_value FROM `wp_options`"))
+        .or_else(|| query.strip_prefix("SELECT `option_name`, `option_value` FROM `wp_options`"))?;
     let rest = rest.trim_start();
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )" {
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
         return Some(WordPressOptionsRowFilter::Autoload);
     }
     let names = rest

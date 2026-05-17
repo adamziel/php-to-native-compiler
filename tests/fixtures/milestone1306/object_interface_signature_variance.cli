@@ -1,0 +1,10 @@
+run object_interface_signature_variance.php
+--- stdout begin ---
+inherited:registered
+interface:registered
+child-interface:registered
+interface-parent:registered
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

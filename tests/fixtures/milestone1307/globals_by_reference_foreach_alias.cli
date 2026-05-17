@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1307/globals_by_reference_foreach_alias.php

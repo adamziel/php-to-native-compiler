@@ -233,16 +233,19 @@ subset. Interface registration also checks child-interface redeclarations of
 inherited methods and simple multi-parent method conflicts with the current
 bounded metadata rules: a redeclaration may not require more parameters than
 the inherited method, may not add a parameter type where the parent method is
-untyped, must keep matching parameter type text when both sides are typed, and
-must keep typed parent return declarations. Public interface constants declared
+untyped, must keep compatible parameter types when both sides are typed, and
+must keep compatible typed parent return declarations. Compatible typed
+relationships include exact text case-insensitively plus simple declared
+class/interface contravariant parameter and covariant return relationships when
+both type names resolve through current metadata. Public interface constants declared
 as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and
 implementing-class class-constant lookup. Missing or cyclic parent interface
 inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
-declarations, full variance/signature enforcement, class/interface type
-subtyping, built-in/internal interface inheritance catalogs, exact PHP
+declarations, full variance/signature enforcement, namespace-aware type-name
+resolution, union/intersection canonicalization, built-in/internal interface inheritance catalogs, exact PHP
 diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
@@ -588,11 +591,15 @@ route. Temporary array-producing expressions such as array literals and direct
 non-reference-returning function calls use the same direct-slot loop machinery
 after the evaluated array is stored in an internal hidden array slot; this
 preserves loop-body and post-loop value-variable aliasing to the temporary
-without claiming mutation of a source lvalue. This intentionally avoids
-claiming full mutation-during-iteration fidelity, broad array
-reordering/replacement semantics, nested lvalue iterable support such as
-`$items[0]`, reference-returning call iterables, object/`Traversable`
-iteration, destructuring targets,
+without claiming mutation of a source lvalue. Direct string-keyed
+`$GLOBALS["name"]` roots use the same alias metadata with a global-array root,
+so the loop value can mutate and linger on slots under the real root symbol
+table from top-level or function scope. This intentionally avoids claiming
+full mutation-during-iteration fidelity, broad array reordering/replacement
+semantics, nested lvalue iterable support such as `$items[0]` or
+`$GLOBALS["name"]["child"]`, non-string-keyed `$GLOBALS` roots,
+reference-returning call iterables, object/`Traversable` iteration,
+destructuring targets,
 array/object/`ArrayAccess` offset loop variables, nested-offset loop values,
 full reference containers, or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
@@ -1635,6 +1642,16 @@ filesystem lowering. Direct native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.
+`filesize()` is interpreter-only for one string local path in the current
+runtime. It uses the same process-path-then-repo-root relative path policy as
+the other local metadata builtins, returns the host regular-file byte length
+as an integer, and returns `false` for missing paths or non-file paths such as
+directories. It rejects stream wrappers instead of modeling wrapper metadata.
+Include-path lookup, PHP stat-cache semantics, `open_basedir`, exact warnings,
+non-UTF-8 paths, oversized file handling beyond the current signed 64-bit
+integer subset, and native filesystem lowering remain out of scope. Native
+function-table introspection recognizes the name, while direct native calls
+reject under the function-call boundary.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
@@ -1701,6 +1718,11 @@ function-table introspection still recognizes `file_get_contents`, but native
 call execution still lacks stream-wrapper handling, local file I/O, binary
 string byte fidelity, warning plus `false` recovery, stream contexts,
 offsets/lengths, include-path lookup, `open_basedir` and stat-cache behavior,
+references/copy-on-write, and exact native diagnostics.
+Direct `filesize(...)` calls reject through the native function-call boundary.
+Native function-table introspection still recognizes `filesize`, but native
+call execution still lacks filesystem metadata, warning plus `false` recovery,
+include_path/open_basedir/stat-cache policy, stream-wrapper handling,
 references/copy-on-write, and exact native diagnostics.
 Direct `realpath(...)` calls reject through a dedicated native
 filesystem-canonicalization boundary before argument lowering or backend

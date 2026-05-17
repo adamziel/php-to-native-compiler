@@ -182,7 +182,9 @@ incorrect native code.
   public methods with the required names at class registration time, to avoid
   requiring more parameters than those interface methods, to pass the current
   bounded interface parameter-type metadata check, and to pass the current
-  bounded interface return-type metadata check; child interfaces that
+  bounded interface return-type metadata check, including simple declared
+  class/interface contravariant parameter and covariant return relationships
+  when both type names resolve through current metadata; child interfaces that
   redeclare inherited methods and simple multi-parent method conflicts are
   checked against the same bounded required-parameter, parameter-type, and
   return-type metadata rules; class `implements` clauses
@@ -195,7 +197,9 @@ incorrect native code.
   inheritance reports stable runtime boundaries;
   typed/static/non-public/abstract/final or
   multi-constant interface declarations, full variance/signature compatibility
-  beyond the current bounded checks, class/interface type subtyping,
+  beyond the current bounded checks, namespace-aware type-name resolution,
+  union/intersection canonicalization, class/interface type subtyping beyond
+  declared simple names,
   broad built-in/internal interface
   inheritance catalogs, exact PHP diagnostics, and native lowering remain
   unsupported; the current internal-interface enforcement slice is limited to concrete
@@ -218,8 +222,10 @@ incorrect native code.
   runtime boundary, final class inheritance, final method overrides, method
   visibility reductions, and inherited method static/non-static compatibility
   violations rejected as runtime boundaries, plus inherited non-constructor
-  method required-parameter, parameter type-text, and return type-text
-  incompatibilities rejected as runtime boundaries, concrete
+  method required-parameter and type compatibility incompatibilities rejected
+  as runtime boundaries, including simple declared class/interface
+  contravariant parameter and covariant return relationships when both type
+  names resolve through current metadata, concrete
   classes with unimplemented abstract methods rejected as runtime boundaries,
   and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
@@ -386,8 +392,10 @@ receiver callback object-property array arguments, using
 broader aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
-the loop. It is not exact PHP aliasing: lingering loop references, mutation
-ordering, non-direct iterables, array slot cells, and copy-on-write remain
+the loop. It also supports direct string-keyed `$GLOBALS["bag"]` roots, with
+loop-body mutation and post-loop lingering aliases to root global array slots.
+It is not exact PHP aliasing: broad mutation ordering, nested lvalue iterables,
+array slot cells, full reference containers, and copy-on-write remain
 unsupported.
 
 ### Native Path
@@ -420,6 +428,7 @@ direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
+direct `filesize(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
 direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`/
