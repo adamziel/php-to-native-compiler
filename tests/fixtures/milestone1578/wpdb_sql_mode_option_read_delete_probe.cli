@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1578/wpdb_sql_mode_option_read_delete_probe.php

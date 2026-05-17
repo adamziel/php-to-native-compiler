@@ -56,8 +56,13 @@
   method, `self::` static method, `parent::` static method, `static::`
   late-static method, and dynamic static receiver reference-return calls is
   executable for the same direct-variable return shape as a by-value read of
-  the returned cell, so by-reference argument mutations are still written back
-  when the caller ignores the returned reference. Non-static
+  the returned cell. It also executes the bounded returned child-slot shape
+  `return $param[$key];` and explicit nested suffixes such as
+  `return $param[$key][$subkey];` as a by-value read after covered
+  by-reference array-offset argument writeback when `$param` was supplied by a
+  direct variable parent array, an alias-backed direct parent, or one of the
+  covered parent array/property-slot roots. By-reference argument mutations are
+  still written back when the caller ignores the returned reference. Non-static
   `self::`/`parent::`/`static::` sources, non-static dynamic static receiver
   sources, missing-parent parent calls, `static::` sources outside
   class/method context, and non-object/non-string dynamic receivers remain
@@ -104,8 +109,8 @@
   `ArrayAccess` argument roots outside the documented direct `offsetGet()`
   reference-source bridge, callback argument-array parents
   beyond the documented `call_user_func_array()` slices, arbitrary return
-  expressions, real PHP reference containers, broader copy-on-write, and
-  native lowering remain unsupported.
+  expressions, mixed nested `ArrayAccess` chains, real PHP reference
+  containers, broader copy-on-write, and native lowering remain unsupported.
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
@@ -1389,7 +1394,7 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `clearstatcache`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
+  `clearstatcache`, `realpath`, `realpath_cache_get`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -2033,7 +2038,8 @@
   the predicate as prefix-only. Prepared expired-timeout predicates also accept
   exact single-character `ESCAPE '<char>'` clauses after `LIKE ?` for the
   current plain/backticked table and column spellings. This does not add
-  SQL-mode-aware deletes, arbitrary predicates, or host database execution.
+  SQL-mode behavior beyond the bounded direct option-name literal and schema
+  metadata slices, arbitrary predicates, or host database execution.
   The same state island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
@@ -2325,6 +2331,11 @@
   distinct recorded option name in the single-quoted list and reporting the
   number of removed rows, including through
   `mysqli_execute_query($handle, $query)` with no params, and accepts exact
+  direct option-name equality reads and equality/`IN` deletes whose
+  single-quoted option-name literals honor the placeholder handle's bounded
+  `NO_BACKSLASH_ESCAPES` SQL-mode branch, disabling implicit backslash escapes
+  after `SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'` while preserving the
+  default MySQL-style backslash escapes otherwise. It accepts exact
   prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements
   through `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query,
   array(...))` when all placeholders are string option names. Exact one-shot
@@ -2475,7 +2486,8 @@
   through `mysqli_prepare()`/`mysqli_stmt_execute()` for the documented
   `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW
   KEYS` equality/`LIKE` filter shapes. This state island is not broad SQL
-  parsing, SQL-mode-aware escaping beyond that bounded schema metadata slice,
+  parsing, SQL-mode-aware escaping beyond the bounded schema metadata and
+  direct option-name literal slices,
   character-set/collation fidelity, arbitrary column alteration beyond the
   exact direct shapes listed above, expression indexes, index opclass/parser
   metadata beyond the bounded `ASC`/`DESC` part ordering slice, exact MySQL
@@ -2544,7 +2556,7 @@
   `ASC`, and return rows in the existing deterministic ascending option-name
   order. This prepared path remains bounded to the documented option-row
   projections and does not support SQL-mode-aware
-  `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists, `DESC`
+  `NO_BACKSLASH_ESCAPES` prepared option pattern reads, prepared pattern lists, `DESC`
   ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
   database execution. The
   exact prepared
@@ -2913,27 +2925,37 @@
   The current request-local stat cache stores successful host metadata reads
   for `filesize()` and `filemtime()` by resolved local path; no-argument
   `clearstatcache()` clears that bounded cache, and the filename form removes
-  the matching local-path entry. This is a small WordPress filesystem
-  compatibility slice, not full PHP stat-cache support: cached metadata for
+  the matching local-path entry. When `clear_realpath_cache` is `true`, the
+  bounded request-local realpath cache is cleared. This is a small WordPress
+  filesystem compatibility slice, not full PHP stat-cache support: cached metadata for
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
-  entries, broader scalar coercions, exact
+  entries from filesystem operations other than successful `realpath()`,
+  per-filename realpath-cache invalidation, broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
   behavior, and native lowering remain unsupported.
   `realpath($path)` accepts exactly one string local path, rejects
   stream-wrapper paths, resolves existing paths through the host filesystem,
   and returns the resolved path as a UTF-8 string. Missing or otherwise
-  unresolved local paths return `false`. Relative paths share the same current
-  process-path-then-repository-root policy as `file_exists`. This is a bounded
-  local path slice, not full PHP filesystem support: symlink policy can differ
-  from PHP/host combinations, exact warning plus `false` fidelity, include-path
-  lookup, `open_basedir`, stream wrappers, non-UTF-8 paths, stat-cache
-  behavior, TOCTOU semantics, host filesystem coupling, partial-output
-  behavior, and native lowering remain unsupported. Native function-table
-  introspection can see the known builtin name, while direct native
-  `realpath(...)` calls stop at a dedicated filesystem-canonicalization
-  codegen boundary before argument lowering or backend selection.
+  unresolved local paths return `false`. Successful resolutions populate a
+  bounded request-local `realpath_cache_get()` entry keyed by the resolved path
+  with `key`, `is_dir`, `realpath`, and `expires` fields; `clearstatcache(false)`
+  leaves those entries intact, while `clearstatcache(true)` clears them.
+  Relative paths share the same current process-path-then-repository-root
+  policy as `file_exists`. This is a bounded local path slice, not full PHP
+  filesystem support: symlink policy can differ from PHP/host combinations,
+  exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
+  stream wrappers, non-UTF-8 paths, realpath cache entries from other
+  filesystem operations, exact realpath-cache `key` hash values and expiration
+  policy, per-filename realpath-cache invalidation, `realpath_cache_size()`,
+  TOCTOU semantics, host filesystem coupling, partial-output behavior, and
+  native lowering remain unsupported. Native function-table introspection can
+  see the known builtin names, while direct native `realpath(...)` calls stop
+  at a dedicated
+  filesystem-canonicalization codegen boundary before argument lowering or
+  backend selection and direct `realpath_cache_get()` calls remain rejected by
+  the generic native function-call boundary.
   `getcwd()` accepts no arguments and returns the process current working
   directory as a UTF-8 string. This is a bounded CLI/request-state filesystem
   slice: directory changes through `chdir()`, failure returning `false`,
@@ -4516,8 +4538,11 @@
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
-  helpers, owned byte-buffer helpers, and an opaque copied PHP string-handle
-  helper surface. This is still a dependency sketch: normal
+  helpers, owned byte-buffer helpers, an opaque copied PHP string-handle
+  helper surface, and a bounded valid-UTF-8 string-handle-to-runtime-value
+  bridge. Null string handles and non-UTF-8 payloads return null value handles
+  until diagnostics handles and binary PHP string values exist. This is still
+  a dependency sketch: normal
   `phpc compile --emit-ir` output does not call those helpers, and linked
   native execution, production string helper lowering, string interning,
   arrays, objects, resources, references/copy-on-write, stack frames,
@@ -4939,7 +4964,7 @@
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `realpath`, `realpath_cache_get`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_cache_limiter`,
   `session_cache_expire`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -6248,9 +6273,15 @@
   the directly preceding `/** ... */` docblock captured by the lexer, or
   `false` when none was captured. Function return type objects use the same
   simple named, bounded union, and pure intersection reflection type objects
-  as the method path. `ReflectionFunction::invoke(...$args)` and
-  `ReflectionFunction::invokeArgs($args)` execute declared user functions over
-  the current by-value argument subset. Internal functions, closure targets,
+  as the method path. The bounded internal target slice also accepts
+  `new ReflectionFunction("strlen")` and
+  `new ReflectionFunction("strtolower")`, exposes their name, false
+  file/start/end/doc-comment metadata, one required string parameter, return
+  type, and by-reference-return predicate, and executes them through
+  `invoke()`/`invokeArgs()`. `ReflectionFunction::invoke(...$args)` and
+  `ReflectionFunction::invokeArgs($args)` execute declared user functions and
+  those two internal string builtins over the current by-value argument
+  subset. Other internal functions, closure targets,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection
@@ -7962,10 +7993,11 @@
   source metadata, modifier, predicate, parameter-list, and return-type
   methods documented above, plus public non-static user-class by-value
   invocation through `invoke()` and `invokeArgs()`. Interface and trait method source-file paths
-  remain unsupported. `ReflectionFunction` currently supports only declared user-function
-  metadata named by string, with the name, file/start/end/doc-comment,
-  parameter-list, return-type, and by-reference-return methods documented
-  above, plus by-value invocation through `invoke()` and `invokeArgs()`.
+  remain unsupported. `ReflectionFunction` currently supports declared
+  user-function metadata named by string, plus bounded internal
+  `strlen`/`strtolower` metadata and by-value invocation. The supported
+  metadata methods are the name, file/start/end/doc-comment, parameter-list,
+  return-type, and by-reference-return methods documented above.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice and declared user-function parameters named by string,
   scalar/array default expressions accepted by the parser,
@@ -7989,10 +8021,12 @@
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
   exact parameter/property docblock association across attributes and unusual trivia,
-  extension/internal function/method/property/parameter metadata, parameter and property
-  attributes, default constant-name introspection, closure
+  extension/internal function/method/property/parameter metadata beyond
+  bounded `strlen`/`strtolower` `ReflectionFunction` targets, parameter and
+  property attributes, default constant-name introspection, closure
   `ReflectionFunction`/`ReflectionParameter` targets, reflection invocation beyond declared
-  user functions and user-class methods, typed declaration
+  user functions, user-class methods, and the bounded `strlen`/`strtolower`
+  internal function slice, typed declaration
   enforcement during reflection invocation, `invokeArgs()` named-argument
   semantics, non-public or dynamic `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, exact

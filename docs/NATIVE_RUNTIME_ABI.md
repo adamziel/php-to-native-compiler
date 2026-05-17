@@ -36,6 +36,11 @@ pub struct NativeByteBuffer {
 pub struct NativeStringHandle {
     ptr: *mut NativeString,
 }
+
+#[repr(C)]
+pub struct NativeValueHandle {
+    ptr: *mut Value,
+}
 ```
 
 The exported constructor symbols are:
@@ -57,6 +62,9 @@ The first scalar output helper symbols are:
 - `phpc_native_string_bytes(NativeStringHandle) -> *const u8`
 - `phpc_native_string_clone_bytes(NativeStringHandle) -> NativeByteBuffer`
 - `phpc_native_string_free(NativeStringHandle)`
+- `phpc_native_value_from_string(NativeStringHandle) -> NativeValueHandle`
+- `phpc_native_value_echo_bytes(NativeValueHandle) -> NativeByteBuffer`
+- `phpc_native_value_free(NativeValueHandle)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
@@ -85,8 +93,15 @@ helper returns the byte length, the bytes helper returns a borrowed pointer that
 is valid only until the handle is freed, and the clone helper returns an owned
 `NativeByteBuffer` copy for generated-code handoff or probes. This is a string
 handle ABI seed only: it does not intern strings, expose mutable string storage,
-convert handles into interpreter `Value::String`, or change normal generated
-string/echo lowering.
+or change normal generated string/echo lowering.
+
+`phpc_native_value_from_string` clones a valid UTF-8 native string handle into
+an opaque runtime-owned `Value::String` handle. The source string handle remains
+owned by the caller and must still be freed separately. Null string handles and
+non-UTF-8 byte payloads return a null value handle until diagnostics handles and
+binary PHP string values have native ABI coverage. `phpc_native_value_echo_bytes`
+returns runtime-owned echo bytes for the current value handle, and
+`phpc_native_value_free` releases the value handle.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -143,6 +158,15 @@ both the cloned buffer and the handle. The milestone also pins a CLI
 `--emit-ir` fixture proving normal generated string output still uses the
 existing direct `printf` path and does not call the new string helpers.
 
+Milestone 1579 adds the opaque runtime value handle declaration
+`%phpc.NativeValueHandle = type { ptr }`, a bounded
+`phpc_native_value_from_string` helper that clones valid UTF-8 string handles
+into runtime `Value::String` handles, value echo-byte cloning, and value-handle
+freeing. The deterministic probe includes a string-handle-to-value echo path,
+while the Milestone 1579 CLI fixture pins that normal generated string output
+still uses the existing direct `printf` lowering path and does not call the
+value helpers.
+
 This is not production lowering. Normal `phpc compile --emit-ir` output remains
 unchanged and still does not link or execute runtime helper calls. The snapshot
 uses the selected target's `usize`/pointer-width shape; a real linked native
@@ -158,6 +182,7 @@ The ABI slice is covered by runtime unit tests:
 cargo test -p php_runtime native_scalar_abi -- --test-threads=1
 cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1
 cargo test -p php_runtime native_string_handle -- --test-threads=1
+cargo test -p php_runtime native_string -- --test-threads=1
 cargo test -p phpc --test native_runtime_abi -- --test-threads=1
 ```
 
@@ -174,19 +199,25 @@ The tests pin:
 - opaque runtime-owned string handles copied from caller-provided bytes,
   including embedded NUL bytes, empty-string handles, borrowed byte pointers,
   cloned owned-byte buffers, null non-empty inputs, and handle release.
+- opaque runtime-owned value handles converted from valid UTF-8 string handles,
+  including embedded NUL bytes, independent source-handle lifetime, value
+  echo-byte cloning, null string handles, non-UTF-8 rejection, and value-handle
+  release.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
-  byte-buffer, and string-handle helper declarations plus the probe calls.
+  byte-buffer, string-handle, and value-handle helper declarations plus the
+  probe calls.
 
 ## Explicit Non-Support
 
 This ABI does not yet provide:
 
-- string interning, mutable string storage, handle-to-`Value::String`
-  conversion, or production lowering of PHP strings through runtime helpers
-  beyond the scalar echo owned-byte helper, copied raw-byte buffer helper, and
-  opaque copied string-handle helper;
+- string interning, mutable string storage, binary PHP string value conversion,
+  diagnostics for failed handle conversion, or production lowering of PHP
+  strings through runtime helpers beyond the scalar echo owned-byte helper,
+  copied raw-byte buffer helper, opaque copied string-handle helper, and valid
+  UTF-8 string-handle-to-value helper;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR;
 - symbol tables, stack frames, call lookup, or diagnostics;

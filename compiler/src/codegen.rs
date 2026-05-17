@@ -403,6 +403,7 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
         &format!("%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}"),
         "%phpc.NativeStringHandle = type { ptr }",
+        "%phpc.NativeValueHandle = type { ptr }",
         "@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c\"heap\"",
         "@phpc.probe.string = private unnamed_addr constant [7 x i8] c\"php\\00abi\"",
         "",
@@ -422,6 +423,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)",
         "declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)",
         "declare void @phpc_native_string_free(%phpc.NativeStringHandle)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)",
+        "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)",
+        "declare void @phpc_native_value_free(%phpc.NativeValueHandle)",
         "",
         &format!("define {usize_type} @phpc_probe_scalar_echo_len() {{"),
         "entry:",
@@ -470,6 +474,23 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "  %raw = call ptr @phpc_native_string_bytes(%phpc.NativeStringHandle %string)",
         "  %clone = call %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle %string)",
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_string_handle_to_value_echo() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 7)"
+        ),
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)",
+        "  %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)",
+        "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
         "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
         &format!("  ret {usize_type} %len"),
         "}",
@@ -7120,6 +7141,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "filesize"
             | "filemtime"
             | "realpath"
+            | "realpath_cache_get"
             | "getcwd"
             | "is_dir"
             | "is_file"

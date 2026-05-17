@@ -328,6 +328,11 @@ successful zero-row deletes. A later exact
 recorded option name in the single-quoted list, reports the number of removed
 rows through `mysqli_affected_rows($handle)`, skips missing names, and is also
 accepted by `mysqli_execute_query($handle, $query)` with no params. Exact
+direct option-name equality reads and equality/`IN` deletes parse
+single-quoted option-name literals through the placeholder handle's bounded
+SQL mode: after `SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'`, implicit
+backslash escapes are disabled for those literals, while the default mode
+keeps the current MySQL-style backslash escapes. Exact
 prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements,
 including the current backticked table/column spelling, are accepted through
 `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query, array(...))`
@@ -358,8 +363,9 @@ expired-timeout predicates also accept an exact single-character
 `ESCAPE '<char>'` clause after `LIKE ?` for the current plain/backticked
 table and column spellings. This is not broad
 `DELETE` SQL, arbitrary multi-table deletes, subquery support, arbitrary
-predicates, SQL-mode-aware deletes, non-string option-name params, real
-index/lock behavior, or host database execution. A later exact
+predicates, SQL-mode behavior beyond the bounded direct option-name literal
+and schema metadata slices, non-string option-name params, real index/lock
+behavior, or host database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
@@ -502,10 +508,10 @@ These prepared LIKE scans also accept an exact single-character
 or ``ORDER BY `option_name` `` suffix, with optional `ASC`, and keep the
 existing deterministic ascending option-name row order. This prepared path is
 still bounded to the documented option-row projections and does not support
-SQL-mode-aware `NO_BACKSLASH_ESCAPES` option reads, prepared pattern lists,
-`DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
-database execution, except for the separate expired-timeout predicate slice
-documented above. The exact
+SQL-mode-aware `NO_BACKSLASH_ESCAPES` prepared option pattern reads, prepared
+pattern lists, `DESC` ordering, arbitrary `ORDER BY` expressions, collation
+fidelity, or host database execution, except for the separate
+expired-timeout predicate slice documented above. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

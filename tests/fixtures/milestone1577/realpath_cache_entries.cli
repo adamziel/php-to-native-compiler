@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1577/realpath_cache_entries.php
+exit: 0
+stdout:
+resolved|cached|same|file|expires-int|kept|cleared--- stdout end ---
+stderr:
+--- stderr end ---

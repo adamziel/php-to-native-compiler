@@ -150,7 +150,9 @@ with `restore_error_handler()` restoring the previous bounded handler.
 `closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
 bounded request-local successful metadata cache used by `filesize()` and
-`filemtime()`, either globally or for one local path. Bounded
+`filemtime()`, either globally or for one local path. Successful `realpath()`
+calls populate bounded request-local `realpath_cache_get()` entries, and
+`clearstatcache(true)` clears those entries. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -160,7 +162,7 @@ filters, context option effects, context param effects beyond option merging,
 broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
-permissions/locking, actual stat-cache/realpath-cache state, closure shutdown callback execution,
+permissions/locking, broader stat-cache/realpath-cache state, closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
 integration beyond that `file_get_contents()` recovery stack slice, temp-file spillover,
 and native stream resources remain unsupported. Native lowering
@@ -326,7 +328,9 @@ incorrect native code.
   plus bounded direct option-name `LIKE` result scans/deletes with `%`, `_`,
   backslash escapes, and single-character `ESCAPE` clauses, bounded prepared
   transient-shaped option-name prefix result scans with single-character
-  `ESCAPE` clauses, and prepared LIKE deletes, including exact
+  `ESCAPE` clauses, SQL-mode-aware direct option-name equality reads and
+  equality/`IN` deletes for the bounded `NO_BACKSLASH_ESCAPES` branch, and
+  prepared LIKE deletes, including exact
   `ORDER BY option_name` suffixes on those scans and a bounded
   expired-transient-timeout
   `option_name LIKE ... AND option_value < timestamp` option-name scan,
@@ -486,8 +490,9 @@ incorrect native code.
   `hasMethod($name)`, `getMethod($name)`, `getMethods([$filter])`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
-  `ReflectionFunction` metadata objects for declared user functions with
-  name, file/start/end/doc-comment, parameter-list, return-type, and
+  `ReflectionFunction` metadata objects for declared user functions, plus a
+  bounded internal `strlen`/`strtolower` slice, with name,
+  file/start/end/doc-comment, parameter-list, return-type, and
   by-reference-return inspection plus by-value `invoke()`/`invokeArgs()`,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
@@ -627,7 +632,7 @@ bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionPar
 and trait method source-file persistence, exact `ReflectionClass::getMethod()`
 and `getMethods()` exception objects/text and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
-method slice, non-public or dynamic
+method and bounded `strlen`/`strtolower` internal function slices, non-public or dynamic
 `ReflectionProperty` value mutation, adapted recursive trait metadata edge
 cases, and
 direct/property-held `ArrayAccess` offsets and
@@ -658,15 +663,18 @@ bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
 `return $param[$key]` and `return $param[$key][$subkey]` child-slot shapes
 when `$param` was supplied by a direct variable parent array or a covered
-parent array/property slot. Normal by-value invocation of direct free-function
+parent array/property slot. Normal by-value invocation of direct free-function,
 direct visible object-method, direct named static method, `self::`,
 `parent::`, `static::`, and dynamic static receiver reference-return calls can
-execute the same direct-variable return shape and write back covered
-by-reference array-offset arguments. Direct named static method and dynamic
-static receiver reference-return calls also use the bounded magic-property
-array-offset bridge when visible public `__get()` returns a direct variable by
-reference. Inaccessible declared-property magic fallback and general
-magic-property reference containers remain unsupported.
+execute the same direct-variable return shape and the same bounded
+`return $param[$key]` / `return $param[$key][$subkey]` child-slot shape as a
+by-value read after covered by-reference array-offset argument writeback.
+Direct named static method and dynamic static receiver reference-return calls
+also use the bounded magic-property array-offset bridge when visible public
+`__get()` returns a direct variable by reference. Inaccessible
+declared-property magic fallback, arbitrary reference-return expressions,
+mixed nested `ArrayAccess` chains, and general magic-property reference
+containers remain unsupported.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including
@@ -825,10 +833,11 @@ The current native path is focused on straight-line scalar lowering:
   selected constant-existence checks
 
 The native runtime ABI has an early probe-only helper surface for scalar echo
-conversion, owned byte buffers, and opaque copied PHP string handles. Normal
-generated LLVM for strings still uses the existing direct static-string
-`printf` path; linked native execution and production runtime string-helper
-lowering are not implemented.
+conversion, owned byte buffers, opaque copied PHP string handles, and a bounded
+valid-UTF-8 string-handle-to-runtime-value bridge. Normal generated LLVM for
+strings still uses the existing direct static-string `printf` path; linked
+native execution, binary PHP string value handles, diagnostics handles, and
+production runtime string-helper lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

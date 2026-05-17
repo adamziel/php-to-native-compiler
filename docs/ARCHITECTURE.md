@@ -187,13 +187,14 @@ object-method, named-static-method, method-context `self::`/`parent::`/
 array-offset writeback/alias result path when a reached by-reference parameter
 is supplied by a direct array-offset or visible named object-property
 array-offset argument and the function or method returns that parameter
-directly. The same
-assignment-only path can bind a returned direct array-offset expression such
-as `return $param[$key];` or `return $param[$key][$subkey];` when `$param` is
-one of those copied-in covered parent array-slot arguments or a direct caller
-variable bound through a by-reference parameter. For copied-in slots, after
-the local parent array is written back, the returned key suffix is appended to
-the caller alias group. For direct caller variables, the returned explicit key
+directly. The same path can bind a returned direct array-offset expression such
+as `return $param[$key];` or `return $param[$key][$subkey];` for
+statement-form reference assignment, and can read that returned child slot by
+value for normal reference-return invocation, when `$param` is one of those
+copied-in covered parent array-slot arguments or a direct caller variable
+bound through a by-reference parameter. For copied-in slots, after the local
+parent array is written back, the returned key suffix is appended to the
+caller alias group. For direct caller variables, the returned explicit key
 suffix is mapped to that caller variable's child slot. If the direct caller
 variable is itself backed by the bounded array-offset alias metadata, the
 callee parameter now receives the alias group instead of looking for a normal
@@ -892,14 +893,16 @@ full reference containers, or PHP copy-on-write.
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
 `null`, booleans, integers, and floats, plus exported constructor symbols in
-`php_runtime`. It also has probe-only owned byte-buffer helpers and an opaque
-copied PHP string-handle helper surface. This is intentionally only an ABI seed
+`php_runtime`. It also has probe-only owned byte-buffer helpers, an opaque
+copied PHP string-handle helper surface, and a bounded valid-UTF-8
+string-handle-to-runtime-value bridge. This is intentionally only an ABI seed
 for future generated-code runtime helper calls. The compiler-side helper probe
 renders `usize`-shaped helper signatures from an explicit pointer-width target
 so the ABI sketch can distinguish 32-bit and 64-bit targets. Linked native
 execution, runtime helper calls from normal generated IR, production string
-helper lowering, string interning, arrays, objects, references,
-copy-on-write, stack frames, and diagnostics are still not implemented.
+helper lowering, string interning, binary PHP string value handles, arrays,
+objects, references, copy-on-write, stack frames, diagnostics, and request or
+WordPress host state are still not implemented.
 
 ## Native Codegen
 
@@ -2008,6 +2011,9 @@ prepared-statement option/transient-shaped state probes,
 plus exact explicit full-row-with-id and
 star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
+SQL-mode-aware direct option-name equality reads and equality/`IN` deletes
+whose single-quoted option-name literals use the placeholder handle's bounded
+`NO_BACKSLASH_ESCAPES` branch, plus
 bounded direct
 `option_name LIKE '<pattern>'` result scans with `%` wildcards, `_`
 single-character wildcards, backslash escapes, and a bounded
@@ -2069,9 +2075,10 @@ charset/collation negotiation, locks, real index inspection
 beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
 duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, SQL-mode behavior beyond the bounded schema metadata
-`NO_BACKSLASH_ESCAPES` parser branch, option-name `LIKE` wildcard semantics
-beyond direct read filters, prepared option-name prefix scans, prepared
-option-row `ESCAPE` clauses, and schema metadata filters, exact MySQL
+`NO_BACKSLASH_ESCAPES` parser branch and direct option-name literal equality
+reads/deletes, option-name `LIKE` wildcard semantics beyond direct read
+filters, prepared option-name prefix scans, prepared option-row `ESCAPE`
+clauses, and schema metadata filters, exact MySQL
 affected-row or insert-ID edge cases, prepared schema placeholders beyond the
 single string filter parameter on documented metadata probes, real
 transactional
@@ -2232,16 +2239,23 @@ function-call boundary.
 `realpath()` is interpreter-only for one string local path. It uses the same
 process-path-then-repo-root relative path policy as the metadata builtins,
 returns a UTF-8 resolved host path for existing local paths, and returns
-`false` for unresolved local paths. Stream wrappers are rejected instead of
+`false` for unresolved local paths. Successful resolutions also populate a
+bounded request-local `realpath_cache_get()` table keyed by resolved path with
+the current PHP-shaped `key`, `is_dir`, `realpath`, and `expires` fields;
+`clearstatcache(false)` leaves that table intact, while
+`clearstatcache(true)` clears it. Stream wrappers are rejected instead of
 being modeled. Symlink policy differences, exact warning plus `false`
-fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths, stat-cache
-behavior, and native filesystem lowering remain out of scope. Native
-function-table introspection recognizes the name, while direct native
+fidelity, include-path lookup, `open_basedir`, non-UTF-8 paths, realpath-cache
+entries from other filesystem operations, exact realpath-cache key hashes and
+expiration policy, per-filename realpath-cache invalidation,
+`realpath_cache_size()`, and native filesystem lowering remain out of scope.
+Native function-table introspection recognizes the names, while direct native
 `realpath(...)` calls stop at a dedicated filesystem-canonicalization codegen
 boundary before argument lowering or backend selection until generated code has
-native filesystem canonicalization, symlink/path policy, warning/false
-recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling,
-references/COW, and exact native diagnostics.
+native filesystem canonicalization, symlink/path policy, warning/false recovery,
+include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW,
+and exact native diagnostics; direct native `realpath_cache_get()` calls still
+reject under the generic function-call boundary.
 `getcwd()` is an interpreter-only request-state/filesystem builtin for the
 current CLI process. It accepts no arguments and returns the process current
 working directory as a UTF-8 string, while function-table introspection

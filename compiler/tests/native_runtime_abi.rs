@@ -56,6 +56,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeValueHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
@@ -78,6 +82,22 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_value_free(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i64 @phpc_probe_scalar_echo_owned_bytes()"),
         "{ir}"
     );
@@ -87,6 +107,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_string_handle_roundtrip()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_string_handle_to_value_echo()"),
         "{ir}"
     );
     assert!(
@@ -116,6 +140,10 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i32 @phpc_probe_string_handle_roundtrip()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_string_handle_to_value_echo()"),
         "{ir}"
     );
 }
@@ -162,6 +190,16 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         ir.contains("define i64 @phpc_probe_string_handle_roundtrip()"),
         "{ir}"
     );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_string_handle_to_value_echo()"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -197,6 +235,41 @@ fn normal_string_emit_ir_cli_snapshot_keeps_runtime_string_helpers_probe_only() 
         !actual.contains("phpc_native_string_from_bytes"),
         "{actual}"
     );
+}
+
+#[test]
+fn normal_string_value_emit_ir_cli_snapshot_keeps_value_helpers_probe_only() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone1579/native_string_value_handle_boundary.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone1579/native_string_value_handle_boundary.cli"),
+    )
+    .expect("native string value handle boundary CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+    assert!(
+        !actual.contains("phpc_native_value_from_string"),
+        "{actual}"
+    );
+    assert!(!actual.contains("phpc_native_value_echo_bytes"), "{actual}");
 }
 
 fn render_cli_snapshot(output: &Output) -> String {

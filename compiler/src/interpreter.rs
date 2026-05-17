@@ -169,6 +169,7 @@ struct Interpreter {
     directories: HashMap<i64, DirectoryResource>,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
+    realpath_cache: HashMap<String, RealpathCacheEntry>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -363,6 +364,7 @@ struct PropertySourceMetadata {
 #[derive(Debug, Clone)]
 struct ReflectionFunctionState {
     name: String,
+    is_internal: bool,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -484,6 +486,13 @@ struct StreamContextResource {
 struct DirectoryResource {
     entries: Vec<String>,
     position: usize,
+}
+
+#[derive(Debug, Clone)]
+struct RealpathCacheEntry {
+    realpath: String,
+    is_dir: bool,
+    expires: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3348,6 +3357,7 @@ impl Interpreter {
             directories: HashMap::new(),
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
+            realpath_cache: HashMap::new(),
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -5510,6 +5520,35 @@ impl Interpreter {
     fn clear_stat_cache_path(&mut self, path: &str) {
         let metadata_path = local_filesystem_metadata_path(path);
         self.stat_cache.remove(&metadata_path);
+    }
+
+    fn cache_realpath_entry(&mut self, resolved: String, metadata: &fs::Metadata) {
+        self.realpath_cache.insert(
+            resolved.clone(),
+            RealpathCacheEntry {
+                realpath: resolved,
+                is_dir: metadata.is_dir(),
+                expires: self.request_time.saturating_add(120),
+            },
+        );
+    }
+
+    fn realpath_cache_array(&self) -> PhpArray {
+        let mut cache = PhpArray::new();
+        let mut keys = self.realpath_cache.keys().cloned().collect::<Vec<_>>();
+        keys.sort();
+        for key in keys {
+            let Some(entry) = self.realpath_cache.get(&key) else {
+                continue;
+            };
+            let mut value = PhpArray::new();
+            value.insert("key", Value::Int(0));
+            value.insert("is_dir", Value::Bool(entry.is_dir));
+            value.insert("realpath", Value::String(entry.realpath.clone()));
+            value.insert("expires", Value::Int(entry.expires));
+            cache.insert(key, Value::Array(value));
+        }
+        cache
     }
 
     fn resolve_required_path(
@@ -11187,7 +11226,7 @@ impl Interpreter {
                 RuntimeError::unsupported_object_instantiation(
                     "ReflectionFunction",
                     format!(
-                        "target must be user function string in the current subset, got {}",
+                        "target must be function string in the current subset, got {}",
                         target.type_name()
                     ),
                 ),
@@ -11203,13 +11242,17 @@ impl Interpreter {
                     .flatten();
                 Ok(reflection_function_state_from_decl(&function, source_file))
             }
-            Some(Callable::Builtin(_)) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionFunction",
-                    format!("internal function {name} reflection is not implemented"),
-                ),
-            )),
+            Some(Callable::Builtin(key)) => {
+                reflection_internal_function_state(&key).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionFunction",
+                            format!("internal function {name} reflection is not implemented"),
+                        ),
+                    )
+                })
+            }
             None => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
@@ -13857,7 +13900,13 @@ impl Interpreter {
         }
 
         if params.is_empty() {
-            if let Some(filter) = parse_wordpress_options_star_row_select_query(query) {
+            let no_backslash_escapes = connection_handle_id.is_some_and(|handle_id| {
+                self.mysqli_sql_mode_disables_backslash_escapes(handle_id)
+            });
+
+            if let Some(filter) =
+                parse_wordpress_options_star_row_select_query(query, no_backslash_escapes)
+            {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| {
@@ -13870,7 +13919,9 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) = parse_wordpress_options_row_select_query(query) {
+            if let Some(filter) =
+                parse_wordpress_options_row_select_query(query, no_backslash_escapes)
+            {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| wordpress_option_rows_for_filter(options, &filter))
@@ -13887,7 +13938,9 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) = parse_wordpress_options_name_row_select_query(query) {
+            if let Some(filter) =
+                parse_wordpress_options_name_row_select_query(query, no_backslash_escapes)
+            {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| wordpress_option_name_rows_for_filter(options, &filter))
@@ -13904,7 +13957,9 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) = parse_wordpress_options_value_row_select_query(query) {
+            if let Some(filter) =
+                parse_wordpress_options_value_row_select_query(query, no_backslash_escapes)
+            {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| wordpress_option_value_rows_for_filter(options, &filter))
@@ -13921,9 +13976,10 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) =
-                parse_wordpress_options_id_name_value_autoload_row_select_query(query)
-            {
+            if let Some(filter) = parse_wordpress_options_id_name_value_autoload_row_select_query(
+                query,
+                no_backslash_escapes,
+            ) {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| {
@@ -13947,7 +14003,9 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) = parse_wordpress_options_name_autoload_row_select_query(query) {
+            if let Some(filter) =
+                parse_wordpress_options_name_autoload_row_select_query(query, no_backslash_escapes)
+            {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| wordpress_option_name_autoload_rows_for_filter(options, &filter))
@@ -13964,9 +14022,10 @@ impl Interpreter {
                 }));
             }
 
-            if let Some(filter) =
-                parse_wordpress_options_name_value_autoload_row_select_query(query)
-            {
+            if let Some(filter) = parse_wordpress_options_name_value_autoload_row_select_query(
+                query,
+                no_backslash_escapes,
+            ) {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
                     .map(|options| {
@@ -14320,7 +14379,11 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
-        if let Some(option_names) = parse_wordpress_option_delete_names_query(&query) {
+        let no_backslash_escapes = self.mysqli_sql_mode_disables_backslash_escapes(handle_id);
+
+        if let Some(option_names) =
+            parse_wordpress_option_delete_names_query(&query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -14328,7 +14391,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(filter) = parse_wordpress_option_delete_expired_transient_pair_query(&query) {
+        if let Some(filter) =
+            parse_wordpress_option_delete_expired_transient_pair_query(&query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows =
                     delete_wordpress_expired_transient_payload_pairs(options, &filter);
@@ -14377,7 +14442,8 @@ impl Interpreter {
             }
         }
 
-        if let Some(filter) = parse_wordpress_option_delete_like_query(&query) {
+        if let Some(filter) = parse_wordpress_option_delete_like_query(&query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -15066,8 +15132,10 @@ impl Interpreter {
             return Ok(Value::Bool(true));
         }
 
+        let no_backslash_escapes = self.mysqli_sql_mode_disables_backslash_escapes(handle_id);
+
         if let Some((option_name, option_value, autoload)) =
-            parse_wordpress_option_insert_on_duplicate_query(query)
+            parse_wordpress_option_insert_on_duplicate_query(query, false)
         {
             let next_insert_id = self
                 .mysqli_insert_ids
@@ -15095,7 +15163,7 @@ impl Interpreter {
         }
 
         if let Some((option_name, option_value, autoload)) =
-            parse_wordpress_option_replace_query(query)
+            parse_wordpress_option_replace_query(query, false)
         {
             let next_insert_id = self
                 .mysqli_insert_ids
@@ -15118,7 +15186,7 @@ impl Interpreter {
         }
 
         if let Some((option_name, option_value, autoload)) =
-            parse_wordpress_option_insert_query(query)
+            parse_wordpress_option_insert_query(query, false)
         {
             let options = self.mysqli_wp_options.entry(handle_id).or_default();
             if options.contains_key(&option_name) {
@@ -15145,7 +15213,7 @@ impl Interpreter {
         }
 
         if let Some((option_name, option_value, autoload)) =
-            parse_wordpress_option_value_autoload_update_query(query)
+            parse_wordpress_option_value_autoload_update_query(query, false)
         {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = if let Some(option) = options.get_mut(&option_name) {
@@ -15160,7 +15228,9 @@ impl Interpreter {
             }
         }
 
-        if let Some((option_name, autoload)) = parse_wordpress_option_autoload_update_query(query) {
+        if let Some((option_name, autoload)) =
+            parse_wordpress_option_autoload_update_query(query, false)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = if let Some(option) = options.get_mut(&option_name) {
                     option.autoload = autoload;
@@ -15173,7 +15243,8 @@ impl Interpreter {
             }
         }
 
-        if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query) {
+        if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query, false)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = if let Some(option) = options.get_mut(&option_name) {
                     option.value = option_value;
@@ -15186,7 +15257,8 @@ impl Interpreter {
             }
         }
 
-        if let Some(option_name) = parse_wordpress_option_delete_query(query) {
+        if let Some(option_name) = parse_wordpress_option_delete_query(query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = if options.remove(&option_name).is_some() {
                     1
@@ -15198,7 +15270,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(option_names) = parse_wordpress_option_delete_names_query(query) {
+        if let Some(option_names) =
+            parse_wordpress_option_delete_names_query(query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -15206,7 +15280,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(filter) = parse_wordpress_option_delete_expired_transient_pair_query(query) {
+        if let Some(filter) =
+            parse_wordpress_option_delete_expired_transient_pair_query(query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows =
                     delete_wordpress_expired_transient_payload_pairs(options, &filter);
@@ -15215,7 +15291,8 @@ impl Interpreter {
             }
         }
 
-        if let Some(filter) = parse_wordpress_option_delete_like_query(query) {
+        if let Some(filter) = parse_wordpress_option_delete_like_query(query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -15223,7 +15300,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(filter) = parse_wordpress_option_delete_expired_timeout_query(query) {
+        if let Some(filter) =
+            parse_wordpress_option_delete_expired_timeout_query(query, no_backslash_escapes)
+        {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -15231,7 +15310,9 @@ impl Interpreter {
             }
         }
 
-        if let Some(option_name) = parse_wordpress_option_value_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_value_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(option_value) = self
                 .mysqli_wp_options
@@ -15251,7 +15332,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_name_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_name_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if self
                 .mysqli_wp_options
@@ -15271,7 +15354,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_autoload_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_autoload_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(autoload) = self
                 .mysqli_wp_options
@@ -15288,7 +15373,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_id_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_id_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(option_id) = self
                 .mysqli_wp_options
@@ -15305,7 +15392,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_value_autoload_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_value_autoload_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some((option_value, autoload)) = self
                 .mysqli_wp_options
@@ -15325,7 +15414,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_name_value_autoload_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_name_value_autoload_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some((option_value, autoload)) = self
                 .mysqli_wp_options
@@ -15350,7 +15441,8 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_id_name_value_autoload_select_query(query)
+        if let Some(option_name) =
+            parse_wordpress_option_id_name_value_autoload_select_query(query, no_backslash_escapes)
         {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some((option_id, option_value, autoload)) = self
@@ -15384,7 +15476,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(option_name) = parse_wordpress_option_star_select_query(query) {
+        if let Some(option_name) =
+            parse_wordpress_option_star_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some((option_id, option_value, autoload)) = self
                 .mysqli_wp_options
@@ -15412,8 +15506,10 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_id_name_value_autoload_row_select_query(query)
-        {
+        if let Some(filter) = parse_wordpress_options_id_name_value_autoload_row_select_query(
+            query,
+            no_backslash_escapes,
+        ) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows =
@@ -15434,7 +15530,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_star_row_select_query(query) {
+        if let Some(filter) =
+            parse_wordpress_options_star_row_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows =
@@ -15450,7 +15548,10 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_name_value_autoload_row_select_query(query) {
+        if let Some(filter) = parse_wordpress_options_name_value_autoload_row_select_query(
+            query,
+            no_backslash_escapes,
+        ) {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows = wordpress_option_name_value_autoload_rows_for_filter(options, &filter);
@@ -15469,7 +15570,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_name_autoload_row_select_query(query) {
+        if let Some(filter) =
+            parse_wordpress_options_name_autoload_row_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows = wordpress_option_name_autoload_rows_for_filter(options, &filter);
@@ -15484,7 +15587,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_name_row_select_query(query) {
+        if let Some(filter) =
+            parse_wordpress_options_name_row_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows = wordpress_option_name_rows_for_filter(options, &filter);
@@ -15499,7 +15604,9 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_value_row_select_query(query) {
+        if let Some(filter) =
+            parse_wordpress_options_value_row_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows = wordpress_option_value_rows_for_filter(options, &filter);
@@ -15514,7 +15621,8 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
-        if let Some(filter) = parse_wordpress_options_row_select_query(query) {
+        if let Some(filter) = parse_wordpress_options_row_select_query(query, no_backslash_escapes)
+        {
             self.mysqli_affected_rows.insert(handle_id, 0);
             if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
                 let rows = wordpress_option_rows_for_filter(options, &filter);
@@ -17188,16 +17296,16 @@ impl Interpreter {
                 )?;
 
             let called_class_id = object.class_id();
-            let returned_cell = self.call_reference_return_function_with_checked_values(
+            let returned_value = self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 Some(object),
                 Some(class_id),
                 Some(called_class_id),
                 reference_bindings,
-                Some(caller_scope),
+                caller_scope,
             )?;
-            return Ok(returned_cell.borrow().clone());
+            return Ok(returned_value);
         }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -17925,10 +18033,16 @@ impl Interpreter {
             }
             "getstartline" => {
                 expect_expr_arity("ReflectionFunction::getStartLine", args.len(), 0, span)?;
+                if state.is_internal {
+                    return Ok(Value::Bool(false));
+                }
                 Ok(Value::Int(state.start_line as i64))
             }
             "getendline" => {
                 expect_expr_arity("ReflectionFunction::getEndLine", args.len(), 0, span)?;
+                if state.is_internal {
+                    return Ok(Value::Bool(false));
+                }
                 Ok(Value::Int(state.end_line as i64))
             }
             "getdoccomment" => {
@@ -18255,18 +18369,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = match self.lookup_function(&state.name) {
             Some(Callable::User(function)) => function,
-            Some(Callable::Builtin(_)) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "ReflectionFunction::invoke",
-                        format!(
-                            "internal function {} reflection invocation is not implemented",
-                            state.name
-                        ),
-                    ),
-                ));
-            }
+            Some(Callable::Builtin(key)) => return self.call_builtin(&key, values, span),
             None => {
                 return Err(runtime_error(
                     span,
@@ -19033,16 +19136,16 @@ impl Interpreter {
                     true,
                 )?;
 
-            let returned_cell = self.call_reference_return_function_with_checked_values(
+            let returned_value = self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 None,
                 Some(class_id),
                 Some(called_class_id),
                 reference_bindings,
-                Some(caller_scope),
+                caller_scope,
             )?;
-            return Ok(returned_cell.borrow().clone());
+            return Ok(returned_value);
         }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -19157,16 +19260,17 @@ impl Interpreter {
                         true,
                     )?;
 
-                let returned_cell = self.call_reference_return_function_with_checked_values(
-                    function,
-                    values,
-                    None,
-                    Some(declaring_class_id),
-                    Some(class_id),
-                    reference_bindings,
-                    Some(caller_scope),
-                )?;
-                return Ok(returned_cell.borrow().clone());
+                let returned_value = self
+                    .call_reference_return_function_value_with_checked_values(
+                        function,
+                        values,
+                        None,
+                        Some(declaring_class_id),
+                        Some(class_id),
+                        reference_bindings,
+                        caller_scope,
+                    )?;
+                return Ok(returned_value);
             }
             ensure_supported_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -19300,16 +19404,16 @@ impl Interpreter {
                     true,
                 )?;
 
-            let returned_cell = self.call_reference_return_function_with_checked_values(
+            let returned_value = self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 None,
                 Some(declaring_class_id),
                 Some(receiver_class_id),
                 reference_bindings,
-                Some(caller_scope),
+                caller_scope,
             )?;
-            return Ok(returned_cell.borrow().clone());
+            return Ok(returned_value);
         }
         ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -20613,16 +20717,17 @@ impl Interpreter {
                         true,
                     )?;
 
-                let returned_cell = self.call_reference_return_function_with_checked_values(
-                    function,
-                    values,
-                    None,
-                    Some(class_id),
-                    Some(called_class_id),
-                    reference_bindings,
-                    Some(caller_scope),
-                )?;
-                return Ok(returned_cell.borrow().clone());
+                let returned_value = self
+                    .call_reference_return_function_value_with_checked_values(
+                        function,
+                        values,
+                        None,
+                        Some(class_id),
+                        Some(called_class_id),
+                        reference_bindings,
+                        caller_scope,
+                    )?;
+                return Ok(returned_value);
             }
             ensure_supported_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
@@ -20744,16 +20849,16 @@ impl Interpreter {
                     true,
                 )?;
 
-            let returned_cell = self.call_reference_return_function_with_checked_values(
+            let returned_value = self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 None,
                 Some(class_id),
                 Some(called_class_id),
                 reference_bindings,
-                Some(caller_scope),
+                caller_scope,
             )?;
-            return Ok(returned_cell.borrow().clone());
+            return Ok(returned_value);
         }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -24897,16 +25002,16 @@ impl Interpreter {
                     true,
                 )?;
 
-            let returned_cell = self.call_reference_return_function_with_checked_values(
+            let returned_value = self.call_reference_return_function_value_with_checked_values(
                 function,
                 values,
                 None,
                 None,
                 None,
                 reference_bindings,
-                Some(caller_scope),
+                caller_scope,
             )?;
-            return Ok(returned_cell.borrow().clone());
+            return Ok(returned_value);
         }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
@@ -25799,6 +25904,60 @@ impl Interpreter {
                         "reference-return array-offset expressions require a covered by-reference array-slot argument in the current subset",
                     ),
                 )),
+            }
+        }
+    }
+
+    fn call_reference_return_function_value_with_checked_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let binding = self
+            .call_reference_return_function_with_checked_values_for_reference_assignment(
+                function,
+                args,
+                this_object,
+                class_context,
+                called_class_context,
+                reference_bindings,
+                caller_scope,
+            )?;
+
+        match binding {
+            ReferenceReturnBinding::Cell(cell) => Ok(cell.borrow().clone()),
+            ReferenceReturnBinding::ArrayOffset(alias) => {
+                caller_scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })
+            }
+            ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                let alias = aliases.first().ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read empty reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })?;
+                caller_scope.read_array_offset_alias(alias).ok_or_else(|| {
+                    runtime_error(
+                        function.span,
+                        RuntimeError::invalid_array_access(
+                            "cannot read reference-return array-offset result".to_string(),
+                        ),
+                    )
+                })
             }
         }
     }
@@ -31411,8 +31570,9 @@ impl Interpreter {
                         ),
                     ));
                 }
-                if let Some(clear_realpath_cache) = args.first() {
-                    if !matches!(clear_realpath_cache, Value::Bool(_)) {
+                let clear_realpath_cache = match args.first() {
+                    Some(Value::Bool(value)) => *value,
+                    Some(clear_realpath_cache) => {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
@@ -31424,7 +31584,8 @@ impl Interpreter {
                             ),
                         ));
                     }
-                }
+                    None => false,
+                };
                 match args.get(1) {
                     Some(Value::String(filename)) => self.clear_stat_cache_path(filename),
                     Some(filename) => {
@@ -31440,6 +31601,9 @@ impl Interpreter {
                         ));
                     }
                     None => self.stat_cache.clear(),
+                }
+                if clear_realpath_cache {
+                    self.realpath_cache.clear();
                 }
                 Ok(Value::Null)
             }
@@ -31458,6 +31622,9 @@ impl Interpreter {
                         }
 
                         let filesystem_path = local_filesystem_metadata_path(path);
+                        let Ok(metadata) = fs::metadata(&filesystem_path) else {
+                            return Ok(Value::Bool(false));
+                        };
                         let Ok(resolved) = fs::canonicalize(&filesystem_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -31470,6 +31637,7 @@ impl Interpreter {
                                 ),
                             )
                         })?;
+                        self.cache_realpath_entry(resolved.clone(), &metadata);
                         Ok(Value::String(resolved))
                     }
                     other => Err(runtime_error(
@@ -31483,6 +31651,10 @@ impl Interpreter {
                         ),
                     )),
                 }
+            }
+            "realpath_cache_get" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Array(self.realpath_cache_array()))
             }
             "getcwd" => {
                 expect_arity(name, &args, 0, span)?;
@@ -36928,6 +37100,7 @@ fn reflection_function_state_from_decl(
 ) -> ReflectionFunctionState {
     ReflectionFunctionState {
         name: function.name.clone(),
+        is_internal: false,
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -36936,6 +37109,44 @@ fn reflection_function_state_from_decl(
         returns_by_reference: function.returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(&function.params),
     }
+}
+
+fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionState> {
+    let (return_type, params) = match name {
+        "strlen" => (
+            "int",
+            vec![ReflectionParameterMetadata {
+                name: "string".to_string(),
+                type_decl: Some("string".to_string()),
+                by_reference: false,
+                is_variadic: false,
+                default: None,
+            }],
+        ),
+        "strtolower" => (
+            "string",
+            vec![ReflectionParameterMetadata {
+                name: "string".to_string(),
+                type_decl: Some("string".to_string()),
+                by_reference: false,
+                is_variadic: false,
+                default: None,
+            }],
+        ),
+        _ => return None,
+    };
+
+    Some(ReflectionFunctionState {
+        name: name.to_string(),
+        is_internal: true,
+        file_name: None,
+        start_line: 0,
+        end_line: 0,
+        doc_comment: None,
+        return_type: Some(return_type.to_string()),
+        returns_by_reference: false,
+        params,
+    })
 }
 
 fn reflection_declaring_params(
@@ -38175,6 +38386,7 @@ fn is_builtin(name: &str) -> bool {
             | "filesize"
             | "filemtime"
             | "realpath"
+            | "realpath_cache_get"
             | "getcwd"
             | "is_dir"
             | "is_file"
@@ -40742,7 +40954,10 @@ fn wordpress_options_full_column_row(
     ]
 }
 
-fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, String)> {
+fn parse_wordpress_option_insert_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<(String, String, String)> {
     let query = query.trim();
     let values = query
         .strip_prefix("INSERT INTO wp_options (option_name, option_value, autoload) VALUES (")
@@ -40752,14 +40967,17 @@ fn parse_wordpress_option_insert_query(query: &str) -> Option<(String, String, S
             )
         })?
         .strip_suffix(')')?;
-    let values = parse_sql_single_quoted_list(values)?;
+    let values = parse_sql_single_quoted_list_with_mode(values, no_backslash_escapes)?;
     if values.len() != 3 {
         return None;
     }
     Some((values[0].clone(), values[1].clone(), values[2].clone()))
 }
 
-fn parse_wordpress_option_replace_query(query: &str) -> Option<(String, String, String)> {
+fn parse_wordpress_option_replace_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<(String, String, String)> {
     let query = query.trim();
     let values = query
         .strip_prefix("REPLACE INTO wp_options (option_name, option_value, autoload) VALUES (")
@@ -40769,7 +40987,7 @@ fn parse_wordpress_option_replace_query(query: &str) -> Option<(String, String, 
             )
         })?
         .strip_suffix(')')?;
-    let values = parse_sql_single_quoted_list(values)?;
+    let values = parse_sql_single_quoted_list_with_mode(values, no_backslash_escapes)?;
     if values.len() != 3 {
         return None;
     }
@@ -40778,6 +40996,7 @@ fn parse_wordpress_option_replace_query(query: &str) -> Option<(String, String, 
 
 fn parse_wordpress_option_insert_on_duplicate_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<(String, String, String)> {
     let query = query.trim();
     let values = query
@@ -40808,14 +41027,17 @@ fn parse_wordpress_option_insert_on_duplicate_query(
                     })
                 })
         })?;
-    let values = parse_sql_single_quoted_list(values)?;
+    let values = parse_sql_single_quoted_list_with_mode(values, no_backslash_escapes)?;
     if values.len() != 3 {
         return None;
     }
     Some((values[0].clone(), values[1].clone(), values[2].clone()))
 }
 
-fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_value_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_value FROM wp_options WHERE option_name = ")
@@ -40823,14 +41045,17 @@ fn parse_wordpress_option_value_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT option_value FROM `wp_options` WHERE option_name = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_name_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_name_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_name FROM wp_options WHERE option_name = ")
@@ -40839,14 +41064,17 @@ fn parse_wordpress_option_name_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT `option_name` FROM `wp_options` WHERE `option_name` = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1")?;
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_autoload_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_autoload_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT autoload FROM wp_options WHERE option_name = ")
@@ -40855,14 +41083,17 @@ fn parse_wordpress_option_autoload_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT `autoload` FROM `wp_options` WHERE `option_name` = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_id_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_id_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_id FROM wp_options WHERE option_name = ")
@@ -40871,14 +41102,17 @@ fn parse_wordpress_option_id_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT `option_id` FROM `wp_options` WHERE `option_name` = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1")?;
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_value_autoload_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_value_autoload_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_value, autoload FROM wp_options WHERE option_name = ")
@@ -40888,14 +41122,17 @@ fn parse_wordpress_option_value_autoload_select_query(query: &str) -> Option<Str
             )
         })?;
     let rest = rest.strip_suffix(" LIMIT 1")?;
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_name_value_autoload_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_name_value_autoload_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ")
@@ -40905,14 +41142,17 @@ fn parse_wordpress_option_name_value_autoload_select_query(query: &str) -> Optio
             )
         })?;
     let rest = rest.strip_suffix(" LIMIT 1")?;
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_id_name_value_autoload_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_id_name_value_autoload_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix(
@@ -40924,27 +41164,33 @@ fn parse_wordpress_option_id_name_value_autoload_select_query(query: &str) -> Op
             )
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_star_select_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_star_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT * FROM wp_options WHERE option_name = ")
         .or_else(|| query.strip_prefix("SELECT * FROM `wp_options` WHERE `option_name` = "))?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
-    let values = parse_sql_single_quoted_list(rest)?;
+    let values = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
     Some(values[0].clone())
 }
 
-fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> {
+fn parse_wordpress_option_update_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<(String, String)> {
     let query = query.trim();
     let rest = query
         .strip_prefix("UPDATE wp_options SET option_value = ")
@@ -40952,8 +41198,8 @@ fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> 
     let (value_sql, where_sql) = rest
         .split_once(" WHERE option_name = ")
         .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
-    let values = parse_sql_single_quoted_list(value_sql)?;
-    let names = parse_sql_single_quoted_list(where_sql)?;
+    let values = parse_sql_single_quoted_list_with_mode(value_sql, no_backslash_escapes)?;
+    let names = parse_sql_single_quoted_list_with_mode(where_sql, no_backslash_escapes)?;
     if values.len() != 1 || names.len() != 1 {
         return None;
     }
@@ -40962,6 +41208,7 @@ fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> 
 
 fn parse_wordpress_option_value_autoload_update_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<(String, String, String)> {
     let query = query.trim();
     let rest = query
@@ -40973,16 +41220,19 @@ fn parse_wordpress_option_value_autoload_update_query(
     let (autoload_sql, where_sql) = rest
         .split_once(" WHERE option_name = ")
         .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
-    let values = parse_sql_single_quoted_list(value_sql)?;
-    let autoloads = parse_sql_single_quoted_list(autoload_sql)?;
-    let names = parse_sql_single_quoted_list(where_sql)?;
+    let values = parse_sql_single_quoted_list_with_mode(value_sql, no_backslash_escapes)?;
+    let autoloads = parse_sql_single_quoted_list_with_mode(autoload_sql, no_backslash_escapes)?;
+    let names = parse_sql_single_quoted_list_with_mode(where_sql, no_backslash_escapes)?;
     if values.len() != 1 || autoloads.len() != 1 || names.len() != 1 {
         return None;
     }
     Some((names[0].clone(), values[0].clone(), autoloads[0].clone()))
 }
 
-fn parse_wordpress_option_autoload_update_query(query: &str) -> Option<(String, String)> {
+fn parse_wordpress_option_autoload_update_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<(String, String)> {
     let query = query.trim();
     let rest = query
         .strip_prefix("UPDATE wp_options SET autoload = ")
@@ -40990,8 +41240,8 @@ fn parse_wordpress_option_autoload_update_query(query: &str) -> Option<(String, 
     let (autoload_sql, where_sql) = rest
         .split_once(" WHERE option_name = ")
         .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
-    let autoloads = parse_sql_single_quoted_list(autoload_sql)?;
-    let names = parse_sql_single_quoted_list(where_sql)?;
+    let autoloads = parse_sql_single_quoted_list_with_mode(autoload_sql, no_backslash_escapes)?;
+    let names = parse_sql_single_quoted_list_with_mode(where_sql, no_backslash_escapes)?;
     if autoloads.len() != 1 || names.len() != 1 {
         return None;
     }
@@ -41645,44 +41895,51 @@ fn wordpress_option_expired_transient_pair_delete_filter_from_prepared_params(
     })
 }
 
-fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {
+fn parse_wordpress_option_delete_query(query: &str, no_backslash_escapes: bool) -> Option<String> {
     let query = query.trim();
     let rest = query
         .strip_prefix("DELETE FROM wp_options WHERE option_name = ")
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` = "))?;
-    let names = parse_sql_single_quoted_list(rest)?;
+    let names = parse_sql_single_quoted_list_with_mode(rest, no_backslash_escapes)?;
     if names.len() != 1 {
         return None;
     }
     Some(names[0].clone())
 }
 
-fn parse_wordpress_option_delete_names_query(query: &str) -> Option<Vec<String>> {
+fn parse_wordpress_option_delete_names_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<Vec<String>> {
     let query = query.trim();
     let values = query
         .strip_prefix("DELETE FROM wp_options WHERE option_name IN (")
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    parse_sql_single_quoted_list(values)
+    parse_sql_single_quoted_list_with_mode(values, no_backslash_escapes)
 }
 
-fn parse_wordpress_option_delete_like_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_option_delete_like_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let pattern_sql = query
         .strip_prefix("DELETE FROM wp_options WHERE option_name LIKE ")
         .or_else(|| query.strip_prefix("DELETE FROM wp_options WHERE `option_name` LIKE "))
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` LIKE "))?;
-    parse_sql_single_quoted_schema_like_filter(pattern_sql, false)
+    parse_sql_single_quoted_schema_like_filter(pattern_sql, no_backslash_escapes)
         .map(WordPressOptionsRowFilter::OptionNameLike)
 }
 
 fn parse_wordpress_option_delete_expired_transient_pair_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressTransientPairDeleteFilter> {
     let (payload_sql, timeout_sql, timeout_prefix, payload_offset, threshold_sql) =
         parse_wordpress_option_delete_expired_transient_pair_parts(query.trim())?;
-    let payload_values = parse_sql_single_quoted_list(payload_sql)?;
-    let timeout_values = parse_sql_single_quoted_list(timeout_sql)?;
+    let payload_values = parse_sql_single_quoted_list_with_mode(payload_sql, no_backslash_escapes)?;
+    let timeout_values = parse_sql_single_quoted_list_with_mode(timeout_sql, no_backslash_escapes)?;
     if payload_values.len() != 1 || timeout_values.len() != 1 {
         return None;
     }
@@ -41695,7 +41952,8 @@ fn parse_wordpress_option_delete_expired_transient_pair_query(
     if payload_offset != payload_prefix.chars().count() + 1 {
         return None;
     }
-    let threshold = parse_wordpress_option_timeout_threshold(threshold_sql)?;
+    let threshold =
+        parse_wordpress_option_timeout_threshold_with_mode(threshold_sql, no_backslash_escapes)?;
     Some(WordPressTransientPairDeleteFilter {
         payload_prefix,
         timeout_prefix,
@@ -41739,16 +41997,20 @@ fn parse_wordpress_option_delete_expired_transient_pair_parts(
 
 fn parse_wordpress_option_delete_expired_timeout_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
         .strip_prefix("DELETE FROM wp_options WHERE option_name LIKE ")
         .or_else(|| query.strip_prefix("DELETE FROM wp_options WHERE `option_name` LIKE "))
         .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` LIKE "))?;
-    parse_wordpress_options_expired_timeout_filter_after_like(rest)
+    parse_wordpress_options_expired_timeout_filter_after_like(rest, no_backslash_escapes)
 }
 
-fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_options_row_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_name, option_value FROM wp_options")
@@ -41758,22 +42020,25 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
 fn parse_wordpress_options_name_autoload_row_select_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
@@ -41783,21 +42048,26 @@ fn parse_wordpress_options_name_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
-fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_options_name_row_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT option_name FROM wp_options")
@@ -41806,22 +42076,25 @@ fn parse_wordpress_options_name_row_select_query(query: &str) -> Option<WordPres
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
 fn parse_wordpress_options_value_row_select_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
@@ -41832,22 +42105,25 @@ fn parse_wordpress_options_value_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
 fn parse_wordpress_options_name_value_autoload_row_select_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
@@ -41859,22 +42135,25 @@ fn parse_wordpress_options_name_value_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
 fn parse_wordpress_options_id_name_value_autoload_row_select_query(
     query: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
@@ -41888,21 +42167,26 @@ fn parse_wordpress_options_id_name_value_autoload_row_select_query(
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
-fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_options_star_row_select_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     let query = query.trim();
     let rest = query
         .strip_prefix("SELECT * FROM wp_options")
@@ -41911,21 +42195,26 @@ fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPres
     if rest.is_empty() {
         return Some(WordPressOptionsRowFilter::All);
     }
-    if let Some(filter) = parse_wordpress_options_autoload_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_autoload_filter(rest, no_backslash_escapes) {
         return Some(filter);
     }
-    if let Some(filter) = parse_wordpress_options_option_name_like_filter(rest) {
+    if let Some(filter) =
+        parse_wordpress_options_option_name_like_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
     let names = rest
         .strip_prefix("WHERE option_name IN (")
         .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
         .strip_suffix(')')?;
-    let names = parse_sql_single_quoted_list(names)?;
+    let names = parse_sql_single_quoted_list_with_mode(names, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
-fn parse_wordpress_options_autoload_filter(rest: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_options_autoload_filter(
+    rest: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
         || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
     {
@@ -41935,7 +42224,7 @@ fn parse_wordpress_options_autoload_filter(rest: &str) -> Option<WordPressOption
     let value_sql = rest
         .strip_prefix("WHERE autoload = ")
         .or_else(|| rest.strip_prefix("WHERE `autoload` = "))?;
-    let values = parse_sql_single_quoted_list(value_sql)?;
+    let values = parse_sql_single_quoted_list_with_mode(value_sql, no_backslash_escapes)?;
     if values.len() != 1 {
         return None;
     }
@@ -41944,33 +42233,40 @@ fn parse_wordpress_options_autoload_filter(rest: &str) -> Option<WordPressOption
 
 fn parse_wordpress_options_option_name_like_filter(
     rest: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
-    if let Some(filter) = parse_wordpress_options_expired_timeout_filter(rest) {
+    if let Some(filter) = parse_wordpress_options_expired_timeout_filter(rest, no_backslash_escapes)
+    {
         return Some(filter);
     }
 
     let pattern_sql = rest
         .strip_prefix("WHERE option_name LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `option_name` LIKE "))?;
-    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, false)?;
+    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
-fn parse_wordpress_options_expired_timeout_filter(rest: &str) -> Option<WordPressOptionsRowFilter> {
+fn parse_wordpress_options_expired_timeout_filter(
+    rest: &str,
+    no_backslash_escapes: bool,
+) -> Option<WordPressOptionsRowFilter> {
     let rest = rest
         .strip_prefix("WHERE option_name LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `option_name` LIKE "))?;
-    parse_wordpress_options_expired_timeout_filter_after_like(rest)
+    parse_wordpress_options_expired_timeout_filter_after_like(rest, no_backslash_escapes)
 }
 
 fn parse_wordpress_options_expired_timeout_filter_after_like(
     rest: &str,
+    no_backslash_escapes: bool,
 ) -> Option<WordPressOptionsRowFilter> {
     let (pattern_sql, threshold_sql) = rest
         .split_once(" AND option_value < ")
         .or_else(|| rest.split_once(" AND `option_value` < "))?;
-    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, false)?;
-    let threshold = parse_wordpress_option_timeout_threshold(threshold_sql)?;
+    let filter = parse_sql_single_quoted_schema_like_filter(pattern_sql, no_backslash_escapes)?;
+    let threshold =
+        parse_wordpress_option_timeout_threshold_with_mode(threshold_sql, no_backslash_escapes)?;
     Some(WordPressOptionsRowFilter::OptionNameLikeValueLessThan(
         filter, threshold,
     ))
@@ -41993,9 +42289,12 @@ fn parse_wordpress_option_name_prefix_like_pattern(pattern: &str) -> Option<Stri
     Some(prefix.to_string())
 }
 
-fn parse_wordpress_option_timeout_threshold(input: &str) -> Option<i64> {
+fn parse_wordpress_option_timeout_threshold_with_mode(
+    input: &str,
+    no_backslash_escapes: bool,
+) -> Option<i64> {
     let value = input.trim();
-    if let Some(values) = parse_sql_single_quoted_list(value) {
+    if let Some(values) = parse_sql_single_quoted_list_with_mode(value, no_backslash_escapes) {
         if values.len() == 1 {
             return values[0].parse::<i64>().ok();
         }
@@ -42289,10 +42588,17 @@ fn is_wordpress_autoload_option_value(value: &str) -> bool {
 }
 
 fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
+    parse_sql_single_quoted_list_with_mode(input, false)
+}
+
+fn parse_sql_single_quoted_list_with_mode(
+    input: &str,
+    no_backslash_escapes: bool,
+) -> Option<Vec<String>> {
     let mut rest = input.trim();
     let mut values = Vec::new();
     loop {
-        let (value, next) = parse_sql_single_quoted_value(rest)?;
+        let (value, next) = parse_sql_single_quoted_value_with_mode(rest, no_backslash_escapes)?;
         values.push(value);
         rest = next.trim_start();
         if rest.is_empty() {
@@ -42303,6 +42609,13 @@ fn parse_sql_single_quoted_list(input: &str) -> Option<Vec<String>> {
 }
 
 fn parse_sql_single_quoted_value(input: &str) -> Option<(String, &str)> {
+    parse_sql_single_quoted_value_with_mode(input, false)
+}
+
+fn parse_sql_single_quoted_value_with_mode(
+    input: &str,
+    no_backslash_escapes: bool,
+) -> Option<(String, &str)> {
     let rest = input.strip_prefix('\'')?;
     let mut value = String::new();
     let mut chars = rest.char_indices().peekable();
@@ -42315,7 +42628,7 @@ fn parse_sql_single_quoted_value(input: &str) -> Option<(String, &str)> {
             }
             return Some((value, &rest[index + ch.len_utf8()..]));
         }
-        if ch == '\\' {
+        if ch == '\\' && !no_backslash_escapes {
             let (_, escaped) = chars.next()?;
             value.push(match escaped {
                 '0' => '\0',
@@ -42396,7 +42709,7 @@ fn mysqli_statement_result_for_query_with_params(
         }));
     }
 
-    if parse_wordpress_options_name_row_select_query(query).is_some()
+    if parse_wordpress_options_name_row_select_query(query, false).is_some()
         || is_wordpress_option_prepared_name_select_names_query(query)
         || is_wordpress_option_prepared_name_select_autoloads_query(query)
     {
@@ -42406,7 +42719,7 @@ fn mysqli_statement_result_for_query_with_params(
         }));
     }
 
-    if parse_wordpress_options_star_row_select_query(query).is_some()
+    if parse_wordpress_options_star_row_select_query(query, false).is_some()
         || is_wordpress_option_prepared_star_select_names_query(query)
         || is_wordpress_option_prepared_star_select_autoloads_query(query)
     {

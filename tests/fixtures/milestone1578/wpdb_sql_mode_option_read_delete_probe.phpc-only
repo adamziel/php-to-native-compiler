@@ -1,0 +1,1 @@
+Uses phpc's deterministic placeholder mysqli/wp_options state island; system PHP requires a real MySQL database connection.

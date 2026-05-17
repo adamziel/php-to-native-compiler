@@ -1,0 +1,16 @@
+run tests/fixtures/milestone1575/internal_reflection_function_invocation.php
+exit: 0
+stdout:
+name|strlen
+file|no
+start|no
+params|1/1
+param|string:string
+return|int
+invoke|9
+invokeArgs|4
+lower|save_post
+lowerArgs|rest_api_init
+--- stdout end ---
+stderr:
+--- stderr end ---

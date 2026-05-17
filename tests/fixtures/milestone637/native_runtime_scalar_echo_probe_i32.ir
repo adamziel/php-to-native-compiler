@@ -3,6 +3,7 @@
 %phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }
 %phpc.NativeByteBuffer = type { ptr, i32, i32 }
 %phpc.NativeStringHandle = type { ptr }
+%phpc.NativeValueHandle = type { ptr }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
 
@@ -16,6 +17,9 @@ declare i32 @phpc_native_string_len(%phpc.NativeStringHandle)
 declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)
 declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
+declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)
+declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
+declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 
 define i32 @phpc_probe_scalar_echo_len() {
 entry:
@@ -52,6 +56,19 @@ entry:
   %raw = call ptr @phpc_native_string_bytes(%phpc.NativeStringHandle %string)
   %clone = call %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle %string)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %clone)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_string_handle_to_value_echo() {
+entry:
+  %bytes = getelementptr inbounds [7 x i8], ptr @phpc.probe.string, i32 0, i32 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i32 7)
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
+  %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)
+  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
   ret i32 %len
 }

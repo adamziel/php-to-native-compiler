@@ -67,6 +67,41 @@ echo basename($resolved);
 }
 
 #[test]
+fn realpath_cache_get_exposes_bounded_successful_realpath_entries() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$target = __DIR__ . "/realpath_target.txt";
+$resolved = realpath($target);
+$cache = realpath_cache_get();
+echo $resolved === false ? "unresolved" : "resolved";
+echo "|";
+echo array_key_exists($resolved, $cache) ? "cached" : "missing";
+$entry = $cache[$resolved];
+echo "|";
+echo $entry["realpath"] === $resolved ? "same" : "different";
+echo "|";
+echo $entry["is_dir"] === false ? "file" : "dir";
+echo "|";
+echo is_int($entry["expires"]) ? "expires-int" : "expires-other";
+echo "|";
+clearstatcache(false);
+echo array_key_exists($resolved, realpath_cache_get()) ? "kept" : "cleared";
+echo "|";
+clearstatcache(true);
+echo array_key_exists($resolved, realpath_cache_get()) ? "kept" : "cleared";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "resolved|cached|same|file|expires-int|kept|cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn realpath_reports_current_argument_and_local_path_boundaries() {
     let non_string = run_source("<?php\necho realpath(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

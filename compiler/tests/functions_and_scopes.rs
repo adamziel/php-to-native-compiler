@@ -1466,6 +1466,54 @@ echo identity(1);
 }
 
 #[test]
+fn normal_reference_return_invocation_reads_returned_array_offset_by_value() {
+    let execution = run_source(
+        r#"<?php
+function &pick_normal_refcow_slot(&$items, $key, $suffix) {
+    $items[$key] = $items[$key] . ":" . $suffix;
+    return $items[$key];
+}
+
+class NormalRefCowSlotPicker {
+    public $cache = [];
+
+    public function &pick(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+
+    public static function &pickStatic(&$items, $key, $suffix) {
+        $items[$key] = $items[$key] . ":" . $suffix;
+        return $items[$key];
+    }
+}
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$payload =& $_REQUEST["payload"];
+echo pick_normal_refcow_slot($payload, "slot", "function"), "|", $_REQUEST["payload"]["slot"], "\n";
+
+$items = ["outer" => ["slot" => "array"]];
+echo NormalRefCowSlotPicker::pickStatic($items["outer"], "slot", "static"), "|", $items["outer"]["slot"], "\n";
+
+$picker = new NormalRefCowSlotPicker();
+$picker->cache["options"]["alloptions"] = "cold";
+echo $picker->pick($picker->cache["options"], "alloptions", "method"), "|", $picker->cache["options"]["alloptions"], "\n";
+
+$dynamic = ["slot" => "dynamic"];
+$class = "NormalRefCowSlotPicker";
+echo $class::pickStatic($dynamic, "slot", "dynamic"), "|", $dynamic["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:function|request:function\narray:static|array:static\ncold:method|cold:method\ndynamic:dynamic|dynamic:dynamic"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_return_methods_inside_unexecuted_class_are_registered() {
     let execution = run_source(
         r#"<?php

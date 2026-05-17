@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1576/reference_return_array_offset_normal_invocation.php
+request:function|request:function
+array:static|array:static
+cold:method|cold:method
+dynamic:dynamic|dynamic:dynamic
+0

@@ -40,6 +40,12 @@ pub struct NativeStringHandle {
     ptr: *mut NativeString,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeValueHandle {
+    ptr: *mut Value,
+}
+
 #[derive(Debug)]
 struct NativeString {
     bytes: Vec<u8>,
@@ -99,6 +105,28 @@ impl NativeStringHandle {
     }
 
     unsafe fn as_ref(&self) -> Option<&NativeString> {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeValueHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn from_value(value: Value) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(value)),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&Value> {
         unsafe { self.ptr.as_ref() }
     }
 }
@@ -290,6 +318,54 @@ pub unsafe extern "C" fn phpc_native_string_clone_bytes(
     unsafe { handle.as_ref() }
         .map(|string| NativeByteBuffer::from_vec(string.bytes.clone()))
         .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed. The returned value handle owns a cloned runtime
+/// `Value::String` for valid UTF-8 bytes. Null handles and non-UTF-8 bytes
+/// return a null value handle until diagnostics and binary string values have
+/// native ABI coverage.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_from_string(
+    handle: NativeStringHandle,
+) -> NativeValueHandle {
+    let Some(string) = (unsafe { handle.as_ref() }) else {
+        return NativeValueHandle::null();
+    };
+
+    let Ok(value) = String::from_utf8(string.bytes.clone()) else {
+        return NativeValueHandle::null();
+    };
+
+    NativeValueHandle::from_value(Value::String(value))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_echo_bytes(
+    handle: NativeValueHandle,
+) -> NativeByteBuffer {
+    unsafe { handle.as_ref() }
+        .map(|value| NativeByteBuffer::from_vec(value.echo_string().into_bytes()))
+        .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Passing any other pointer is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_free(handle: NativeValueHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
 /// # Safety
@@ -4793,6 +4869,51 @@ mod tests {
         assert_eq!(clone.cap(), 0);
         unsafe { phpc_native_byte_buffer_free(clone) };
         unsafe { phpc_native_string_free(invalid) };
+    }
+
+    #[test]
+    fn native_string_handle_converts_to_runtime_value_handle() {
+        let input = b"php\0value";
+        let string = unsafe { phpc_native_string_from_bytes(input.as_ptr(), input.len()) };
+        let value = unsafe { phpc_native_value_from_string(string) };
+
+        assert!(!value.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("php\0value".to_string()))
+        );
+
+        let echoed = unsafe { phpc_native_value_echo_bytes(value) };
+        assert_eq!(echoed.len(), input.len());
+        let echoed_bytes = unsafe { std::slice::from_raw_parts(echoed.ptr(), echoed.len()) };
+        assert_eq!(echoed_bytes, input);
+
+        assert_eq!(unsafe { phpc_native_string_len(string) }, input.len());
+
+        unsafe { phpc_native_byte_buffer_free(echoed) };
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_string_value_conversion_rejects_missing_or_non_utf8_handles() {
+        let null_value = unsafe { phpc_native_value_from_string(NativeStringHandle::null()) };
+        assert!(null_value.is_null());
+        let null_echo = unsafe { phpc_native_value_echo_bytes(null_value) };
+        assert!(null_echo.ptr().is_null());
+        assert_eq!(null_echo.len(), 0);
+        assert_eq!(null_echo.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(null_echo) };
+        unsafe { phpc_native_value_free(null_value) };
+
+        let invalid_bytes = [0xff, b'p', b'h', b'p'];
+        let string =
+            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
+        let invalid_value = unsafe { phpc_native_value_from_string(string) };
+        assert!(invalid_value.is_null());
+
+        unsafe { phpc_native_value_free(invalid_value) };
+        unsafe { phpc_native_string_free(string) };
     }
 
     #[test]

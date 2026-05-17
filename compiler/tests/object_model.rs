@@ -5486,6 +5486,36 @@ echo $method->invokeArgs($runner, array("save_post", 20)), "|", implode(",", $ru
 }
 
 #[test]
+fn reflection_function_invokes_bounded_internal_string_builtins() {
+    let execution = run_source(
+        r#"<?php
+$strlen = new ReflectionFunction("StrLen");
+echo "name|", $strlen->getName(), "\n";
+echo "file|", ($strlen->getFileName() ? "yes" : "no"), "\n";
+echo "start|", ($strlen->getStartLine() ? "yes" : "no"), "\n";
+echo "params|", $strlen->getNumberOfParameters() . "/" . $strlen->getNumberOfRequiredParameters(), "\n";
+$params = $strlen->getParameters();
+$param = $params[0];
+echo "param|", $param->getName() . ":" . $param->getType()->getName(), "\n";
+echo "return|", $strlen->getReturnType()->getName(), "\n";
+echo "invoke|", $strlen->invoke("cache-key"), "\n";
+echo "invokeArgs|", $strlen->invokeArgs(array("hook")), "\n";
+
+$lower = new ReflectionFunction("strtolower");
+echo "lower|", $lower->invoke("Save_Post"), "\n";
+echo "lowerArgs|", $lower->invokeArgs(array("REST_API_INIT"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "name|strlen\nfile|no\nstart|no\nparams|1/1\nparam|string:string\nreturn|int\ninvoke|9\ninvokeArgs|4\nlower|save_post\nlowerArgs|rest_api_init"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_invokes_public_static_methods() {
     let execution = run_source(
         r#"<?php
