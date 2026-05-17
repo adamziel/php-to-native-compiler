@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1316/destructor_shape_validation.php:7:15: unsupported class inheritance for PluginLifecycle: destructor PluginLifecycle::__destruct() must be public in the current subset
+--- stderr end ---

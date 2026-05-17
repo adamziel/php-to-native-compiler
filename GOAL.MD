@@ -138,15 +138,15 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed small slices of public destructor
-shutdown behavior, nested by-reference `foreach` over direct array/request-bag
-paths, local `filemtime()` metadata, and exact `wp_options` option-name-list
-deletes over the placeholder MySQLi state island. Those are useful
-compatibility steps, but they do not change the larger project shape: the next
-lanes should keep attacking broad object/interface semantics, real
-reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
-WordPress database/bootstrap evidence until those areas become coherent
-subsystems instead of reached slices.
+The latest WordPress-focused batch closed small slices of destructor shape
+validation, by-reference `foreach` over direct visible object-property arrays,
+in-memory CLI session state, and prepared `wp_options` option-name-list deletes
+over the placeholder MySQLi state island. Those are useful compatibility
+steps, but they do not change the larger project shape: the next lanes should
+keep attacking broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress
+database/bootstrap evidence until those areas become coherent subsystems
+instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

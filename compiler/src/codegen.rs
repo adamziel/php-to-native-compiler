@@ -120,10 +120,12 @@ const LLVM_BITWISE_REJECTION: &str = "LLVM bitwise lowering rejects unsupported 
 const ASSEMBLY_BITWISE_REJECTION: &str = "assembly bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior";
 const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
-const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
-const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, $_FILES, and $_SESSION until native request-state storage, SAPI population, variables_order policy, upload metadata, session storage, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, $_FILES, and $_SESSION until native request-state storage, SAPI population, variables_order policy, upload metadata, session storage, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 const ASSEMBLY_HEADER_STATE_REJECTION: &str = "assembly header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
+const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
+const ASSEMBLY_SESSION_STATE_REJECTION: &str = "assembly session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
 const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_clean(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
@@ -164,7 +166,7 @@ fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
 fn is_request_superglobal_name(name: &str) -> bool {
     matches!(
         name,
-        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES"
+        "_SERVER" | "_COOKIE" | "_GET" | "_POST" | "_REQUEST" | "_FILES" | "_SESSION"
     )
 }
 
@@ -182,6 +184,13 @@ fn is_header_state_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "header" | "header_remove" | "headers_list" | "headers_sent" | "setcookie"
+    )
+}
+
+fn is_session_state_builtin(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "session_start" | "session_status" | "session_id" | "session_write_close"
     )
 }
 
@@ -808,6 +817,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_HEADER_STATE_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
+                Err(self.unsupported(*span, LLVM_SESSION_STATE_REJECTION))
             }
             Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_OUTPUT_BUFFER_REJECTION))
@@ -3703,6 +3715,9 @@ impl CGenerator {
             }
             Expr::Call { name, span, .. } if is_header_state_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_HEADER_STATE_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_session_state_builtin(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_SESSION_STATE_REJECTION))
             }
             Expr::Call { name, span, .. } if is_output_buffer_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_OUTPUT_BUFFER_REJECTION))
@@ -6660,6 +6675,9 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         | "PHP_INT_MAX"
         | "PHP_SAPI"
         | "PATH_SEPARATOR"
+        | "PHP_SESSION_DISABLED"
+        | "PHP_SESSION_NONE"
+        | "PHP_SESSION_ACTIVE"
         | "E_ERROR"
         | "E_WARNING"
         | "E_PARSE"
@@ -6974,6 +6992,10 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "headers_list"
             | "headers_sent"
             | "setcookie"
+            | "session_start"
+            | "session_status"
+            | "session_id"
+            | "session_write_close"
             | "assert"
             | "get_class"
             | "is_object"

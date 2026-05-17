@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
+const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, $_FILES, and $_SESSION until native request-state storage, SAPI population, variables_order policy, upload metadata, session storage, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();

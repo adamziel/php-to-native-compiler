@@ -139,6 +139,8 @@ struct Interpreter {
     response_headers: Vec<String>,
     output_buffers: Vec<String>,
     output_start: Option<OutputStart>,
+    session_status: i64,
+    session_id: String,
     stdout: String,
     exit_signal: Option<i32>,
 }
@@ -185,8 +187,18 @@ struct ActiveForeachReference {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ForeachArrayRoot {
-    Static { name: String, keys: Vec<ArrayKey> },
-    Global { name: String, keys: Vec<ArrayKey> },
+    Static {
+        name: String,
+        keys: Vec<ArrayKey>,
+    },
+    Global {
+        name: String,
+        keys: Vec<ArrayKey>,
+    },
+    Alias {
+        root: ArrayOffsetAliasRoot,
+        keys: Vec<ArrayKey>,
+    },
 }
 
 #[derive(Clone)]
@@ -927,6 +939,19 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_static_to_existing_array_offset_alias_root(
+        &mut self,
+        target: &str,
+        root: ArrayOffsetAliasRoot,
+        keys: Vec<ArrayKey>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let alias = ArrayOffsetAlias { root, keys };
+        self.materialize_array_offset_alias(&alias, span)?;
+        self.bind_static_to_array_offset_alias(target, alias);
+        Ok(())
+    }
+
     fn bind_static_to_appended_array_offset(
         &mut self,
         target: &str,
@@ -1131,6 +1156,20 @@ impl SymbolTable {
                     keys: alias_keys,
                 } if name == global_name && alias_keys.as_slice() == keys
             ))
+        )
+    }
+
+    fn is_static_bound_to_array_offset_alias_root(
+        &self,
+        target: &str,
+        root: &ArrayOffsetAliasRoot,
+        keys: &[ArrayKey],
+    ) -> bool {
+        matches!(
+            self.array_offset_aliases.get(target),
+            Some(aliases) if aliases.iter().any(|alias| {
+                alias.root == *root && alias.keys.as_slice() == keys
+            })
         )
     }
 
@@ -2231,6 +2270,16 @@ fn bind_foreach_lingering_reference(
                     value, name, alias_keys, span,
                 )?;
             }
+            ForeachArrayRoot::Alias { root, keys } => {
+                let mut alias_keys = keys.clone();
+                alias_keys.push(key);
+                scope.bind_static_to_existing_array_offset_alias_root(
+                    value,
+                    root.clone(),
+                    alias_keys,
+                    span,
+                )?;
+            }
         }
     }
     Ok(())
@@ -2478,6 +2527,8 @@ impl Interpreter {
             response_headers: Vec::new(),
             output_buffers: Vec::new(),
             output_start: None,
+            session_status: PHP_SESSION_NONE,
+            session_id: String::new(),
             stdout: String::new(),
             exit_signal: None,
         };
@@ -2515,6 +2566,46 @@ impl Interpreter {
         }
     }
 
+    fn foreach_object_property_alias_root(
+        &self,
+        object_name: &str,
+        property: &str,
+        scope: &SymbolTable,
+        span: Span,
+    ) -> CompileResult<ArrayOffsetAliasRoot> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let visibility = object
+            .property_visibility_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+
+        Ok(if visibility == Visibility::Public {
+            ArrayOffsetAliasRoot::PublicObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+            }
+        } else {
+            ArrayOffsetAliasRoot::ContextObjectProperty {
+                object: object_name.to_string(),
+                property: property.to_string(),
+                current_class_id,
+                protected_class_ids,
+            }
+        })
+    }
+
     fn by_reference_foreach_root(
         &mut self,
         iterable: &Expr,
@@ -2550,13 +2641,44 @@ impl Interpreter {
                     });
                 }
 
+                if let Some((object_name, property, indices)) =
+                    Self::collect_direct_object_property_array_index_path(target, index)
+                {
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+                    let root =
+                        self.foreach_object_property_alias_root(object_name, property, scope, span)?;
+                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                }
+
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "foreach",
-                        "by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression",
+                        "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
                     ),
                 ))
+            }
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "foreach",
+                            "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
+                        ),
+                    ));
+                };
+                let root =
+                    self.foreach_object_property_alias_root(object_name, property, scope, span)?;
+                Ok(ForeachArrayRoot::Alias {
+                    root,
+                    keys: Vec::new(),
+                })
             }
             expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
                 let value = self.evaluate(expr, scope)?;
@@ -2580,7 +2702,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "foreach",
-                    "by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression",
+                    "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
                 ),
             )),
         }
@@ -2601,6 +2723,16 @@ impl Interpreter {
                     return Err(runtime_error(span, RuntimeError::undefined_variable(name)));
                 };
                 (name.as_str(), keys.as_slice(), value)
+            }
+            ForeachArrayRoot::Alias { root, keys } => {
+                let alias = ArrayOffsetAlias {
+                    root: root.clone(),
+                    keys: Vec::new(),
+                };
+                let value = scope
+                    .read_alias_root_value(&alias, span)?
+                    .unwrap_or(Value::Null);
+                ("", keys.as_slice(), value)
             }
         };
 
@@ -3335,6 +3467,16 @@ impl Interpreter {
                                     value, name, alias_keys, *span,
                                 )?;
                             }
+                            ForeachArrayRoot::Alias { root, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.bind_static_to_existing_array_offset_alias_root(
+                                    value,
+                                    root.clone(),
+                                    alias_keys,
+                                    *span,
+                                )?;
+                            }
                         }
                         self.active_foreach_references.push(ActiveForeachReference {
                             root: root.clone(),
@@ -3357,6 +3499,15 @@ impl Interpreter {
                                 scope.is_static_bound_to_global_array_offset_path(
                                     value,
                                     name,
+                                    &alias_keys,
+                                )
+                            }
+                            ForeachArrayRoot::Alias { root, keys } => {
+                                let mut alias_keys = keys.clone();
+                                alias_keys.push(entry_key.clone());
+                                scope.is_static_bound_to_array_offset_alias_root(
+                                    value,
+                                    root,
                                     &alias_keys,
                                 )
                             }
@@ -4848,7 +4999,9 @@ impl Interpreter {
     fn track_allocated_object(&mut self, object: &PhpObject) {
         if self
             .resolve_instance_method(object.class_id(), "__destruct")
-            .is_some()
+            .is_some_and(|(_, _, _, visibility, is_static)| {
+                visibility == Visibility::Public && !is_static
+            })
         {
             self.allocated_objects.push(object.clone());
         }
@@ -8879,6 +9032,38 @@ impl Interpreter {
             }
         }
 
+        if is_wordpress_option_prepared_delete_names_query(&query) {
+            if let Some(handle_id) = connection_handle_id {
+                if self.mysqli_wp_options.contains_key(&handle_id) {
+                    let mut option_names = Vec::with_capacity(bound_parameters.len());
+                    for parameter in &bound_parameters {
+                        let Value::String(option_name) = parameter else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    function,
+                                    "prepared wp_options option-name-list delete requires string option name parameters in the current subset",
+                                ),
+                            ));
+                        };
+                        option_names.push(option_name.clone());
+                    }
+                    let options = self
+                        .mysqli_wp_options
+                        .get_mut(&handle_id)
+                        .expect("checked wp_options state should exist");
+                    let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                    self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = affected_rows;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(true));
+                }
+            }
+        }
+
         if is_mysqli_mutation_query(&query) {
             return Err(runtime_error(
                 span,
@@ -9515,6 +9700,27 @@ impl Interpreter {
         }
 
         if let Some(option_names) = parse_wordpress_option_delete_names_query(&query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = delete_wordpress_options_by_names(options, &option_names);
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        if is_wordpress_option_prepared_delete_names_query(&query) {
+            let mut option_names = Vec::with_capacity(params.len());
+            for parameter in &params {
+                let Value::String(option_name) = parameter else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_execute_query()",
+                            "prepared wp_options option-name-list delete requires string option name parameters in the current subset",
+                        ),
+                    ));
+                };
+                option_names.push(option_name.clone());
+            }
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = delete_wordpress_options_by_names(options, &option_names);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
@@ -17429,6 +17635,102 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_session_start(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "session_start()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if let Some(other) = args
+            .first()
+            .filter(|value| !matches!(value, Value::Array(_)))
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "session_start()",
+                    format!(
+                        "options argument must be array in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+
+        if self.output_start.is_some() {
+            return Ok(Value::Bool(false));
+        }
+
+        if self.session_status != PHP_SESSION_ACTIVE {
+            self.session_status = PHP_SESSION_ACTIVE;
+            if self.session_id.is_empty() {
+                self.session_id = "phpc-session".to_string();
+            }
+            self.global_symbols
+                .borrow_mut()
+                .entry("_SESSION".to_string())
+                .or_insert_with(|| value_cell(Value::Array(PhpArray::new())));
+        }
+
+        Ok(Value::Bool(true))
+    }
+
+    fn call_session_status(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("session_status", args, 0, span)?;
+        Ok(Value::Int(self.session_status))
+    }
+
+    fn call_session_id(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "session_id()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.session_id.clone();
+        let Some(id) = args.first() else {
+            return Ok(Value::String(previous));
+        };
+        let Value::String(id) = id else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "session_id()",
+                    format!(
+                        "id argument must be string in the current subset, got {}",
+                        id.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if self.session_status == PHP_SESSION_ACTIVE {
+            return Ok(Value::Bool(false));
+        }
+
+        self.session_id = id.clone();
+        Ok(Value::String(previous))
+    }
+
+    fn call_session_write_close(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("session_write_close", args, 0, span)?;
+        if self.session_status == PHP_SESSION_ACTIVE {
+            self.session_status = PHP_SESSION_NONE;
+        }
+        Ok(Value::Bool(true))
+    }
+
     fn call_headers_sent_direct(
         &mut self,
         args: &[Expr],
@@ -19481,6 +19783,10 @@ impl Interpreter {
             "headers_list" => self.call_headers_list(&args, span),
             "headers_sent" => self.call_headers_sent_values(&args, span),
             "setcookie" => self.call_setcookie(&args, span),
+            "session_start" => self.call_session_start(&args, span),
+            "session_status" => self.call_session_status(&args, span),
+            "session_id" => self.call_session_id(&args, span),
+            "session_write_close" => self.call_session_write_close(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -22858,6 +23164,8 @@ fn register_class_members(
 
     for method in composed_trait_methods(class, trait_lookup)? {
         let visibility = runtime_visibility(method.visibility);
+        validate_destructor_method_shape(&class.name, &method, visibility)
+            .map_err(|error| runtime_error(method.span, error))?;
         validate_final_method_override(classes, id, &class.name, &method, final_methods)
             .map_err(|error| runtime_error(method.span, error))?;
         validate_inherited_method_static_compatibility(classes, id, &class.name, &method)
@@ -22910,6 +23218,8 @@ fn register_class_members(
             }
             ClassMember::Method(method) => {
                 let visibility = runtime_visibility(method.visibility);
+                validate_destructor_method_shape(&class.name, method, visibility)
+                    .map_err(|error| runtime_error(method.span, error))?;
                 validate_final_method_override(classes, id, &class.name, method, final_methods)
                     .map_err(|error| runtime_error(method.span, error))?;
                 validate_inherited_method_static_compatibility(classes, id, &class.name, method)
@@ -24048,6 +24358,48 @@ fn method_static_name(is_static: bool) -> &'static str {
     }
 }
 
+fn validate_destructor_method_shape(
+    class_name: &str,
+    method: &ClassMethodDecl,
+    visibility: Visibility,
+) -> RuntimeResult<()> {
+    if !method.function.name.eq_ignore_ascii_case("__destruct") {
+        return Ok(());
+    }
+
+    if visibility != Visibility::Public {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            class_name,
+            format!(
+                "destructor {}::__destruct() must be public in the current subset",
+                class_name
+            ),
+        ));
+    }
+
+    if method.is_static {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            class_name,
+            format!(
+                "destructor {}::__destruct() must be non-static in the current subset",
+                class_name
+            ),
+        ));
+    }
+
+    if !method.function.params.is_empty() {
+        return Err(RuntimeError::unsupported_class_inheritance(
+            class_name,
+            format!(
+                "destructor {}::__destruct() cannot declare parameters in the current subset",
+                class_name
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_inherited_method_signature_compatibility(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
@@ -24722,6 +25074,10 @@ fn is_builtin(name: &str) -> bool {
             | "headers_list"
             | "headers_sent"
             | "setcookie"
+            | "session_start"
+            | "session_status"
+            | "session_id"
+            | "session_write_close"
             | "assert"
             | "get_class"
             | "is_object"
@@ -24898,6 +25254,9 @@ const PHP_MYSQLI_REFRESH_ALL_SUPPORTED: i64 = PHP_MYSQLI_REFRESH_GRANT
     | PHP_MYSQLI_REFRESH_SLAVE
     | PHP_MYSQLI_REFRESH_MASTER
     | PHP_MYSQLI_REFRESH_BACKUP_LOG;
+const PHP_SESSION_DISABLED: i64 = 0;
+const PHP_SESSION_NONE: i64 = 1;
+const PHP_SESSION_ACTIVE: i64 = 2;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -24906,6 +25265,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
+        "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
+        "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),
+        "PHP_SESSION_ACTIVE" => Some(Value::Int(PHP_SESSION_ACTIVE)),
         "E_ERROR" => Some(Value::Int(PHP_E_ERROR)),
         "E_WARNING" => Some(Value::Int(PHP_E_WARNING)),
         "E_PARSE" => Some(Value::Int(PHP_E_PARSE)),
@@ -25449,6 +25811,25 @@ fn is_wordpress_option_prepared_delete_query(query: &str) -> bool {
     let query = query.trim();
     query == "DELETE FROM wp_options WHERE option_name = ?"
         || query == "DELETE FROM `wp_options` WHERE `option_name` = ?"
+}
+
+fn is_wordpress_option_prepared_delete_names_query(query: &str) -> bool {
+    let query = query.trim();
+    let Some(values) = query
+        .strip_prefix("DELETE FROM wp_options WHERE option_name IN (")
+        .or_else(|| query.strip_prefix("DELETE FROM `wp_options` WHERE `option_name` IN ("))
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let mut saw_placeholder = false;
+    for value in values.split(',') {
+        if value.trim() != "?" {
+            return false;
+        }
+        saw_placeholder = true;
+    }
+    saw_placeholder
 }
 
 fn parse_wordpress_option_delete_query(query: &str) -> Option<String> {

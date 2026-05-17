@@ -1,0 +1,2 @@
+runtime error at 7:15: unsupported class inheritance for PluginLifecycle: destructor PluginLifecycle::__destruct() must be public in the current subset
+

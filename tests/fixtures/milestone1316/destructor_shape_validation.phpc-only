@@ -1,0 +1,1 @@
+phpc reports a stable bounded runtime diagnostic for unsupported non-public destructor declarations; exact PHP fatal formatting and timing are not modeled.

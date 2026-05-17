@@ -57,8 +57,11 @@ cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
 `$_FILES` upload metadata from URL-encoded keys such as
 `async-upload[name]=plugin.zip&async-upload[error]=0`; it does not parse
 multipart bodies or create temporary upload files. `PHPC_REQUEST_BODY` also
-seeds `php://input` for the interpreter only; native lowering still rejects
-request state until a native runtime ABI exists.
+seeds `php://input` for the interpreter only. `session_start()` now
+materializes a bounded in-memory `$_SESSION` array for the current CLI request;
+session persistence, locking, save handlers, and cookie emission remain
+unsupported. Native lowering still rejects request/session state until a native
+runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -139,7 +142,10 @@ incorrect native code.
   append writes, nested direct-variable array-offset assignment expressions,
   append-at-depth assignment expressions, direct-object-property nested array
   assignment and append-at-depth expressions, direct/nested array offset
-  removal, nested object-property array offset removal, array iteration, and
+  removal, nested object-property array offset removal, array iteration
+  including bounded by-reference iteration over direct array, nested array,
+  superglobal/request-bag, string-keyed `$GLOBALS`, and visible
+  object-property array roots, and
   positional statement-form
   `list($a, $b) = expr;` plus `[$a, $b] = expr;` assignment over numeric
   keys, including skipped slots
@@ -257,7 +263,8 @@ incorrect native code.
   bounded public-property plus context-aware non-public property reference-slot
   mirroring for direct-variable clone assignments, shutdown execution of
   public inherited or declared no-argument `__destruct` methods for allocated
-  and cloned objects in reverse allocation order, plus bounded direct
+  and cloned objects in reverse allocation order, with class-registration
+  validation for non-public, static, or parameterized destructors, plus bounded direct
   object-property array-offset and append reference sources for named visible
   public, private `$this`, protected `$this`, and protected peer-object
   properties in valid method contexts,

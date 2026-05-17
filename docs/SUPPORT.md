@@ -528,13 +528,18 @@
   `foreach ($_REQUEST["payload"] as &$value)`, and string-keyed `$GLOBALS`
   paths such as `foreach ($GLOBALS["bag"]["child"] as $key => &$value)` also
   route the loop value to the selected nested array slot, including from
-  function scope for root superglobals. After loop completion the loop
-  variable remains routed to the last
+  function scope for root superglobals. Direct visible object-property array
+  roots such as `foreach ($object->items as &$value)` and nested direct
+  object-property array roots such as
+  `foreach ($object->items["child"] as &$value)` route the loop value to the
+  selected property array slot through the same bounded alias metadata,
+  including visible non-public properties from valid method contexts. After
+  loop completion the loop variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
-  reference containers, copy-on-write, object/Traversable iteration, nested
-  object-property or ArrayAccess iterables, non-string-keyed `$GLOBALS` roots,
+  reference containers, copy-on-write, object/Traversable iteration,
+  ArrayAccess iterables, dynamic-property iterable roots, non-string-keyed `$GLOBALS` roots,
   reference-returning call iterables,
   foreach destructuring, array/object/ArrayAccess offset loop variables,
   nested-offset loop values, and native lowering remain unsupported.
@@ -632,8 +637,8 @@
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
   copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
-  sessions, other superglobals, exact warning behavior, and native lowering
-  remain unsupported.
+  session-related server key population, other superglobals, exact warning
+  behavior, and native lowering remain unsupported.
 - `$_COOKIE` is seeded as a bounded root superglobal for `phpc run`. By
   default it is an empty ordered array. When `PHPC_COOKIE` is set, the runtime
   treats it as a semicolon-delimited cookie header seed, parses cookie pairs
@@ -686,6 +691,15 @@
   `variables_order`, host SAPI imports, `$GLOBALS` aliasing, references,
   copy-on-write, exact warning behavior, and native lowering remain
   unsupported.
+- `$_SESSION` is not seeded at startup, matching the current bounded session
+  lifecycle. `session_start()` materializes it as an empty ordered array in the
+  root symbol table when no unbuffered output has started, and direct
+  function-scope reads and writes route through that root storage after it
+  exists. The current slice keeps session data in memory for one `phpc run`
+  request only. Session persistence, session file locking, save handlers,
+  session module configuration, session cookies/cache headers, garbage
+  collection, strict id validation, trans-sid behavior, exact warnings, and
+  native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -732,7 +746,10 @@
   no-argument `__destruct` method run that destructor during normal script
   shutdown, including after `exit`, in reverse allocation order for the current
   allocated-object queue; cloned objects without `__clone` are also queued for
-  the same shutdown destructor path. Dynamic class
+  the same shutdown destructor path. User-declared destructors are validated
+  at class registration for the current supported public non-static
+  parameterless shape; non-public, static, or parameterized destructors report
+  stable runtime boundaries before object allocation. Dynamic class
   variables with non-string values report a stable runtime boundary, and
   dynamic strings naming missing classes use the current undefined-class
   diagnostic. Instantiating an abstract class reports a stable runtime boundary;
@@ -892,6 +909,9 @@
   `E_STRICT`, `E_RECOVERABLE_ERROR`, `E_DEPRECATED`, `E_USER_DEPRECATED`, and
   `E_ALL` with the current PHP 8.3-compatible integer values used by
   `error_reporting()`
+- exact uppercase PHP session status constants `PHP_SESSION_DISABLED`,
+  `PHP_SESSION_NONE`, and `PHP_SESSION_ACTIVE` with their current integer
+  values for the bounded in-memory session-state slice
 - runtime-defined constants through `define($name, $value)` over the current
   unqualified or qualified string-name and scalar/array value subset;
   `constant($name)` accepts unqualified names and qualified lookup names with
@@ -1045,7 +1065,9 @@
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
   `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `abs`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
+  `session_start`, `session_status`, `session_id`, `session_write_close`,
+  `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -1581,18 +1603,26 @@
   string-valued dynamic calls, `call_user_func("mysqli_execute", ...)`, and
   positional `call_user_func_array("mysqli_execute", array(...))`. Alias calls
   use the same direct-variable refresh and params-array validation paths while
-  reporting `mysqli_execute()` in alias-specific diagnostics. This is not
-  broader statement execution, named params-array support, true by-reference
-  aliasing, mutation SQL, host database state, PHP warning/error fidelity,
-  mysqlnd behavior, or native statement lowering.
+  reporting `mysqli_execute()` in alias-specific diagnostics. The bounded
+  WordPress `wp_options` state island also accepts exact prepared
+  `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements, including
+  the current backticked table/column spelling, when every placeholder is a
+  string option name; it removes each distinct reached option name and updates
+  statement and connection affected-row metadata. This is not broader
+  statement execution, named params-array support, true by-reference aliasing,
+  mutation SQL beyond exact `wp_options` state-island shapes, host database
+  state, PHP warning/error fidelity, mysqlnd behavior, or native statement
+  lowering.
   `mysqli_execute_query($handle, $query, $params = null)` accepts a
   placeholder `mysqli` object, string query, and optional PHP list scalar/null
   params array for the same exact known placeholder SQL shapes. It returns a
   placeholder `mysqli_result` for deterministic SELECT placeholders and
   `true` for current deterministic no-result shapes and for the exact
-  no-placeholder `DELETE FROM wp_options WHERE option_name IN (...)` state
-  island shape, and rejects params arrays whose length does not match the
-  query `?` placeholder count. This is not
+  `DELETE FROM wp_options WHERE option_name IN (...)` state island shapes,
+  including no-placeholder single-quoted literal lists and prepared
+  `IN (?, ...)` lists whose params are all string option names, and rejects
+  params arrays whose length does not match the query `?` placeholder count.
+  This is not
   broad prepared SQL execution, named params-array support, hidden statement
   status-copy fidelity, mutation SQL beyond that exact option-name-list
   delete shape, host database state, PHP warning/error fidelity, mysqlnd
@@ -1765,7 +1795,10 @@
   `DELETE FROM wp_options WHERE option_name IN (...)` by removing each
   distinct recorded option name in the single-quoted list and reporting the
   number of removed rows, including through
-  `mysqli_execute_query($handle, $query)` with no params, and lets a later
+  `mysqli_execute_query($handle, $query)` with no params, and accepts exact
+  prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements
+  through `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query,
+  array(...))` when all placeholders are string option names, and lets a later
   exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
@@ -2210,6 +2243,24 @@
   SameSite, options arrays, deletion cookies, cookie-name/value encoding,
   duplicate/replacement policy, SAPI/web-server emission, exact diagnostics,
   warning recovery, and native lowering remain unsupported.
+  `session_start($options = [])` accepts no argument or one array argument.
+  It returns `true`, sets the bounded session status to active, assigns a
+  deterministic id when none was set, and materializes `$_SESSION` as an empty
+  root superglobal when no unbuffered output has started. If unbuffered output
+  has already started, it returns `false` without warning machinery. Option
+  values are currently accepted only as an array shape and are otherwise
+  ignored. `session_status()` accepts no arguments and returns
+  `PHP_SESSION_NONE` or `PHP_SESSION_ACTIVE` for the current request.
+  `session_id($id = null)` returns the current id; before a session is active,
+  one string argument sets a deterministic id and returns the previous id.
+  While active, `session_id($id)` returns `false` without changing the id.
+  `session_write_close()` accepts no arguments, closes the active bounded
+  session status back to `PHP_SESSION_NONE`, keeps the in-memory `$_SESSION`
+  data visible for the rest of the request, and returns `true`. Session
+  persistence, session file locking, save handlers, `session_name()`,
+  `session_destroy()`, `session_abort()`, `session_reset()`, `session_unset()`,
+  `session_cache_*()`, strict id validation, session cookies/cache headers,
+  garbage collection, exact warnings, and native lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3183,9 +3234,9 @@
   value to the direct loop variable in the active scope. `foreach ($array as
   $key => $value)` additionally writes the current integer or string key as an
   `int` or `string` value to the direct key loop variable. Bounded
-  by-reference value iteration is supported for the direct and nested array
-  roots documented above, but it still does not provide full PHP reference
-  containers or copy-on-write. Missing key reads
+  by-reference value iteration is supported for the direct, nested, and
+  direct object-property array roots documented above, but it still does not
+  provide full PHP reference containers or copy-on-write. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`, `array_values`,
@@ -3813,6 +3864,7 @@
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
+  `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
@@ -4726,6 +4778,11 @@
   as the builtin section above; direct native `setcookie(...)` calls reject
   under the header-state boundary, while native function-table introspection
   recognizes the name.
+  `session_start`, `session_status`, `session_id`, and `session_write_close`
+  accept the same current bounded in-memory CLI session subset as the builtin
+  section above; direct native calls reject under the session-state boundary,
+  while native function-table introspection recognizes the names. Native reads
+  of `$_SESSION` reject with the request-superglobal boundary.
   `php_sapi_name` accepts the same current no-argument deterministic `cli`
   subset as the builtin section above; direct native `php_sapi_name(...)`
   calls still reject under the function-call boundary, while native
@@ -5579,11 +5636,14 @@
   same-class or child-class method context through `new ClassName(...)`.
   Public non-static no-argument `__destruct` methods, including inherited
   destructors, execute during normal shutdown for successfully allocated or
-  cloned objects that reached the current allocation tracker.
+  cloned objects that reached the current allocation tracker. Declarations of
+  non-public, static, or parameterized destructors are rejected at class
+  registration with stable runtime diagnostics instead of being deferred to
+  shutdown.
   Constructor arguments for classes without a constructor, private
   constructors without same-class construction context, protected constructors
   outside same-class/child-class construction context, static constructors,
-  static/private/protected destructors, destructor parameters, destructor
+  exact PHP fatal wording for destructor declaration errors, destructor
   execution on runtime-error paths, cyclic garbage collection, exact object
   lifetime and handle-reuse ordering, constructor promotion, explicit parent
   calls outside active child instance context, named arguments,
@@ -6856,6 +6916,12 @@
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
   native lowering beyond function-table introspection
+- session behavior beyond the current in-memory CLI request slice:
+  persistence across requests, file locking, save handlers, session module INI
+  configuration, `session_name()`, `session_destroy()`, `session_abort()`,
+  `session_reset()`, `session_unset()`, `session_cache_*()` APIs, strict id
+  validation, session cookies/cache headers, garbage collection, exact warning
+  behavior, and native lowering beyond function-table introspection
 - `microtime()` behavior beyond the current `microtime(true)` float-seconds
   subset: no-argument and `false` string-return format, exact formatting,
   precision guarantees, monotonicity, deterministic virtual time, broad
@@ -6897,7 +6963,7 @@
   request method/content-type enforcement, `variables_order`, host SAPI
   imports, `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering
   fidelity, exact warning behavior, and native lowering
-- other superglobals such as `$_ENV`, `$_SESSION`, and `$GLOBALS`
+- other superglobals such as `$_ENV` and full PHP `$GLOBALS` materialization
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,

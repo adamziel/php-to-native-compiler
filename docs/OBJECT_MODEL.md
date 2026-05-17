@@ -308,15 +308,18 @@ Protected constructors can execute through `new ClassName(...)` from
 same-class or child-class method context.
 Public non-static no-argument destructors, including inherited destructors, run
 during normal script shutdown in reverse allocation order for objects reached
-by the current allocation tracker.
+by the current allocation tracker. User-declared `__destruct` methods are
+validated at class registration for the currently executable public,
+non-static, parameterless shape, so non-public, static, or parameterized
+destructors fail before object allocation rather than from the shutdown queue.
 Undefined classes, constructor arguments for classes without constructors,
 private constructors without same-class construction context, protected
 constructors outside same-class/child-class construction context, parent
 constructor calls outside active child instance context, and static
-constructors produce stable runtime errors. Static, private, or protected
-destructors, destructor parameters, destructor execution on runtime-error
-paths, cyclic garbage collection, exact object lifetime ordering, handle reuse,
-and native lowering remain unsupported.
+constructors produce stable runtime errors. Exact PHP fatal wording for
+destructor declaration errors, destructor execution on runtime-error paths,
+cyclic garbage collection, exact object lifetime ordering, handle reuse, and
+native lowering remain unsupported.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance

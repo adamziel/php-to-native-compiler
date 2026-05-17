@@ -1,0 +1,1 @@
+Depends on phpc's deterministic placeholder MySQLi wp_options state island instead of a real MySQL server.

@@ -13305,35 +13305,114 @@ handled.
 
 ## Milestone 1316: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: advance a larger object/interface blocker from
+- [x] Parser/runtime lane: advance a larger object/interface blocker from
   `GOAL.MD`. Prefer constructor parameter/default fidelity, destructor
   visibility and shutdown edge cases, autoloadable class/interface lookup
   scaffolding, magic object hooks such as `__get`/`__set`/`__isset`/`__call`,
   reflection-visible metadata reached by WordPress, or trait/interface edge
   cases. Keep full PHP variance, runtime type enforcement, exact diagnostics,
   references/COW, autoload fidelity, and native lowering unsupported until
-  implemented and tested.
+  implemented and tested. Milestone 1316 closes a bounded destructor
+  declaration-shape slice: user-declared `__destruct` methods are validated at
+  class registration for the current public, non-static, parameterless
+  shutdown path, so non-public, static, or parameterized destructors report
+  stable runtime boundaries before allocation instead of surfacing from the
+  shutdown queue.
 
 ## Milestone 1317: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: advance a larger reference/COW blocker from `GOAL.MD`.
-  Prefer real reference containers, object-property or ArrayAccess
-  by-reference iteration roots, reference-return iterable aliases,
-  stored/reference-return alias lifetime cleanup, alias propagation across
-  included files, or broader array/object copy-on-write. Keep exact warning
-  behavior, full PHP alias destruction ordering, resource/object edge cases,
-  and native lowering unsupported until implemented and tested.
+- [x] Runtime lane: advance a larger reference/COW blocker from `GOAL.MD`.
+  Milestone 1317 adds bounded by-reference `foreach` over direct visible
+  object-property array roots, including nested paths such as
+  `$object->items["child"]`. The loop value binds to the selected property
+  array slot through the existing public/context object-property alias root,
+  preserving body mutation, appended tail visitation, post-loop lingering
+  aliases, and `unset($value)` detachment for the covered direct-object
+  property shape. This is not real reference containers, ArrayAccess
+  by-reference iteration, reference-return iterable aliases,
+  stored/reference-return alias lifetime cleanup, broader array/object
+  copy-on-write, exact warning behavior, full PHP alias destruction ordering,
+  resource/object edge cases, or native lowering.
 
 ## Milestone 1318: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
+- [x] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
   behavior that blocks real WordPress requests. Prefer `php://temp`, file and
   stream resources, sessions, header/output state, shutdown-time visibility,
   include-path metadata follow-up behavior, host filesystem fidelity, or
   multipart/upload handling. Keep native lowering rejected for request, stream,
   filesystem, and resource state unless runtime support and tests exist.
+  Milestone 1318 adds bounded in-memory CLI session state:
+  `session_start()`, `session_status()`, `session_id()`,
+  `session_write_close()`, `PHP_SESSION_*` constants, and `$_SESSION`
+  materialization before unbuffered output. Persistence, file locking, save
+  handlers, session cookies/cache headers, broader session APIs, strict id
+  validation, exact warnings, references/COW, and native session lowering
+  remain unsupported.
 
 ## Milestone 1319: WordPress DB/Bootstrap Evidence Blocker
+
+- [x] Compatibility/runtime lane: advance executable WordPress database or
+  bootstrap evidence. Prefer broader `wpdb`/MySQLi result or mutation
+  behavior, object-cache/transient persistence, option API state, hooks under
+  realistic callback shapes, deterministic plugin/theme loading probes, or a
+  WordPress bootstrap/request probe that moves past its next real blocker.
+  Keep real MySQL, arbitrary SQL, full request support, plugin/theme support,
+  references/COW, and native support unsupported until implemented and tested.
+  Milestone 1319 adds exact prepared
+  `DELETE FROM wp_options WHERE option_name IN (?, ...)` support for string
+  option-name placeholders through `mysqli_stmt_execute()` and
+  `mysqli_execute_query($handle, $query, array(...))`, including deterministic
+  affected-row metadata over the placeholder state island. Real MySQL,
+  arbitrary prepared `DELETE`, subqueries, non-string option params,
+  persistent cache, broad `wpdb`, full option/transient APIs, plugin/theme
+  loading, request fidelity, references/COW, and native support remain
+  unsupported.
+
+## Milestone 1320: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1316-1319 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch. Manual full gate passed before checkpoint: `cargo
+  test` completed successfully, `phpc test` reported `1432` fixture tests
+  passed with `0` failures, and `phpc test --compare-php` reported `1432`
+  fixture tests passed with `0` failures, `822` system PHP comparisons, and
+  `610` skipped `phpc-only` fixtures.
+
+## Milestone 1321: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: advance a larger object/interface blocker from
+  `GOAL.MD`. Prefer constructor parameter/default fidelity, autoloadable
+  class/interface lookup scaffolding, magic object hooks such as
+  `__get`/`__set`/`__isset`/`__call`, reflection-visible metadata reached by
+  WordPress, trait/interface edge cases, `__clone` dispatch, or destructor
+  shutdown ordering beyond the current declaration-shape slice. Keep full PHP
+  variance, runtime type enforcement, exact diagnostics, references/COW,
+  autoload fidelity, and native lowering unsupported until implemented and
+  tested.
+
+## Milestone 1322: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: advance a larger reference/COW blocker from `GOAL.MD`.
+  Prefer real reference containers, ArrayAccess by-reference iteration roots,
+  reference-return iterable aliases, stored/reference-return alias lifetime
+  cleanup, alias propagation across included files, broader array/object
+  copy-on-write, or `$_SESSION`/request-state alias behavior. Keep exact
+  warning behavior, full PHP alias destruction ordering, resource/object edge
+  cases, and native lowering unsupported until implemented and tested.
+
+## Milestone 1323: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: advance request/SAPI, filesystem, or stream
+  behavior that blocks real WordPress requests. Prefer `php://temp`, file and
+  stream resources, session persistence or cookies, header/output state,
+  shutdown-time visibility, include-path metadata follow-up behavior, host
+  filesystem fidelity, or multipart/upload handling. Keep native lowering
+  rejected for request, stream, filesystem, and resource state unless runtime
+  support and tests exist.
+
+## Milestone 1324: WordPress DB/Bootstrap Evidence Blocker
 
 - [ ] Compatibility/runtime lane: advance executable WordPress database or
   bootstrap evidence. Prefer broader `wpdb`/MySQLi result or mutation
@@ -13343,9 +13422,9 @@ handled.
   Keep real MySQL, arbitrary SQL, full request support, plugin/theme support,
   references/COW, and native support unsupported until implemented and tested.
 
-## Milestone 1320: WordPress-Focused Queue Refresh
+## Milestone 1325: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1316-1319 land, refresh the
+- [ ] Tests/docs lane: after Milestones 1321-1324 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

@@ -373,6 +373,19 @@ real MySQL, persistent object cache, broad `wpdb`, full WordPress option or
 transient APIs, plugins/themes, request/SAPI fidelity, references/copy-on-write,
 or native support.
 
+After Milestone 1319, that same transient cleanup evidence also covers exact
+prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements
+through `mysqli_stmt_execute()` and
+`mysqli_execute_query($handle, $query, array(...))`, with deterministic
+affected-row metadata and duplicate requested-name de-duplication over the
+placeholder option state. A committed `wpdb`-shaped fixture proves deleting the
+transient value and timeout rows through a prepared name-list path while
+clearing the bounded in-memory cache slot. This remains a bounded state-island
+probe only; it does not claim arbitrary prepared `DELETE` SQL, subqueries,
+non-string option-name params, real MySQL, persistent object cache, broad
+`wpdb`, full WordPress option or transient APIs, plugin/theme loading,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

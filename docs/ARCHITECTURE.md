@@ -34,13 +34,19 @@ observe the same value in the current top-level/root-symbol-table slice. This
 same alias metadata also backs the bounded by-reference `foreach` path for
 direct nested array-offset roots, request-bag roots such as
 `$_REQUEST["payload"]`, and string-keyed nested `$GLOBALS` paths such as
-`$GLOBALS["bag"]["child"]`. This is still a materialized-symbol-table model,
-not PHP's full reference-backed alias, recursive `$GLOBALS` array,
-copy-on-write, dynamic global-name, object-property/ArrayAccess iteration, or
-included-file scope model.
+`$GLOBALS["bag"]["child"]`. The same path now covers direct visible
+object-property array roots such as `$object->items` and
+`$object->items["child"]`, using the existing public/context property alias
+root instead of a general PHP reference container. This is still a
+materialized-symbol-table model, not PHP's full reference-backed alias,
+recursive `$GLOBALS` array, copy-on-write, dynamic global-name, ArrayAccess
+iteration, dynamic object-property iterable roots, or included-file scope
+model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
-that root storage. The default request bags are empty ordered arrays. For
+that root storage. `$_SESSION` is materialized lazily into the same root symbol
+table when the bounded CLI `session_start()` path succeeds. The default
+request bags are empty ordered arrays. For
 explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
 and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_REQUEST_METHOD=POST` plus
@@ -61,7 +67,8 @@ deterministic request-state scaffolding only: it does not import browser
 cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
 malformed or edge-case PHP request names with exact `parse_str()` behavior,
 parse multipart uploads, create temporary upload files, validate host upload
-state, emit cookies, or model `variables_order`/`request_order`.
+state, persist sessions, lock session files, dispatch session save handlers,
+emit session cookies/cache headers, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -2004,7 +2011,10 @@ handle. Classes without constructors still require no constructor arguments.
 Objects whose class declares or inherits a public non-static no-argument
 `__destruct` method are tracked after successful allocation and run during
 normal shutdown in reverse allocation order; current shallow clones are tracked
-as separate handles for that same destructor path.
+as separate handles for that same destructor path. User-declared destructors
+are validated when class members register, so non-public, static, or
+parameterized `__destruct` declarations fail before object allocation instead
+of being discovered by the shutdown queue.
 The allocated object stores class identity and `null` instance-property slots
 in inherited parent-to-child declaration order while skipping static
 properties. Compatible public/protected redeclarations share the inherited

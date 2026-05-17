@@ -6602,6 +6602,66 @@ echo "body\n";
 }
 
 #[test]
+fn destructor_declarations_validate_public_non_static_parameterless_shape() {
+    let private_destructor = runtime_error(
+        r#"<?php
+class PrivateDestructor {
+    private function __destruct() {}
+}
+echo "unreachable";
+"#,
+    );
+    assert_eq!(private_destructor.line, 3);
+    assert_eq!(private_destructor.column, 13);
+    assert_eq!(
+        private_destructor.message,
+        "unsupported class inheritance for PrivateDestructor: destructor PrivateDestructor::__destruct() must be public in the current subset"
+    );
+
+    let protected_destructor = runtime_error(
+        r#"<?php
+class ProtectedDestructor {
+    protected function __destruct() {}
+}
+"#,
+    );
+    assert_eq!(protected_destructor.line, 3);
+    assert_eq!(protected_destructor.column, 15);
+    assert_eq!(
+        protected_destructor.message,
+        "unsupported class inheritance for ProtectedDestructor: destructor ProtectedDestructor::__destruct() must be public in the current subset"
+    );
+
+    let static_destructor = runtime_error(
+        r#"<?php
+class StaticDestructor {
+    public static function __destruct() {}
+}
+"#,
+    );
+    assert_eq!(static_destructor.line, 3);
+    assert_eq!(static_destructor.column, 19);
+    assert_eq!(
+        static_destructor.message,
+        "unsupported class inheritance for StaticDestructor: destructor StaticDestructor::__destruct() must be non-static in the current subset"
+    );
+
+    let parameter_destructor = runtime_error(
+        r#"<?php
+class ParameterDestructor {
+    public function __destruct($value = "default") {}
+}
+"#,
+    );
+    assert_eq!(parameter_destructor.line, 3);
+    assert_eq!(parameter_destructor.column, 12);
+    assert_eq!(
+        parameter_destructor.message,
+        "unsupported class inheritance for ParameterDestructor: destructor ParameterDestructor::__destruct() cannot declare parameters in the current subset"
+    );
+}
+
+#[test]
 fn parent_method_calls_execute_with_current_this_binding() {
     let execution = run_source(
         r#"<?php

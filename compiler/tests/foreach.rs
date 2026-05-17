@@ -396,6 +396,45 @@ echo $_REQUEST["payload"]["first"], "|", $_REQUEST["payload"]["second"];
 }
 
 #[test]
+fn foreach_by_reference_mutates_object_property_array_roots() {
+    let source = r#"<?php
+class Bag {
+    public $items = ["outer" => ["a" => "one", "b" => "two"]];
+}
+
+$bag = new Bag();
+foreach ($bag->items["outer"] as $key => &$value) {
+    $value = $value . ":" . $key;
+    if ($key === "a") {
+        $bag->items["outer"]["c"] = "three";
+    }
+}
+
+echo $bag->items["outer"]["a"], "|", $bag->items["outer"]["b"], "|", $bag->items["outer"]["c"], "|", $value, "\n";
+$bag->items["outer"]["c"] = "direct";
+echo $value, "|";
+$value = "tail";
+echo $bag->items["outer"]["c"], "|", $value, "\n";
+unset($value);
+
+foreach ($bag->items as $key => &$value) {
+    if ($key === "outer") {
+        $value["d"] = "delta";
+    }
+}
+unset($value);
+echo $bag->items["outer"]["d"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "one:a|two:b|three:c|three:c\ndirect|tail|tail\ndelta"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_rejects_reference_return_iterables_as_stable_boundary() {
     let error = runtime_error(
         r#"<?php
@@ -414,7 +453,7 @@ foreach (items() as &$item) {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call foreach: by-reference iteration currently requires a direct array variable, direct array-offset path, string-keyed $GLOBALS path, or temporary array expression"
+        "unsupported call foreach: by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression"
     );
 }
 

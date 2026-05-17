@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1319/mysqli_wp_options_prepared_transient_name_list_delete_state.php
+cached-feed:cache|deleted:2|cache-miss|rows=siteurl=https://example.test

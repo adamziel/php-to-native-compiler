@@ -322,11 +322,16 @@ successful zero-row deletes. A later exact
 `DELETE FROM wp_options WHERE option_name IN (...)` removes each distinct
 recorded option name in the single-quoted list, reports the number of removed
 rows through `mysqli_affected_rows($handle)`, skips missing names, and is also
-accepted by `mysqli_execute_query($handle, $query)` with no params. This gives
-the current transient-shaped cleanup probe a deterministic option-state path;
-it is not broad `DELETE` SQL, subquery support, arbitrary predicates, prepared
-name-list binding, real index/lock behavior, or host database execution. A
-later exact
+accepted by `mysqli_execute_query($handle, $query)` with no params. Exact
+prepared `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements,
+including the current backticked table/column spelling, are accepted through
+`mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query, array(...))`
+when every placeholder value is a string option name; duplicate names are
+de-duplicated for affected-row accounting. This gives the current
+transient-shaped cleanup probe a deterministic option-state path for literal
+and prepared name lists; it is not broad `DELETE` SQL, subquery support,
+arbitrary predicates, non-string option-name params, real index/lock behavior,
+or host database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
