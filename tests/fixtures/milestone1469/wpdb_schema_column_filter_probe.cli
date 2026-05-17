@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1469/wpdb_schema_column_filter_probe.php

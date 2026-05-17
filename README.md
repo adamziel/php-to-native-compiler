@@ -79,8 +79,14 @@ deterministic header.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
-was closed. Cross-process session persistence, locking, save handlers, option
-effects beyond the documented session-start options, cookie encoding,
+was closed. When `ini_set("session.save_path", $path)` supplies an explicit
+local save path and `session_id($id)` supplies a bounded alphanumeric,
+underscore, or hyphen id before start, `session_start()`/`session_write_close()`
+also load and write PHP-compatible `sess_<id>` files for scalar and array
+string-keyed session values across separate `phpc run` invocations. Locking,
+save handlers, garbage collection, strict id validation, integer top-level
+session keys, object/resource session values, option effects beyond the
+documented session-start options, cookie encoding,
 expiration-date formatting, cookie replacement, and cache-header emission
 remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
@@ -515,7 +521,8 @@ protected-method, constructor, method inheritance
 visibility/staticness/signature-count/type-text, and class-constant slice,
 typed property compatibility beyond exact same-text inherited metadata, weak
 scalar coercions, inherited class-name typed-property write checks, and
-declared user-interface typed-property write checks, compound/DNF-shaped typed property
+declared user-interface typed-property write checks, current class/interface
+alias typed-property write checks, compound/DNF-shaped typed property
 declarations, readonly property metadata and write-once enforcement, promoted
 constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
@@ -598,9 +605,11 @@ direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
-Direct variable and direct visible object-property assignments from reference
+Direct variable, direct array-offset, and direct visible object-property
+assignments from reference
 array literals, such as
-`$args = array(&$value)` and
+`$args = array(&$value)`,
+`$registry["args"] = array(&$value)`, and
 `$store->args = array("value" => &$object->items[$key])`, preserve covered
 direct variable, direct array-offset, and direct visible object-property
 array-offset reference elements for later stored-array callback invocation and
@@ -608,13 +617,13 @@ reference-return alias binding. The same covered reference elements are
 preserved when the assigned direct variable is already backed by covered
 array-offset alias metadata, such as
 `$args =& $registry["args"]; $args = array(&$value)`. Reference array
-literals assigned into array offsets, dynamic properties, or other
-non-variable targets, reference elements from arbitrary expressions, executing
+literals assigned into dynamic properties or other non-variable targets,
+reference elements from arbitrary expressions, executing
 unknown or duplicate string-keyed argument names beyond the stable diagnostic
 path, positional arguments after string-keyed named arguments, variadic named
 callback arguments, stored arrays whose reached slots were not assigned by
 reference or by a covered reference array literal, non-direct stored array
-expressions beyond direct
+expressions beyond direct array offsets and direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback

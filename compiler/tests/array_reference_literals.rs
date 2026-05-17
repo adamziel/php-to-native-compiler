@@ -144,6 +144,45 @@ echo $items["slot"], "|", $store->args[0], "|", $copy[0];
 }
 
 #[test]
+fn array_reference_literals_assigned_to_array_offset_feed_call_user_func_array() {
+    let execution = run_source(
+        r#"<?php
+function mark_refcow_literal_offset(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+function &pick_refcow_literal_offset(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$value = "seed";
+$registry = [];
+$registry["args"] = array(&$value, "offset");
+call_user_func_array("mark_refcow_literal_offset", $registry["args"]);
+echo $value, "|", $registry["args"][0], "\n";
+
+$alias =& call_user_func_array("pick_refcow_literal_offset", $registry["args"]);
+$alias = $alias . ":alias";
+echo $value, "|", $registry["args"][0], "|", $alias, "\n";
+
+$items = ["slot" => "array"];
+$registry["args"] = array(&$items["slot"], "copy");
+$copy = $registry["args"];
+$copy[0] = "copied";
+echo $items["slot"], "|", $registry["args"][0], "|", $copy[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:offset|seed:offset\nseed:offset:offset:alias|seed:offset:offset:alias|seed:offset:offset:alias\ncopied|copied|copied"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_copies_preserve_direct_reference_element_identity() {
     let execution = run_source(
         r#"<?php

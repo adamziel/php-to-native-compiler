@@ -15390,26 +15390,38 @@ handled.
 
 ## Milestone 1466: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: target the next object/class blocker, prioritizing
-  interface aliases, built-in/internal interface catalog behavior,
-  class aliases in typed-property checks, compound property type objects,
+- [x] Parser/runtime lane: added bounded class/interface alias compatibility
+  for declared typed-property checks. Runtime object relationship metadata now
+  records active `class_alias()` lookup names for instantiated classes,
+  ancestor classes, and declared implemented interfaces, so direct instance
+  and static typed-property writes accept current alias names in the simple
+  class/interface property-type subset. This does not add aliases registered
+  after an object was instantiated, compound property type objects,
   readonly/property-hook behavior, property attributes, file/line/doc-comment
   metadata, extension/internal metadata, function/closure reflection targets,
-  magic hooks reached by WordPress, autoload/class-alias lifecycle parity,
-  interface diagnostics, or broader class metadata behavior.
+  broader autoload/class-alias lifecycle parity, or native lowering.
 
 ## Milestone 1467: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: target the next reference/COW blocker, prioritizing real
+- [x] Runtime lane: target the next reference/COW blocker, prioritizing real
   reference containers, array-offset or dynamic-property reference-literal
   assignment targets, arbitrary reference expressions, dynamic `ArrayAccess`
   roots, nested mixed `ArrayAccess` chains, alias cleanup after replacing
   containing properties, broader array/object copy-on-write, exact alias
-  destruction ordering, by-reference foreach, or native lowering.
+  destruction ordering, by-reference foreach, or native lowering. Completed as
+  a bounded direct array-offset reference-literal assignment target slice:
+  `$registry["args"] = array(&$value, ...)` now records covered literal
+  reference slots below the stored array-offset container, so later
+  `call_user_func_array($callback, $registry["args"])` invocation and
+  reference-return alias binding observe the same covered source. Real
+  reference containers, dynamic-property assignment targets, arbitrary
+  reference expressions, dynamic `ArrayAccess` roots, nested mixed
+  `ArrayAccess` chains, broader COW, exact alias destruction ordering,
+  broader by-reference foreach, and native lowering remain unsupported.
 
 ## Milestone 1468: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
+- [x] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
   behavior that blocks real WordPress requests, prioritizing cookie encoding,
   expiration-date formatting, cookie deletion/replacement semantics,
   cache-header emission, session file persistence, locking or save-handler
@@ -15418,10 +15430,20 @@ handled.
   shutdown/fatal/destructor edge ordering, include-path/stat-cache behavior,
   `open_basedir`, stream filters/wrappers, wrapper-specific stream contexts,
   request-body lifetime, host filesystem edge cases, or native lowering.
+  Milestone 1468 adds bounded deterministic session file persistence when
+  `session.save_path` is set through `ini_set()` and a bounded explicit
+  `session_id()` is provided before start. `session_start()` loads an existing
+  PHP-compatible `sess_<id>` file for string-keyed scalar and array session
+  values, and `session_write_close()` writes the active `$_SESSION` array back
+  for later `phpc run` invocations. Locking, save handlers, garbage
+  collection, strict id validation, integer top-level session keys,
+  object/resource session
+  serialization, malformed session-file recovery diagnostics, broader option
+  effects, exact warning text, and native lowering remain unsupported.
 
 ## Milestone 1469: WordPress DB/Bootstrap Evidence Blocker
 
-- [ ] Compatibility/runtime lane: target executable WordPress database or
+- [x] Compatibility/runtime lane: target executable WordPress database or
   bootstrap evidence, prioritizing real SQL parsing slices, dbDelta diff
   generation, schema rollback, expression indexes, index ordering/opclass
   metadata, host database inspection, table status/detail metadata, broader
@@ -15429,10 +15451,74 @@ handled.
   option/transient query shapes, object-cache/transient persistence, hooks
   under realistic callback shapes, deterministic plugin/theme loading probes,
   or a bootstrap/request probe that moves past its next real blocker.
+  Milestone 1469 adds bounded filtered column metadata over the MySQLi
+  dynamic schema island: exact `SHOW FULL COLUMNS FROM <table> LIKE
+  '<column>'`, `SHOW COLUMNS FROM <table> WHERE Field = '<column>'`, and
+  `DESCRIBE`/`DESC <table> <column>` probes return the matching recorded
+  column or an empty result set for missing exact columns. Real MySQL
+  connectivity, wildcard `LIKE` filters, arbitrary predicates, dbDelta,
+  full `wpdb`, persistent object cache, and native database lowering remain
+  unsupported.
 
 ## Milestone 1470: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1466-1469 land, refresh the
+- [x] Tests/docs lane: after Milestones 1466-1469 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch.
+  Manual full gate passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1466-1470 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1549` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1549` fixture tests
+  passed with `0` failures, `907` system PHP comparisons, and `642`
+  `phpc-only` skipped fixtures.
+
+## Milestone 1471: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: target the next object/class blocker, prioritizing
+  aliases registered after instantiation, compound union/intersection/DNF
+  property type objects, readonly/property-hook behavior, property
+  attributes, file/line/doc-comment metadata, extension/internal metadata,
+  function/closure reflection targets, magic hooks reached by WordPress,
+  broader autoload/class-alias lifecycle parity, interface diagnostics, or
+  broader class metadata behavior.
+
+## Milestone 1472: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: target the next reference/COW blocker, prioritizing real
+  reference containers, dynamic-property or append-offset reference-literal
+  assignment targets, arbitrary reference expressions, dynamic `ArrayAccess`
+  roots, nested mixed `ArrayAccess` chains, alias cleanup after replacing
+  containing properties, broader array/object copy-on-write, exact alias
+  destruction ordering, by-reference foreach, or native lowering.
+
+## Milestone 1473: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
+  behavior that blocks real WordPress requests, prioritizing session file
+  locking, save handlers, garbage collection, strict session-id validation,
+  cookie encoding, expiration-date formatting, cookie deletion/replacement
+  semantics, cache-header emission, broader session option effects, exact
+  warning/notice/deprecation text, binary string reads, shutdown/fatal/
+  destructor edge ordering, include-path/stat-cache behavior, `open_basedir`,
+  stream filters/wrappers, wrapper-specific stream contexts, request-body
+  lifetime, host filesystem edge cases, or native lowering.
+
+## Milestone 1474: WordPress DB/Bootstrap Evidence Blocker
+
+- [ ] Compatibility/runtime lane: target executable WordPress database or
+  bootstrap evidence, prioritizing real SQL parsing slices, dbDelta diff
+  generation, schema rollback, expression indexes, index ordering/opclass
+  metadata, host database inspection, wildcard column/table metadata filters,
+  broader `wpdb`/MySQLi result or mutation behavior, arbitrary prepared
+  option/transient query shapes, object-cache/transient persistence, hooks
+  under realistic callback shapes, deterministic plugin/theme loading probes,
+  or a bootstrap/request probe that moves past its next real blocker.
+
+## Milestone 1475: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1471-1474 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

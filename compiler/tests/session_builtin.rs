@@ -1,5 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_id(), and session_write_close() until native request/session storage, session id persistence, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
 #[test]
@@ -179,6 +181,48 @@ echo implode("|", $out);
         "closed-edit:guest|saved:admin|closed|second|second"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_save_path_persists_across_interpreter_invocations() {
+    let save_path = unique_session_save_path("phpc-session-file-persist");
+    fs::create_dir_all(&save_path).unwrap();
+    let save_path_php = save_path.display().to_string().replace('\\', "\\\\");
+    let write_source = format!(
+        r#"<?php
+ini_set("session.save_path", "{save_path_php}");
+session_id("phpcfilepersist");
+session_start(["use_cookies" => false]);
+$_SESSION["token"] = "saved";
+$_SESSION["nested"]["count"] = 2;
+session_write_close();
+echo "wrote";
+"#
+    );
+    let read_source = format!(
+        r#"<?php
+ini_set("session.save_path", "{save_path_php}");
+session_id("phpcfilepersist");
+session_start(["use_cookies" => false]);
+echo $_SESSION["token"], "|", $_SESSION["nested"]["count"];
+"#
+    );
+
+    let write = run_source(&write_source).unwrap();
+    assert_eq!(write.stdout, "wrote");
+
+    let read = run_source(&read_source).unwrap();
+    assert_eq!(read.stdout, "saved|2");
+
+    let session_file = save_path.join("sess_phpcfilepersist");
+    let stored = fs::read_to_string(&session_file).unwrap();
+    assert!(stored.contains("token|s:5:\"saved\""), "{stored}");
+    assert!(
+        stored.contains("nested|a:1:{s:5:\"count\";i:2;}"),
+        "{stored}"
+    );
+    let _ = fs::remove_file(session_file);
+    let _ = fs::remove_dir(save_path);
 }
 
 #[test]
@@ -386,4 +430,12 @@ fn emit_asm_rejects_session_state_before_backend_execution() {
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_SESSION_STATE_REJECTION);
+}
+
+fn unique_session_save_path(prefix: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
 }

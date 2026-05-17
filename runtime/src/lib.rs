@@ -2230,6 +2230,13 @@ impl PhpClassTable {
         self.lookup.get(&normalize_class_lookup_name(name)).copied()
     }
 
+    pub fn lookup_names_for_class_id(&self, class_id: ClassId) -> Vec<String> {
+        self.lookup
+            .iter()
+            .filter_map(|(name, id)| (*id == class_id).then(|| name.clone()))
+            .collect()
+    }
+
     pub fn declare_class_alias(
         &mut self,
         source_name: &str,

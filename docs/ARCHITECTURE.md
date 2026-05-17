@@ -82,9 +82,11 @@ deterministic request-state scaffolding only: it does not import browser
 cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
 malformed or edge-case PHP request names with exact `parse_str()` behavior,
 parse multipart uploads, create temporary upload files, validate host upload
-state beyond the explicit seed, model failed-upload provenance, persist
-sessions, lock session files, dispatch session save handlers, emit session
-cookies/cache headers, or model `variables_order`/`request_order`.
+state beyond the explicit seed, model failed-upload provenance, lock session
+files, dispatch session save handlers, emit session cache headers, or model
+`variables_order`/`request_order`. The only cross-process session persistence
+path is the bounded `session.save_path`/`session_id()` file slice documented
+below.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -1633,17 +1635,18 @@ assigned by reference through the covered direct array-offset target path use
 the existing alias metadata as a copy-in/writeback bridge, including for
 normal callback invocations of reference-returning user functions or public
 array-callable methods that mutate reached by-reference parameters.
-Direct variable and direct visible object-property assignments from reference
-array literals now add the selected literal slot to the same bounded alias
-metadata used by direct reference assignment, so `$args = array(&$value)` and
+Direct variable, direct array-offset, and direct visible object-property
+assignments from reference array literals now add the selected literal slot to
+the same bounded alias metadata used by direct reference assignment, so
+`$args = array(&$value)`, `$registry["args"] = array(&$value)`, and
 `$store->args = array("value" => &$object->items[$key])` can be used later as
 stored `call_user_func_array()` argument arrays. If the assigned direct
 variable is already backed by covered array-offset alias metadata, such as
 `$args =& $registry["args"]`, the literal reference slots are recorded below
 that aliased target path. This is still keyed alias metadata over materialized
 array values, not a runtime reference container. Reference array literals
-assigned into array offsets, dynamic properties, or other non-variable
-targets, reference elements from arbitrary expressions, stored arrays without
+assigned into dynamic properties or other non-variable targets, reference
+elements from arbitrary expressions, stored arrays without
 covered reference-assigned slots,
 execution past unknown or duplicate string-keyed argument names, variadic
 named callback arguments, positional arguments after string-keyed named
@@ -1726,9 +1729,12 @@ cookie attributes, encoding, exact warning text, SAPI emission, and native
 lowering remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
-in-memory `$_SESSION` root from a request-local snapshot keyed by the current
-session id, or from an empty array when no snapshot exists, and marks the
-session active. A fresh successful start appends a deterministic
+in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
+`session.save_path` was set through `ini_set()` and the current id is bounded
+to ASCII letters, digits, underscores, or hyphens. Without that file it falls
+back to the request-local snapshot keyed by the current session id, or to an
+empty array when no snapshot exists, and marks the session active. A fresh
+successful start appends a deterministic
 `Set-Cookie: PHPSESSID=<id>` line to the same request-local CLI header log used
 by `header()`, `setcookie()`, and `headers_list()`; the bounded `use_cookies`
 session option suppresses that line when it is falsey. The bounded
@@ -1737,19 +1743,23 @@ session option suppresses that line when it is falsey. The bounded
 attributes on that in-memory header log; they do not model cookie encoding,
 expiration-date formatting, replacement policy, or host SAPI emission.
 `session_write_close()` stores the active `$_SESSION` array
-back into that request-local snapshot map before closing the status. A later
-`session_start()` for the same id replaces the visible root from the last
-closed snapshot, so edits made while the session was closed are not promoted
-to active data. The recognized `read_and_close` option reloads the snapshot
+back into that request-local snapshot map and, when the bounded save-path/id
+file slice is active, writes string-keyed scalar and array values back to
+`sess_<id>` before closing the status. A later `session_start()` for the same
+id replaces the visible root from the session file or last closed snapshot, so
+edits made while the session was closed are not promoted to active data. The recognized
+`read_and_close` option reloads the file or snapshot
 and immediately closes the bounded status back to `PHP_SESSION_NONE` while
 keeping the in-memory session array visible. After unbuffered output it
 returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
 applying options. Cache-header emission, cookie encoding, expiration-date
-formatting, replacement policy, trans-sid behavior, cross-process file
-persistence, locking, save handlers, option effects beyond the documented
-session-start options, exact warning text, reference aliases across `_SESSION`
-root replacement, and native lowering remain outside the model.
+formatting, replacement policy, trans-sid behavior, locking, save handlers,
+garbage collection, strict id validation, integer top-level session keys,
+object/resource session serialization, malformed session-file recovery
+diagnostics, option effects beyond the documented session-start options, exact
+warning text, reference aliases across `_SESSION` root replacement, and native
+lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
@@ -1891,11 +1901,17 @@ same callback path when its source class or interface is missing and the
 current bool-like autoload flag is truthy; successful class aliases insert an
 additional case-insensitive name into the class table that points at the
 original class metadata, so alias instantiation still creates objects whose
-declared class is the source class. Successful interface aliases insert an
+declared class is the source class. Runtime object relationship metadata
+records active class-alias lookup names for the instantiated class and its
+ancestors, which lets the current simple typed-property compatibility check
+accept alias type names when the alias exists before object instantiation.
+Successful interface aliases insert an
 additional case-insensitive interface lookup entry that points at the original
 interface declaration; relationship checks canonicalize that alias back to the
-original interface name, and `get_declared_interfaces()` still walks only real
-interface declarations. Stream/URL paths, exact PHP warnings,
+original interface name, instantiated object metadata records active aliases
+for implemented declared interfaces for the same typed-property slice, and
+`get_declared_interfaces()` still walks only real interface declarations.
+Stream/URL paths, exact PHP warnings,
 scalar-to-string extension coercions, recursive edge cases beyond the current
 same-name guard, enum autoload lookup, trait aliasing, alias entries in
 `get_declared_classes()`/`get_declared_interfaces()`, and native autoload

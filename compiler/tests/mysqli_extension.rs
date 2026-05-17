@@ -5211,6 +5211,41 @@ echo mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_query_filters_bounded_wordpress_schema_column_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_options (option_id bigint(20) unsigned NOT NULL auto_increment, option_name varchar(191) NOT NULL default '', option_value longtext NOT NULL, autoload varchar(20) NOT NULL default 'yes', PRIMARY KEY  (option_id), UNIQUE KEY option_name (option_name)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$like = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_probe_options` LIKE 'option_name'");
+echo mysqli_num_rows($like), ":";
+$like_row = mysqli_fetch_assoc($like);
+echo $like_row["Field"], ":", $like_row["Type"], ":", $like_row["Collation"], ":", $like_row["Key"];
+echo "|";
+$where = mysqli_query($handle, "SHOW COLUMNS FROM wp_probe_options WHERE Field = 'option_value'");
+echo mysqli_num_rows($where), ":";
+$where_row = mysqli_fetch_assoc($where);
+echo $where_row["Field"], ":", $where_row["Null"], ":", $where_row["Collation"];
+echo "|";
+$describe = mysqli_query($handle, "DESCRIBE wp_probe_options autoload");
+echo mysqli_num_rows($describe), ":";
+$describe_row = mysqli_fetch_assoc($describe);
+echo $describe_row["Field"], ":", $describe_row["Default"];
+echo "|";
+$missing = mysqli_query($handle, "SHOW FULL COLUMNS FROM wp_probe_options LIKE 'missing_column'");
+echo mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1:option_name:varchar(191):utf8mb4_unicode_ci:UNI|1:option_value:NO:utf8mb4_unicode_ci|1:autoload:yes|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

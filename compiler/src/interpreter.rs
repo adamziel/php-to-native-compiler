@@ -928,6 +928,7 @@ enum ArrayOffsetAliasRoot {
 #[derive(Debug, Clone)]
 enum StoredArgumentArrayRoot {
     DirectVariable(String),
+    ArrayOffset(ArrayOffsetAlias),
     ObjectProperty(ArrayOffsetAliasRoot),
 }
 
@@ -1512,6 +1513,19 @@ impl SymbolTable {
             root: root.clone(),
             keys: vec![key.clone()],
         };
+        self.array_offset_aliases
+            .values()
+            .find(|aliases| aliases.contains(&candidate))
+            .cloned()
+    }
+
+    fn array_offset_alias_group_for_stored_alias_slot(
+        &self,
+        root_alias: &ArrayOffsetAlias,
+        key: &ArrayKey,
+    ) -> Option<Vec<ArrayOffsetAlias>> {
+        let mut candidate = root_alias.clone();
+        candidate.keys.push(key.clone());
         self.array_offset_aliases
             .values()
             .find(|aliases| aliases.contains(&candidate))
@@ -5834,7 +5848,8 @@ impl Interpreter {
         let object_id = self.allocate_object_id();
 
         let inherited_properties = self.inherited_instance_properties(class_id);
-        let ancestor_class_names = self.inherited_class_names(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
         let interface_names = self.class_implements_interface_names(class_id);
         let class = self
             .classes
@@ -6247,9 +6262,25 @@ impl Interpreter {
                 .get(ancestor_id)
                 .expect("ancestor class id should resolve to metadata");
             ancestors.push(ancestor.name().to_string());
+            ancestors.extend(self.class_alias_names(ancestor_id));
             current = ancestor.parent_id();
         }
         ancestors
+    }
+
+    fn class_alias_names(&self, class_id: ClassId) -> Vec<String> {
+        let Some(class) = self.classes.get(class_id) else {
+            return Vec::new();
+        };
+        let canonical = class.name().to_ascii_lowercase();
+        let mut aliases: Vec<String> = self
+            .classes
+            .lookup_names_for_class_id(class_id)
+            .into_iter()
+            .filter(|name| name != &canonical)
+            .collect();
+        aliases.sort();
+        aliases
     }
 
     fn apply_instance_property_defaults(
@@ -8048,7 +8079,14 @@ impl Interpreter {
                     Some(index) => Some(self.evaluate_array_key(index, scope)?),
                     None => None,
                 };
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 if name == "GLOBALS" {
                     let Some(key) = key.as_ref() else {
                         return Err(runtime_error(
@@ -8070,6 +8108,17 @@ impl Interpreter {
                     };
                     scope.write_global_name(global_name, value.clone());
                     scope.sync_array_offset_aliases_for_global_root(global_name);
+                    if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                            ArrayOffsetAliasRoot::GlobalArray {
+                                name: global_name.to_string(),
+                            },
+                            Vec::new(),
+                            array_literal_references,
+                            expr.span(),
+                            scope,
+                        )?;
+                    }
                     return Ok(value);
                 }
                 if let Some(key) = key.as_ref() {
@@ -8082,6 +8131,19 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
+                if key.is_none()
+                    && matches!(value, Value::Array(_))
+                    && !array_literal_references.is_empty()
+                {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "array assignment",
+                            "append-offset reference array literal assignment targets are not implemented in the current subset",
+                        ),
+                    ));
+                }
+                let target_key = key.clone();
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -8123,6 +8185,26 @@ impl Interpreter {
                 }
                 scope.write_static(name, slot);
                 scope.sync_array_offset_aliases_for_static_root(name);
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    let Some(key) = target_key else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                "array assignment",
+                                "append-offset reference array literal assignment targets are not implemented in the current subset",
+                            ),
+                        ));
+                    };
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        vec![key],
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                }
 
                 Ok(value)
             }
@@ -8135,15 +8217,44 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 if name == "GLOBALS" {
                     Self::write_global_nested_array_assignment(&keys, value.clone(), *span, scope)?;
+                    if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                        let (global_name, prefix) =
+                            SymbolTable::split_globals_reference_path(keys, *span)?;
+                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                            ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            prefix,
+                            array_literal_references,
+                            expr.span(),
+                            scope,
+                        )?;
+                    }
                     return Ok(value);
                 }
                 if scope.write_alias_backed_array_offset(name, &keys, value.clone(), *span)? {
                     return Ok(value);
                 }
                 Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        keys,
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                }
                 Ok(value)
             }
             AssignTarget::NestedArrayAppend {
@@ -9742,12 +9853,31 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        self.bind_array_literal_references_to_alias_root_with_prefix(
+            root,
+            Vec::new(),
+            references,
+            span,
+            scope,
+        )
+    }
+
+    fn bind_array_literal_references_to_alias_root_with_prefix(
+        &mut self,
+        root: ArrayOffsetAliasRoot,
+        prefix: Vec<ArrayKey>,
+        references: Vec<ArrayLiteralReferenceElement>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
         for reference in references {
             match reference {
                 ArrayLiteralReferenceElement::Variable { key, source_name } => {
+                    let mut keys = prefix.clone();
+                    keys.push(key);
                     scope.bind_object_property_array_offset_alias_root_to_static_source(
                         root.clone(),
-                        vec![key],
+                        keys,
                         &source_name,
                         span,
                     )?;
@@ -9757,9 +9887,11 @@ impl Interpreter {
                     source_alias,
                     value,
                 } => {
+                    let mut keys = prefix.clone();
+                    keys.push(key);
                     let target_alias = ArrayOffsetAlias {
                         root: root.clone(),
-                        keys: vec![key],
+                        keys,
                     };
                     scope.bind_array_offset_alias_to_reference_alias(
                         target_alias,
@@ -18611,6 +18743,11 @@ impl Interpreter {
             if seen.insert(key) {
                 names.push(interface.name.clone());
             }
+            for alias_name in self.interface_alias_names(&interface.name) {
+                if seen.insert(alias_name.clone()) {
+                    names.push(alias_name);
+                }
+            }
             if !parents_first {
                 for parent_name in &interface.parents {
                     self.push_class_implements_interface_name(parent_name, false, names, seen);
@@ -18623,6 +18760,20 @@ impl Interpreter {
         if seen.insert(key) {
             names.push(interface_name.to_string());
         }
+    }
+
+    fn interface_alias_names(&self, interface_name: &str) -> Vec<String> {
+        let canonical = interface_name.to_ascii_lowercase();
+        let mut aliases: Vec<String> = self
+            .interface_lookup
+            .iter()
+            .filter_map(|(lookup_name, interface)| {
+                (interface.name.eq_ignore_ascii_case(interface_name) && lookup_name != &canonical)
+                    .then(|| lookup_name.clone())
+            })
+            .collect();
+        aliases.sort();
+        aliases
     }
 
     fn current_property_access_context(&self) -> (Option<ClassId>, Vec<ClassId>) {
@@ -20244,18 +20395,52 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<StoredArgumentArrayRoot>> {
-        let Expr::Property {
-            target, property, ..
-        } = argument_expr
-        else {
-            return Ok(None);
-        };
-        let Expr::Variable(object_name, _) = target.as_ref() else {
-            return Ok(None);
-        };
-        let root =
-            self.context_object_property_alias_root(object_name, property, span, caller_scope)?;
-        Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
+        match argument_expr {
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Ok(None);
+                };
+                let root = self.context_object_property_alias_root(
+                    object_name,
+                    property,
+                    span,
+                    caller_scope,
+                )?;
+                Ok(Some(StoredArgumentArrayRoot::ObjectProperty(root)))
+            }
+            Expr::Index { target, index, .. } => {
+                let Some((name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                else {
+                    return Ok(None);
+                };
+                let mut keys = Vec::with_capacity(indices.len());
+                for index in indices {
+                    keys.push(self.evaluate_array_key(index, caller_scope)?);
+                }
+                if name == "GLOBALS" {
+                    let (global_name, keys) =
+                        SymbolTable::split_globals_reference_path(keys, span)?;
+                    return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::GlobalArray { name: global_name },
+                            keys,
+                        },
+                    )));
+                }
+                return Ok(Some(StoredArgumentArrayRoot::ArrayOffset(
+                    ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::StaticArray {
+                            name: name.to_string(),
+                        },
+                        keys,
+                    },
+                )));
+            }
+            _ => Ok(None),
+        }
     }
 
     fn evaluate_stored_call_user_func_array_reference_arguments(
@@ -20294,6 +20479,8 @@ impl Interpreter {
                 let aliases = match &stored_root {
                     StoredArgumentArrayRoot::DirectVariable(array_name) => caller_scope
                         .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key),
+                    StoredArgumentArrayRoot::ArrayOffset(root_alias) => caller_scope
+                        .array_offset_alias_group_for_stored_alias_slot(root_alias, &entry.key),
                     StoredArgumentArrayRoot::ObjectProperty(root) => caller_scope
                         .array_offset_alias_group_for_stored_object_property_slot(
                             root, &entry.key,
@@ -20429,6 +20616,8 @@ impl Interpreter {
                 let aliases = match &stored_root {
                     StoredArgumentArrayRoot::DirectVariable(array_name) => caller_scope
                         .array_offset_alias_group_for_stored_array_slot(array_name, &entry.key),
+                    StoredArgumentArrayRoot::ArrayOffset(root_alias) => caller_scope
+                        .array_offset_alias_group_for_stored_alias_slot(root_alias, &entry.key),
                     StoredArgumentArrayRoot::ObjectProperty(root) => caller_scope
                         .array_offset_alias_group_for_stored_object_property_slot(
                             root, &entry.key,
@@ -25814,9 +26003,8 @@ impl Interpreter {
             ));
         }
         let session_data = self
-            .session_store
-            .get(&self.session_id)
-            .cloned()
+            .load_session_file()
+            .or_else(|| self.session_store.get(&self.session_id).cloned())
             .unwrap_or_else(PhpArray::new);
         self.global_symbols.borrow_mut().insert(
             "_SESSION".to_string(),
@@ -25844,9 +26032,38 @@ impl Interpreter {
 
     fn persist_current_session(&mut self) {
         if !self.session_id.is_empty() {
+            let session_data = self.current_session_array();
+            self.persist_session_file(&session_data);
             self.session_store
-                .insert(self.session_id.clone(), self.current_session_array());
+                .insert(self.session_id.clone(), session_data);
         }
+    }
+
+    fn session_file_path(&self) -> Option<PathBuf> {
+        if self.session_id.is_empty() || !is_bounded_session_id(&self.session_id) {
+            return None;
+        }
+        let save_path = self.ini_value("session.save_path")?;
+        if save_path.is_empty() {
+            return None;
+        }
+        Some(Path::new(&save_path).join(format!("sess_{}", self.session_id)))
+    }
+
+    fn load_session_file(&self) -> Option<PhpArray> {
+        let path = self.session_file_path()?;
+        let data = fs::read_to_string(path).ok()?;
+        parse_php_session_file(&data)
+    }
+
+    fn persist_session_file(&self, session_data: &PhpArray) {
+        let Some(path) = self.session_file_path() else {
+            return;
+        };
+        let Some(data) = format_php_session_file(session_data) else {
+            return;
+        };
+        let _ = fs::write(path, data);
     }
 
     fn session_option<'a>(args: &'a [Value], name: &str) -> Option<&'a Value> {
@@ -34501,6 +34718,11 @@ struct WordPressSchemaAlter {
     operations: Vec<WordPressSchemaAlterOperation>,
 }
 
+struct WordPressSchemaColumnQuery {
+    table_name: String,
+    column_filter: Option<String>,
+}
+
 enum WordPressSchemaAlterOperation {
     AddColumn(WordPressSchemaColumnState),
     AddIndex(WordPressSchemaIndexState),
@@ -34565,12 +34787,8 @@ fn wordpress_dynamic_schema_result_for_query(
         });
     }
 
-    let describe_table = query
-        .strip_prefix("DESCRIBE ")
-        .or_else(|| query.strip_prefix("DESC "))
-        .and_then(parse_schema_table_identifier);
-    if let Some(table_name) = describe_table {
-        let table = tables.get(&table_name)?;
+    if let Some(column_query) = parse_dynamic_schema_describe_query(query) {
+        let table = tables.get(&column_query.table_name)?;
         return Some(MysqliPendingResultState {
             fields: vec![
                 "Field".to_string(),
@@ -34583,17 +34801,14 @@ fn wordpress_dynamic_schema_result_for_query(
             rows: table
                 .columns
                 .iter()
+                .filter(|column| schema_column_matches_filter(column, &column_query.column_filter))
                 .map(|column| dynamic_schema_describe_row(column, table))
                 .collect(),
         });
     }
 
-    let show_columns_table = query
-        .strip_prefix("SHOW FULL COLUMNS FROM ")
-        .or_else(|| query.strip_prefix("SHOW COLUMNS FROM "))
-        .and_then(parse_schema_table_identifier);
-    if let Some(table_name) = show_columns_table {
-        let table = tables.get(&table_name)?;
+    if let Some(column_query) = parse_dynamic_schema_show_columns_query(query) {
+        let table = tables.get(&column_query.table_name)?;
         return Some(MysqliPendingResultState {
             fields: vec![
                 "Field".to_string(),
@@ -34609,6 +34824,7 @@ fn wordpress_dynamic_schema_result_for_query(
             rows: table
                 .columns
                 .iter()
+                .filter(|column| schema_column_matches_filter(column, &column_query.column_filter))
                 .map(|column| dynamic_schema_full_column_row(column, table))
                 .collect(),
         });
@@ -34652,6 +34868,87 @@ fn wordpress_dynamic_schema_result_for_query(
     }
 
     None
+}
+
+fn parse_dynamic_schema_describe_query(query: &str) -> Option<WordPressSchemaColumnQuery> {
+    let rest = query
+        .strip_prefix("DESCRIBE ")
+        .or_else(|| query.strip_prefix("DESC "))?
+        .trim();
+    let (table_name, rest) = parse_schema_identifier_with_optional_suffix(rest)?;
+    let rest = rest.trim();
+    let column_filter = if rest.is_empty() {
+        None
+    } else {
+        Some(parse_schema_table_identifier(rest)?)
+    };
+    Some(WordPressSchemaColumnQuery {
+        table_name,
+        column_filter,
+    })
+}
+
+fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchemaColumnQuery> {
+    let rest = query
+        .strip_prefix("SHOW FULL COLUMNS FROM ")
+        .or_else(|| query.strip_prefix("SHOW COLUMNS FROM "))?
+        .trim();
+    let (table_name, rest) = parse_schema_identifier_with_optional_suffix(rest)?;
+    let rest = rest.trim();
+    let column_filter = if rest.is_empty() {
+        None
+    } else if let Some(like) = rest.strip_prefix("LIKE ") {
+        Some(parse_sql_single_quoted_list(like).and_then(|values| {
+            (values.len() == 1)
+                .then(|| values[0].clone())
+                .and_then(|value| parse_schema_table_identifier(&value))
+        })?)
+    } else if let Some(field) = rest
+        .strip_prefix("WHERE Field = ")
+        .or_else(|| rest.strip_prefix("WHERE `Field` = "))
+    {
+        Some(parse_sql_single_quoted_list(field).and_then(|values| {
+            (values.len() == 1)
+                .then(|| values[0].clone())
+                .and_then(|value| parse_schema_table_identifier(&value))
+        })?)
+    } else {
+        return None;
+    };
+    Some(WordPressSchemaColumnQuery {
+        table_name,
+        column_filter,
+    })
+}
+
+fn schema_column_matches_filter(
+    column: &WordPressSchemaColumnState,
+    filter: &Option<String>,
+) -> bool {
+    filter
+        .as_ref()
+        .map(|filter| column.name == *filter)
+        .unwrap_or(true)
+}
+
+fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, &str)> {
+    let input = input.trim_start();
+    if let Some(after_tick) = input.strip_prefix('`') {
+        let (identifier, rest) = after_tick.split_once('`')?;
+        return Some((
+            parse_schema_table_identifier(identifier)?,
+            rest.trim_start(),
+        ));
+    }
+
+    let split_at = input
+        .char_indices()
+        .find_map(|(idx, ch)| ch.is_whitespace().then_some(idx))
+        .unwrap_or(input.len());
+    Some((
+        parse_schema_table_identifier(&input[..split_at])?,
+        input[split_at..].trim_start(),
+    ))
 }
 
 fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<String> {
@@ -39571,6 +39868,230 @@ fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(parts.join(separator)))
 }
 
+fn is_bounded_session_id(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn format_php_session_file(session_data: &PhpArray) -> Option<String> {
+    let mut output = String::new();
+    for entry in session_data.entries() {
+        let ArrayKey::String(name) = &entry.key else {
+            return None;
+        };
+        if name.is_empty() || name.contains('|') {
+            return None;
+        }
+        output.push_str(name);
+        output.push('|');
+        format_php_serialized_value(entry.value(), &mut output)?;
+    }
+    Some(output)
+}
+
+fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()> {
+    match value {
+        Value::Null => output.push_str("N;"),
+        Value::Bool(value) => output.push_str(if *value { "b:1;" } else { "b:0;" }),
+        Value::Int(value) => {
+            output.push_str("i:");
+            output.push_str(&value.to_string());
+            output.push(';');
+        }
+        Value::Float(value) => {
+            output.push_str("d:");
+            output.push_str(&value.to_string());
+            output.push(';');
+        }
+        Value::String(value) => {
+            output.push_str("s:");
+            output.push_str(&value.len().to_string());
+            output.push_str(":\"");
+            output.push_str(value);
+            output.push_str("\";");
+        }
+        Value::Array(array) => {
+            output.push_str("a:");
+            output.push_str(&array.len().to_string());
+            output.push_str(":{");
+            for entry in array.entries() {
+                format_php_serialized_array_key(&entry.key, output);
+                format_php_serialized_value(entry.value(), output)?;
+            }
+            output.push('}');
+        }
+        Value::Object(_) | Value::Closure(_) | Value::Resource(_) => return None,
+    }
+    Some(())
+}
+
+fn format_php_serialized_array_key(key: &ArrayKey, output: &mut String) {
+    match key {
+        ArrayKey::Int(value) => {
+            output.push_str("i:");
+            output.push_str(&value.to_string());
+            output.push(';');
+        }
+        ArrayKey::String(value) => {
+            output.push_str("s:");
+            output.push_str(&value.len().to_string());
+            output.push_str(":\"");
+            output.push_str(value);
+            output.push_str("\";");
+        }
+    }
+}
+
+fn parse_php_session_file(data: &str) -> Option<PhpArray> {
+    let mut parser = PhpSerializedParser::new(data);
+    let mut session = PhpArray::new();
+    while !parser.is_finished() {
+        let name = parser.take_until_byte(b'|')?;
+        if name.is_empty() {
+            return None;
+        }
+        parser.expect_byte(b'|')?;
+        let value = parser.parse_value()?;
+        session.insert(ArrayKey::String(name), value);
+    }
+    Some(session)
+}
+
+struct PhpSerializedParser<'a> {
+    data: &'a [u8],
+    position: usize,
+}
+
+impl<'a> PhpSerializedParser<'a> {
+    fn new(data: &'a str) -> Self {
+        Self {
+            data: data.as_bytes(),
+            position: 0,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.data.len()
+    }
+
+    fn take_until_byte(&mut self, needle: u8) -> Option<String> {
+        let start = self.position;
+        while self.position < self.data.len() && self.data[self.position] != needle {
+            self.position += 1;
+        }
+        if self.position >= self.data.len() {
+            return None;
+        }
+        std::str::from_utf8(&self.data[start..self.position])
+            .ok()
+            .map(str::to_string)
+    }
+
+    fn expect_byte(&mut self, expected: u8) -> Option<()> {
+        if self.data.get(self.position).copied()? != expected {
+            return None;
+        }
+        self.position += 1;
+        Some(())
+    }
+
+    fn parse_value(&mut self) -> Option<Value> {
+        match self.data.get(self.position).copied()? {
+            b'N' => {
+                self.position += 1;
+                self.expect_byte(b';')?;
+                Some(Value::Null)
+            }
+            b'b' => {
+                self.position += 1;
+                self.expect_byte(b':')?;
+                let value = match self.data.get(self.position).copied()? {
+                    b'0' => false,
+                    b'1' => true,
+                    _ => return None,
+                };
+                self.position += 1;
+                self.expect_byte(b';')?;
+                Some(Value::Bool(value))
+            }
+            b'i' => {
+                self.position += 1;
+                self.expect_byte(b':')?;
+                let number = self.parse_until_semicolon()?.parse::<i64>().ok()?;
+                Some(Value::Int(number))
+            }
+            b'd' => {
+                self.position += 1;
+                self.expect_byte(b':')?;
+                let number = self.parse_until_semicolon()?.parse::<f64>().ok()?;
+                Some(Value::Float(number))
+            }
+            b's' => {
+                self.position += 1;
+                Some(Value::String(self.parse_serialized_string()?))
+            }
+            b'a' => {
+                self.position += 1;
+                self.expect_byte(b':')?;
+                let len = self.parse_usize_until_byte(b':')?;
+                self.expect_byte(b'{')?;
+                let mut array = PhpArray::new();
+                for _ in 0..len {
+                    let key = self.parse_array_key()?;
+                    let value = self.parse_value()?;
+                    array.insert(key, value);
+                }
+                self.expect_byte(b'}')?;
+                Some(Value::Array(array))
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_array_key(&mut self) -> Option<ArrayKey> {
+        match self.data.get(self.position).copied()? {
+            b'i' => {
+                self.position += 1;
+                self.expect_byte(b':')?;
+                Some(ArrayKey::Int(
+                    self.parse_until_semicolon()?.parse::<i64>().ok()?,
+                ))
+            }
+            b's' => {
+                self.position += 1;
+                Some(ArrayKey::String(self.parse_serialized_string()?))
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_serialized_string(&mut self) -> Option<String> {
+        self.expect_byte(b':')?;
+        let len = self.parse_usize_until_byte(b':')?;
+        self.expect_byte(b'"')?;
+        let end = self.position.checked_add(len)?;
+        let bytes = self.data.get(self.position..end)?;
+        self.position = end;
+        self.expect_byte(b'"')?;
+        self.expect_byte(b';')?;
+        std::str::from_utf8(bytes).ok().map(str::to_string)
+    }
+
+    fn parse_until_semicolon(&mut self) -> Option<String> {
+        let value = self.take_until_byte(b';')?;
+        self.expect_byte(b';')?;
+        Some(value)
+    }
+
+    fn parse_usize_until_byte(&mut self, delimiter: u8) -> Option<usize> {
+        let value = self.take_until_byte(delimiter)?;
+        self.expect_byte(delimiter)?;
+        value.parse::<usize>().ok()
+    }
+}
+
 fn format_session_cookie_header(
     session_id: &str,
     lifetime: Option<i64>,
@@ -40285,6 +40806,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "post_max_size" => Some("8M"),
         "sendmail_from" => Some(""),
         "sendmail_path" => Some(""),
+        "session.save_path" => Some(""),
         "upload_max_filesize" => Some("2M"),
         "upload_tmp_dir" => Some(""),
         "user_agent" => Some(""),

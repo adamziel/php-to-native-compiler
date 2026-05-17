@@ -208,41 +208,30 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Parser/runtime lane: Milestone 1451 targets a larger object/interface
-  blocker such as weak scalar coercions for typed properties, inherited
-  class-name assignment checks, attributes, file/line/doc-comment metadata,
-  extension/internal metadata, function/closure reflection targets,
-  `ReflectionUnionType` or `ReflectionIntersectionType`, default constant-name
-  introspection, readonly/property-hook behavior, static typed-property
-  unset/uninitialization, magic hooks reached by WordPress, autoload/
-  class-alias lifecycle parity, interface diagnostics, or broader class
-  metadata behavior.
-- Runtime lane: Milestone 1452 targets a larger reference/COW blocker such as
-  real reference containers, reference array literals stored by value,
-  arbitrary `offsetGet()` bodies with custom append logic, dynamic
-  `ArrayAccess` roots, mixed nested `ArrayAccess` chains, alias cleanup after
-  replacing containing objects/properties, alias lifetime cleanup across
-  function/include boundaries, broader array/object copy-on-write,
-  request/session alias behavior, or variadic and named callback-reference
-  semantics that block WordPress.
-- Runtime or IR/lowering lane: Milestone 1453 targets request/SAPI,
-  filesystem, and stream behavior that blocks real WordPress requests, such as
-  session persistence, locking or save-handler behavior, cookie/cache-header
-  emission, garbage collection, strict session-id validation, broader session
-  option effects, exact warning/notice/deprecation text, binary string reads,
-  output-started/header fidelity, shutdown/fatal/destructor edge ordering,
-  include-path/stat-cache behavior, stream filters/wrappers, wrapper-specific
-  stream context behavior, request-body lifetime, or host filesystem edge
-  cases.
-- Compatibility/runtime lane: Milestone 1454 targets executable WordPress
-  database/bootstrap evidence: real SQL parsing slices, dropped/renamed/
-  changed columns, expression indexes, index ordering/opclass metadata,
-  dbDelta diff generation, schema rollback, host database inspection, broader
-  `wpdb`/MySQLi result or mutation behavior, arbitrary prepared option/
-  transient query shapes, object-cache/transient persistence, hooks under
-  realistic callback shapes, deterministic plugin/theme loading probes, or a
-  bootstrap/request probe that moves past its next real blocker.
-- Tests/docs lane: Milestone 1455 is the next tests/docs slot after the next
+- Object/interface lane: Milestone 1471 targets aliases registered after
+  instantiation, compound property type objects, readonly/property-hook
+  behavior, attributes/metadata/reflection, magic hooks reached by WordPress,
+  broader autoload/class-alias lifecycle parity, interface diagnostics, or
+  broader class metadata behavior.
+- Reference/COW lane: Milestone 1472 targets real reference containers,
+  dynamic-property or append-offset reference-literal assignment targets,
+  arbitrary reference expressions, dynamic `ArrayAccess` roots, mixed nested
+  `ArrayAccess` chains, alias cleanup, broader array/object copy-on-write,
+  exact alias destruction ordering, by-reference foreach, or native lowering.
+- Request/SAPI/filesystem/stream lane: Milestone 1473 targets session file
+  locking, save handlers, garbage collection, strict session-id validation,
+  cookie encoding, expiration/deletion/replacement semantics, cache headers,
+  broader session option effects, exact diagnostics, binary reads, shutdown
+  ordering, include-path/stat-cache behavior, stream wrappers/contexts,
+  request-body lifetime, host filesystem edge cases, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1474 targets real SQL parsing slices,
+  dbDelta diff generation, schema rollback, expression indexes, host database
+  inspection, wildcard column/table metadata filters, broader `wpdb`/MySQLi
+  result or mutation behavior, prepared option/transient query shapes,
+  object-cache/transient persistence, hooks under realistic callback shapes,
+  deterministic plugin/theme loading probes, or a bootstrap/request probe that
+  moves past its next real blocker.
+- Tests/docs lane: Milestone 1475 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,

@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1467/reference_array_literals_array_offset_target.php
+exit: 0
+stdout:
+seed:offset|seed:offset
+seed:offset:offset:alias|seed:offset:offset:alias|seed:offset:offset:alias
+copied|copied|copied
+--- stdout end ---
+stderr:
+--- stderr end ---

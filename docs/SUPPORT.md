@@ -231,10 +231,12 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Direct variable and direct visible object-property assignments from
-  reference array literals now preserve
+  Direct variable, direct array-offset, and direct visible object-property
+  assignments from reference array literals now preserve
   covered reference elements for later stored-array callback use, for example
-  `$args = array(&$value); call_user_func_array($callback, $args);` and
+  `$args = array(&$value); call_user_func_array($callback, $args);`,
+  `$registry["args"] = array(&$value); call_user_func_array($callback,
+  $registry["args"]);`, and
   `$store->args = array("value" => &$object->items[$key]);`. The covered
   reference element sources are direct variables, direct array offsets, and
   direct visible named object-property array offsets. Direct variable
@@ -243,10 +245,10 @@
   `$args =& $registry["args"]; $args = array(&$value);`.
   Dynamic-property append-offset sources, `ArrayAccess` roots outside the
   direct `offsetGet()` bridge, reference array literals assigned into
-  array offsets, dynamic properties, or other non-variable targets, reference
+  dynamic properties or other non-variable targets, reference
   elements from arbitrary expressions, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
-  visible named object-property arrays, direct reference assignment between
+  array offsets and direct visible named object-property arrays, direct reference assignment between
   non-append object-property array offsets without an intermediate alias variable,
   dynamic static receiver, executing duplicate or unknown string-keyed
   callback argument names beyond the stable diagnostic path, positional
@@ -892,8 +894,14 @@
   made to visible `$_SESSION` while the session is closed do not become the
   next active session data unless another active close persists them.
   `session_start(["read_and_close" => true])` also reloads the current
-  request-local snapshot and immediately closes the status. A fresh successful
-  start appends a deterministic `Set-Cookie: PHPSESSID=<id>` line to the same
+  request-local snapshot and immediately closes the status. When
+  `ini_set("session.save_path", $path)` supplies an explicit local save path
+  and `session_id($id)` supplies a bounded alphanumeric, underscore, or hyphen
+  id before start, fresh starts load a PHP-compatible `sess_<id>` file from
+  that path when present, and `session_write_close()` writes string-keyed
+  scalar and array session values back to that file for later `phpc run`
+  invocations. A fresh successful start appends a deterministic
+  `Set-Cookie: PHPSESSID=<id>` line to the same
   CLI header log exposed by `headers_list()`, unless the bounded
   `use_cookies` option is falsey for that start. The bounded
   `cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
@@ -907,8 +915,9 @@
   active emits a bounded `E_NOTICE` through that same handler stack or stderr
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
   keeps the session active even if `read_and_close` was requested. Session
-  file persistence across `phpc run` processes, session file locking, save
-  handlers, session module configuration, session cookie encoding,
+  file locking, save handlers, session module configuration, integer top-level
+  session keys, object/resource session serialization, malformed session-file
+  recovery diagnostics, session cookie encoding,
   expiration-date formatting, cookie replacement, cache headers, garbage
   collection, strict id validation, trans-sid
   behavior, exact warning text, reference aliases that survive `_SESSION` root
@@ -2052,8 +2061,11 @@
   changes rename matching recorded index parts. Later exact `SHOW TABLES LIKE
   '<table>'`, `SHOW TABLE STATUS LIKE '<table>'`,
   `SHOW TABLE STATUS WHERE Name = '<table>'`, `DESCRIBE`/`DESC <table>`,
-  `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
-  `SHOW KEYS FROM <table>` probes read that recorded shape, and
+  `DESCRIBE`/`DESC <table> <column>`, `SHOW [FULL] COLUMNS FROM <table>`,
+  exact `SHOW [FULL] COLUMNS FROM <table> LIKE '<column>'`, exact
+  `SHOW [FULL] COLUMNS FROM <table> WHERE Field = '<column>'`, and
+  `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS FROM <table>` probes read that
+  recorded shape, and
   `SHOW CREATE TABLE <table>` returns a deterministic MySQL-shaped create
   statement for the same recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, simple
@@ -2067,6 +2079,8 @@
   indexes, index ordering/opclass/parser metadata, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
+  wildcard `LIKE` column matching, arbitrary `SHOW COLUMNS WHERE`
+  predicates,
   dbDelta diff generation, real DDL execution, transactions for schema state,
   host database inspection, or native database lowering. For an
   exact current synthetic WordPress option write,
@@ -2940,13 +2954,19 @@
   data visible for the rest of the request, stores a request-local snapshot
   under the current session id, and returns `true`. A later
   `session_start()` for the same id reloads that snapshot instead of keeping
-  closed-session edits. Session file persistence across `phpc run` processes,
-  session file locking, save handlers, `session_name()`, `session_destroy()`,
+  closed-session edits. When `session.save_path` is set through `ini_set()`
+  before start and the session id contains only ASCII letters, digits,
+  underscores, or hyphens, the same close/start lifecycle writes and reloads
+  PHP-compatible `sess_<id>` files for string-keyed scalar and array
+  `$_SESSION` data across separate `phpc run` invocations. Session file
+  locking, save handlers,
+  `session_name()`, `session_destroy()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, option effects beyond
   the documented session-start options, session cookie encoding,
   expiration-date formatting, cookie replacement, cache headers, garbage
-  collection, exact warning text, reference
+  collection, integer top-level session keys, object/resource session
+  serialization, malformed session-file recovery diagnostics, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
   lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
@@ -3401,7 +3421,11 @@
   nullable `?T`, literal `true`/`false`, and class-name object values,
   including objects whose runtime class extends the declared property type and
   objects whose runtime class or inherited parent class implements a declared
-  user-interface property type;
+  user-interface property type. Runtime object relationship metadata also
+  records active `class_alias()` names for the object's class, ancestors, and
+  implemented declared interfaces at instantiation time, so declared instance
+  and static typed-property writes accept those current alias type names in
+  the covered simple class/interface type subset;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
   the current scalar value model. Integer writes to `float` are stored as
@@ -3411,9 +3435,10 @@
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
   `get_object_vars()` excludes the slot, and a later direct write may
   initialize it again. Exact PHP deprecation/warning emission for lossy scalar
-  coercions, interface aliases and broader built-in/internal interface catalog
-  behavior beyond the current metadata in typed-property compatibility checks,
-  class aliases in typed-property compatibility checks, references, property writes through
+  coercions, class/interface aliases registered after an object was
+  instantiated in typed-property compatibility checks, broader built-in/internal
+  interface catalog behavior beyond the current metadata in typed-property
+  compatibility checks, references, property writes through
   complex alias paths, readonly properties, property hooks, static typed
   property unset, and native lowering remain unsupported. Compound
   union/intersection/DNF property type objects remain unsupported until

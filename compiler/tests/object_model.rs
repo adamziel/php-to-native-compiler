@@ -5137,6 +5137,76 @@ Registry::$shared = new OtherHook();
 }
 
 #[test]
+fn typed_properties_accept_class_alias_name_assignments() {
+    let execution = run_source(
+        r#"<?php
+class Hook {}
+class ActionHook extends Hook {}
+interface HookContract {}
+class ContractHook implements HookContract {}
+class OtherHook {}
+
+class_alias("Hook", "HookAlias");
+class_alias("HookContract", "HookContractAlias");
+
+class Registry {
+    public HookAlias $instance;
+    public static HookAlias $shared;
+    public HookContractAlias $contract;
+    public static HookContractAlias $staticContract;
+}
+
+$registry = new Registry();
+$registry->instance = new Hook();
+Registry::$shared = new ActionHook();
+$registry->contract = new ContractHook();
+Registry::$staticContract = new ContractHook();
+echo get_class($registry->instance), "|", get_class(Registry::$shared), "|", get_class($registry->contract), "|", get_class(Registry::$staticContract);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Hook|ActionHook|ContractHook|ContractHook"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let write_error = runtime_error(
+        r#"<?php
+class Hook {}
+class OtherHook {}
+class_alias("Hook", "HookAlias");
+class Registry { public HookAlias $instance; }
+$registry = new Registry();
+$registry->instance = new OtherHook();
+"#,
+    );
+    assert_eq!(write_error.line, 7);
+    assert_eq!(write_error.column, 1);
+    assert_eq!(
+        write_error.message,
+        "invalid property access: typed property Registry::$instance expects HookAlias, got object"
+    );
+
+    let static_write_error = runtime_error(
+        r#"<?php
+interface HookContract {}
+class OtherHook {}
+class_alias("HookContract", "HookContractAlias");
+class Registry { public static HookContractAlias $shared; }
+Registry::$shared = new OtherHook();
+"#,
+    );
+    assert_eq!(static_write_error.line, 6);
+    assert_eq!(static_write_error.column, 9);
+    assert_eq!(
+        static_write_error.message,
+        "invalid property access: typed property Registry::$shared expects HookContractAlias, got object"
+    );
+}
+
+#[test]
 fn typed_property_unset_restores_uninitialized_instance_slots() {
     let execution = run_source(
         r#"<?php
