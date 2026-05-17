@@ -191,7 +191,12 @@
   and `$args[] =& $holder->bag["created"]["leaf"]` when the same bounded
   public by-reference `offsetGet($offset) { return $this->property[$offset]; }`
   bridge applies; callback writeback and reference-return binding reuse the
-  backing property array alias metadata. It also covers normal
+  backing property array alias metadata. Direct and property-held append-offset
+  `ArrayAccess` sources such as `$args[0] =& $bag[]` and
+  `$args["value"] =& $holder->bag[]` are also covered for that same exact
+  `offsetGet()` body shape; the interpreter models PHP's `offsetGet(null)`
+  behavior by binding the backing property array's empty-string key, not by
+  calling arbitrary append logic. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
   callables declared as returning by reference when the callback writes through
   reached by-reference parameters. Statement-form reference assignment from
@@ -237,7 +242,8 @@
   arguments after a string-keyed named argument, variadic named callback
   arguments, dynamic key expressions in the literal
   reference named-argument path, dynamic `ArrayAccess` roots, append-offset
-  `ArrayAccess` source roots such as `$bag[]`, `ArrayAccess` bridges outside
+  `ArrayAccess` source roots outside the exact direct/property-held
+  `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
@@ -397,14 +403,16 @@
   the alias to the backing property array slot or nested child slot,
   materializes missing slots as `null`, and supports public plus
   private/protected backing properties through the declaring method context.
+  Append-offset sources such as `$alias =& $bag[]` and
+  `$alias =& $holder->bag[]` use that same exact-body bridge and bind
+  `offsetGet(null)` to the backing property array's empty-string key.
   Normal reads through that same bounded reference-returning `offsetGet()`
   return the selected slot value. By-value `offsetGet()`, `offsetGet()` bodies
   with side effects or broader return expressions, dynamic property-held
   sources, property-held alias lifetime after replacing the containing
-  property, append `ArrayAccess` sources, stored callback argument arrays
-  whose slots were assigned from `ArrayAccess` references, mixed nested
-  `ArrayAccess` chains, and real runtime reference containers remain
-  unsupported. Direct
+  property, append `ArrayAccess` sources outside the exact `offsetGet(null)`
+  bridge, mixed nested `ArrayAccess` chains, and real runtime reference
+  containers remain unsupported. Direct
   array-offset reference targets
   such as `$array[$key] =& $value;`, `$array[] =& $value;`,
   `$array[$outer][$inner] =& $value;`, and `$array[$outer][] =& $value;`
@@ -867,11 +875,15 @@
   keeps session data in memory for one `phpc run` request only. Starting a
   session after unbuffered output returns `false` and emits a bounded
   `E_WARNING` through the current `set_error_handler()` stack or stderr
-  fallback. Session persistence, session file locking, save handlers, session
+  fallback. Calling `session_start()` while the bounded session is already
+  active emits a bounded `E_NOTICE` through that same handler stack or stderr
+  fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
+  keeps the session active even if `read_and_close` was requested. Session
+  persistence, session file locking, save handlers, session
   module configuration, session cookies/cache headers, garbage collection,
-  strict id validation, trans-sid behavior, exact warning text, active-session
-  restart notices, full PHP reference containers, broader copy-on-write, exact
-  alias destruction ordering, and native lowering remain unsupported.
+  strict id validation, trans-sid behavior, exact warning text, full PHP
+  reference containers, broader copy-on-write, exact alias destruction
+  ordering, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -1992,16 +2004,19 @@
   per-placeholder-handle schema-state island for WordPress/dbDelta-style
   probes: exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` statements with
   direct column definitions, `PRIMARY KEY`, `KEY`/`INDEX`, and
-  `UNIQUE KEY`/`UNIQUE INDEX` entries record a deterministic table shape, and
+  `UNIQUE KEY`/`UNIQUE INDEX` entries record a deterministic table shape,
+  including ordered multi-column index parts and numeric prefix sub-parts such
+  as `post_name(191)`, and
   exact `ALTER TABLE <table> ADD COLUMN ...`, `ADD KEY ...`, `ADD INDEX ...`,
   `ADD UNIQUE KEY ...`, or `ADD PRIMARY KEY ...` entries mutate that recorded
   table. Later exact `SHOW TABLES LIKE '<table>'`, `DESCRIBE`/`DESC <table>`,
   `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
   `SHOW KEYS FROM <table>` probes read that recorded shape, including
-  primary/unique/non-unique key markers, simple defaults, auto-increment
-  extras, and placeholder collation metadata for character/text columns. This
-  does not add real SQL parsing, dropped/renamed/changed columns,
-  multi-column indexes, index sub-parts, dbDelta diff generation, real DDL
+  primary/unique/non-unique key markers, per-index sequence numbers, simple
+  defaults, auto-increment extras, prefix sub-part lengths, and placeholder
+  collation metadata for character/text columns. This does not add real SQL
+  parsing, dropped/renamed/changed columns, expression indexes, index
+  ordering/opclass/parser metadata, dbDelta diff generation, real DDL
   execution, transactions for schema state, host database inspection, or
   native database lowering. For an
   exact current synthetic WordPress option write,
@@ -2162,14 +2177,15 @@
   names, uniqueness markers, `BTREE` type, visibility, and null sub-parts.
   A separate bounded schema-state island for direct `mysqli_query()` accepts
   exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` definitions with direct
-  columns and simple primary/unique/non-unique indexes, plus exact
+  columns and primary/unique/non-unique indexes, including ordered
+  multi-column parts and numeric prefix sub-parts, plus exact
   `ALTER TABLE <table> ADD ...` column/index mutations, then exposes that
   recorded shape through the same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
   `SHOW [FULL] COLUMNS`, and `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` probes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, dropped/renamed/changed columns,
-  multi-column indexes, sub-part index lengths, dbDelta diff generation,
-  schema transaction rollback, or real index behavior,
+  expression indexes, index ordering/opclass/parser metadata, dbDelta diff
+  generation, schema transaction rollback, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2842,6 +2858,9 @@
   request. If unbuffered output has already started, `session_start()` returns
   `false` and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback before applying options.
+  Calling it while the bounded session is already active emits a bounded
+  `E_NOTICE`, returns `true`, preserves the existing session data and active
+  status, and ignores `read_and_close` for that restart attempt.
   Other option keys are accepted only as array entries and are otherwise
   ignored. `session_status()` accepts no arguments and returns
   `PHP_SESSION_NONE` or `PHP_SESSION_ACTIVE` for the current request.
@@ -2855,8 +2874,7 @@
   `session_destroy()`, `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, option effects beyond
   `read_and_close`, session cookies/cache headers, garbage collection, exact
-  warning text, active-session restart notices, and native lowering remain
-  unsupported.
+  warning text, and native lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3307,11 +3325,17 @@
   instance and static properties enforce the current simple named type subset
   for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
   nullable `?T`, literal `true`/`false`, and exact class-name object values;
-  integer writes to `float` are stored as floats. Weak PHP scalar coercions
-  such as string-to-int, inherited class-name assignment checks, references,
-  property writes through complex alias paths, and native lowering remain
-  unsupported. Compound union/intersection/DNF property type objects remain
-  unsupported until `ReflectionUnionType`/`ReflectionIntersectionType` exist.
+  integer writes to `float` are stored as floats. Direct
+  `unset($object->typedProperty)` over a visible declared instance typed
+  property restores the slot to the same uninitialized state: later direct
+  reads fail, `isset(...)` reports false, `empty(...)` reports true,
+  `get_object_vars()` excludes the slot, and a later direct write may
+  initialize it again. Weak PHP scalar coercions such as string-to-int,
+  inherited class-name assignment checks, references, property writes through
+  complex alias paths, readonly properties, property hooks, static typed
+  property unset, and native lowering remain unsupported. Compound
+  union/intersection/DNF property type objects remain unsupported until
+  `ReflectionUnionType`/`ReflectionIntersectionType` exist.
   Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new

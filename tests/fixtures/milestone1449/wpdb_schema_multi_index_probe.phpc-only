@@ -1,0 +1,1 @@
+Uses phpc's deterministic MySQLi schema-state island for bounded CREATE TABLE multi-column index and prefix sub-part probes without a real MySQL server; system PHP needs an actual mysqli connection and database.

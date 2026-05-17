@@ -87,6 +87,37 @@ echo implode("|", $out);
 }
 
 #[test]
+fn session_start_while_active_emits_notice_and_keeps_session_open() {
+    let execution = run_source(
+        r#"<?php
+function active_session_notice($errno, $errstr, $errfile, $errline) {
+    echo "notice:" . $errno;
+    echo ":" . (str_contains($errstr, "already active") ? "active" : "other");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}
+session_id("phpcactiverestart");
+$first = session_start();
+$_SESSION["phase"] = "open";
+set_error_handler("active_session_notice", E_NOTICE);
+$second = session_start(["read_and_close" => true]);
+echo "|" . ($first ? "first" : "first-failed");
+echo "|" . ($second ? "second" : "second-failed");
+echo "|" . (session_status() === PHP_SESSION_ACTIVE ? "active" : "closed");
+echo "|" . $_SESSION["phase"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "notice:8:active:Command line code:12|first|second|active|open"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_superglobal_reference_aliases_survive_function_scope_writes() {
     let execution = run_source(
         r#"<?php

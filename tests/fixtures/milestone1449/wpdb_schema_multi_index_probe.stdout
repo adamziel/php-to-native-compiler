@@ -1,0 +1,1 @@
+indexes=8:PRIMARY:1:ID:,type_status_date:1:post_type:,type_status_date:2:post_status:,type_status_date:3:post_date:,type_status_date:4:ID:,post_name:1:post_name:191,name_date:1:post_name:191,name_date:2:post_date:|columns=ID:PRI,post_name:MUL,post_type:MUL,post_status:MUL,post_date:MUL

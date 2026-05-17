@@ -141,10 +141,13 @@ arrays can also bind direct and property-held `ArrayAccess` elements,
 including nested offset elements, when public by-reference
 `offsetGet($offset)` has the exact bounded `return $this->property[$offset];`
 shape; the interpreter maps that to the backing property array alias root plus
-any nested child-key suffix instead of creating a real reference container. It
+any nested child-key suffix instead of creating a real reference container.
+Append-offset `ArrayAccess` reference sources such as `$bag[]` and
+`$holder->bag[]` use the same bridge and model PHP's `offsetGet(null)` call as
+the backing property array's empty-string key for that exact body shape. It
 does not make callback argument arrays, non-public/dynamic object-property
-array bridges, dynamic or stored-array ArrayAccess roots, append ArrayAccess
-roots, or stored array-offset metadata into general runtime reference
+array bridges, dynamic ArrayAccess roots, arbitrary append ArrayAccess bodies,
+or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
@@ -161,7 +164,7 @@ before the replacement value is observed by future copies. Reassigning the
 direct object variable also drops stale public object-property roots for that
 object name. Arbitrary nested copied reference slots beyond the literal copied
 path slice, non-public property-offset or magic clone alias mirroring, dynamic
-or stored-array ArrayAccess references, alias cleanup after replacing a
+ArrayAccess references, arbitrary ArrayAccess append bodies, alias cleanup after replacing a
 property that held an ArrayAccess object, reference array literals, exact alias
 destruction ordering, and native lowering still require the future runtime
 reference/COW value model.
@@ -714,9 +717,10 @@ execution past unknown or duplicate string-keyed callback argument names,
 positional arguments after a string-keyed named argument, variadic named
 callback arguments, dynamic key expressions in the literal reference
 named-argument path,
-dynamic ArrayAccess reference roots, append-offset ArrayAccess source roots,
-stored-array ArrayAccess roots outside the current direct/property-held
-`offsetGet()` reference bridge, non-public property roots outside the current valid
+dynamic ArrayAccess reference roots, append-offset ArrayAccess source roots
+outside the exact direct/property-held `offsetGet(null)` bridge, stored-array
+ArrayAccess roots outside the current direct/property-held `offsetGet()`
+reference bridge, non-public property roots outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
 by-reference `foreach`, or copy-on-write.

@@ -3040,6 +3040,28 @@ impl PhpObject {
         Ok(())
     }
 
+    pub fn unset_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<bool> {
+        let mut properties = self.properties.borrow_mut();
+        let Some(property) = self.context_property_mut_or_none(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        property.value = Value::Null;
+        property.initialized = property.type_decl.is_none();
+        Ok(true)
+    }
+
     fn public_property_or_error<'a>(
         &self,
         properties: &'a [ObjectProperty],
@@ -3128,6 +3150,42 @@ impl PhpObject {
         }
 
         self.public_property_mut_or_error(properties, name)
+    }
+
+    fn context_property_mut_or_none<'a>(
+        &self,
+        properties: &'a mut [ObjectProperty],
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<Option<&'a mut ObjectProperty>> {
+        if current_class_id.is_some() {
+            if let Some(index) = properties.iter().rposition(|property| {
+                property.name == name
+                    && property.visibility != Visibility::Public
+                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+            }) {
+                return Ok(Some(&mut properties[index]));
+            }
+        }
+
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            return Ok(Some(&mut properties[index]));
+        }
+
+        if properties
+            .iter()
+            .any(|property| property.name == name && property.visibility != Visibility::Public)
+        {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        Ok(None)
     }
 
     fn unsupported_non_public_property<'a>(

@@ -66,9 +66,11 @@ covered nested reference aliases. `session_start(["read_and_close" => true])`
 materializes that root and immediately closes the bounded active status while
 keeping `$_SESSION` visible. Starting a session after unbuffered output
 returns `false` and emits a bounded `E_WARNING` through the current
-`set_error_handler()` stack or stderr fallback. Session persistence, locking,
-save handlers, option effects beyond `read_and_close`, and cookie emission
-remain unsupported. `fopen()` can create bounded
+`set_error_handler()` stack or stderr fallback. Starting an already active
+session emits a bounded `E_NOTICE`, returns `true`, preserves the active
+session and data, and ignores `read_and_close` for that restart attempt.
+Session persistence, locking, save handlers, option effects beyond
+`read_and_close`, and cookie emission remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -586,17 +588,21 @@ visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
 object-property array arguments, dynamic property-held ArrayAccess reference
-roots, append or stored-array ArrayAccess reference roots, broader aliasing,
-and full copy-on-write remain unsupported.
+roots, ArrayAccess append reference sources outside the exact
+`offsetGet(null)` bridge, broader aliasing, and full copy-on-write remain
+unsupported.
 The current interpreter does include a narrow direct and property-held
 ArrayAccess reference
 root bridge for `$alias =& $bag[$key]`, nested direct sources such as
 `$alias =& $bag["outer"]["slot"]`, property-held sources such as
 `$alias =& $holder->bag["outer"]["slot"]`, and literal callback elements such
 as `array(&$holder->bag["outer"]["slot"])` when public by-reference
-`offsetGet($offset)` is exactly `return $this->property[$offset];`. Alias
-lifetime after replacing the containing property remains outside that bounded
-slice.
+`offsetGet($offset)` is exactly `return $this->property[$offset];`. Direct and
+property-held append reference sources such as `$alias =& $bag[]` and
+`$args[0] =& $holder->bag[]` are covered only for that same exact body shape,
+where PHP's `offsetGet(null)` maps to the backing array's empty-string key.
+Alias lifetime after replacing the containing property remains outside that
+bounded slice.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as

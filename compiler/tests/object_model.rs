@@ -5015,6 +5015,62 @@ Box::$ready = "yes";
 }
 
 #[test]
+fn typed_property_unset_restores_uninitialized_instance_slots() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public int $id;
+    public ?string $label;
+    public $legacy = "warm";
+
+    public function __unset($property) {
+        echo "magic=", $property;
+    }
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$box = new Box();
+$box->id = 42;
+$box->label = "plugin";
+echo "before|", yn(isset($box->id)), yn(empty($box->id)), "|", count(get_object_vars($box)), "\n";
+unset($box->id);
+unset($box->label);
+echo "after|", yn(isset($box->id)), yn(empty($box->id)), yn(isset($box->label)), yn(empty($box->label)), "|", count(get_object_vars($box)), "\n";
+$box->id = 7;
+$box->label = null;
+echo "reassign|", $box->id, "|", ($box->label === null ? "null" : $box->label), "|", count(get_object_vars($box)), "\n";
+unset($box->missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "before|10|3\nafter|0101|1\nreassign|7|null|3\nmagic=missing"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let read_error = runtime_error(
+        r#"<?php
+class Box { public int $id; }
+$box = new Box();
+$box->id = 42;
+unset($box->id);
+echo $box->id;
+"#,
+    );
+    assert_eq!(read_error.line, 6);
+    assert_eq!(read_error.column, 6);
+    assert_eq!(
+        read_error.message,
+        "typed property Box::$id must not be accessed before initialization"
+    );
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;

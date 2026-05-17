@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone1447/append_array_access_reference_roots.php
+exit: 0
+stdout:
+direct|direct
+direct:stored|direct:stored
+direct:stored:stored:alias|direct:stored:stored:alias|direct:stored:stored:alias
+null:held|null:held
+--- stdout end ---
+stderr:
+--- stderr end ---

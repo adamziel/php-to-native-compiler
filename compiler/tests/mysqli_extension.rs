@@ -5100,6 +5100,35 @@ while ($index = mysqli_fetch_assoc($indexes)) {
 }
 
 #[test]
+fn mysqli_query_tracks_bounded_wordpress_schema_multi_column_index_parts() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_posts (ID bigint(20) unsigned NOT NULL auto_increment, post_name varchar(200) NOT NULL default '', post_type varchar(20) NOT NULL default 'post', post_status varchar(20) NOT NULL default 'publish', post_date datetime NOT NULL default '0000-00-00 00:00:00', PRIMARY KEY  (ID), KEY type_status_date (post_type, post_status, post_date, ID), KEY post_name (post_name(191))) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_posts ADD KEY name_date (post_name(191), post_date)");
+$indexes = mysqli_query($handle, "SHOW INDEX FROM `wp_probe_posts`");
+echo mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Seq_in_index"], ":", $index["Column_name"], ":", $index["Sub_part"], ";";
+}
+echo "|";
+$columns = mysqli_query($handle, "DESCRIBE wp_probe_posts");
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ":", $column["Key"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "8:PRIMARY:1:ID:;type_status_date:1:post_type:;type_status_date:2:post_status:;type_status_date:3:post_date:;type_status_date:4:ID:;post_name:1:post_name:191;name_date:1:post_name:191;name_date:2:post_date:;|ID:PRI;post_name:MUL;post_type:MUL;post_status:MUL;post_date:MUL;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

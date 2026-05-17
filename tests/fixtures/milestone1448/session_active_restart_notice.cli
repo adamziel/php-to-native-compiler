@@ -1,0 +1,2 @@
+$ cargo run -q -p phpc -- run tests/fixtures/milestone1448/session_active_restart_notice.php
+notice:8:active:session_active_restart_notice.php:12|first|second|active|open

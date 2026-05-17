@@ -251,8 +251,14 @@ struct WordPressSchemaColumnState {
 #[derive(Clone)]
 struct WordPressSchemaIndexState {
     key_name: String,
-    column_name: String,
+    parts: Vec<WordPressSchemaIndexPart>,
     non_unique: bool,
+}
+
+#[derive(Clone)]
+struct WordPressSchemaIndexPart {
+    column_name: String,
+    sub_part: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -3860,29 +3866,50 @@ impl Interpreter {
         message: impl AsRef<str>,
         span: Span,
     ) -> CompileResult<()> {
+        self.emit_runtime_diagnostic(function, "Warning", PHP_E_WARNING, message, span)
+    }
+
+    fn emit_notice(
+        &mut self,
+        function: &str,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_runtime_diagnostic(function, "Notice", PHP_E_NOTICE, message, span)
+    }
+
+    fn emit_runtime_diagnostic(
+        &mut self,
+        function: &str,
+        label: &str,
+        level: i64,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
         let message = message.as_ref().to_string();
         let file = self
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
-        if self.call_error_handler_for_warning(&message, &file, span)? {
+        if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
             return Ok(());
         }
-        if self.error_reporting_mask & PHP_E_WARNING == 0 {
+        if self.error_reporting_mask & level == 0 {
             return Ok(());
         }
         if !self.stderr.is_empty() {
             self.stderr.push('\n');
         }
         self.stderr.push_str(&format!(
-            "PHP Warning:  {function}: {} in {file} on line {}",
+            "PHP {label}:  {function}: {} in {file} on line {}",
             message, span.line
         ));
         Ok(())
     }
 
-    fn call_error_handler_for_warning(
+    fn call_error_handler_for_diagnostic(
         &mut self,
+        level: i64,
         message: &str,
         file: &str,
         span: Span,
@@ -3893,12 +3920,12 @@ impl Interpreter {
         let Some(handler) = self.error_handlers.last().cloned() else {
             return Ok(false);
         };
-        if handler.mask.is_some_and(|mask| mask & PHP_E_WARNING == 0) {
+        if handler.mask.is_some_and(|mask| mask & level == 0) {
             return Ok(false);
         }
 
         let args = vec![
-            Value::Int(PHP_E_WARNING),
+            Value::Int(level),
             Value::String(message.to_string()),
             Value::String(file.to_string()),
             Value::Int(span.line as i64),
@@ -5124,25 +5151,15 @@ impl Interpreter {
             }
         };
 
-        if object
-            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?
-            .is_none()
-        {
+        let found = object
+            .unset_property_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        if !found {
             if call_magic_on_missing {
                 self.call_magic_property_method(object, "__unset", property, span)?;
             }
-            return Ok(());
         }
-
-        object
-            .write_property_from_context(
-                property,
-                Value::Null,
-                current_class_id,
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))
+        Ok(())
     }
 
     fn execute_unset_dynamic_object_property(
@@ -6307,6 +6324,16 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if keys.is_empty() {
+                        if let Some((alias, _)) = self
+                            .evaluate_direct_array_access_append_reference_source_alias(
+                                array_name, span, scope,
+                            )?
+                        {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                            return Ok(());
+                        }
+                    }
                     self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                     scope.bind_static_to_appended_array_offset(name, array_name, keys, span)?;
                 } else if let ReferenceSource::ObjectPropertyArrayIndex {
@@ -6380,6 +6407,16 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    if keys.is_empty() {
+                        if let Some((alias, _)) = self
+                            .evaluate_object_property_array_access_append_reference_source_alias(
+                                object, property, span, scope,
+                            )?
+                        {
+                            scope.bind_static_to_array_offset_alias(name, alias);
+                            return Ok(());
+                        }
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -6932,6 +6969,15 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                if keys.is_empty() {
+                    if let Some(alias) = self
+                        .evaluate_direct_array_access_append_reference_source_alias(
+                            array_name, span, scope,
+                        )?
+                    {
+                        return Ok(Some(alias));
+                    }
+                }
                 self.reject_array_access_reference_source_if_needed(array_name, span, scope)?;
                 let alias = scope.append_array_offset_reference_alias(
                     array_name,
@@ -6959,6 +7005,15 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                if keys.is_empty() {
+                    if let Some(alias) = self
+                        .evaluate_object_property_array_access_append_reference_source_alias(
+                            object, property, span, scope,
+                        )?
+                    {
+                        return Ok(Some(alias));
+                    }
+                }
                 self.reject_object_property_array_access_reference_source_if_needed(
                     object, property, span, scope,
                 )?;
@@ -7211,6 +7266,28 @@ impl Interpreter {
         Ok(())
     }
 
+    fn array_access_append_reference_key() -> ArrayKey {
+        // PHP invokes offsetGet(null) for ArrayAccess append-offset reference
+        // sources. In the currently supported exact body
+        // `return $this->property[$offset];`, that null offset indexes the
+        // backing array with an empty-string key.
+        ArrayKey::String(String::new())
+    }
+
+    fn evaluate_direct_array_access_append_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        self.evaluate_direct_array_access_reference_source_alias(
+            object_name,
+            vec![Self::array_access_append_reference_key()],
+            span,
+            scope,
+        )
+    }
+
     fn evaluate_direct_array_access_reference_source_alias(
         &mut self,
         object_name: &str,
@@ -7239,6 +7316,22 @@ impl Interpreter {
             scope,
         )
         .map(Some)
+    }
+
+    fn evaluate_object_property_array_access_append_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        self.evaluate_object_property_array_access_reference_source_alias(
+            object_name,
+            property,
+            vec![Self::array_access_append_reference_key()],
+            span,
+            scope,
+        )
     }
 
     fn evaluate_object_property_array_access_reference_source_alias(
@@ -25388,16 +25481,23 @@ impl Interpreter {
             })
             .is_some_and(Value::is_truthy);
 
-        if self.session_status != PHP_SESSION_ACTIVE {
-            self.session_status = PHP_SESSION_ACTIVE;
-            if self.session_id.is_empty() {
-                self.session_id = "phpc-session".to_string();
-            }
-            self.global_symbols
-                .borrow_mut()
-                .entry("_SESSION".to_string())
-                .or_insert_with(|| value_cell(Value::Array(PhpArray::new())));
+        if self.session_status == PHP_SESSION_ACTIVE {
+            self.emit_notice(
+                "session_start()",
+                "Ignoring session_start() because a session is already active",
+                span,
+            )?;
+            return Ok(Value::Bool(true));
         }
+
+        self.session_status = PHP_SESSION_ACTIVE;
+        if self.session_id.is_empty() {
+            self.session_id = "phpc-session".to_string();
+        }
+        self.global_symbols
+            .borrow_mut()
+            .entry("_SESSION".to_string())
+            .or_insert_with(|| value_cell(Value::Array(PhpArray::new())));
 
         if read_and_close {
             self.session_status = PHP_SESSION_NONE;
@@ -34099,7 +34199,11 @@ fn wordpress_dynamic_schema_result_for_query(
             rows: table
                 .indexes
                 .iter()
-                .map(|index| dynamic_schema_index_row(&table.name, index))
+                .flat_map(|index| {
+                    index.parts.iter().enumerate().map(|(idx, part)| {
+                        dynamic_schema_index_row(&table.name, index, part, (idx + 1) as i64)
+                    })
+                })
                 .collect(),
         });
     }
@@ -34190,10 +34294,10 @@ fn apply_wordpress_schema_alter(
 fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableState) -> Option<()> {
     let upper = part.to_ascii_uppercase();
     if upper.starts_with("PRIMARY KEY") {
-        let column_name = parse_schema_index_column(part)?;
+        let parts = parse_schema_index_parts(part)?;
         table.indexes.push(WordPressSchemaIndexState {
             key_name: "PRIMARY".to_string(),
-            column_name,
+            parts,
             non_unique: false,
         });
         return Some(());
@@ -34203,10 +34307,10 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
         let rest = part
             .strip_prefix("UNIQUE KEY ")
             .or_else(|| part.strip_prefix("UNIQUE INDEX "))?;
-        let (key_name, column_name) = parse_schema_named_index(rest)?;
+        let (key_name, parts) = parse_schema_named_index(rest)?;
         table.indexes.push(WordPressSchemaIndexState {
             key_name,
-            column_name,
+            parts,
             non_unique: false,
         });
         return Some(());
@@ -34216,10 +34320,10 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
         let rest = part
             .strip_prefix("KEY ")
             .or_else(|| part.strip_prefix("INDEX "))?;
-        let (key_name, column_name) = parse_schema_named_index(rest)?;
+        let (key_name, parts) = parse_schema_named_index(rest)?;
         table.indexes.push(WordPressSchemaIndexState {
             key_name,
-            column_name,
+            parts,
             non_unique: true,
         });
         return Some(());
@@ -34266,19 +34370,46 @@ fn parse_schema_column_definition(part: &str) -> Option<WordPressSchemaColumnSta
     })
 }
 
-fn parse_schema_named_index(rest: &str) -> Option<(String, String)> {
+fn parse_schema_named_index(rest: &str) -> Option<(String, Vec<WordPressSchemaIndexPart>)> {
     let open = rest.find('(')?;
     let key_name = parse_schema_table_identifier(rest[..open].trim())?;
-    let column_name = parse_schema_index_column(rest)?;
-    Some((key_name, column_name))
+    let parts = parse_schema_index_parts(rest)?;
+    Some((key_name, parts))
 }
 
-fn parse_schema_index_column(part: &str) -> Option<String> {
+fn parse_schema_index_parts(part: &str) -> Option<Vec<WordPressSchemaIndexPart>> {
     let open = part.find('(')?;
-    let close = part[open + 1..].find(')')? + open + 1;
-    let first = part[open + 1..close].split(',').next()?.trim();
-    let first = first.split_whitespace().next()?.trim();
-    parse_schema_table_identifier(first)
+    let close = part.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for raw_part in split_sql_top_level_commas(&part[open + 1..close]) {
+        parts.push(parse_schema_index_part(raw_part.trim())?);
+    }
+    (!parts.is_empty()).then_some(parts)
+}
+
+fn parse_schema_index_part(part: &str) -> Option<WordPressSchemaIndexPart> {
+    let (identifier, rest) = if let Some(after_tick) = part.strip_prefix('`') {
+        let (identifier, rest) = after_tick.split_once('`')?;
+        (identifier, rest.trim())
+    } else {
+        let split_at = part
+            .char_indices()
+            .find_map(|(idx, ch)| (ch.is_whitespace() || ch == '(').then_some(idx))
+            .unwrap_or(part.len());
+        (&part[..split_at], part[split_at..].trim())
+    };
+    let column_name = parse_schema_table_identifier(identifier)?;
+    let sub_part = rest
+        .strip_prefix('(')
+        .and_then(|value| value.split_once(')'))
+        .and_then(|(value, _)| value.trim().parse::<i64>().ok());
+    Some(WordPressSchemaIndexPart {
+        column_name,
+        sub_part,
+    })
 }
 
 fn parse_schema_table_identifier(identifier: &str) -> Option<String> {
@@ -34429,14 +34560,21 @@ fn dynamic_schema_column_key(
     table
         .indexes
         .iter()
-        .find(|index| index.column_name == column.name)
+        .find(|index| {
+            index
+                .parts
+                .iter()
+                .any(|part| part.column_name == column.name)
+        })
         .map(|index| {
             if index.key_name == "PRIMARY" {
                 "PRI"
+            } else if !index.non_unique && index.parts.len() == 1 {
+                "UNI"
             } else if index.non_unique {
                 "MUL"
             } else {
-                "UNI"
+                "MUL"
             }
         })
         .unwrap_or("")
@@ -34450,6 +34588,8 @@ fn dynamic_schema_column_has_collation(column: &WordPressSchemaColumnState) -> b
 fn dynamic_schema_index_row(
     table_name: &str,
     index: &WordPressSchemaIndexState,
+    part: &WordPressSchemaIndexPart,
+    seq_in_index: i64,
 ) -> Vec<(String, Value)> {
     vec![
         ("Table".to_string(), Value::String(table_name.to_string())),
@@ -34461,14 +34601,17 @@ fn dynamic_schema_index_row(
             "Key_name".to_string(),
             Value::String(index.key_name.clone()),
         ),
-        ("Seq_in_index".to_string(), Value::Int(1)),
+        ("Seq_in_index".to_string(), Value::Int(seq_in_index)),
         (
             "Column_name".to_string(),
-            Value::String(index.column_name.clone()),
+            Value::String(part.column_name.clone()),
         ),
         ("Collation".to_string(), Value::String("A".to_string())),
         ("Cardinality".to_string(), Value::Int(0)),
-        ("Sub_part".to_string(), Value::Null),
+        (
+            "Sub_part".to_string(),
+            part.sub_part.map(Value::Int).unwrap_or(Value::Null),
+        ),
         ("Packed".to_string(), Value::Null),
         ("Null".to_string(), Value::String(String::new())),
         ("Index_type".to_string(), Value::String("BTREE".to_string())),

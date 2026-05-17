@@ -194,50 +194,51 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Parser/runtime lane: Milestone 1446 targets a larger object/interface
+- Parser/runtime lane: Milestone 1451 targets a larger object/interface
   blocker such as weak scalar coercions for typed properties, inherited
   class-name assignment checks, attributes, file/line/doc-comment metadata,
   extension/internal metadata, function/closure reflection targets,
   `ReflectionUnionType` or `ReflectionIntersectionType`, default constant-name
-  introspection, readonly/property-hook behavior, magic hooks reached by
-  WordPress, autoload/class-alias lifecycle parity, interface diagnostics, or
-  broader class metadata behavior.
-- Runtime lane: Milestone 1447 targets a larger reference/COW blocker such as
+  introspection, readonly/property-hook behavior, static typed-property
+  unset/uninitialization, magic hooks reached by WordPress, autoload/
+  class-alias lifecycle parity, interface diagnostics, or broader class
+  metadata behavior.
+- Runtime lane: Milestone 1452 targets a larger reference/COW blocker such as
   real reference containers, reference array literals stored by value,
-  dynamic `ArrayAccess` roots, append-offset `ArrayAccess` source roots,
-  arbitrary `offsetGet()` bodies, mixed nested `ArrayAccess` chains, alias
-  cleanup after replacing containing objects/properties, alias lifetime
-  cleanup across function/include boundaries, broader array/object
-  copy-on-write, request/session alias behavior, or variadic and named
-  callback-reference semantics that block WordPress.
-- Runtime or IR/lowering lane: Milestone 1448 targets request/SAPI,
+  arbitrary `offsetGet()` bodies with custom append logic, dynamic
+  `ArrayAccess` roots, mixed nested `ArrayAccess` chains, alias cleanup after
+  replacing containing objects/properties, alias lifetime cleanup across
+  function/include boundaries, broader array/object copy-on-write,
+  request/session alias behavior, or variadic and named callback-reference
+  semantics that block WordPress.
+- Runtime or IR/lowering lane: Milestone 1453 targets request/SAPI,
   filesystem, and stream behavior that blocks real WordPress requests, such as
   session persistence, locking or save-handler behavior, cookie/cache-header
-  emission, broader warnings/notices/deprecations, active-session restart
-  notices, garbage collection, strict session-id validation, binary string
-  reads, output-started/header fidelity, shutdown/fatal/destructor edge
-  ordering, include-path/stat-cache behavior, stream filters/wrappers,
-  wrapper-specific stream context behavior, request-body lifetime, or host
-  filesystem edge cases.
-- Compatibility/runtime lane: Milestone 1449 targets executable WordPress
+  emission, garbage collection, strict session-id validation, broader session
+  option effects, exact warning/notice/deprecation text, binary string reads,
+  output-started/header fidelity, shutdown/fatal/destructor edge ordering,
+  include-path/stat-cache behavior, stream filters/wrappers, wrapper-specific
+  stream context behavior, request-body lifetime, or host filesystem edge
+  cases.
+- Compatibility/runtime lane: Milestone 1454 targets executable WordPress
   database/bootstrap evidence: real SQL parsing slices, dropped/renamed/
-  changed columns, multi-column indexes or sub-parts, dbDelta diff generation,
-  schema rollback, host database inspection, broader `wpdb`/MySQLi result or
-  mutation behavior, arbitrary prepared option/transient query shapes,
-  object-cache/transient persistence, hooks under realistic callback shapes,
-  deterministic plugin/theme loading probes, or a bootstrap/request probe that
-  moves past its next real blocker.
-- Tests/docs lane: Milestone 1450 is the next tests/docs slot after the next
+  changed columns, expression indexes, index ordering/opclass metadata,
+  dbDelta diff generation, schema rollback, host database inspection, broader
+  `wpdb`/MySQLi result or mutation behavior, arbitrary prepared option/
+  transient query shapes, object-cache/transient persistence, hooks under
+  realistic callback shapes, deterministic plugin/theme loading probes, or a
+  bootstrap/request probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1455 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
-592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, 1236, 1241, 1246, 1251, 1256, 1261, 1266, 1271, 1276, 1281, 1286, 1291, 1301, 1306, 1311, 1316, 1321, 1326, 1331, 1336, 1341, 1346, 1351, 1356, 1361, 1366, 1371, 1376, 1381, 1386, 1391, 1396, 1401, 1406, 1411, 1416, 1421, 1426, 1431, 1436, and 1441 closed recent parser slots, Milestones 565, 568,
+592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, 1236, 1241, 1246, 1251, 1256, 1261, 1266, 1271, 1276, 1281, 1286, 1291, 1301, 1306, 1311, 1316, 1321, 1326, 1331, 1336, 1341, 1346, 1351, 1356, 1361, 1366, 1371, 1376, 1381, 1386, 1391, 1396, 1401, 1406, 1411, 1416, 1421, 1426, 1431, 1436, 1441, and 1446 closed recent parser slots, Milestones 565, 568,
 572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, 615, 1204, 1209, 1214, and 1219 closed recent
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
-593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, 1233, 1237, 1238, 1242, 1243, 1247, 1248, 1252, 1253, 1257, 1258, 1262, 1263, 1267, 1268, 1272, 1273, 1277, 1278, 1282, 1283, 1287, 1288, 1292, 1293, 1302, 1303, 1307, 1308, 1312, 1313, 1317, 1318, 1322, 1323, 1327, 1328, 1332, 1333, 1337, 1338, 1342, 1343, 1347, 1348, 1352, 1353, 1357, 1358, 1362, 1363, 1367, 1368, 1372, 1373, 1377, 1378, 1382, 1383, 1387, 1388, 1392, 1393, 1397, 1398, 1402, 1403, 1407, 1408, 1412, 1413, 1417, 1418, 1422, 1423, 1427, 1428, 1432, 1433, 1437, 1438, 1442, and 1443 closed recent runtime slots, and Milestones 569,
+593, 598, 603, 608, 613, 618, 1202, 1207, 1212, 1217, 1222, 1223, 1227, 1228, 1232, 1233, 1237, 1238, 1242, 1243, 1247, 1248, 1252, 1253, 1257, 1258, 1262, 1263, 1267, 1268, 1272, 1273, 1277, 1278, 1282, 1283, 1287, 1288, 1292, 1293, 1302, 1303, 1307, 1308, 1312, 1313, 1317, 1318, 1322, 1323, 1327, 1328, 1332, 1333, 1337, 1338, 1342, 1343, 1347, 1348, 1352, 1353, 1357, 1358, 1362, 1363, 1367, 1368, 1372, 1373, 1377, 1378, 1382, 1383, 1387, 1388, 1392, 1393, 1397, 1398, 1402, 1403, 1407, 1408, 1412, 1413, 1417, 1418, 1422, 1423, 1427, 1428, 1432, 1433, 1437, 1438, 1442, 1443, 1447, and 1448 closed recent runtime slots, and Milestones 569,
 573, 588, 591, 596, 601, 606, 611, 616, 1203, 1208, 1213, and 1218 closed recent IR/lowering slots.
-Milestones 1224, 1229, 1234, 1239, 1244, 1249, 1254, 1259, 1264, 1269, 1274, 1279, 1284, 1289, 1294, 1304, 1309, 1314, 1319, 1324, 1329, 1334, 1339, 1344, 1349, 1354, 1359, 1364, 1369, 1374, 1379, 1384, 1389, 1394, 1399, 1404, 1409, 1414, 1419, 1424, 1429, 1434, 1439, and 1444 closed recent WordPress compatibility evidence work. Milestones
-604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, 1235, 1240, 1245, 1250, 1255, 1260, 1265, 1270, 1275, 1280, 1285, 1290, 1295, 1300, 1305, 1310, 1315, 1320, 1325, 1330, 1335, 1340, 1345, 1350, 1355, 1360, 1365, 1370, 1375, 1380, 1385, 1390, 1395, 1400, 1405, 1410, 1415, 1420, 1425, 1430, 1435, 1440, and 1445 closed recent tests/docs
+Milestones 1224, 1229, 1234, 1239, 1244, 1249, 1254, 1259, 1264, 1269, 1274, 1279, 1284, 1289, 1294, 1304, 1309, 1314, 1319, 1324, 1329, 1334, 1339, 1344, 1349, 1354, 1359, 1364, 1369, 1374, 1379, 1384, 1389, 1394, 1399, 1404, 1409, 1414, 1419, 1424, 1429, 1434, 1439, 1444, and 1449 closed recent WordPress compatibility evidence work. Milestones
+604, 609, 614, 619, 1205, 1210, 1215, 1220, 1225, 1230, 1235, 1240, 1245, 1250, 1255, 1260, 1265, 1270, 1275, 1280, 1285, 1290, 1295, 1300, 1305, 1310, 1315, 1320, 1325, 1330, 1335, 1340, 1345, 1350, 1355, 1360, 1365, 1370, 1375, 1380, 1385, 1390, 1395, 1400, 1405, 1410, 1415, 1420, 1425, 1430, 1435, 1440, 1445, and 1450 closed recent tests/docs
 queue refreshes.
 Milestones 1156 through 1159 closed the latest parser/runtime/IR/compiler-output
 implementation batch, and Milestone 1160 refreshed the next-lane queue.
