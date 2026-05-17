@@ -5563,6 +5563,59 @@ while ($index = mysqli_fetch_assoc($explicit)) {
 }
 
 #[test]
+fn mysqli_prepared_queries_filter_bounded_wordpress_schema_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_prepared_schema (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(255) NOT NULL default '', meta_value longtext NOT NULL, post_content longtext NOT NULL, PRIMARY KEY  (ID), KEY meta_lookup (meta_key(191)), KEY metaXlookup (meta_value(10)), FULLTEXT KEY content_search (post_content)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$like = mysqli_execute_query($handle, "SHOW INDEX FROM wp_probe_prepared_schema WHERE Key_name LIKE ?", array("meta_%"));
+echo "like=", mysqli_num_rows($like), ":";
+while ($index = mysqli_fetch_assoc($like)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ";";
+}
+$escaped = mysqli_execute_query($handle, "SHOW INDEX FROM wp_probe_prepared_schema WHERE `Key_name` LIKE ? ESCAPE '!'", array("meta!_%"));
+echo "|escaped=", mysqli_num_rows($escaped), ":";
+while ($index = mysqli_fetch_assoc($escaped)) {
+    echo $index["Key_name"], ":", $index["Sub_part"], ";";
+}
+$columns = mysqli_execute_query($handle, "SHOW FULL COLUMNS FROM wp_probe_prepared_schema LIKE ?", array("meta_%"));
+echo "|columns=", mysqli_num_rows($columns), ":";
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ":", $column["Key"], ";";
+}
+$field = mysqli_execute_query($handle, "SHOW COLUMNS FROM wp_probe_prepared_schema WHERE Field = ?", array("post_content"));
+$field_row = mysqli_fetch_assoc($field);
+echo "|field=", mysqli_num_rows($field), ":", $field_row["Field"], ":", $field_row["Type"];
+$key = mysqli_execute_query($handle, "SHOW INDEX FROM wp_probe_prepared_schema WHERE Key_name = ?", array("content_search"));
+$key_row = mysqli_fetch_assoc($key);
+echo "|key=", mysqli_num_rows($key), ":", $key_row["Key_name"], ":", $key_row["Index_type"];
+$status = mysqli_execute_query($handle, "SHOW TABLE STATUS LIKE ?", array("wp_probe_prepared_schema"));
+$status_row = mysqli_fetch_assoc($status);
+echo "|status=", mysqli_num_rows($status), ":", $status_row["Collation"];
+$stmt = mysqli_prepare($handle, "SHOW TABLES LIKE ?");
+mysqli_stmt_execute($stmt, array("wp_probe_prepared_%"));
+$tables = mysqli_stmt_get_result($stmt);
+echo "|tables=", mysqli_num_rows($tables), ":";
+$table = mysqli_fetch_assoc($tables);
+echo $table["Tables_in_wordpress (wp_probe_prepared_%)"];
+mysqli_query($handle, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
+$mode = mysqli_execute_query($handle, "SHOW INDEX FROM wp_probe_prepared_schema WHERE Key_name LIKE ?", array("meta\\_%"));
+echo "|mode=", mysqli_num_rows($mode);
+$explicit = mysqli_execute_query($handle, "SHOW INDEX FROM wp_probe_prepared_schema WHERE Key_name LIKE ? ESCAPE '!'", array("meta!_%"));
+echo "|mode-explicit=", mysqli_num_rows($explicit);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "like=2:meta_lookup:meta_key;metaXlookup:meta_value;|escaped=1:meta_lookup:191;|columns=2:meta_key:MUL;meta_value:MUL;|field=1:post_content:longtext|key=1:content_search:FULLTEXT|status=1:utf8mb4_unicode_ci|tables=1:wp_probe_prepared_schema|mode=0|mode-explicit=1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

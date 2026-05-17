@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1519/wpdb_prepared_schema_metadata_probe.php

@@ -97,7 +97,11 @@ unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
 path/domain-aware replacement with ASCII-case-insensitive domain identity
-matching. `fopen()` can create bounded
+matching; options-array calls reject numeric keys and unknown string option
+keys before changing that header log. Exact `ValueError` objects/text,
+case-insensitive option-key matching,
+cookie name validation/encoding, full domain policy, real SAPI emission, and
+native lowering remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -219,7 +223,8 @@ incorrect native code.
   removal, nested object-property array offset removal, array iteration
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
-  named or direct dynamic object-property array roots, plus direct
+  named, direct dynamic, and bounded object-result non-direct dynamic
+  object-property array roots, plus direct
   free-function, direct visible
   instance-method, direct named-static-method, method-context
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -299,7 +304,9 @@ incorrect native code.
   `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection, including
   bounded schema metadata `LIKE` wildcards and single-character `ESCAPE`
   clauses, plus a bounded `NO_BACKSLASH_ESCAPES` branch for those schema
-  metadata `LIKE` filters;
+  metadata `LIKE` filters, and one-string-parameter prepared metadata filters
+  for the documented `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and
+  `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` forms;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -462,9 +469,11 @@ incorrect native code.
   properties without explicit defaults, with runtime typed-property writes
   accepting inherited class-name objects and declared user-interface
   implementors in the current object metadata model, declared trait
-  metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
-  `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
-  traits, plus simple public trait method alias adaptations such as
+  metadata for empty traits, public trait constants, simple public instance
+  trait methods, simple class-body `use TraitName;` and `use TraitA, TraitB;`
+  composition for already-declared traits, simple trait-body `use` declarations
+  that compose public methods and constants into classes consuming the outer
+  trait, plus simple public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }`, protected/private
   trait aliases such as `use TraitName { method as protected helper; }`,
@@ -511,7 +520,8 @@ bounded `insteadof` shape, aliases
 beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
 unqualified visibility-only adaptations across multiple used traits,
-unqualified `insteadof`, `__TRAIT__`,
+trait-body aliases/visibility adaptations/`insteadof`, unqualified
+`insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
@@ -569,7 +579,7 @@ core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
-and trait method source-file persistence, trait-body `use` reflection, and
+and trait method source-file persistence, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -765,6 +775,7 @@ outputs including direct variables backed by the current bounded array-offset
 reference-alias metadata, bounded ordinary header-name replacement in the
 request-local CLI header log, bounded path/domain-aware cookie replacement,
 bounded cookie `Max-Age` emission for nonzero expirations, bounded
+cookie options-array key validation,
 request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,

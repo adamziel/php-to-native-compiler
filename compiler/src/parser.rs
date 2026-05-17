@@ -509,6 +509,7 @@ impl Parser {
         let name = self.consume_identifier("expected trait name")?;
         let name = self.resolve_declared_class_name(&name);
         self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
+        let mut trait_uses = Vec::new();
         let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
@@ -518,7 +519,10 @@ impl Parser {
                 self.advance();
                 continue;
             }
-            if self.check_trait_constant_declaration() {
+            if self.check(|kind| matches!(kind, TokenKind::Use)) {
+                self.pending_doc_comment = None;
+                trait_uses.extend(self.parse_trait_body_use()?);
+            } else if self.check_trait_constant_declaration() {
                 constants.push(self.parse_trait_constant()?);
             } else {
                 methods.push(self.parse_trait_method()?);
@@ -528,12 +532,50 @@ impl Parser {
         let end_line = self.previous().span.line;
         Ok(Stmt::Trait(TraitDecl {
             name,
+            trait_uses,
             constants,
             methods,
             end_line,
             doc_comment,
             span,
         }))
+    }
+
+    fn parse_trait_body_use(&mut self) -> CompileResult<Vec<TraitUseDecl>> {
+        let span = self.consume_keyword(TokenKind::Use, "expected 'use'")?.span;
+        let mut trait_uses = Vec::new();
+        loop {
+            let name = self.consume_class_like_name("expected trait name after 'use'")?;
+            trait_uses.push(TraitUseDecl {
+                name,
+                aliases: Vec::new(),
+                visibility_adaptations: Vec::new(),
+                precedences: Vec::new(),
+                span,
+            });
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| {
+                matches!(
+                    kind,
+                    TokenKind::Semicolon | TokenKind::LBrace | TokenKind::Eof
+                )
+            }) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "expected trait name after ',' in trait-body use",
+                ));
+            }
+        }
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(
+                self.peek().span,
+                "unsupported trait-body use adaptation: aliases, visibility adaptations, and insteadof conflict resolution inside traits are not implemented",
+            ));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after trait-body use")?;
+        Ok(trait_uses)
     }
 
     fn parse_trait_constant(&mut self) -> CompileResult<ClassConstantDecl> {

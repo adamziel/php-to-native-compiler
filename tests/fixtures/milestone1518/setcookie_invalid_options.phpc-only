@@ -1,0 +1,1 @@
+System PHP throws ValueError for invalid setcookie() option keys; this fixture pins phpc's current bounded runtime diagnostic until exception objects, exact warning text, and full cookie option parity are implemented.

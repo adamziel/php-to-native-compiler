@@ -752,7 +752,14 @@
   `foreach ($object->{$name} as &$value)` and
   `foreach ($object->{$name}["child"] as &$value)` use the evaluated string or
   integer property name and the same public/context-aware alias root when the
-  selected property is visible in the current context. Direct
+  selected property is visible in the current context. Bounded non-direct
+  dynamic-property holder expressions such as
+  `foreach ($holders["bag"]->{$name}["child"] as &$value)` and method-context
+  object-returning expressions such as
+  `foreach ($this->holder()->{$name} as &$value)` are also covered for
+  by-reference iteration: the holder is evaluated once, must produce an
+  object, and the selected public or context-visible non-public property is
+  routed through the same internal object-property alias root. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -771,7 +778,8 @@
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
-  ArrayAccess iterables, non-direct dynamic-property holder expressions,
+  ArrayAccess iterables, non-direct dynamic-property holder expressions outside
+  the documented object-result dynamic-property foreach slice,
   invisible selected dynamic properties, magic-property reference containers,
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
   properties, array offsets, expressions, or nested-control-flow returns,
@@ -2152,6 +2160,14 @@
   `LIKE` parser treats backslashes as literal characters instead of implicit
   escapes; explicit single-character `ESCAPE '<char>'` clauses still escape
   `%`, `_`, and the escape character for the documented schema metadata
+  filters. The same recorded dynamic schema metadata can now be filtered
+  through bounded prepared placeholders in `mysqli_execute_query()` and
+  `mysqli_prepare()`/`mysqli_stmt_execute(..., array(...))` for one string
+  parameter on the covered `SHOW TABLES LIKE ?`,
+  `SHOW TABLE STATUS LIKE ?`, `SHOW [FULL] COLUMNS ... LIKE ?`,
+  `SHOW [FULL] COLUMNS ... WHERE Field = ?`, and
+  `SHOW INDEX`/`SHOW KEYS ... WHERE Key_name = ?` or `LIKE ?` forms,
+  including explicit `LIKE ? ESCAPE '<char>'` for the covered metadata
   filters. Table/status rows remain deterministically sorted, and patterns
   without unescaped wildcard characters keep exact matching behavior.
   `SHOW CREATE TABLE <table>` returns a deterministic
@@ -2177,6 +2193,8 @@
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
   documented `Key_name` equality and `Key_name LIKE` forms,
+  prepared schema metadata placeholders beyond the documented single string
+  filter parameter,
   dbDelta diff generation, real DDL execution, real transactional DDL
   semantics beyond the bounded in-memory snapshot/restore path, host database
   inspection, or native database lowering. For an
@@ -2356,7 +2374,11 @@
   The documented schema metadata `LIKE` filters also honor the bounded
   `NO_BACKSLASH_ESCAPES` SQL-mode branch recorded on that placeholder handle,
   disabling implicit backslash escaping while keeping explicit
-  `ESCAPE '<char>'` clauses available. This state island is not broad SQL
+  `ESCAPE '<char>'` clauses available. Bounded prepared metadata filters
+  accept one string placeholder parameter through `mysqli_execute_query()` and
+  through `mysqli_prepare()`/`mysqli_stmt_execute()` for the documented
+  `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW
+  KEYS` equality/`LIKE` filter shapes. This state island is not broad SQL
   parsing, SQL-mode-aware escaping beyond that bounded schema metadata slice,
   character-set/collation fidelity, arbitrary column alteration beyond the
   exact direct shapes listed above, expression indexes, index opclass/parser
@@ -3031,14 +3053,17 @@
   matching the domain identity ASCII-case-insensitively and keeping same-name
   cookies for different path/domain identities. Past expirations emit
   `Max-Age=0`, and the emitted header preserves the caller-provided domain
-  text. Once
+  text. Options-array calls reject numeric keys and string keys outside
+  `expires`, `path`, `domain`, `secure`, `httponly`, and `samesite` before
+  changing the deterministic header log. Once
   unbuffered output has started, it returns `false`, does not append a cookie
   header, and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback. `setrawcookie()`
   accepts the same bounded signature and attributes, but writes the string
   value unchanged instead of percent-encoding it. Cookie name
   validation/encoding, exact request-time/Date-header parity for future
-  `Max-Age` values, array option validation beyond the documented keys,
+  `Max-Age` values, case-insensitive option-key matching, exact
+  `ValueError` objects/text for invalid options,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
   exact warning text, and native lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
@@ -5994,7 +6019,8 @@
   values are bounded `ReflectionClass` metadata objects for the traits.
   Interfaces and traits currently report empty trait metadata because
   interface trait use is not a PHP construct and trait-body `use` declarations
-  are not parsed by the current subset.
+  are composed for consuming classes but are not exposed as trait reflection
+  metadata.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -6091,7 +6117,12 @@
   including traits with supported public constants and public instance methods.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
-  public instance trait methods onto the consuming class metadata. Trait
+  public instance trait methods onto the consuming class metadata. Simple
+  trait-body declarations such as `trait A { use B; }` and `use B, C;`
+  compose public methods and constants from the used traits into classes that
+  consume the outer trait; the class's direct trait metadata remains the outer
+  trait, matching PHP's non-recursive direct-class trait reflection for the
+  covered slice. Trait
   constants declared as `const NAME = ...` or `public const NAME = ...` use the
   current class-constant expression subset and resolve as ordinary public class
   constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
@@ -6660,7 +6691,8 @@
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
   unqualified visibility-only adaptations across multiple used traits,
-  unqualified `insteadof`, `__TRAIT__`,
+  trait-body aliases/visibility adaptations/`insteadof`, unqualified
+  `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -8042,13 +8074,15 @@
   clock and pinned to `0` for past expirations, replacing deterministic cookie
   headers by cookie name plus normalized non-empty path/domain identity with
   ASCII-case-insensitive domain matching, returning `false` after unbuffered
-  output starts with a bounded `E_WARNING`, and
+  output starts with a bounded `E_WARNING`, rejecting numeric options-array
+  keys and unknown string option keys, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
   cookie name validation/encoding, exact request-time/Date-header parity for
-  future `Max-Age` values, option validation beyond the documented keys,
-  IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
-  exact warning text, and native lowering beyond function-table introspection
+  future `Max-Age` values, case-insensitive option-key matching, exact
+  `ValueError` objects/text for invalid options,
+  IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server
+  emission, exact warning text, and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct writable filename/line output-argument slice, including direct
   variables, direct array offsets, direct object properties, direct

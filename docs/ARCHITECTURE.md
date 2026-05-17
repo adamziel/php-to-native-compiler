@@ -43,7 +43,11 @@ object-property array roots such as `$object->items` and
 `$object->{$name}` and `$object->{$name}["child"]` when the evaluated property
 is visible in the current public/private/protected context, using the existing
 public/context property alias root instead of a general PHP reference
-container. Direct free-function calls
+container. Bounded non-direct dynamic-property holder expressions in
+by-reference `foreach`, such as `$holders["bag"]->{$name}["child"]` or
+method-context `$this->holder()->{$name}`, evaluate the holder once into a
+private temporary object root and then use that same public/context property
+alias machinery when the selected property is visible. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
@@ -51,7 +55,7 @@ private temporary root to that returned cell before applying the existing
 foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 recursive `$GLOBALS` array, copy-on-write, dynamic global-name, ArrayAccess
-iteration, dynamic object-property iterable roots, or included-file scope
+iteration, arbitrary dynamic object-property iterable roots, or included-file scope
 model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
@@ -165,12 +169,14 @@ magic-property references, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct visible named and dynamic object-property
-array roots, direct free-function, direct visible
+array roots, bounded non-direct dynamic-property holder expressions that
+evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
 including bounded direct caller-cell and direct static-local cell cases.
-Non-direct dynamic-property holders, invisible selected properties,
+Non-direct dynamic-property holders outside that object-result foreach slice,
+invisible selected properties,
 magic-property containers, property-return, array-offset-return beyond that
 assignment-only covered parent-slot suffix shape, expression-return, magic
 `__callStatic`, and callback forms outside the bounded
@@ -288,6 +294,10 @@ comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
 composes those trait public instance methods onto the consuming class metadata
 and stores the executable method bodies under the consuming class id, so
 ordinary instance method dispatch works through `phpc run`. A narrow trait
+body slice also accepts simple `use TraitName;` and `use TraitA, TraitB;`
+declarations inside traits; classes consuming the outer trait receive the
+nested traits' supported public methods and constants, while direct
+class-trait metadata remains non-recursive. A narrow trait
 method alias adaptation such as `use TraitName { method as alias; }` clones
 the composed public instance method under the alias name while leaving the
 original method available. The same alias path accepts an explicit `public`
@@ -324,7 +334,8 @@ multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 broad conflict resolution beyond class-method precedence and the current
 bounded `insteadof` slice, unqualified visibility-only adaptations across
-multiple used traits, unqualified `insteadof`,
+multiple used traits, trait-body aliases/visibility adaptations/`insteadof`,
+unqualified `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
@@ -1771,12 +1782,16 @@ path/domain identities. Domain identity matching lowercases non-empty ASCII
 domain text for replacement only; the emitted header preserves the
 caller-provided domain text.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
-string value. After unbuffered output starts these calls return `false`, leave
+string value. Options-array calls reject numeric keys and unknown string keys
+outside the bounded PHP option-key set before changing the deterministic header
+log. After unbuffered output starts these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,
-exact request-time/Date-header parity for future `Max-Age` values, full option
-validation, IDNA/trailing-dot/domain-policy canonicalization, exact warning
-text, SAPI emission, and native lowering remain outside the model.
+exact request-time/Date-header parity for future `Max-Age` values,
+case-insensitive option-key matching, exact `ValueError` objects/text for
+invalid options, IDNA/trailing-dot/domain-policy
+canonicalization, exact warning text, SAPI emission, and native lowering
+remain outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1928,7 +1943,12 @@ column names, and index names. A per-handle accepted
 `SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'` toggles the bounded schema
 metadata `LIKE` parser so implicit backslash escaping is disabled for later
 metadata filters on that handle while explicit `ESCAPE '<char>'` clauses
-still work. The same placeholder transaction and savepoint helpers that
+still work. The prepared statement path routes one string filter parameter
+from `mysqli_execute_query()` or `mysqli_stmt_execute(..., array(...))` into
+that same recorded schema metadata for the covered `SHOW TABLES`, `SHOW TABLE
+STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` filter
+forms; it does not substitute arbitrary SQL parameters. The same placeholder
+transaction and savepoint helpers that
 snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
 `CREATE TABLE`/`ALTER TABLE` metadata. It does not model arbitrary
@@ -1939,7 +1959,8 @@ beyond recorded schema-state rows, expression indexes, opclass/parser metadata,
 duplicate aliases, malformed `CONCAT`/`SUBSTRING`
 forms, SQL-mode behavior beyond the bounded schema metadata
 `NO_BACKSLASH_ESCAPES` parser branch, exact MySQL affected-row or insert-ID
-edge cases, real transactional
+edge cases, prepared schema placeholders beyond the single string filter
+parameter on documented metadata probes, real transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
 schema model, host database connection, PDO layer, or native database runtime.
@@ -2687,8 +2708,8 @@ and native lowering remain unsupported.
 list already stored on runtime class metadata by the trait-composition pass.
 `getTraits()` wraps each direct user trait name in the same request-local
 `ReflectionClass` state used by direct trait reflection. The slice intentionally
-does not add trait-body `use` parsing, recursive parent-trait aggregation,
-built-in/internal trait catalogs, or native lowering.
+does not add recursive trait reflection metadata, built-in/internal trait
+catalogs, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

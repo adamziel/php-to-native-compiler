@@ -809,6 +809,30 @@ echo setcookie("A", "B", "soon");
         "unsupported call setcookie(): expires argument must be int or options array in the current subset, got string"
     );
 
+    let invalid_option = runtime_error(
+        r#"<?php
+echo setcookie("A", "B", ["unknown" => true]);
+"#,
+    );
+    assert_eq!(invalid_option.line, 2);
+    assert_eq!(invalid_option.column, 6);
+    assert_eq!(
+        invalid_option.message,
+        "unsupported call setcookie(): option \"unknown\" is invalid in the current subset"
+    );
+
+    let numeric_option = runtime_error(
+        r#"<?php
+echo setcookie("A", "B", [0 => true]);
+"#,
+    );
+    assert_eq!(numeric_option.line, 2);
+    assert_eq!(numeric_option.column, 6);
+    assert_eq!(
+        numeric_option.message,
+        "unsupported call setcookie(): options array cannot have numeric keys in the current subset"
+    );
+
     let too_many = runtime_error(
         r#"<?php
 echo setcookie("A", "B", 0, "", "", false, false, "extra");
@@ -858,6 +882,30 @@ echo setrawcookie("A", "B", "soon");
     assert_eq!(
         bad_expires.message,
         "unsupported call setrawcookie(): expires argument must be int or options array in the current subset, got string"
+    );
+
+    let invalid_option = runtime_error(
+        r#"<?php
+echo setrawcookie("A", "B", ["priority" => "high"]);
+"#,
+    );
+    assert_eq!(invalid_option.line, 2);
+    assert_eq!(invalid_option.column, 6);
+    assert_eq!(
+        invalid_option.message,
+        "unsupported call setrawcookie(): option \"priority\" is invalid in the current subset"
+    );
+
+    let numeric_option = runtime_error(
+        r#"<?php
+echo setrawcookie("A", "B", [1 => "path"]);
+"#,
+    );
+    assert_eq!(numeric_option.line, 2);
+    assert_eq!(numeric_option.column, 6);
+    assert_eq!(
+        numeric_option.message,
+        "unsupported call setrawcookie(): options array cannot have numeric keys in the current subset"
     );
 }
 

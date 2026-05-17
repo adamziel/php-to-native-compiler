@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1518/setcookie_invalid_options.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1518/setcookie_invalid_options.php:2:1: unsupported call setcookie(): option "priority" is invalid in the current subset
+--- stderr end ---

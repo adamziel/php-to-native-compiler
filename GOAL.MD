@@ -175,10 +175,10 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed direct `ReflectionClass` trait
-metadata, by-reference `foreach` over direct dynamic object-property array
-roots, deterministic cookie `Max-Age` emission, and bounded per-handle
-`NO_BACKSLASH_ESCAPES` handling for MySQLi schema metadata `LIKE` filters.
+The latest WordPress-focused batch closed simple trait-body `use` composition,
+by-reference `foreach` over non-direct dynamic-property holder roots, invalid
+cookie options-array rejection before header mutation, and prepared schema
+metadata filters for covered `SHOW TABLES`/`SHOW COLUMNS`/`SHOW INDEX` forms.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream

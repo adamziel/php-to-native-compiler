@@ -3415,6 +3415,32 @@ impl Interpreter {
         })
     }
 
+    fn non_direct_foreach_object_property_alias_root(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<ArrayOffsetAliasRoot> {
+        let target_value = self.evaluate(target, scope)?;
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let temp_name = self.next_foreach_temporary_array_name();
+        scope.write_static(&temp_name, Value::Object(object));
+        self.foreach_object_property_alias_root(&temp_name, property, scope, span)
+    }
+
     fn by_reference_foreach_root(
         &mut self,
         iterable: &Expr,
@@ -3479,6 +3505,20 @@ impl Interpreter {
                     return Ok(ForeachArrayRoot::Alias { root, keys });
                 }
 
+                if let Some((holder, property, indices)) =
+                    Self::collect_dynamic_object_property_array_index_path(target, index)
+                {
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let mut keys = Vec::with_capacity(indices.len());
+                    for index in indices {
+                        keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+                    let root = self.non_direct_foreach_object_property_alias_root(
+                        holder, &property, scope, span,
+                    )?;
+                    return Ok(ForeachArrayRoot::Alias { root, keys });
+                }
+
                 Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -3512,13 +3552,14 @@ impl Interpreter {
                 ..
             } => {
                 let Expr::Variable(object_name, _) = target.as_ref() else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "foreach",
-                            "by-reference iteration currently requires a direct array variable, direct array-offset path, direct object-property array path, string-keyed $GLOBALS path, or temporary array expression",
-                        ),
-                    ));
+                    let property = self.evaluate_dynamic_property_name(property, span, scope)?;
+                    let root = self.non_direct_foreach_object_property_alias_root(
+                        target, &property, scope, span,
+                    )?;
+                    return Ok(ForeachArrayRoot::Alias {
+                        root,
+                        keys: Vec::new(),
+                    });
                 };
                 let property = self.evaluate_dynamic_property_name(property, span, scope)?;
                 let root =
@@ -12785,6 +12826,21 @@ impl Interpreter {
         params: &[Value],
         span: Span,
     ) -> CompileResult<Option<MysqliPendingResultState>> {
+        if let Some(handle_id) = connection_handle_id {
+            if let Some(tables) = self.mysqli_schema_tables.get(&handle_id) {
+                if let Some(result) = wordpress_dynamic_prepared_schema_result_for_query(
+                    query,
+                    tables,
+                    self.mysqli_sql_mode_disables_backslash_escapes(handle_id),
+                    params,
+                    function,
+                    span,
+                )? {
+                    return Ok(Some(result));
+                }
+            }
+        }
+
         if matches!(
             query,
             "SELECT option_value FROM wp_options WHERE option_name = ?"
@@ -31985,6 +32041,30 @@ impl Interpreter {
         }
     }
 
+    fn collect_dynamic_object_property_array_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<(&'a Expr, &'a Expr, Vec<&'a Expr>)> {
+        let mut indices = vec![index];
+        let mut current = target;
+
+        loop {
+            match current {
+                Expr::DynamicProperty {
+                    target, property, ..
+                } => {
+                    indices.reverse();
+                    return Some((target, property, indices));
+                }
+                Expr::Index { target, index, .. } => {
+                    indices.push(index);
+                    current = target;
+                }
+                _ => return None,
+            }
+        }
+    }
+
     fn literal_array_key_path(indices: &[&Expr]) -> Option<Vec<ArrayKey>> {
         indices
             .iter()
@@ -33754,14 +33834,12 @@ fn composed_trait_constants(
 ) -> CompileResult<Vec<ClassConstantDecl>> {
     let mut constants = Vec::new();
     for trait_use in &class.trait_uses {
-        let key = trait_use.name.to_ascii_lowercase();
-        let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
-            runtime_error(
-                trait_use.span,
-                RuntimeError::undefined_class(&trait_use.name),
-            )
-        })?;
-        constants.extend(trait_decl.constants.iter().cloned());
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        constants.extend(composed_trait_constants_for_trait(
+            trait_decl,
+            trait_lookup,
+            &mut HashSet::new(),
+        )?);
     }
     Ok(constants)
 }
@@ -33775,14 +33853,11 @@ fn composed_trait_methods(
     let precedence_exclusions = trait_precedence_exclusions(class, trait_lookup)?;
     for trait_use in &class.trait_uses {
         let key = trait_use.name.to_ascii_lowercase();
-        let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
-            runtime_error(
-                trait_use.span,
-                RuntimeError::undefined_class(&trait_use.name),
-            )
-        })?;
-        let visibility_adaptations = trait_visibility_adaptations(trait_use, trait_decl)?;
-        for method in &trait_decl.methods {
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let trait_methods =
+            composed_trait_methods_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?;
+        let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
+        for method in &trait_methods {
             let method_key = method.function.name.to_ascii_lowercase();
             if precedence_exclusions.contains(&(key.clone(), method_key)) {
                 continue;
@@ -33799,7 +33874,7 @@ fn composed_trait_methods(
             methods.push(composed);
         }
         for alias in &trait_use.aliases {
-            let Some(method) = trait_decl.methods.iter().find(|method| {
+            let Some(method) = trait_methods.iter().find(|method| {
                 method
                     .function
                     .name
@@ -33828,11 +33903,11 @@ fn composed_trait_methods(
 
 fn trait_visibility_adaptations(
     trait_use: &TraitUseDecl,
-    trait_decl: &TraitDecl,
+    trait_methods: &[ClassMethodDecl],
 ) -> CompileResult<HashMap<String, ClassVisibility>> {
     let mut adaptations = HashMap::new();
     for adaptation in &trait_use.visibility_adaptations {
-        let Some(method) = trait_decl.methods.iter().find(|method| {
+        let Some(method) = trait_methods.iter().find(|method| {
             method
                 .function
                 .name
@@ -33842,7 +33917,7 @@ fn trait_visibility_adaptations(
                 adaptation.span,
                 RuntimeError::unsupported_trait_use(format!(
                     "trait visibility adaptation {}::{} targets a missing method",
-                    trait_decl.name, adaptation.method_name
+                    trait_use.name, adaptation.method_name
                 )),
             ));
         };
@@ -33852,6 +33927,100 @@ fn trait_visibility_adaptations(
         );
     }
     Ok(adaptations)
+}
+
+fn composed_trait_constants_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> CompileResult<Vec<ClassConstantDecl>> {
+    let key = trait_decl.name.to_ascii_lowercase();
+    if !path.insert(key.clone()) {
+        return Err(runtime_error(
+            trait_decl.span,
+            RuntimeError::unsupported_trait_use(format!(
+                "recursive trait-body use involving {} is not implemented",
+                trait_decl.name
+            )),
+        ));
+    }
+
+    let mut constants = Vec::new();
+    for trait_use in &trait_decl.trait_uses {
+        ensure_simple_trait_body_use(trait_use)?;
+        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        constants.extend(composed_trait_constants_for_trait(
+            nested,
+            trait_lookup,
+            path,
+        )?);
+    }
+    constants.extend(trait_decl.constants.iter().cloned());
+
+    path.remove(&key);
+    Ok(constants)
+}
+
+fn composed_trait_methods_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> CompileResult<Vec<ClassMethodDecl>> {
+    let key = trait_decl.name.to_ascii_lowercase();
+    if !path.insert(key.clone()) {
+        return Err(runtime_error(
+            trait_decl.span,
+            RuntimeError::unsupported_trait_use(format!(
+                "recursive trait-body use involving {} is not implemented",
+                trait_decl.name
+            )),
+        ));
+    }
+
+    let mut methods = Vec::new();
+    let direct_method_names = declared_trait_method_names(trait_decl);
+    for trait_use in &trait_decl.trait_uses {
+        ensure_simple_trait_body_use(trait_use)?;
+        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for method in composed_trait_methods_for_trait(nested, trait_lookup, path)? {
+            if !direct_method_names.contains(&method.function.name.to_ascii_lowercase()) {
+                methods.push(method);
+            }
+        }
+    }
+    methods.extend(trait_decl.methods.iter().cloned());
+
+    path.remove(&key);
+    Ok(methods)
+}
+
+fn ensure_simple_trait_body_use(trait_use: &TraitUseDecl) -> CompileResult<()> {
+    if trait_use.aliases.is_empty()
+        && trait_use.visibility_adaptations.is_empty()
+        && trait_use.precedences.is_empty()
+    {
+        return Ok(());
+    }
+
+    Err(runtime_error(
+        trait_use.span,
+        RuntimeError::unsupported_trait_use(
+            "trait-body use adaptations are not implemented".to_string(),
+        ),
+    ))
+}
+
+fn resolve_trait_use_decl<'a>(
+    trait_use: &TraitUseDecl,
+    trait_lookup: &'a HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<&'a TraitDecl> {
+    let key = trait_use.name.to_ascii_lowercase();
+    trait_lookup.get(&key).map(Rc::as_ref).ok_or_else(|| {
+        runtime_error(
+            trait_use.span,
+            RuntimeError::undefined_class(&trait_use.name),
+        )
+    })
 }
 
 fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
@@ -33864,6 +34033,14 @@ fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
             };
             Some(method.function.name.to_ascii_lowercase())
         })
+        .collect()
+}
+
+fn declared_trait_method_names(trait_decl: &TraitDecl) -> HashSet<String> {
+    trait_decl
+        .methods
+        .iter()
+        .map(|method| method.function.name.to_ascii_lowercase())
         .collect()
 }
 
@@ -33895,15 +34072,11 @@ fn trait_precedence_exclusions(
 ) -> CompileResult<HashSet<(String, String)>> {
     let mut exclusions = HashSet::new();
     for trait_use in &class.trait_uses {
-        let winner_key = trait_use.name.to_ascii_lowercase();
-        let winner_trait = trait_lookup.get(&winner_key).ok_or_else(|| {
-            runtime_error(
-                trait_use.span,
-                RuntimeError::undefined_class(&trait_use.name),
-            )
-        })?;
+        let winner_trait = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let winner_methods =
+            composed_trait_methods_for_trait(winner_trait, trait_lookup, &mut HashSet::new())?;
         for precedence in &trait_use.precedences {
-            let Some(winner_method) = winner_trait.methods.iter().find(|method| {
+            let Some(winner_method) = winner_methods.iter().find(|method| {
                 method
                     .function
                     .name
@@ -33919,13 +34092,17 @@ fn trait_precedence_exclusions(
             };
 
             let loser_key = precedence.loser_trait_name.to_ascii_lowercase();
-            let loser_trait = trait_lookup.get(&loser_key).ok_or_else(|| {
-                runtime_error(
-                    precedence.span,
-                    RuntimeError::undefined_class(&precedence.loser_trait_name),
-                )
-            })?;
-            if !loser_trait.methods.iter().any(|method| {
+            let loser_trait_use = TraitUseDecl {
+                name: precedence.loser_trait_name.clone(),
+                aliases: Vec::new(),
+                visibility_adaptations: Vec::new(),
+                precedences: Vec::new(),
+                span: precedence.span,
+            };
+            let loser_trait = resolve_trait_use_decl(&loser_trait_use, trait_lookup)?;
+            let loser_methods =
+                composed_trait_methods_for_trait(loser_trait, trait_lookup, &mut HashSet::new())?;
+            if !loser_methods.iter().any(|method| {
                 method
                     .function
                     .name
@@ -36533,6 +36710,246 @@ fn wordpress_dynamic_schema_result_for_query(
     None
 }
 
+fn wordpress_dynamic_prepared_schema_result_for_query(
+    query: &str,
+    tables: &HashMap<String, WordPressSchemaTableState>,
+    no_backslash_escapes: bool,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<MysqliPendingResultState>> {
+    let query = query.trim().strip_suffix(';').unwrap_or(query.trim());
+
+    if let Some(input) = query.strip_prefix("SHOW TABLES LIKE ") {
+        if let Some(table_filter) = parse_prepared_schema_like_placeholder_filter(
+            input,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )? {
+            let mut table_names = tables
+                .keys()
+                .filter(|table_name| {
+                    wordpress_schema_name_matches_filter(table_name, &table_filter)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            table_names.sort();
+            if !table_names.is_empty() {
+                let field = format!("Tables_in_wordpress ({})", table_filter.pattern());
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![field.clone()],
+                    rows: table_names
+                        .into_iter()
+                        .map(|table_name| vec![(field.clone(), Value::String(table_name))])
+                        .collect(),
+                }));
+            }
+            return Ok(None);
+        }
+    }
+
+    if let Some(input) = query.strip_prefix("SHOW TABLE STATUS LIKE ") {
+        if let Some(table_filter) = parse_prepared_schema_like_placeholder_filter(
+            input,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )? {
+            let mut table_names = tables
+                .keys()
+                .filter(|table_name| {
+                    wordpress_schema_name_matches_filter(table_name, &table_filter)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            table_names.sort();
+            let rows = table_names
+                .into_iter()
+                .filter_map(|table_name| tables.get(&table_name))
+                .map(dynamic_schema_table_status_row)
+                .collect();
+            return Ok(Some(MysqliPendingResultState {
+                fields: dynamic_schema_table_status_fields(),
+                rows,
+            }));
+        }
+    }
+
+    if let Some(column_query) = parse_dynamic_prepared_schema_show_columns_query(
+        query,
+        no_backslash_escapes,
+        params,
+        function,
+        span,
+    )? {
+        let Some(table) = tables.get(&column_query.table_name) else {
+            return Ok(None);
+        };
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec![
+                "Field".to_string(),
+                "Type".to_string(),
+                "Collation".to_string(),
+                "Null".to_string(),
+                "Key".to_string(),
+                "Default".to_string(),
+                "Extra".to_string(),
+                "Privileges".to_string(),
+                "Comment".to_string(),
+            ],
+            rows: table
+                .columns
+                .iter()
+                .filter(|column| schema_column_matches_filter(column, &column_query.column_filter))
+                .map(|column| dynamic_schema_full_column_row(column, table))
+                .collect(),
+        }));
+    }
+
+    if let Some(index_query) = parse_dynamic_prepared_schema_show_index_query(
+        query,
+        no_backslash_escapes,
+        params,
+        function,
+        span,
+    )? {
+        let Some(table) = tables.get(&index_query.table_name) else {
+            return Ok(None);
+        };
+        return Ok(Some(MysqliPendingResultState {
+            fields: vec![
+                "Table".to_string(),
+                "Non_unique".to_string(),
+                "Key_name".to_string(),
+                "Seq_in_index".to_string(),
+                "Column_name".to_string(),
+                "Collation".to_string(),
+                "Cardinality".to_string(),
+                "Sub_part".to_string(),
+                "Packed".to_string(),
+                "Null".to_string(),
+                "Index_type".to_string(),
+                "Comment".to_string(),
+                "Index_comment".to_string(),
+                "Visible".to_string(),
+                "Expression".to_string(),
+            ],
+            rows: table
+                .indexes
+                .iter()
+                .filter(|index| schema_index_matches_filter(index, &index_query.key_filter))
+                .flat_map(|index| {
+                    index.parts.iter().enumerate().map(|(idx, part)| {
+                        dynamic_schema_index_row(&table.name, index, part, (idx + 1) as i64)
+                    })
+                })
+                .collect(),
+        }));
+    }
+
+    Ok(None)
+}
+
+fn parse_dynamic_prepared_schema_show_columns_query(
+    query: &str,
+    no_backslash_escapes: bool,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<WordPressSchemaColumnQuery>> {
+    let Some(rest) = query
+        .strip_prefix("SHOW FULL COLUMNS FROM ")
+        .or_else(|| query.strip_prefix("SHOW COLUMNS FROM "))
+    else {
+        return Ok(None);
+    };
+    let (table_name, rest) = match parse_schema_identifier_with_optional_suffix(rest.trim()) {
+        Some(parsed) => parsed,
+        None => return Ok(None),
+    };
+    let rest = rest.trim();
+    let column_filter = if let Some(like) = rest.strip_prefix("LIKE ") {
+        parse_prepared_schema_like_placeholder_filter(
+            like,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )?
+    } else if let Some(field) = rest
+        .strip_prefix("WHERE Field = ")
+        .or_else(|| rest.strip_prefix("WHERE `Field` = "))
+    {
+        parse_prepared_schema_exact_placeholder_filter(field, params, function, span)?
+    } else if let Some(field) = rest
+        .strip_prefix("WHERE Field LIKE ")
+        .or_else(|| rest.strip_prefix("WHERE `Field` LIKE "))
+    {
+        parse_prepared_schema_like_placeholder_filter(
+            field,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )?
+    } else {
+        return Ok(None);
+    };
+    Ok(
+        column_filter.map(|column_filter| WordPressSchemaColumnQuery {
+            table_name,
+            column_filter: Some(column_filter),
+        }),
+    )
+}
+
+fn parse_dynamic_prepared_schema_show_index_query(
+    query: &str,
+    no_backslash_escapes: bool,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<WordPressSchemaIndexQuery>> {
+    let Some(rest) = query
+        .strip_prefix("SHOW INDEX FROM ")
+        .or_else(|| query.strip_prefix("SHOW INDEXES FROM "))
+        .or_else(|| query.strip_prefix("SHOW KEYS FROM "))
+    else {
+        return Ok(None);
+    };
+    let (table_name, rest) = match parse_schema_identifier_with_optional_suffix(rest.trim()) {
+        Some(parsed) => parsed,
+        None => return Ok(None),
+    };
+    let rest = rest.trim();
+    let key_filter = if let Some(key_name) = rest
+        .strip_prefix("WHERE Key_name = ")
+        .or_else(|| rest.strip_prefix("WHERE `Key_name` = "))
+    {
+        parse_prepared_schema_exact_placeholder_filter(key_name, params, function, span)?
+    } else if let Some(key_name) = rest
+        .strip_prefix("WHERE Key_name LIKE ")
+        .or_else(|| rest.strip_prefix("WHERE `Key_name` LIKE "))
+    {
+        parse_prepared_schema_like_placeholder_filter(
+            key_name,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )?
+    } else {
+        return Ok(None);
+    };
+    Ok(key_filter.map(|key_filter| WordPressSchemaIndexQuery {
+        table_name,
+        key_filter: Some(key_filter),
+    }))
+}
+
 fn parse_dynamic_schema_show_index_query(
     query: &str,
     no_backslash_escapes: bool,
@@ -36743,6 +37160,132 @@ fn parse_sql_single_quoted_schema_like_filter(
     } else {
         None
     }
+}
+
+fn parse_prepared_schema_like_placeholder_filter(
+    input: &str,
+    params: &[Value],
+    no_backslash_escapes: bool,
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<WordPressSchemaNameFilter>> {
+    let Some(mut rest) = input.trim().strip_prefix('?') else {
+        return Ok(None);
+    };
+    rest = rest.trim_start();
+    let escape_char = if let Some(escape) = rest.strip_prefix("ESCAPE ") {
+        let Some((escape, next)) = parse_sql_single_quoted_value(escape.trim_start()) else {
+            return Ok(None);
+        };
+        if !next.trim().is_empty() {
+            return Ok(None);
+        }
+        let mut escape_chars = escape.chars();
+        let Some(escape_char) = escape_chars.next() else {
+            return Ok(None);
+        };
+        if escape_chars.next().is_some() {
+            return Ok(None);
+        }
+        escape_char
+    } else if rest.is_empty() {
+        '\\'
+    } else {
+        return Ok(None);
+    };
+
+    let pattern = prepared_schema_string_filter_param(function, params, span)?;
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, no_backslash_escapes) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata LIKE filter contains an unterminated escape sequence in the current subset",
+            ),
+        ));
+    };
+    Ok(Some(filter))
+}
+
+fn parse_prepared_schema_exact_placeholder_filter(
+    input: &str,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<WordPressSchemaNameFilter>> {
+    let Some(rest) = input.trim().strip_prefix('?') else {
+        return Ok(None);
+    };
+    if !rest.trim().is_empty() {
+        return Ok(None);
+    }
+    let value = prepared_schema_string_filter_param(function, params, span)?;
+    let Some(identifier) = parse_schema_table_identifier(value) else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata exact filter requires an identifier-shaped string parameter in the current subset",
+            ),
+        ));
+    };
+    Ok(Some(WordPressSchemaNameFilter::Exact(identifier)))
+}
+
+fn prepared_schema_string_filter_param<'a>(
+    function: &str,
+    params: &'a [Value],
+    span: Span,
+) -> CompileResult<&'a str> {
+    let [Value::String(pattern)] = params else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared schema metadata filters require exactly one string parameter in the current subset",
+            ),
+        ));
+    };
+    Ok(pattern)
+}
+
+fn parse_schema_like_pattern(
+    pattern: &str,
+    escape_char: char,
+    no_backslash_escapes: bool,
+) -> Option<WordPressSchemaNameFilter> {
+    let mut normalized_pattern = String::new();
+    let mut tokens = Vec::new();
+    let mut has_wildcard = false;
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == escape_char && (!no_backslash_escapes || escape_char != '\\') {
+            let escaped = chars.next()?;
+            normalized_pattern.push(escaped);
+            tokens.push(WordPressSchemaLikeToken::Literal(escaped));
+            continue;
+        }
+        normalized_pattern.push(ch);
+        match ch {
+            '%' => {
+                has_wildcard = true;
+                tokens.push(WordPressSchemaLikeToken::AnyMany);
+            }
+            '_' => {
+                has_wildcard = true;
+                tokens.push(WordPressSchemaLikeToken::AnyOne);
+            }
+            literal => tokens.push(WordPressSchemaLikeToken::Literal(literal)),
+        }
+    }
+    Some(if has_wildcard {
+        WordPressSchemaNameFilter::Like {
+            pattern: normalized_pattern,
+            tokens,
+        }
+    } else {
+        WordPressSchemaNameFilter::Exact(normalized_pattern)
+    })
 }
 
 fn parse_sql_single_quoted_schema_like_value(
@@ -42340,6 +42883,7 @@ fn parse_setcookie_options(
                 ),
             ));
         }
+        validate_setcookie_option_keys(array, function_name, span)?;
         options.expires = optional_cookie_int_option(array, "expires", function_name, span)?;
         options.path = optional_cookie_string_option(array, "path", function_name, span)?;
         options.domain = optional_cookie_string_option(array, "domain", function_name, span)?;
@@ -42373,6 +42917,37 @@ fn parse_setcookie_options(
     options.secure = args.get(5).is_some_and(Value::is_truthy);
     options.httponly = args.get(6).is_some_and(Value::is_truthy);
     Ok(options)
+}
+
+fn validate_setcookie_option_keys(
+    options: &PhpArray,
+    function_name: &'static str,
+    span: Span,
+) -> CompileResult<()> {
+    for entry in options.entries() {
+        let ArrayKey::String(key) = &entry.key else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    "options array cannot have numeric keys in the current subset",
+                ),
+            ));
+        };
+        if !matches!(
+            key.as_str(),
+            "expires" | "path" | "domain" | "secure" | "httponly" | "samesite"
+        ) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function_name,
+                    format!("option \"{key}\" is invalid in the current subset"),
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn optional_cookie_positional_string(

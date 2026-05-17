@@ -4642,6 +4642,52 @@ fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn trait_body_use_composes_public_members() {
+    let execution = run_source(
+        r#"<?php
+trait HookLabels {
+    public const NESTED = "nested";
+    public function label($suffix) {
+        return "nested:" . $suffix;
+    }
+}
+
+trait HookTools {
+    use HookLabels;
+    public const SOURCE = "tools";
+    public function register($hook) {
+        return $this->label($hook) . ":" . self::SOURCE . ":" . self::NESTED;
+    }
+}
+
+class Plugin {
+    use HookTools;
+}
+
+$plugin = new Plugin();
+echo $plugin->register("init"), "\n";
+echo $plugin->label("admin"), "\n";
+echo Plugin::SOURCE, "|", Plugin::NESTED, "\n";
+$class = new ReflectionClass(Plugin::class);
+echo implode(",", $class->getTraitNames()), "\n";
+$names = array("register", "label");
+$count = count($names);
+foreach ($names as $index => $name) {
+    $method = new ReflectionMethod(Plugin::class, $name);
+    echo $name, "|", $method->getDeclaringClass()->getName(), $index + 1 === $count ? "" : "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "nested:init:tools:nested\nnested:admin\ntools|nested\nHookTools\nregister|Plugin\nlabel|Plugin"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_bounded_class_interface_and_trait_metadata() {
     let execution = run_source(
         r#"<?php
