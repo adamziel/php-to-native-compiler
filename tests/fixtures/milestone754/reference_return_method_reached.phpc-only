@@ -1,1 +1,0 @@
-phpc parses by-reference method returns as a runtime boundary; it does not implement PHP reference return binding, aliases, or copy-on-write.

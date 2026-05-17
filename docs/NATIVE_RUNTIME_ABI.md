@@ -45,6 +45,7 @@ The first scalar output helper symbols are:
 - `phpc_native_scalar_echo_len(NativeScalarValue) -> usize`
 - `phpc_native_scalar_echo_write(NativeScalarValue, *mut u8, usize) -> usize`
 - `phpc_native_scalar_echo_bytes(NativeScalarValue) -> NativeByteBuffer`
+- `phpc_native_byte_buffer_from_bytes(*const u8, usize) -> NativeByteBuffer`
 - `phpc_native_byte_buffer_free(NativeByteBuffer)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
@@ -59,6 +60,13 @@ and capacity that must later be returned to `phpc_native_byte_buffer_free`.
 Empty echo output is represented as a null pointer with zero length and zero
 capacity. This owned-buffer path is ABI/probe groundwork only; normal generated
 echo lowering does not call it yet.
+
+`phpc_native_byte_buffer_from_bytes` copies a caller-provided byte slice into a
+runtime-owned `NativeByteBuffer` with the same free contract. Null or
+zero-length inputs return the canonical empty buffer. This is heap ownership
+groundwork for future PHP string handoff only; it is not a PHP string value
+handle, does not intern strings, and does not change normal generated string or
+echo lowering.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -101,6 +109,12 @@ probe function that extracts the owned buffer length before freeing it. The
 probe still does not alter production `phpc compile` echo lowering or imply
 linked native execution support.
 
+Milestone 1567 adds the copied-byte ownership helper declaration
+`phpc_native_byte_buffer_from_bytes(ptr, usize) -> NativeByteBuffer` plus a
+target-width-aware probe function that clones a static byte payload, extracts
+the owned length, and frees the buffer. Normal `phpc compile` output remains on
+the existing direct `printf` scalar lowering path.
+
 This is not production lowering. Normal `phpc compile --emit-ir` output remains
 unchanged and still does not link or execute runtime helper calls. The snapshot
 uses the selected target's `usize`/pointer-width shape; a real linked native
@@ -126,6 +140,8 @@ The tests pin:
 - scalar echo byte sizing, partial buffer writes, and null-buffer sizing.
 - owned scalar echo byte buffers, including empty null-buffer results and the
   exported free helper.
+- copied runtime-owned byte buffers from caller-provided byte slices, including
+  embedded NUL bytes, zero-length inputs, and null inputs.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo and owned
@@ -136,7 +152,7 @@ The tests pin:
 This ABI does not yet provide:
 
 - general string ownership, string interning, or PHP string value handles beyond
-  the scalar echo owned-byte helper;
+  the scalar echo owned-byte helper and copied raw-byte buffer helper;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR;
 - symbol tables, stack frames, call lookup, or diagnostics;

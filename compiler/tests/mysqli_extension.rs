@@ -4422,6 +4422,45 @@ echo $timeout_row["option_name"];
 }
 
 #[test]
+fn mysqli_prepared_expired_transient_timeout_predicates_apply_escape_clause() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-timeout-feed_mod', '110', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_timeout_feed_mod', '120', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_fresh', '900', 'no')");
+$select = mysqli_execute_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE ? ESCAPE '!' AND option_value < ? ORDER BY option_name", array("!_transient!_timeout!_%", "300"));
+$selected = mysqli_fetch_assoc($select);
+echo mysqli_num_rows($select);
+echo ":";
+echo $selected["option_name"];
+echo "|";
+$stmt = mysqli_prepare($handle, "DELETE FROM wp_options WHERE option_name LIKE ? ESCAPE '!' AND option_value < ?");
+mysqli_stmt_execute($stmt, array("!_transient!_timeout!_%", 300));
+echo mysqli_stmt_affected_rows($stmt);
+echo "|";
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_execute_query($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE ? ESCAPE '!' AND `option_value` < ?", array("!_transient!_timeout!_%", "300"));
+echo mysqli_affected_rows($handle);
+echo "|";
+$left = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '%transient%timeout%' ORDER BY option_name");
+while ($row = mysqli_fetch_assoc($left)) {
+    echo $row["option_name"], ",";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1:_transient_timeout_feed_mod|1|1|_site_transient_timeout_feed_mod,_transient_timeout_fresh,xtransient-timeout-feed_mod,"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_row_sets_from_state() {
     let execution = run_source(
         r#"<?php

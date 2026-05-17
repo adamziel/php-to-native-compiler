@@ -402,11 +402,16 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "; this is a dependency sketch, not production lowering or linked execution",
         "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
         &format!("%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}"),
+        "@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c\"heap\"",
+        "",
         &format!("declare {usize_type} @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)"),
         &format!(
             "declare {usize_type} @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, {usize_type})"
         ),
         "declare %phpc.NativeByteBuffer @phpc_native_scalar_echo_bytes(%phpc.NativeScalarValue)",
+        &format!(
+            "declare %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr, {usize_type})"
+        ),
         "declare void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer)",
         "",
         &format!("define {usize_type} @phpc_probe_scalar_echo_len() {{"),
@@ -424,6 +429,19 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "  %value = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
         "  %with_payload = insertvalue %phpc.NativeScalarValue %value, i64 -123, 3",
         "  %buffer = call %phpc.NativeByteBuffer @phpc_native_scalar_echo_bytes(%phpc.NativeScalarValue %with_payload)",
+        "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_byte_buffer_from_bytes() {{"),
+        "entry:",
+        &format!(
+            "  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.bytes, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %buffer = call %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr %bytes, {usize_type} 4)"
+        ),
         "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
         &format!("  ret {usize_type} %len"),

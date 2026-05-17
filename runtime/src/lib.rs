@@ -181,6 +181,23 @@ pub extern "C" fn phpc_native_scalar_echo_bytes(value: NativeScalarValue) -> Nat
 
 /// # Safety
 ///
+/// `bytes` must either be null or point to at least `len` readable bytes.
+/// Null or zero-length inputs return the canonical empty buffer.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_byte_buffer_from_bytes(
+    bytes: *const u8,
+    len: usize,
+) -> NativeByteBuffer {
+    if bytes.is_null() || len == 0 {
+        return NativeByteBuffer::empty();
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes, len) };
+    NativeByteBuffer::from_vec(bytes.to_vec())
+}
+
+/// # Safety
+///
 /// `buffer` must be a `NativeByteBuffer` previously returned by the runtime
 /// ABI. Passing any other pointer/capacity pair is undefined behavior.
 #[no_mangle]
@@ -4585,6 +4602,36 @@ mod tests {
         unsafe { phpc_native_byte_buffer_free(buffer) };
 
         let empty = phpc_native_scalar_echo_bytes(phpc_native_null());
+        assert!(empty.ptr().is_null());
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(empty) };
+    }
+
+    #[test]
+    fn native_byte_buffer_from_bytes_copies_into_owned_buffer() {
+        let input = b"heap\0slice";
+        let buffer = unsafe { phpc_native_byte_buffer_from_bytes(input.as_ptr(), input.len()) };
+
+        assert_ne!(buffer.ptr(), input.as_ptr().cast_mut());
+        assert_eq!(buffer.len(), input.len());
+        assert!(buffer.cap() >= buffer.len());
+        let bytes = unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) };
+        assert_eq!(bytes, input);
+
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+    }
+
+    #[test]
+    fn native_byte_buffer_from_bytes_empty_inputs_are_canonical() {
+        let input = b"ignored";
+        let empty = unsafe { phpc_native_byte_buffer_from_bytes(input.as_ptr(), 0) };
+        assert!(empty.ptr().is_null());
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.cap(), 0);
+        unsafe { phpc_native_byte_buffer_free(empty) };
+
+        let empty = unsafe { phpc_native_byte_buffer_from_bytes(std::ptr::null(), 5) };
         assert!(empty.ptr().is_null());
         assert_eq!(empty.len(), 0);
         assert_eq!(empty.cap(), 0);

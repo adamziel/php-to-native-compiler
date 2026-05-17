@@ -115,10 +115,33 @@ fn run_options_from_env() -> CompileResult<RunOptions> {
         }
         _ => None,
     };
+    let request_time = match env::var("PHPC_REQUEST_TIME") {
+        Ok(value) if !value.trim().is_empty() => {
+            let parsed = value.trim().parse::<i64>().map_err(|_| {
+                Diagnostic::new(
+                    Phase::Cli,
+                    0,
+                    0,
+                    "PHPC_REQUEST_TIME must be a non-negative integer",
+                )
+            })?;
+            if parsed < 0 {
+                return Err(Diagnostic::new(
+                    Phase::Cli,
+                    0,
+                    0,
+                    "PHPC_REQUEST_TIME must be a non-negative integer",
+                ));
+            }
+            Some(parsed)
+        }
+        _ => None,
+    };
 
     Ok(RunOptions {
         max_execution_steps,
         trace_includes: env::var_os("PHPC_TRACE_INCLUDES").is_some(),
+        request_time,
         query_string: env::var("PHPC_QUERY_STRING").ok(),
         cookie_header: env::var("PHPC_COOKIE").ok(),
         upload_files: env::var("PHPC_FILES").ok(),

@@ -42,11 +42,19 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr, i64)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer)"),
         "{ir}"
     );
     assert!(
         ir.contains("define i64 @phpc_probe_scalar_echo_owned_bytes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_byte_buffer_from_bytes()"),
         "{ir}"
     );
     assert!(
@@ -94,6 +102,14 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_scalar_echo_owned_bytes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr, i64)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_byte_buffer_from_bytes()"),
         "{ir}"
     );
 }

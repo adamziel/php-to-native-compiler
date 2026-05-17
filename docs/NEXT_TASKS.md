@@ -17022,8 +17022,90 @@ handled.
 
 ## Milestone 1563: Object/Interface WordPress Blocker
 
+- [x] Object/interface lane: closed a bounded `ReflectionClass::getMethods()`
+  metadata slice for declared user classes, inherited non-private class
+  methods, composed trait methods, interface methods, direct trait methods,
+  and optional int-like `ReflectionMethod::IS_*` filter masks. The milestone
+  fixture matches system PHP and native object/interface lowering remains an
+  explicit rejection.
+
+## Milestone 1564: Reference/COW WordPress Blocker
+
+- [x] Runtime lane: closed with bounded normal invocation of direct
+  free-function and direct visible object-method calls declared as returning by
+  reference when a by-reference parameter is supplied from an array offset below
+  a missing magic property. Calls such as
+  `touch($object->missing["slot"])` and
+  `$picker->touch($object->{$name}["outer"]["slot"])` now use visible public
+  `__get()` returning a direct variable by reference, copy the selected array
+  slot into the parameter, write mutations back, and discard the returned
+  reference as a by-value result. Static/dynamic-static reference-return
+  invocation, reference-return array-offset expressions in normal invocation,
+  inaccessible declared-property magic fallback, magic-property reference
+  containers, arbitrary reference expressions, invisible selected dynamic
+  properties, mixed nested `ArrayAccess` chains, broader array/object
+  copy-on-write, exact alias destruction ordering, object/Traversable
+  by-reference iteration, superglobal reference lifetime, and native lowering
+  remain unsupported.
+
+## Milestone 1565: Request/SAPI/Filesystem/Stream Blocker
+
+- [x] Runtime lane: closed with bounded session cache request-time and
+  main-script mtime parity. `PHPC_REQUEST_TIME` now seeds
+  `$_SERVER["REQUEST_TIME"]` and the public `session_cache_limiter("public")`
+  `Expires` calculation, while `private`, `private_no_expire`, and `public`
+  use the main source file's filesystem mtime for `Last-Modified` when it can
+  be statted. Real SAPI `Date` emission, host-webserver request-time
+  initialization, session cookie replacement parity, realpath-cache entries,
+  stat-cache breadth, include_path/open_basedir policy, stream-wrapper cache
+  interaction, cookie-name encoding, exact `ValueError` objects/text,
+  locking/save handlers, garbage collection, binary reads, output buffering,
+  shutdown/fatal/destructor ordering, request-body lifetime, broader host
+  filesystem edge cases, upload metadata, exact warning text, and native
+  lowering remain unsupported.
+
+## Milestone 1566: WordPress DB/Bootstrap Evidence Blocker
+
+- [x] Compatibility/runtime lane: closed with exact prepared
+  single-character `ESCAPE '<char>'` clauses for expired-timeout `wp_options`
+  predicates in the deterministic MySQLi state island. Prepared
+  `SELECT option_name ... WHERE option_name LIKE ? ESCAPE '<char>' AND
+  option_value < ?` reads and prepared deletes now distinguish literal
+  underscores in WordPress-shaped patterns such as
+  `!_transient!_timeout!_%`. General prepared `ESCAPE` clauses for option-row
+  scans, SQL-mode-aware deletes, arbitrary prepared SQL, host DB execution,
+  collation fidelity, persistent cache/transients, broader bootstrap probes,
+  and native DB lowering remain unsupported.
+
+## Milestone 1567: Native Runtime ABI/Execution Blocker
+
+- [x] IR/runtime lane: closed with a copied raw-byte ownership helper.
+  `phpc_native_byte_buffer_from_bytes(*const u8, usize)` copies a
+  caller-provided byte slice into a runtime-owned `NativeByteBuffer` using the
+  existing free contract, and the deterministic native ABI probe declares and
+  exercises the helper without changing normal generated LLVM. PHP string
+  handles, interning, arrays, objects, resources, references/COW, linked
+  native execution, and normal generated LLVM runtime helper calls remain
+  unsupported.
+
+## Milestone 1568: WordPress-Focused Queue Refresh
+
+- [x] Tests/docs lane: after Milestones 1563-1567 landed, refreshed the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; recorded focused verification; ran the serialized full gate;
+  and prepared the checkpoint batch. Focused integrated checks passed for
+  `ReflectionClass::getMethods()`, normal reference-return invocation with
+  magic-property array-offset arguments, session request-time/main-script mtime
+  cache headers, prepared expired-timeout `ESCAPE` predicates, and copied
+  raw-byte native ABI ownership helpers. Milestone fixtures 1563-1566 passed,
+  with system PHP comparisons for 1563 and 1564 and documented `phpc-only`
+  skips for 1565 and 1566. The full-gate result is recorded in
+  `docs/PROGRESS.md`.
+
+## Milestone 1569: Object/Interface WordPress Blocker
+
 - [ ] Object/interface lane: target the next large class/object blocker,
-  prioritizing interface/trait method reflection invocation, closure/internal
+  prioritizing interface/trait reflection invocation, closure/internal
   reflection targets, exact reflection exceptions, inherited interface
   compatibility, constructor/destructor fidelity, magic hooks reached by
   WordPress, class alias/autoload lifecycle, readonly/property-hook behavior,
@@ -17031,52 +17113,51 @@ handled.
   semantics. Keep native object/trait lowering as an explicit rejection unless
   implemented with tests.
 
-## Milestone 1564: Reference/COW WordPress Blocker
+## Milestone 1570: Reference/COW WordPress Blocker
 
 - [ ] Runtime lane: target real reference/COW behavior, prioritizing general
-  reference containers, by-reference returns, reference assignment,
-  reference-returning function or method calls with magic-property
-  array-offset arguments, inaccessible declared-property magic fallback,
+  reference containers, static or dynamic-static reference-return invocation,
+  reference-return array-offset expressions in normal invocation,
+  by-reference assignment, inaccessible declared-property magic fallback,
   magic-property reference containers, arbitrary reference expressions,
   invisible selected dynamic properties, mixed nested `ArrayAccess` chains,
   broader array/object copy-on-write, exact alias destruction ordering,
   object/Traversable by-reference iteration, superglobal reference lifetime,
   or native lowering diagnostics.
 
-## Milestone 1565: Request/SAPI/Filesystem/Stream Blocker
+## Milestone 1571: Request/SAPI/Filesystem/Stream Blocker
 
 - [ ] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
-  behavior that blocks real WordPress requests, prioritizing exact session
-  Date/request-time/script-mtime parity, session cookie replacement parity,
-  realpath-cache entries, stat-cache coverage beyond `filesize()`/`filemtime()`,
-  include_path/open_basedir policy, stream-wrapper cache interaction,
-  cookie-name encoding, exact `ValueError` objects/text, locking/save
-  handlers, garbage collection, binary reads, output buffering,
-  shutdown/fatal/destructor ordering, request-body lifetime, host filesystem
-  edge cases, upload metadata, exact warning text, real SAPI emission, or
-  native lowering.
+  behavior that blocks real WordPress requests, prioritizing real SAPI `Date`
+  emission, session cookie replacement parity, realpath-cache entries,
+  broader stat-cache coverage, include_path/open_basedir policy,
+  stream-wrapper cache interaction, cookie-name encoding, exact `ValueError`
+  objects/text, locking/save handlers, garbage collection, binary reads,
+  output buffering, shutdown/fatal/destructor ordering, request-body
+  lifetime, host filesystem edge cases, upload metadata, exact warning text,
+  real SAPI emission, or native lowering.
 
-## Milestone 1566: WordPress DB/Bootstrap Evidence Blocker
+## Milestone 1572: WordPress DB/Bootstrap Evidence Blocker
 
 - [ ] Compatibility/runtime lane: target executable WordPress database or
-  bootstrap evidence, prioritizing prepared `ESCAPE` clauses for
-  expired-timeout predicates, SQL-mode-aware deletes, arbitrary prepared SQL,
-  broad SQL-mode semantics, exact MySQL string-literal and wildcard parity,
+  bootstrap evidence, prioritizing general prepared `ESCAPE` clauses for
+  option-row scans, SQL-mode-aware deletes, arbitrary prepared SQL, broad
+  SQL-mode semantics, exact MySQL string-literal and wildcard parity,
   dbDelta-relevant schema diffing, host database inspection, arbitrary
   query/result behavior, transactions and errors, charset/collation fidelity,
   persistent object-cache/transient behavior, broader hook callback shapes,
   plugin/theme loading breadth, REST/admin bootstrap probes, or a
   front-controller probe that moves past its next real blocker.
 
-## Milestone 1567: Native Runtime ABI/Execution Blocker
+## Milestone 1573: Native Runtime ABI/Execution Blocker
 
 - [ ] IR/runtime lane: target the next native-runtime integration blocker,
   prioritizing helper-call lowering from normal generated LLVM, PHP string
-  handles, heap ownership, linked execution probes, diagnostics handles, array
-  or object ABI shape, request-state handles, or explicit native rejections
-  where runtime ABI coverage is still missing.
+  handles, heap ownership beyond raw byte buffers, linked execution probes,
+  diagnostics handles, array or object ABI shape, request-state handles, or
+  explicit native rejections where runtime ABI coverage is still missing.
 
-## Milestone 1568: WordPress-Focused Queue Refresh
+## Milestone 1574: WordPress-Focused Queue Refresh
 
 - [ ] Tests/docs lane: after the next implementation lanes land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and

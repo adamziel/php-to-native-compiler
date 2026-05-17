@@ -5086,6 +5086,79 @@ line("trait", $trait->getMethod("helper"), "");
 }
 
 #[test]
+fn reflection_class_get_methods_returns_bounded_method_lists() {
+    let execution = run_source(
+        r#"<?php
+interface RootContract {
+    public function root($hook = "init");
+}
+
+interface HookContract extends RootContract {
+    public static function register();
+}
+
+class BasePlugin {
+    protected function inherited() {}
+    private function baseHidden() {}
+    public final function seal() {}
+}
+
+trait HookTools {
+    public function helper() {}
+    public function label() {}
+}
+
+class Plugin extends BasePlugin implements HookContract {
+    use HookTools;
+
+    public static function register() {}
+    private function hidden() {}
+    public function root($hook = "init") {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function dump_methods($label, $methods) {
+    $lines = array();
+    foreach ($methods as $method) {
+        $lines[$method->getName()] = $method->getDeclaringClass()->getName() . ":" . $method->getModifiers() . ":" . yn($method->isStatic()) . yn($method->isAbstract());
+    }
+    foreach ($lines as $name => $line) {
+        echo $label, "|", $name, "|", $line, "\n";
+    }
+}
+
+function method_line($label, $method, $ending = "\n") {
+    echo $label, "|", $method->getName(), "|", $method->getDeclaringClass()->getName(), ":", $method->getModifiers(), ":", yn($method->isStatic()), yn($method->isAbstract()), $ending;
+}
+
+$plugin = new ReflectionClass(Plugin::class);
+dump_methods("all", $plugin->getMethods());
+dump_methods("public", $plugin->getMethods(ReflectionMethod::IS_PUBLIC));
+dump_methods("static", $plugin->getMethods(ReflectionMethod::IS_STATIC));
+echo "zero|", count($plugin->getMethods(0)), "\n";
+
+$interface = new ReflectionClass(HookContract::class);
+dump_methods("interface", $interface->getMethods());
+
+$trait = new ReflectionClass(HookTools::class);
+$traitMethods = $trait->getMethods();
+method_line("trait", $traitMethods[0]);
+method_line("trait", $traitMethods[1], "");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "all|register|Plugin:17:10\nall|hidden|Plugin:4:00\nall|root|Plugin:1:00\nall|inherited|BasePlugin:2:00\nall|seal|BasePlugin:33:00\nall|helper|Plugin:1:00\nall|label|Plugin:1:00\npublic|register|Plugin:17:10\npublic|root|Plugin:1:00\npublic|seal|BasePlugin:33:00\npublic|helper|Plugin:1:00\npublic|label|Plugin:1:00\nstatic|register|Plugin:17:10\nzero|0\ninterface|register|HookContract:81:11\ninterface|root|RootContract:65:01\ntrait|helper|HookTools:1:00\ntrait|label|HookTools:1:00"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_reports_bounded_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php

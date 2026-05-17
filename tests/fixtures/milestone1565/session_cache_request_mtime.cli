@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone1565/session_cache_request_mtime.php
+0|request-expires|public-cache|stale-mtime|gmt
+$ PHPC_REQUEST_TIME=978307200 phpc run tests/fixtures/milestone1565/session_cache_request_mtime.php
+978307200|request-expires|public-cache|script-mtime|gmt

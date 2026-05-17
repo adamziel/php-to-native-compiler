@@ -735,8 +735,15 @@ materialization, full reference containers, copy-on-write, exact mutation
 ordering, and native lowering remain future work.
 By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register. Normal invocation
-of reference-return functions and methods still reports stable runtime
-boundaries before any by-value return is produced.
+of direct free-function and direct visible object-method reference-return calls
+can execute the same direct-variable return shape used by statement-form
+reference assignment and then expose a by-value snapshot of the returned cell.
+That path now reuses the covered array-offset writeback machinery for
+by-reference parameters, including array offsets below missing magic
+properties when visible public `__get()` returns a direct variable by
+reference. Static, dynamic-static, nested-control-flow, and arbitrary
+reference-return invocations still report stable runtime boundaries before any
+by-value return is produced.
 By-reference parameters are also metadata-first: omitted optional
 by-reference parameters can use their defaults as ordinary local values, while
 provided direct-variable by-reference arguments bind the callee parameter name
@@ -1896,11 +1903,13 @@ read or update those values before output or active session state. The empty
 limiter string suppresses the session cache headers on the next fresh start,
 and restoring `nocache` re-enables the deterministic no-cache trio. The
 `private`, `private_no_expire`, and `public` variants format bounded
-deterministic headers from the configured expiration minutes and a fixed
-synthetic `Last-Modified`/public `Expires` baseline so CLI fixture output is
-stable. Other stored limiter strings remain an explicit `session_start()`
-unsupported-call boundary until broader limiter variants and exact
-Date/request-time/script-mtime parity exist.
+deterministic headers from the configured expiration minutes. Public
+`Expires` uses the bounded request timestamp, seeded by `PHPC_REQUEST_TIME`
+or the fixed epoch CLI fallback; `Last-Modified` uses the main source file's
+filesystem mtime when available and falls back to that request timestamp.
+Other stored limiter strings remain an explicit `session_start()`
+unsupported-call boundary until broader limiter variants, real SAPI `Date`
+emission, and host-webserver request-time initialization exist.
 `session_write_close()` stores the active `$_SESSION` array
 back into that request-local snapshot map and, when the bounded save-path/id
 file slice is active, writes string-keyed scalar and array values back to

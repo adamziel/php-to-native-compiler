@@ -176,16 +176,15 @@ gate above is satisfied.
 ### Current Parallel Focus
 
 The latest WordPress-focused batch closed bounded
-`ReflectionClass::getMethod()` metadata, magic `__get()` array-offset
-by-reference parameters, `private`/`private_no_expire`/`public` session cache
-limiter headers, expired-transient timeout wildcard matching, a synthetic
-plugin/theme loading evidence probe, and owned scalar echo byte-buffer ABI
-groundwork. Those are useful compatibility steps, but they do not change the
-larger project shape: the next lanes should keep attacking broad
-object/interface semantics, real reference/COW behavior,
-request/SAPI/filesystem/stream breadth, executable WordPress
-database/bootstrap evidence, and native runtime integration until those areas
-become coherent subsystems instead of reached slices.
+`ReflectionClass::getMethods()` metadata, normal reference-return invocation
+with magic `__get()` array-offset by-reference arguments, request-time and
+main-script mtime session cache-header parity, prepared expired-timeout
+`ESCAPE` predicates, and a copied raw-byte native ABI helper. Those are useful
+compatibility steps, but they do not change the larger project shape: the next
+lanes should keep attacking broad object/interface semantics, real
+reference/COW behavior, request/SAPI/filesystem/stream breadth, executable
+WordPress database/bootstrap evidence, and native runtime integration until
+those areas become coherent subsystems instead of reached slices.
 
 ### Near-Term Compatibility Roadmap
 

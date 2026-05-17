@@ -1450,22 +1450,19 @@ $alias =& Box::missing($value);
 }
 
 #[test]
-fn reference_return_invocation_reports_stable_runtime_boundary() {
-    let error = runtime_error(
+fn normal_reference_return_invocation_reads_returned_cell_by_value() {
+    let execution = run_source(
         r#"<?php
 function &identity($value) {
     return $value;
 }
 echo identity(1);
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call identity(): reference returns are not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1488,8 +1485,8 @@ echo "loaded";
 }
 
 #[test]
-fn reference_return_method_invocation_reports_stable_runtime_boundary() {
-    let error = runtime_error(
+fn normal_reference_return_method_invocation_reads_returned_cell_by_value() {
+    let execution = run_source(
         r#"<?php
 class Factory {
     public function &make() {
@@ -1500,14 +1497,11 @@ class Factory {
 $factory = new Factory();
 echo $factory->make();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 9);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call make(): reference returns are not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -2918,6 +2912,46 @@ echo $dynamicStorage["created"];
         execution.stdout,
         "initial:plain\ninside:nested\nnull:selected"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn normal_reference_return_call_accepts_magic_get_array_offset_argument() {
+    let execution = run_source(
+        r#"<?php
+$storage = ["slot" => "initial", "nested" => ["leaf" => "inside"]];
+
+class MagicReturnCallBox {
+    public function &__get($name) {
+        global $storage;
+        return $storage;
+    }
+}
+
+class MagicReturnCallPicker {
+    public function &touch(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+function &touch_magic_return_call(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$box = new MagicReturnCallBox();
+touch_magic_return_call($box->missing["slot"], "function");
+
+$picker = new MagicReturnCallPicker();
+$picker->touch($box->missing["nested"]["leaf"], "method");
+
+echo $storage["slot"], "\n", $storage["nested"]["leaf"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "initial:function\ninside:method");
     assert_eq!(execution.exit_code, 0);
 }
 

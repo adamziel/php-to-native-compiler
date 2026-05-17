@@ -51,8 +51,11 @@
   `$object::method()` are executable for object or class-string receivers when
   they resolve to visible static methods in that same direct-variable return
   shape. In those shapes, the assigned alias binds to the returned variable
-  cell and `unset($alias)` detaches only the alias name. Normal invocation such
-  as `identity($value)`, `$object->identity($value)`,
+  cell and `unset($alias)` detaches only the alias name. Normal invocation of
+  direct free-function and direct visible object-method reference-return calls
+  is executable for the same direct-variable return shape as a by-value read
+  of the returned cell, so by-reference argument mutations are still written
+  back when the caller ignores the returned reference. Normal invocation of
   `Box::identity($value)`, `self::identity($value)`,
   `parent::identity($value)`, `static::identity($value)`,
   `$class::identity($value)`, or `$object::identity($value)`, non-static
@@ -87,6 +90,14 @@
   accepts a direct variable argument already backed by covered array-offset
   alias metadata, such as
   `$payload =& $_REQUEST["payload"]; $alias =& pick($payload, "slot");`.
+  Normal invocation of direct free-function and direct visible object-method
+  reference-return calls also accepts the bounded magic `__get()` array-offset
+  by-reference argument bridge when the function or method returns that
+  parameter directly, such as
+  `touch($object->missing["slot"])` and
+  `$picker->touch($object->{$name}["outer"]["slot"])`; callee mutations write
+  back through the array cell returned by visible public `__get()`, and the
+  produced reference is discarded as a by-value result.
   Nested-control-flow returns, dynamic object-property argument roots,
   non-public object-property roots outside valid method visibility contexts,
   `ArrayAccess` argument roots outside the documented direct `offsetGet()`
@@ -143,12 +154,14 @@
   accepts array offsets below those magic properties, such as
   `handler($object->missing["slot"])` and
   `handler($object->{$name}["outer"]["slot"])`, as a bounded copy-in/writeback
-  bridge through the array cell returned by `__get()`. This does not add
-  reference-returning function or method calls with magic-property array-offset
-  arguments, inaccessible declared-property magic fallback, mixed nested
-  `ArrayAccess` chains, general magic-property reference containers,
-  arbitrary reference expressions, or a general in-call PHP reference
-  container. String
+  bridge through the array cell returned by `__get()`. Direct free-function
+  and direct visible object-method calls that return by reference now use that
+  same bridge for normal invocation when the returned reference is discarded.
+  This does not add static/dynamic-static reference-returning calls with
+  magic-property array-offset arguments, inaccessible declared-property magic
+  fallback, mixed nested `ArrayAccess` chains, general magic-property
+  reference containers, arbitrary reference expressions, or a general in-call
+  PHP reference container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -2017,8 +2030,12 @@
   matcher for direct literal queries, prepared statement execution, and
   `mysqli_execute_query()` params-array execution, so `%`, `_`, and
   backslash-escaped wildcard literals are distinguished instead of treating
-  the predicate as prefix-only. This does not add SQL-mode-aware deletes,
-  arbitrary predicates, or host database execution. The same state island also
+  the predicate as prefix-only. Prepared expired-timeout predicates also accept
+  exact single-character `ESCAPE '<char>'` clauses after `LIKE ?` for the
+  current plain/backticked table and column spellings. This does not add
+  SQL-mode-aware deletes, prepared `ESCAPE` clauses for general option-row
+  scans, arbitrary predicates, or host database execution. The same state
+  island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
   trailing-percent patterns plus a decimal threshold; it deletes each reached
@@ -3212,11 +3229,14 @@
   `nocache` emits the deterministic `Expires`, `Cache-Control`, and `Pragma`
   trio. `private`, `private_no_expire`, and `public` emit bounded
   deterministic variants using `session_cache_expire()` minutes for
-  `max-age`; `public` also uses that value for `Expires`. Those three
-  variants use a fixed synthetic `Thu, 01 Jan 1970 00:00:00 GMT`
-  `Last-Modified` baseline for deterministic CLI fixture output instead of
-  the host request time or current script mtime. Changes after output or
-  while a session is active route a bounded warning and return `false`. Other
+  `max-age`; `public` also uses that value plus the bounded request timestamp
+  for `Expires`. `PHPC_REQUEST_TIME` seeds that request timestamp and
+  `$_SERVER["REQUEST_TIME"]`; without it, `phpc run` uses a fixed epoch
+  fallback for deterministic CLI fixtures. Those three variants use the main
+  script's filesystem modification time for `Last-Modified` when it can be
+  statted, otherwise they fall back to the bounded request timestamp. Changes
+  after output or while a session is active route a bounded warning and return
+  `false`. Other
   limiter strings can be stored before start but remain unsupported for header
   emission and make `session_start()` fail with a stable unsupported-call
   diagnostic in the current subset.
@@ -3242,13 +3262,14 @@
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_regenerate_id()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
-  expiration-date formatting, cookie replacement, exact cache-header
-  request-time and script-mtime parity, cache-limiter variants beyond empty
-  suppression, `nocache`, `private`, `private_no_expire`, and `public`, garbage
-  collection, integer top-level session keys, object/resource session
-  serialization, exact malformed session-file recovery parity, exact warning text, reference
-  aliases that survive `_SESSION` root replacement on restart, and native
-  lowering remain unsupported.
+  expiration-date formatting, cookie replacement, real SAPI `Date` header
+  emission, host-webserver request-time initialization, cache-limiter variants
+  beyond empty suppression, `nocache`, `private`, `private_no_expire`, and
+  `public`, garbage collection, integer top-level session keys,
+  object/resource session serialization, exact malformed session-file
+  recovery parity, exact warning text, reference aliases that survive
+  `_SESSION` root replacement on restart, and native lowering remain
+  unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable, direct array-offset, direct object-property, and direct
   object-property array-offset output arguments for the filename and line.
@@ -6163,7 +6184,11 @@
   object as `new ReflectionMethod($class, $name)` for methods declared on
   current user classes, inherited class methods, composed trait methods,
   interface methods, and direct trait methods when the method-name argument is
-  a string.
+  a string. `getMethods()` returns bounded `ReflectionMethod` metadata arrays
+  for current user classes, inherited non-private class methods, composed
+  trait methods, interface methods, and direct trait methods. It also accepts
+  one int-like scalar modifier mask using the current `ReflectionMethod::IS_*`
+  constants; a zero mask returns an empty array.
   Interfaces and traits currently report empty trait metadata because
   interface trait use is not a PHP construct and trait-body `use` declarations
   are composed for consuming classes but are not exposed as trait reflection
@@ -7921,7 +7946,8 @@
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
   `getTraitNames()`, `getTraits()`, `hasMethod($name)`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`,
-  `hasProperty($name)`, `getProperty($name)`, and
+  `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
+  `getProperty($name)`, and
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
@@ -7961,8 +7987,10 @@
   enforcement during reflection invocation, `invokeArgs()` named-argument
   semantics, non-public or dynamic `ReflectionProperty` value mutation,
   `ReflectionClass::getProperties()` filter masks, exact
-  `ReflectionClass::getMethod()` exception objects/text for missing methods or
-  non-string names, trait-use metadata inside trait declarations, exact
+  `ReflectionClass::getMethod()`/`getMethods()` exception objects/text for
+  missing methods, non-string names, non-int filter arguments, and exact
+  `getMethods()` ordering for recursive or adapted trait method compositions,
+  trait-use metadata inside trait declarations, exact
   `ReflectionException` behavior, namespace/import alias expansion beyond
   parsed class-like names, and native lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,

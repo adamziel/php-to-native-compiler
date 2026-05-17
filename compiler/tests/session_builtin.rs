@@ -1,9 +1,42 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
+use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LLVM_SESSION_STATE_REJECTION: &str = "LLVM session-state lowering rejects $_SESSION and session_start(), session_status(), session_cache_limiter(), session_cache_expire(), session_id(), and session_write_close() until native request/session storage, session id persistence, cache limiter state, locking, cookie/header emission, save handlers, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI session-state behavior";
+
+fn format_http_date(timestamp: i64) -> String {
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let days = timestamp.div_euclid(86_400);
+    let seconds = timestamp.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds / 3_600;
+    let minute = (seconds % 3_600) / 60;
+    let second = seconds % 60;
+    let weekday = WEEKDAYS[days.rem_euclid(7) as usize];
+    let month_name = MONTHS[(month - 1) as usize];
+    format!("{weekday}, {day:02} {month_name} {year:04} {hour:02}:{minute:02}:{second:02} GMT")
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2).div_euclid(153);
+    let day = doy - (153 * mp + 2).div_euclid(5) + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
+}
+
 #[test]
 fn session_start_materializes_session_superglobal_and_status() {
     let execution = run_source(
@@ -180,6 +213,61 @@ echo implode("|", $out);
     assert_eq!(
         execution.stdout,
         "3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: private, max-age=120|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT|2|Cache-Control: private, max-age=180|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT|3|Expires: Thu, 01 Jan 1970 00:01:00 GMT|Cache-Control: public, max-age=60|Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_cache_limiter_uses_request_time_and_main_script_mtime() {
+    let source = r#"<?php
+$out = array();
+session_cache_limiter("public");
+session_cache_expire(1);
+session_id("phpcmtimecache");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = $_SERVER["REQUEST_TIME"];
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+echo implode("|", $out);
+"#;
+    let path = std::env::temp_dir().join(format!(
+        "phpc-session-cache-mtime-{}-{}.php",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos()
+    ));
+    fs::write(&path, source).expect("temporary session-cache source can be written");
+    let metadata = fs::metadata(&path).expect("temporary session-cache source has metadata");
+    let modified = metadata
+        .modified()
+        .expect("temporary session-cache source has mtime")
+        .duration_since(UNIX_EPOCH)
+        .expect("temporary session-cache source mtime is after Unix epoch")
+        .as_secs() as i64;
+
+    let program = parse(source).unwrap();
+    let execution = run_program_with_source_file_and_options(
+        &program,
+        path.display().to_string(),
+        RunOptions {
+            request_time: Some(978_307_200),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        format!(
+            "978307200|3|Expires: Mon, 01 Jan 2001 00:01:00 GMT|Cache-Control: public, max-age=60|Last-Modified: {}",
+            format_http_date(modified)
+        )
     );
     assert_eq!(execution.exit_code, 0);
 }

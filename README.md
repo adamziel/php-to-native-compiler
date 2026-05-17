@@ -47,12 +47,13 @@ metadata, and unsupported dynamic behavior fails with stable diagnostics instead
 of silently pretending to work.
 
 For bounded request/SAPI exercises, `phpc run` accepts explicit environment
-seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`,
-`PHPC_REQUEST_BODY`, `PHPC_COOKIE`, and `PHPC_FILES`. These populate bounded
-URL-encoded `$_GET`/`$_POST`/`$_REQUEST` data, including bracketed names,
-repeated `[]` values, and top-level dotted/spaced request names normalized to
-underscores. `PHPC_COOKIE` seeds `$_COOKIE` from a semicolon-delimited cookie
-header string and exposes the raw value through `$_SERVER["HTTP_COOKIE"]`;
+seeds: `PHPC_REQUEST_TIME`, `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`,
+`PHPC_CONTENT_TYPE`, `PHPC_REQUEST_BODY`, `PHPC_COOKIE`, and `PHPC_FILES`.
+These populate bounded URL-encoded `$_GET`/`$_POST`/`$_REQUEST` data,
+including bracketed names, repeated `[]` values, and top-level dotted/spaced
+request names normalized to underscores. `PHPC_COOKIE` seeds `$_COOKIE` from
+a semicolon-delimited cookie header string and exposes the raw value through
+`$_SERVER["HTTP_COOKIE"]`;
 cookies are not merged into `$_REQUEST`. `PHPC_FILES` seeds explicit
 `$_FILES` upload metadata from URL-encoded keys such as
 `async-upload[name]=plugin.zip&async-upload[error]=0`; it does not parse
@@ -86,8 +87,11 @@ limiter to an empty string suppresses session cache headers, and restoring
 `nocache` re-enables the deterministic no-cache trio. The `private`,
 `private_no_expire`, and `public` limiters emit bounded deterministic
 `Cache-Control`/`Expires`/`Last-Modified` variants using
-`session_cache_expire()` minutes and a fixed synthetic request timestamp for
-CLI fixture stability.
+`session_cache_expire()` minutes, the bounded request timestamp from
+`PHPC_REQUEST_TIME` when supplied, and the main script modification time for
+`Last-Modified` when the source file can be statted. Without an explicit
+request-time seed, the CLI fallback remains a fixed synthetic epoch for
+fixture stability.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
@@ -104,9 +108,9 @@ Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
 parity, session-cookie encoding/expiration/replacement beyond the documented
-`session_start()` attribute scaffold, exact cache-header request-time and
-script-mtime parity, cache-header variants beyond empty suppression,
-`nocache`, `private`, `private_no_expire`, and `public` remain
+`session_start()` attribute scaffold, real SAPI `Date` header emission,
+host-webserver request-time initialization, cache-header variants beyond empty
+suppression, `nocache`, `private`, `private_no_expire`, and `public` remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
@@ -474,7 +478,7 @@ incorrect native code.
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
-  `hasMethod($name)`, class-like
+  `hasMethod($name)`, `getMethod($name)`, `getMethods([$filter])`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions with
@@ -616,8 +620,9 @@ beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
 and trait method source-file persistence, exact `ReflectionClass::getMethod()`
-exception objects/text, reflection invocation beyond the current by-value user
-function/user-class method slice, non-public or dynamic
+and `getMethods()` exception objects/text and broad trait-order parity,
+reflection invocation beyond the current by-value user function/user-class
+method slice, non-public or dynamic
 `ReflectionProperty` value mutation, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
@@ -647,9 +652,12 @@ bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
 `return $param[$key]` and `return $param[$key][$subkey]` child-slot shapes
 when `$param` was supplied by a direct variable parent array or a covered
-parent array/property slot. Normal by-value
-invocation of reference-return functions and methods still reports a stable
-unsupported diagnostic.
+parent array/property slot. Normal by-value invocation of direct free-function
+and direct visible object-method reference-return calls can execute the same
+direct-variable return shape and write back covered by-reference array-offset
+arguments, including array offsets below missing magic properties when visible
+public `__get()` returns a direct variable by reference; static and
+dynamic-static reference-return invocation remains unsupported.
 Omitted optional by-reference parameters can use their defaults without alias
 binding; direct-variable by-reference arguments use a bounded direct cell path
 for output-parameter style calls. Direct array-offset arguments, including
@@ -668,7 +676,10 @@ Direct user-function calls also accept direct missing named and dynamic
 object-property arguments such as `handler($object->missing)` and
 `handler($object->{$name})` when public `__get($name)` returns a direct
 variable by reference; the parameter binds to that returned cell. Array offsets
-below magic properties, inaccessible declared-property magic fallback, general
+below magic properties use the same bounded copy-in/writeback bridge for direct
+user-function by-reference parameters and for normal direct free-function or
+direct visible object-method reference-return calls that discard the returned
+reference. Inaccessible declared-property magic fallback, general
 magic-property reference containers, and arbitrary reference expressions remain
 unsupported.
 Mutations before `unset($param)` are written back; later writes to the

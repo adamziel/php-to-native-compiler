@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1564/magic_get_reference_return_call_argument.php
+initial:function
+inside:method
+dynamic:dynamic
+0

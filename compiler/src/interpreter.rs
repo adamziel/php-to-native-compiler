@@ -47,6 +47,7 @@ pub struct Execution {
 pub struct RunOptions {
     pub max_execution_steps: Option<usize>,
     pub trace_includes: bool,
+    pub request_time: Option<i64>,
     pub query_string: Option<String>,
     pub cookie_header: Option<String>,
     pub upload_files: Option<String>,
@@ -149,8 +150,11 @@ struct Interpreter {
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
     reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     source_file: Option<String>,
+    main_source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
+    request_time: i64,
+    request_time_seeded: bool,
     request_body: String,
     include_path: String,
     execution_steps: usize,
@@ -3322,9 +3326,14 @@ impl Interpreter {
             reflection_properties: HashMap::new(),
             reflection_named_types: HashMap::new(),
             reflection_compound_types: HashMap::new(),
+            main_source_file: source_file.clone(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
+            request_time: options
+                .request_time
+                .unwrap_or(SESSION_CACHE_REFERENCE_TIMESTAMP),
+            request_time_seeded: options.request_time.is_some(),
             request_body: options.request_body.unwrap_or_default(),
             include_path: ".".to_string(),
             execution_steps: 0,
@@ -3846,6 +3855,7 @@ impl Interpreter {
         server.insert("PHP_SELF", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_FILENAME", Value::String("/index.php".to_string()));
+        server.insert("REQUEST_TIME", Value::Int(self.request_time));
         server.insert("QUERY_STRING", Value::String(query_string.to_string()));
         server.insert("HTTP_COOKIE", Value::String(cookie_header.to_string()));
         server.insert("REQUEST_METHOD", Value::String(method.clone()));
@@ -13010,6 +13020,7 @@ impl Interpreter {
                     let filter =
                         wordpress_option_expired_timeout_delete_filter_from_prepared_params(
                             function,
+                            &query,
                             &bound_parameters,
                             span,
                         )?;
@@ -13607,7 +13618,7 @@ impl Interpreter {
 
         if is_wordpress_option_prepared_name_select_expired_timeout_prefix_query(query) {
             let filter = wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
-                function, params, span,
+                function, query, params, span,
             )?;
             let rows = connection_handle_id
                 .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -14384,6 +14395,7 @@ impl Interpreter {
         if is_wordpress_option_prepared_delete_expired_timeout_prefix_query(&query) {
             let filter = wordpress_option_expired_timeout_delete_filter_from_prepared_params(
                 "mysqli_execute_query()",
+                &query,
                 &params,
                 span,
             )?;
@@ -16930,6 +16942,7 @@ impl Interpreter {
             Some(class_id),
             Some(called_class_id),
             Vec::new(),
+            None,
         )
         .map(Some)
     }
@@ -17154,6 +17167,31 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+
+            let called_class_id = object.class_id();
+            let returned_cell = self.call_reference_return_function_with_checked_values(
+                function,
+                values,
+                Some(object),
+                Some(class_id),
+                Some(called_class_id),
+                reference_bindings,
+                Some(caller_scope),
+            )?;
+            return Ok(returned_cell.borrow().clone());
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -17391,6 +17429,32 @@ impl Interpreter {
                 let method = self.resolve_reflection_method_target(&state, &method, span)?;
                 self.create_reflection_method_object(method, span)
             }
+            "getmethods" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "ReflectionClass::getMethods()",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let filter = if let Some(arg) = args.first() {
+                    let value = self.evaluate(arg, caller_scope)?;
+                    Some(reflection_method_filter_argument(value, span)?)
+                } else {
+                    None
+                };
+                let mut methods = PhpArray::new();
+                for method in self.reflection_class_methods(&state, filter, span)? {
+                    let method = self.create_reflection_method_object(method, span)?;
+                    methods
+                        .append(method)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Array(methods))
+            }
             "hasproperty" => {
                 expect_expr_arity("ReflectionClass::hasProperty", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -17455,6 +17519,117 @@ impl Interpreter {
         }
     }
 
+    fn reflection_class_methods(
+        &self,
+        state: &ReflectionClassState,
+        filter: Option<i64>,
+        _span: Span,
+    ) -> CompileResult<Vec<ReflectionMethodState>> {
+        let mut methods = Vec::new();
+        match state.kind {
+            ReflectionClassKind::Class => {
+                let Some(class_id) = state.class_id else {
+                    return Ok(methods);
+                };
+                let mut seen = HashSet::new();
+                let mut trait_methods = Vec::new();
+                let mut current = Some(class_id);
+                let mut include_private = true;
+                while let Some(current_id) = current {
+                    let class = self
+                        .classes
+                        .get(current_id)
+                        .expect("reflected class id should resolve");
+                    let class_source = self.class_source_metadata.get(&current_id);
+                    for method in class.methods() {
+                        if !include_private && method.visibility() == Visibility::Private {
+                            continue;
+                        }
+                        if !seen.insert(method.name().to_ascii_lowercase()) {
+                            continue;
+                        }
+                        let method_state =
+                            self.reflection_class_method_state(class_id, current_id, method);
+                        let is_declared_in_class = class_source.is_some_and(|metadata| {
+                            method_state.start_line >= metadata.start_line
+                                && method_state.start_line <= metadata.end_line
+                        });
+                        if is_declared_in_class {
+                            if reflection_method_matches_filter(&method_state, filter) {
+                                methods.push(method_state);
+                            }
+                        } else {
+                            trait_methods.push(method_state);
+                        }
+                    }
+                    include_private = false;
+                    current = class.parent_id();
+                }
+                for method_state in trait_methods {
+                    if reflection_method_matches_filter(&method_state, filter) {
+                        methods.push(method_state);
+                    }
+                }
+            }
+            ReflectionClassKind::Interface => {
+                if let Some(interface) = self.interface_lookup.get(&state.name.to_ascii_lowercase())
+                {
+                    let mut seen = HashSet::new();
+                    for method in &interface.methods {
+                        let key = format!(
+                            "{}::{}",
+                            interface.name.to_ascii_lowercase(),
+                            method.function.name.to_ascii_lowercase()
+                        );
+                        if !seen.insert(key) {
+                            continue;
+                        }
+                        let method_state =
+                            self.reflection_interface_method_state(interface.name.clone(), method);
+                        if reflection_method_matches_filter(&method_state, filter) {
+                            methods.push(method_state);
+                        }
+                    }
+                    for parent_name in &interface.parents {
+                        let Some(parent) =
+                            self.interface_lookup.get(&parent_name.to_ascii_lowercase())
+                        else {
+                            continue;
+                        };
+                        for (declaring_interface, method) in
+                            expanded_interface_methods(&self.interface_lookup, parent)
+                        {
+                            let key = format!(
+                                "{}::{}",
+                                declaring_interface.to_ascii_lowercase(),
+                                method.function.name.to_ascii_lowercase()
+                            );
+                            if !seen.insert(key) {
+                                continue;
+                            }
+                            let method_state =
+                                self.reflection_interface_method_state(declaring_interface, method);
+                            if reflection_method_matches_filter(&method_state, filter) {
+                                methods.push(method_state);
+                            }
+                        }
+                    }
+                }
+            }
+            ReflectionClassKind::Trait => {
+                if let Some(trait_decl) = self.trait_lookup.get(&state.name.to_ascii_lowercase()) {
+                    for method in &trait_decl.methods {
+                        let method_state = self.reflection_trait_method_state(trait_decl, method);
+                        if reflection_method_matches_filter(&method_state, filter) {
+                            methods.push(method_state);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(methods)
+    }
+
     fn reflection_class_trait_names(&self, state: &ReflectionClassState) -> Vec<String> {
         match state.kind {
             ReflectionClassKind::Class => state
@@ -17489,6 +17664,95 @@ impl Interpreter {
                         .iter()
                         .any(|method| method.function.name.eq_ignore_ascii_case(method_name))
                 }),
+        }
+    }
+
+    fn reflection_class_method_state(
+        &self,
+        reflected_class_id: ClassId,
+        declaring_class_id: ClassId,
+        method: &PhpMethodMetadata,
+    ) -> ReflectionMethodState {
+        let declaring_class = self
+            .classes
+            .get(declaring_class_id)
+            .expect("declaring class id should resolve");
+        let signature_key = (declaring_class_id, method.name().to_ascii_lowercase());
+        let signature = self.method_signatures.get(&signature_key);
+        ReflectionMethodState {
+            reflected_class_id: Some(reflected_class_id),
+            declaring_class_name: declaring_class.name().to_string(),
+            declaring_kind: ReflectionClassKind::Class,
+            declaring_class_id: Some(declaring_class_id),
+            name: method.name().to_string(),
+            file_name: signature.and_then(|signature| signature.file_name.clone()),
+            start_line: signature.map(|signature| signature.start_line).unwrap_or(0),
+            end_line: signature.map(|signature| signature.end_line).unwrap_or(0),
+            doc_comment: signature.and_then(|signature| signature.doc_comment.clone()),
+            visibility: method.visibility(),
+            is_static: method.is_static(),
+            is_abstract: method.is_abstract(),
+            is_final: method.is_final(),
+            return_type: signature.and_then(|signature| signature.return_type.clone()),
+            params: signature
+                .map(reflection_parameter_metadata_from_signature)
+                .unwrap_or_default(),
+        }
+    }
+
+    fn reflection_interface_method_state(
+        &self,
+        declaring_interface: String,
+        method: &InterfaceMethodDecl,
+    ) -> ReflectionMethodState {
+        ReflectionMethodState {
+            reflected_class_id: None,
+            declaring_class_name: declaring_interface,
+            declaring_kind: ReflectionClassKind::Interface,
+            declaring_class_id: None,
+            name: method.function.name.clone(),
+            file_name: None,
+            start_line: method.function.span.line,
+            end_line: method.function.end_line,
+            doc_comment: method.function.doc_comment.clone(),
+            visibility: Visibility::Public,
+            is_static: method.is_static,
+            is_abstract: true,
+            is_final: false,
+            return_type: method
+                .function
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.clone()),
+            params: reflection_parameter_metadata_from_function_params(&method.function.params),
+        }
+    }
+
+    fn reflection_trait_method_state(
+        &self,
+        trait_decl: &TraitDecl,
+        method: &ClassMethodDecl,
+    ) -> ReflectionMethodState {
+        ReflectionMethodState {
+            reflected_class_id: None,
+            declaring_class_name: trait_decl.name.clone(),
+            declaring_kind: ReflectionClassKind::Trait,
+            declaring_class_id: None,
+            name: method.function.name.clone(),
+            file_name: None,
+            start_line: method.function.span.line,
+            end_line: method.function.end_line,
+            doc_comment: method.function.doc_comment.clone(),
+            visibility: runtime_visibility(method.visibility),
+            is_static: method.is_static,
+            is_abstract: method.is_abstract,
+            is_final: method.is_final,
+            return_type: method
+                .function
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.clone()),
+            params: reflection_parameter_metadata_from_function_params(&method.function.params),
         }
     }
 
@@ -24458,6 +24722,30 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let (values, reference_bindings) = self
+                .evaluate_user_function_call_arguments_with_options(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    true,
+                )?;
+
+            let returned_cell = self.call_reference_return_function_with_checked_values(
+                function,
+                values,
+                None,
+                None,
+                None,
+                reference_bindings,
+                Some(caller_scope),
+            )?;
+            return Ok(returned_cell.borrow().clone());
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -25361,6 +25649,7 @@ impl Interpreter {
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
+        mut writeback_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<VariableCell> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -25373,6 +25662,7 @@ impl Interpreter {
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
+        let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
             if param.is_variadic {
                 let mut rest = PhpArray::new();
@@ -25388,8 +25678,34 @@ impl Interpreter {
                 .iter()
                 .find(|binding| binding.param_name == param.name)
             {
-                if let ReferenceBindingTarget::CallerCell { cell, .. } = &binding.target {
-                    local_scope.bind_static_to_cell(&param.name, cell.clone());
+                match &binding.target {
+                    ReferenceBindingTarget::CallerCell { cell, .. } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                    }
+                    ReferenceBindingTarget::ArrayOffset(alias) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    vec![alias.clone()],
+                                    cell,
+                                ));
+                            }
+                        }
+                    }
+                    ReferenceBindingTarget::ArrayOffsets(aliases) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    aliases.clone(),
+                                    cell,
+                                ));
+                            }
+                        }
+                    }
                 }
                 continue;
             }
@@ -25422,6 +25738,95 @@ impl Interpreter {
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
         let result = self.execute_reference_return_statements(function, &mut local_scope);
+        let writeback_result = if result.is_ok() {
+            let mut writeback_result = Ok(());
+            if let Some(target_scope) = writeback_scope.as_deref_mut() {
+                for (param_name, aliases, original_cell) in &array_offset_binding_cells {
+                    let Some(local_cell) = local_scope.read_cell(param_name) else {
+                        continue;
+                    };
+                    if !Rc::ptr_eq(&local_cell, original_cell) {
+                        continue;
+                    }
+                    let Some(value) = local_scope.read_named(param_name) else {
+                        continue;
+                    };
+                    if !target_scope.write_array_offset_aliases(aliases, value) {
+                        writeback_result = Err(runtime_error(
+                            function.span,
+                            RuntimeError::invalid_array_access(
+                                "cannot write array reference argument".to_string(),
+                            ),
+                        ));
+                        break;
+                    }
+                    for alias in aliases {
+                        match &alias.root {
+                            ArrayOffsetAliasRoot::StaticArray { name } => {
+                                target_scope.sync_array_offset_aliases_for_static_root(name);
+                            }
+                            ArrayOffsetAliasRoot::GlobalArray { name } => {
+                                target_scope.sync_array_offset_aliases_for_global_root(name);
+                            }
+                            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                                object,
+                                property,
+                                ..
+                            } => {
+                                target_scope.sync_array_offset_aliases_for_object_property_root(
+                                    object, property,
+                                );
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (param_name, aliases, original_cell) in &array_offset_binding_cells {
+                    let Some(local_cell) = local_scope.read_cell(param_name) else {
+                        continue;
+                    };
+                    if !Rc::ptr_eq(&local_cell, original_cell) {
+                        continue;
+                    }
+                    let Some(value) = local_scope.read_named(param_name) else {
+                        continue;
+                    };
+                    if !local_scope.write_array_offset_aliases(aliases, value) {
+                        writeback_result = Err(runtime_error(
+                            function.span,
+                            RuntimeError::invalid_array_access(
+                                "cannot write array reference argument".to_string(),
+                            ),
+                        ));
+                        break;
+                    }
+                    for alias in aliases {
+                        match &alias.root {
+                            ArrayOffsetAliasRoot::StaticArray { name } => {
+                                local_scope.sync_array_offset_aliases_for_static_root(name);
+                            }
+                            ArrayOffsetAliasRoot::GlobalArray { name } => {
+                                local_scope.sync_array_offset_aliases_for_global_root(name);
+                            }
+                            ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                            | ArrayOffsetAliasRoot::ContextObjectProperty {
+                                object,
+                                property,
+                                ..
+                            } => {
+                                local_scope.sync_array_offset_aliases_for_object_property_root(
+                                    object, property,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            writeback_result
+        } else {
+            Ok(())
+        };
         let static_names = self.active_static_locals.pop().unwrap_or_default();
         let function_key = function.name.to_ascii_lowercase();
         for name in static_names {
@@ -25439,6 +25844,7 @@ impl Interpreter {
             self.called_class_context.pop();
         }
 
+        writeback_result?;
         result
     }
 
@@ -28455,7 +28861,7 @@ impl Interpreter {
         let max_age = self.session_cache_expire.saturating_mul(60).max(0);
         let last_modified = format!(
             "Last-Modified: {}",
-            format_cookie_expires(SESSION_CACHE_REFERENCE_TIMESTAMP)
+            format_cookie_expires(self.session_cache_last_modified_timestamp())
         );
         match self.session_cache_limiter.as_str() {
             "private" => {
@@ -28468,7 +28874,7 @@ impl Interpreter {
                 self.replace_response_header(last_modified);
             }
             "public" => {
-                let expires_at = SESSION_CACHE_REFERENCE_TIMESTAMP.saturating_add(max_age);
+                let expires_at = self.request_time.saturating_add(max_age);
                 self.replace_response_header(format!(
                     "Expires: {}",
                     format_cookie_expires(expires_at)
@@ -28478,6 +28884,26 @@ impl Interpreter {
             }
             _ => unreachable!("session cache limiter variants are validated by caller"),
         }
+    }
+
+    fn session_cache_last_modified_timestamp(&self) -> i64 {
+        if !self.request_time_seeded {
+            return self.request_time;
+        }
+        let Some(source_file) = self.main_source_file.as_deref() else {
+            return self.request_time;
+        };
+        let path = local_filesystem_metadata_path(source_file);
+        let Ok(metadata) = fs::metadata(path) else {
+            return self.request_time;
+        };
+        let Ok(modified) = metadata.modified() else {
+            return self.request_time;
+        };
+        let Ok(timestamp) = modified.duration_since(UNIX_EPOCH) else {
+            return self.request_time;
+        };
+        i64::try_from(timestamp.as_secs()).unwrap_or(self.request_time)
     }
 
     fn replace_response_header(&mut self, header: String) {
@@ -36444,6 +36870,44 @@ fn reflection_method_modifier_mask(method: &ReflectionMethodState) -> i64 {
     mask
 }
 
+fn reflection_method_matches_filter(method: &ReflectionMethodState, filter: Option<i64>) -> bool {
+    match filter {
+        Some(0) => false,
+        Some(filter) => reflection_method_modifier_mask(method) & filter != 0,
+        None => true,
+    }
+}
+
+fn reflection_method_filter_argument(value: Value, span: Span) -> CompileResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(value)),
+        Value::Int(value) => Ok(value),
+        Value::Float(value) if value.is_finite() => Ok(value as i64),
+        Value::String(value) => parse_sprintf_numeric_string(&value)
+            .map(|value| value as i64)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionClass::getMethods",
+                        "filter argument must be int-like scalar in the current subset",
+                    ),
+                )
+            }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "ReflectionClass::getMethods",
+                format!(
+                    "filter argument must be int-like scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
 fn reflection_property_modifier_mask(property: &ReflectionPropertyState) -> i64 {
     let mut mask = match property.visibility {
         Visibility::Public => 1,
@@ -40455,9 +40919,34 @@ fn strip_wordpress_option_prepared_like_escape_suffix(query: &str) -> Option<(&s
     Some((base.trim_end(), escape_char))
 }
 
+fn strip_wordpress_option_prepared_expired_timeout_escape_clause(
+    query: &str,
+) -> Option<(String, char)> {
+    let query = query.trim();
+    let Some((base, escape_sql)) = query.split_once(" ESCAPE ") else {
+        return Some((query.to_string(), '\\'));
+    };
+    let (escape, rest) = parse_sql_single_quoted_value(escape_sql.trim_start())?;
+    let mut escape_chars = escape.chars();
+    let escape_char = escape_chars.next()?;
+    if escape_chars.next().is_some() {
+        return None;
+    }
+    let rest = rest.trim_start();
+    if !rest.starts_with("AND ") {
+        return None;
+    }
+    Some((format!("{} {}", base.trim_end(), rest), escape_char))
+}
+
 fn is_wordpress_option_prepared_delete_expired_timeout_prefix_query(query: &str) -> bool {
+    let Some((query, _escape_char)) =
+        strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
+    else {
+        return false;
+    };
     matches!(
-        query.trim(),
+        query.as_str(),
         "DELETE FROM wp_options WHERE option_name LIKE ? AND option_value < ?"
             | "DELETE FROM wp_options WHERE `option_name` LIKE ? AND `option_value` < ?"
             | "DELETE FROM `wp_options` WHERE `option_name` LIKE ? AND `option_value` < ?"
@@ -40557,7 +41046,12 @@ fn is_wordpress_option_prepared_name_select_prefix_query(query: &str) -> bool {
 }
 
 fn is_wordpress_option_prepared_name_select_expired_timeout_prefix_query(query: &str) -> bool {
-    let query = strip_wordpress_option_order_by_name_suffix(query.trim());
+    let Some((query, _escape_char)) =
+        strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
+    else {
+        return false;
+    };
+    let query = strip_wordpress_option_order_by_name_suffix(query.as_str());
     matches!(
         query,
         "SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?"
@@ -40796,6 +41290,7 @@ fn wordpress_option_name_delete_like_filter_from_prepared_params(
 
 fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
     function: &str,
+    query: &str,
     params: &[Value],
     span: Span,
 ) -> CompileResult<WordPressOptionsRowFilter> {
@@ -40808,7 +41303,18 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+    let Some((_query, escape_char)) =
+        strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
+    else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options expired timeout select requires an exact LIKE predicate shape in the current subset",
+            ),
+        ));
+    };
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -40825,6 +41331,7 @@ fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(
 
 fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
     function: &str,
+    query: &str,
     params: &[Value],
     span: Span,
 ) -> CompileResult<WordPressOptionsRowFilter> {
@@ -40837,7 +41344,18 @@ fn wordpress_option_expired_timeout_delete_filter_from_prepared_params(
             ),
         ));
     };
-    let Some(filter) = parse_schema_like_pattern(pattern, '\\', false) else {
+    let Some((_query, escape_char)) =
+        strip_wordpress_option_prepared_expired_timeout_escape_clause(query)
+    else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "prepared wp_options expired timeout delete requires an exact LIKE predicate shape in the current subset",
+            ),
+        ));
+    };
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(

@@ -1,0 +1,1 @@
+System PHP CLI does not expose phpc's deterministic in-process CLI header log or PHPC_REQUEST_TIME request-time seed through headers_list(); this fixture documents bounded session cache request-time and main-script mtime behavior.

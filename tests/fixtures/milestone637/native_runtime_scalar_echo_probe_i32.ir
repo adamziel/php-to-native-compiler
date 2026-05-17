@@ -2,9 +2,12 @@
 ; this is a dependency sketch, not production lowering or linked execution
 %phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }
 %phpc.NativeByteBuffer = type { ptr, i32, i32 }
+@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
+
 declare i32 @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)
 declare i32 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i32)
 declare %phpc.NativeByteBuffer @phpc_native_scalar_echo_bytes(%phpc.NativeScalarValue)
+declare %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr, i32)
 declare void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer)
 
 define i32 @phpc_probe_scalar_echo_len() {
@@ -20,6 +23,15 @@ entry:
   %value = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
   %with_payload = insertvalue %phpc.NativeScalarValue %value, i64 -123, 3
   %buffer = call %phpc.NativeByteBuffer @phpc_native_scalar_echo_bytes(%phpc.NativeScalarValue %with_payload)
+  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
+  ret i32 %len
+}
+
+define i32 @phpc_probe_byte_buffer_from_bytes() {
+entry:
+  %bytes = getelementptr inbounds [4 x i8], ptr @phpc.probe.bytes, i32 0, i32 0
+  %buffer = call %phpc.NativeByteBuffer @phpc_native_byte_buffer_from_bytes(ptr %bytes, i32 4)
   %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
   ret i32 %len
