@@ -47,12 +47,14 @@ metadata, and unsupported dynamic behavior fails with stable diagnostics instead
 of silently pretending to work.
 
 For bounded request/SAPI exercises, `phpc run` accepts explicit environment
-seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`, and
-`PHPC_REQUEST_BODY`. These populate bounded URL-encoded `$_GET`/`$_POST`/
-`$_REQUEST` data, including bracketed names, repeated `[]` values, and
-top-level dotted/spaced request names normalized to underscores. They also seed
-`php://input` for the interpreter only; native lowering still rejects request
-state until a native runtime ABI exists.
+seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`,
+`PHPC_REQUEST_BODY`, and `PHPC_COOKIE`. These populate bounded URL-encoded
+`$_GET`/`$_POST`/`$_REQUEST` data, including bracketed names, repeated `[]`
+values, and top-level dotted/spaced request names normalized to underscores.
+`PHPC_COOKIE` seeds `$_COOKIE` from a semicolon-delimited cookie header string
+and exposes the raw value through `$_SERVER["HTTP_COOKIE"]`; cookies are not
+merged into `$_REQUEST`. They also seed `php://input` for the interpreter only;
+native lowering still rejects request state until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -254,7 +256,9 @@ incorrect native code.
   traits, plus simple public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }`, protected/private
-  trait aliases such as `use TraitName { method as protected helper; }`, and
+  trait aliases such as `use TraitName { method as protected helper; }`,
+  visibility-only trait adaptations such as
+  `use TraitName { method as protected; }`, and
   bounded
   public instance conflict resolution such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including the
@@ -294,8 +298,8 @@ methods, conflicting trait composition outside class-method precedence and the
 bounded single-loser `insteadof` shape, aliases
 beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
-visibility-only adaptations and original-method visibility changes without an
-alias, unqualified or multi-loser `insteadof`, `__TRAIT__`,
+unqualified visibility-only adaptations across multiple used traits,
+unqualified or multi-loser `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
@@ -403,7 +407,8 @@ clone expressions,
 include/require, broad control flow, exception boundaries, scalar casts,
 mutation forms that require symbol-table effects, double-quoted string
 interpolation, dynamic calls, `assert()`, runtime constant tables,
-direct request superglobal reads such as `$_GET`/`$_POST`/`$_REQUEST`/`$_FILES`,
+direct request superglobal reads such as `$_GET`/`$_POST`/`$_COOKIE`/
+`$_REQUEST`/`$_FILES`,
 direct `str_starts_with(...)` string-prefix calls,
 direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,

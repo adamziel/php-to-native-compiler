@@ -138,16 +138,41 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed small slices of visibility-changing
-trait aliases, `call_user_func_array()` reference-returning callback invocation
-over covered by-reference array slots, dotted/spaced top-level request-name
-normalization for explicit CLI request seeds, and `wp_options` value/autoload
-updates over the placeholder MySQLi state island. Those are useful
-compatibility steps, but they do not change the larger project shape: the next
-lanes should keep attacking broad object/interface semantics, real
-reference/COW behavior, request/SAPI/filesystem/stream breadth, and executable
-WordPress database/bootstrap evidence until those areas become coherent
-subsystems instead of reached slices.
+The latest WordPress-focused batch closed small slices of visibility-only
+trait adaptations, `call_user_func_array()` reference-return alias binding over
+literal direct-variable reference arguments, explicit CLI cookie request
+seeding, and value-preserving `wp_options` autoload-only updates over the
+placeholder MySQLi state island. Those are useful compatibility steps, but
+they do not change the larger project shape: the next lanes should keep
+attacking broad object/interface semantics, real reference/COW behavior,
+request/SAPI/filesystem/stream breadth, and executable WordPress
+database/bootstrap evidence until those areas become coherent subsystems
+instead of reached slices.
+
+### Near-Term Compatibility Roadmap
+
+The project has been building verified compatibility substrate one narrow
+slice at a time: syntax and runtime behavior, object metadata, reference
+bridges, request state, fixture comparison, and synthetic WordPress bootstrap
+evidence. That work is necessary, but it is not the end goal. The next durable
+goal is to turn the reached slices into coherent subsystems:
+
+- Object/interface/trait semantics need constructor/destructor fidelity,
+  inherited signature compatibility, magic hooks, autoload lookup, reflection,
+  and exact diagnostics.
+- References and copy-on-write need general containers and alias lifetime
+  rules instead of per-shape bridges for callbacks, arrays, object properties,
+  and superglobals.
+- Request/SAPI/filesystem/stream behavior needs web-style request state,
+  cookies/sessions/uploads, headers, output/shutdown behavior, stream
+  resources, include paths, and host filesystem fidelity.
+- WordPress execution needs real or faithfully emulated database behavior,
+  persistent object cache, options/transients, hooks, plugin/theme loading,
+  REST/admin/front-end flows, and install/update evidence.
+- Native compilation needs a PHP runtime ABI for values, heap objects,
+  references/COW, dispatch, resources, request state, filesystem/database
+  calls, exceptions, and extension shims before it can honestly claim parity
+  with `phpc run`.
 
 ## What We Have Been Doing
 

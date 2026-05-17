@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1291/trait_visibility_only_adaptation.php
+exit: 0
+stdout:
+boot:Plugin|secret:Plugin|boot-exists|secret-exists|2:hidden,hidden,callBoot,callSecret
+--- stdout end ---
+stderr:
+--- stderr end ---

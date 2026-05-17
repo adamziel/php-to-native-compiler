@@ -160,6 +160,44 @@ echo $_COOKIE["wordpress_test_cookie"];
 }
 
 #[test]
+fn cookie_superglobal_parses_explicit_cli_cookie_seed() {
+    let program = parse(
+        r#"<?php
+echo $_SERVER["HTTP_COOKIE"];
+echo "|";
+echo $_COOKIE["wordpress_test_cookie"];
+echo "|";
+echo $_COOKIE["logged_in"];
+echo "|";
+echo $_COOKIE["settings"]["theme"];
+echo "|";
+echo $_COOKIE["dotted_name"];
+echo "|";
+echo isset($_REQUEST["wordpress_test_cookie"]) ? "request-cookie" : "request-empty";
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            cookie_header: Some(
+                "wordpress_test_cookie=WP+Cookie+check; logged_in=user%7Ctoken; settings[theme]=classic; dotted.name=value"
+                    .to_string(),
+            ),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "wordpress_test_cookie=WP+Cookie+check; logged_in=user%7Ctoken; settings[theme]=classic; dotted.name=value|WP Cookie check|user|token|classic|value|request-empty"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn request_bag_superglobals_are_materialized_as_empty_auto_global_arrays() {
     let execution = run_source(
         r#"<?php
@@ -453,6 +491,30 @@ fn normalized_request_input_env_cli_snapshot_matches_current_sapi_seed() {
 }
 
 #[test]
+fn cookie_request_input_env_cli_snapshot_matches_current_sapi_seed() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = "tests/fixtures/milestone1293/cookie_request_seed.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env(
+            "PHPC_COOKIE",
+            "wordpress_test_cookie=WP+Cookie+check; logged_in=user%7Ctoken; settings[theme]=classic; dotted.name=value",
+        )
+        .env("PHPC_QUERY_STRING", "preview=true")
+        .args(["run", fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture}: {error}"));
+
+    let actual = render_cli_snapshot(&output);
+    let expected = "exit: 0\nstdout:\nWP Cookie check|user|token|classic|value|true|request-empty|wordpress_test_cookie=WP+Cookie+check; logged_in=user%7Ctoken; settings[theme]=classic; dotted.name=value--- stdout end ---\nstderr:\n--- stderr end ---\n";
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn files_superglobal_is_materialized_as_empty_auto_global_array() {
     let execution = run_source(
         r#"<?php
@@ -506,6 +568,12 @@ fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() 
     assert_eq!(files_direct.line, 2);
     assert_eq!(files_direct.column, 6);
     assert_eq!(files_direct.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
+
+    let cookie_direct = emit_ir_source("<?php\necho $_COOKIE;\n").unwrap_err();
+    assert_eq!(cookie_direct.phase, Phase::Codegen);
+    assert_eq!(cookie_direct.line, 2);
+    assert_eq!(cookie_direct.column, 6);
+    assert_eq!(cookie_direct.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
 }
 
 #[test]

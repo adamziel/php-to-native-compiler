@@ -1,0 +1,1 @@
+Uses phpc's deterministic placeholder MySQLi wp_options state island; it is not intended to compare with a host MySQL server.

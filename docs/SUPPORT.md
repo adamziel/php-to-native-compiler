@@ -100,17 +100,28 @@
   slots through the existing alias metadata. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
   callables declared as returning by reference when the callback writes through
-  reached by-reference parameters; the callback result is still returned by
-  value. `unset($param)` detaches only the callee's local parameter name;
+  reached by-reference parameters. Statement-form reference assignment from
+  `call_user_func_array()` itself is also executable for string user-function
+  callbacks, public `[object, method]` instance callbacks, and public
+  `["ClassName", "method"]` static callbacks declared as returning by
+  reference when the argument array is a literal and each reached
+  by-reference parameter is supplied by a direct-variable reference element,
+  for example `$alias =& call_user_func_array("tag", array(&$value));`. The
+  assigned alias binds to the callback's returned direct variable cell, so a
+  reference-returning callback that returns the referenced parameter aliases
+  the caller's direct variable. `unset($param)` detaches only the callee's
+  local parameter name;
   later local writes do not mutate the caller variable or write back through
   the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
   assigned by reference, dynamic static receiver, string-keyed named callback
-  argument arrays, using `call_user_func_array()` itself as a statement-form
-  reference-return source, and broader reference-return binding forms remain
-  unsupported for object-property and stored-array reference arguments. This is
-  still a bounded
+  argument arrays, stored argument arrays with reached by-reference parameters
+  for `call_user_func_array()` reference-return alias binding, object-property
+  or array-offset argument bridges for `call_user_func_array()` reference-return
+  alias binding, closure or builtin callbacks as reference-return sources, and
+  broader reference-return binding forms remain unsupported for object-property
+  and stored-array reference arguments. This is still a bounded
   direct-variable alias and public object-property output path, not full PHP
   reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
@@ -525,8 +536,9 @@
   `if (!function_exists("name")) { function name() {} }` work for the current
   braced statement-body subset. Skipped nested declarations remain absent, and
   repeated executed declarations report duplicate-function diagnostics.
-  Unbraced nested declarations, full declaration timing edge cases,
-  reference-return alias binding, and native lowering remain unsupported.
+  Unbraced nested declarations, full declaration timing edge cases, broader
+  reference-return alias binding outside the documented reference-assignment
+  source forms, and native lowering remain unsupported.
 - positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions, with optional
@@ -597,22 +609,29 @@
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
   `HTTP_HOST`, `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and
   `QUERY_STRING`. `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`,
-  `PHPC_CONTENT_TYPE`, and `PHPC_REQUEST_BODY` can seed bounded CLI request
-  values for `QUERY_STRING`, `REQUEST_METHOD`, `CONTENT_TYPE`, and
-  `CONTENT_LENGTH`. Direct function-scope reads and writes of `$_SERVER` route
-  through the root symbol table without a
+  `PHPC_CONTENT_TYPE`, `PHPC_REQUEST_BODY`, and `PHPC_COOKIE` can seed bounded
+  CLI request values for `QUERY_STRING`, `REQUEST_METHOD`, `CONTENT_TYPE`,
+  `CONTENT_LENGTH`, and `HTTP_COOKIE`. Direct function-scope reads and writes
+  of `$_SERVER` route through the root symbol table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
   copy-on-write, mutation-ordering fidelity, `variables_order`, uploads,
   sessions, other superglobals, exact warning behavior, and native lowering
   remain unsupported.
-- `$_COOKIE` is seeded as a bounded root superglobal for `phpc run` with an
-  empty ordered array. Direct function-scope reads and writes of `$_COOKIE`
-  route through the root symbol table without a `global $_COOKIE` declaration.
-  Browser cookie parsing, SAPI request imports, `variables_order`,
-  `$_REQUEST` merging, cookie emission through headers, `$GLOBALS` aliasing,
-  references, copy-on-write, exact warning behavior, and native lowering remain
-  unsupported.
+- `$_COOKIE` is seeded as a bounded root superglobal for `phpc run`. By
+  default it is an empty ordered array. When `PHPC_COOKIE` is set, the runtime
+  treats it as a semicolon-delimited cookie header seed, parses cookie pairs
+  into `$_COOKIE`, decodes URL-encoded values with the current request
+  component decoder, supports the same bracketed-key insertion slice as
+  request bags, and normalizes dots and spaces in top-level names to
+  underscores. The raw seed is also exposed as `$_SERVER["HTTP_COOKIE"]`.
+  Direct function-scope reads and writes of `$_COOKIE` route through the root
+  symbol table without a `global $_COOKIE` declaration. Host SAPI cookie
+  imports, exact browser cookie parsing and raw-cookie behavior, quoted cookie
+  values, duplicate-cookie ordering beyond current last-write-wins insertion,
+  `variables_order`, `request_order`, `$_REQUEST` cookie merging, cookie
+  emission through headers, `$GLOBALS` aliasing, references, copy-on-write,
+  exact warning behavior, and native lowering remain unsupported.
 - `$_GET`, `$_POST`, and `$_REQUEST` are seeded as bounded root superglobals
   for `phpc run`. By default they are empty ordered arrays. When
   `PHPC_QUERY_STRING` is set, the runtime parses URL-encoded query pairs into
@@ -1691,7 +1710,10 @@
   exact
   `UPDATE wp_options SET option_value = ..., autoload = ... WHERE option_name = ...`
   for updating both the recorded option value and autoload flag with the same
-  affected-row behavior, accepts a later
+  affected-row behavior, accepts a later exact
+  `UPDATE wp_options SET autoload = ... WHERE option_name = ...` for updating
+  only the recorded autoload flag while preserving the option value with the
+  same affected-row behavior, accepts a later
   exact `DELETE FROM wp_options WHERE option_name = ...` by removing existing
   recorded options with `mysqli_affected_rows($handle) === 1` and treating
   missing option names as successful zero-row deletes, and lets a later
@@ -1741,8 +1763,9 @@
   doubled single quotes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
-  ordering/collation fidelity, autoload mutation beyond exact inserts and the
-  exact option value/autoload update shape,
+  ordering/collation fidelity, autoload mutation beyond exact inserts, the
+  exact option value/autoload update shape, and the exact direct autoload-only
+  update shape,
   arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
@@ -1823,9 +1846,9 @@
   missing option names as successful zero-row deletes. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, real unique-index enforcement, no-op update
-  affected-row fidelity, non-string parameter coercion, result binding fidelity
-  beyond exact metadata, real auto-increment fidelity, host database execution,
-  PDO, or native lowering. For the
+  affected-row fidelity, prepared autoload-only updates, non-string parameter
+  coercion, result binding fidelity beyond exact metadata, real auto-increment
+  fidelity, host database execution, PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -4845,8 +4868,12 @@
   `use TraitName { method as protected helper; }`; those aliases are composed
   as non-public instance methods, dispatch through the existing method
   visibility checks, are visible to `method_exists()`, and are omitted from
-  global-context `get_class_methods()`. Visibility-only adaptations without an
-  alias remain unsupported. A bounded conflict
+  global-context `get_class_methods()`. Visibility-only adaptations such as
+  `use TraitName { method as protected; }` and
+  `use TraitName { method as private; }` change the original composed public
+  instance trait method visibility without creating an alias; the methods
+  remain visible to `method_exists()`, callable from valid class context, and
+  omitted from global-context `get_class_methods()` when non-public. A bounded conflict
   resolution shape such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
   public instance methods from traits in the same class-body `use`
@@ -5392,8 +5419,8 @@
   bounded single-loser `insteadof` shape,
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
-  visibility-only adaptations and original-method visibility changes without
-  an alias, unqualified `insteadof`, multi-loser
+  unqualified visibility-only adaptations across multiple used traits,
+  unqualified `insteadof`, multi-loser
   `insteadof`, `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
@@ -6734,15 +6761,17 @@
   complete server key catalogs, `$GLOBALS` aliasing, references/copy-on-write,
   mutation-ordering fidelity, `variables_order`, exact warning behavior, and
   native lowering
-- `$_COOKIE` behavior beyond the current deterministic empty array seed and
-  direct root-symbol routing: browser cookie parsing, request/SAPI imports,
-  `variables_order`, `$_REQUEST` merging, cookie emission through headers,
-  `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
-  exact warning behavior, and native lowering
+- `$_COOKIE` behavior beyond the current explicit `PHPC_COOKIE` CLI seed and
+  direct root-symbol routing: host SAPI cookie imports, exact browser/raw
+  cookie parsing, quoted values, duplicate-cookie ordering beyond the current
+  last-write-wins insertion, `variables_order`, `request_order`, `$_REQUEST`
+  cookie merging, cookie emission through headers, `$GLOBALS` aliasing,
+  references/copy-on-write, mutation-ordering fidelity, exact warning behavior,
+  and native lowering
 - `$_GET`, `$_POST`, and `$_REQUEST` behavior beyond the current explicit
   bounded URL-encoded CLI seed and direct root-symbol routing: exact
   `parse_str()` handling for malformed bracket names, max-input-vars limits,
-  dotted/spaced name normalization, multipart uploads, `variables_order`,
+  multipart uploads, `variables_order`,
   `request_order`, cookie merging into `$_REQUEST`, host environment imports,
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering

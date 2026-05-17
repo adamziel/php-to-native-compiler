@@ -120,6 +120,7 @@ fn run_options_from_env() -> CompileResult<RunOptions> {
         max_execution_steps,
         trace_includes: env::var_os("PHPC_TRACE_INCLUDES").is_some(),
         query_string: env::var("PHPC_QUERY_STRING").ok(),
+        cookie_header: env::var("PHPC_COOKIE").ok(),
         request_body: env::var("PHPC_REQUEST_BODY").ok(),
         request_method: env::var("PHPC_REQUEST_METHOD").ok(),
         content_type: env::var("PHPC_CONTENT_TYPE").ok(),

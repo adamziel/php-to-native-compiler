@@ -550,6 +550,7 @@ pub struct TraitDecl {
 pub struct TraitUseDecl {
     pub name: String,
     pub aliases: Vec<TraitMethodAliasDecl>,
+    pub visibility_adaptations: Vec<TraitMethodVisibilityDecl>,
     pub precedences: Vec<TraitMethodPrecedenceDecl>,
     pub span: Span,
 }
@@ -559,6 +560,14 @@ pub struct TraitMethodAliasDecl {
     pub trait_name: Option<String>,
     pub method_name: String,
     pub alias: String,
+    pub visibility: ClassVisibility,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitMethodVisibilityDecl {
+    pub trait_name: Option<String>,
+    pub method_name: String,
     pub visibility: ClassVisibility,
     pub span: Span,
 }

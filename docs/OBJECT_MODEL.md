@@ -84,7 +84,12 @@ already-declared traits may be composed into a class with
 `use TraitA, TraitB;` and called through ordinary object method dispatch.
 Simple public aliases, including same-use qualified forms such as
 `TraitA::method as public alias`, are registered as ordinary public methods
-and may satisfy the current interface method-presence checks. Single-loser
+and may satisfy the current interface method-presence checks. Protected/private
+aliases and visibility-only adaptations such as
+`TraitA::method as protected helper` and `TraitA::method as protected` use the
+current method visibility metadata, so they are visible to `method_exists()`
+but omitted from global-context `get_class_methods()` when non-public.
+Single-loser
 public instance conflict adaptations such as
 `TraitA::method insteadof TraitB` select the winner from traits listed in the
 same class-body `use` declaration and skip the loser method during
@@ -416,9 +421,10 @@ trait properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded single-loser `insteadof` shape,
-trait aliases beyond the current simple public, qualified public-alias, and
-same-block winner public-alias slices, protected/private visibility changes,
-visibility-only adaptations,
+trait alias/adaptation edge cases beyond the current simple public, qualified
+public-alias, same-block winner public-alias, protected/private alias, and
+single-trait visibility-only slices,
+unqualified visibility-only adaptations across multiple used traits,
 unqualified or multi-loser `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
 declarations, enum case objects, enum methods/constants/properties, enum interface implementation,

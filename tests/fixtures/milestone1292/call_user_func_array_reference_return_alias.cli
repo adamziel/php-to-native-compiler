@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1292/call_user_func_array_reference_return_alias.php

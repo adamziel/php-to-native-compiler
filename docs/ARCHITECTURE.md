@@ -41,16 +41,19 @@ explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
 and bracketed URL-encoded query pairs into `$_GET`, and
 `PHPC_REQUEST_METHOD=POST` plus
 `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
-seeds flat and bracketed URL-encoded body pairs into `$_POST`. Repeated scalar
-keys use last-write-wins, `[]` bracket segments append in order, and keyed
-bracket segments materialize nested arrays under the current ordered-array
-model. Dots and spaces in top-level request names are normalized to underscores
-before insertion, while bracket segment keys keep their current literal decoded
-text. `$_REQUEST` starts as GET merged with POST at the top-level key. This is
-deterministic request-state scaffolding only: it does not parse browser cookie
-headers, malformed or edge-case PHP request names with exact `parse_str()`
-behavior, multipart uploads, or host SAPI state, import file-upload metadata,
-emit cookies, or model `variables_order`/`request_order`.
+seeds flat and bracketed URL-encoded body pairs into `$_POST`. `PHPC_COOKIE`
+is treated as an explicit semicolon-delimited cookie header seed for
+`$_COOKIE` and `$_SERVER["HTTP_COOKIE"]`. Repeated scalar keys use
+last-write-wins, `[]` bracket segments append in order, and keyed bracket
+segments materialize nested arrays under the current ordered-array model. Dots
+and spaces in top-level request names are normalized to underscores before
+insertion, while bracket segment keys keep their current literal decoded text.
+`$_REQUEST` starts as GET merged with POST at the top-level key. This is
+deterministic request-state scaffolding only: it does not import browser
+cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
+malformed or edge-case PHP request names with exact `parse_str()` behavior,
+multipart uploads, or host SAPI state, import file-upload metadata, emit
+cookies, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -74,6 +77,11 @@ object-property alias metadata from the cloned source variable to the target
 variable, so the current bounded reference-slot model can keep covered property
 slots shared across a fresh object handle for the covered `clone $object`
 assignment shape.
+Reference-returning `call_user_func_array()` sources use the same caller-cell
+binding path as direct reference-returning function and method calls for the
+current literal argument-array/direct-variable-reference-element slice. They do
+not promote callback argument arrays, object-property array bridges, or stored
+array-offset metadata into general runtime reference containers.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -177,7 +185,10 @@ marker with a same-use qualified trait target, such as
 the alias as an ordinary public method. Alias adaptations may also mark the new
 alias `protected` or `private`; the original public trait method remains
 available, and the non-public alias uses the existing method visibility checks
-for dispatch, `method_exists()`, and `get_class_methods()`. A bounded trait
+for dispatch, `method_exists()`, and `get_class_methods()`. Visibility-only
+adaptations such as `use TraitName { method as protected; }` and
+`use TraitName { method as private; }` change the original composed public
+instance trait method visibility without creating an alias. A bounded trait
 conflict adaptation such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted for
 public instance methods from traits in the same class-body `use`
@@ -198,9 +209,8 @@ properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
 broad conflict resolution beyond class-method precedence and the current
-single-loser `insteadof` slice, visibility-only adaptations,
-original-method visibility changes without an alias, unqualified or
-multi-loser `insteadof`,
+single-loser `insteadof` slice, unqualified visibility-only adaptations across
+multiple used traits, unqualified or multi-loser `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.

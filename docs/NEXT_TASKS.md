@@ -12971,44 +12971,104 @@ handled.
 
 ## Milestone 1291: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: advance a larger object/interface blocker from
-  `GOAL.MD`. Prefer one WordPress-reached slice of trait conflict resolution,
-  visibility-only adaptations, inherited method compatibility, constructors or
-  destructors, class/interface autoload lookup, magic object hooks, or another
-  object construct that moves the bootstrap beyond synthetic coverage. Keep
-  exact PHP diagnostics, broad reflection, references/COW, autoload fidelity,
-  and native lowering unsupported until implemented and tested.
+- [x] Parser/runtime lane: advanced a bounded visibility-only trait adaptation
+  slice. Public instance trait methods composed into a class can now use
+  `as protected;` or `as private;` without creating an alias, changing the
+  original composed method visibility while preserving `method_exists()` and
+  global-context `get_class_methods()` filtering. Non-public/static/abstract/
+  final trait methods, trait properties, broad conflict resolution, exact PHP
+  diagnostics, autoloading, references/COW, and native lowering remain
+  unsupported.
 
 ## Milestone 1292: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: advance a larger reference/COW blocker. Prefer request-bag
+- [x] Runtime lane: advance a larger reference/COW blocker. Prefer request-bag
   or `$GLOBALS` alias mutation, reference-return alias binding, object-property
   or array-offset alias lifetimes beyond the current metadata bridges,
   by-reference iteration, or callback/property shapes reached by WordPress.
   Continue naming full reference containers, broad copy-on-write, exact
-  warnings, and native lowering as unsupported until covered.
+  warnings, and native lowering as unsupported until covered. Completed with a
+  bounded `call_user_func_array()` reference-return alias source for
+  user-function, public object-method array, and public static array callbacks
+  over literal direct-variable reference argument elements.
 
 ## Milestone 1293: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: advance real request, filesystem, or stream
-  behavior needed for WordPress. Prefer cookie/session seeding, uploaded-file
-  metadata, include-path resolution, stream-wrapper/resource state,
-  `php://temp`, shutdown-time output/header visibility, or host SAPI import
-  scaffolding. Native lowering must keep explicit rejection boundaries for
-  runtime-only request and stream state.
+- [x] Runtime lane: added a bounded explicit cookie request seed. `PHPC_COOKIE`
+  is parsed as a semicolon-delimited cookie header string into `$_COOKIE`, the
+  raw seed is exposed as `$_SERVER["HTTP_COOKIE"]`, and top-level cookie names
+  reuse the current dotted/spaced normalization. `$_REQUEST` still follows the
+  existing GET-then-POST merge only. Host SAPI cookie imports, exact
+  browser/raw-cookie parsing, quoted values, `variables_order`/`request_order`,
+  cookie emission, references/COW, and native request lowering remain
+  unsupported.
 
 ## Milestone 1294: WordPress DB/Bootstrap Evidence Blocker
 
-- [ ] Compatibility/runtime lane: advance executable WordPress database or
-  bootstrap evidence. Prefer a broader `wpdb`/MySQLi result/update/delete
-  shape, object-cache/transient behavior, deterministic bootstrap probe, or
-  another real WordPress blocker. Avoid claiming real MySQL, arbitrary SQL,
-  persistent cache, plugin/theme loading, full request support, or native
-  support without code and tests.
+- [x] Compatibility/runtime lane: advance executable WordPress database or
+  bootstrap evidence. Milestone 1294 adds the exact direct
+  `UPDATE wp_options SET autoload = ... WHERE option_name = ...` shape to the
+  placeholder MySQLi `wp_options` state island and advances the deterministic
+  add-option inventory probe so a value-preserving autoload-only update is
+  observed through value/autoload and full-row-with-id reads. Real MySQL,
+  arbitrary SQL, prepared autoload-only updates, persistent cache,
+  plugin/theme loading, full request support, and native support remain
+  unsupported.
 
 ## Milestone 1295: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1291-1294 land, refresh the
+- [x] Tests/docs lane: after Milestones 1291-1294 land, refresh the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; record focused verification; run the serialized full gate; and
+  checkpoint the batch. Milestone 1295 reconciles the missing full PHP and
+  WordPress compatibility pieces into `GOAL.MD` as subsystem work rather than
+  isolated reached slices, and keeps the next lanes focused on object
+  semantics, references/COW, request/SAPI/filesystem/stream behavior, and
+  executable database/bootstrap evidence. Full gate passed before checkpoint:
+  `1412` fixture tests, `810` system PHP comparisons, and `602` skipped
+  `phpc-only` fixtures.
+
+## Milestone 1296: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: advance another object/interface blocker from
+  `GOAL.MD`. Prefer constructor/destructor behavior, inherited method
+  compatibility, trait conflict resolution beyond the current slices,
+  class/interface autoload lookup scaffolding, magic object hooks, or
+  reflection-visible metadata reached by WordPress. Keep broad reflection,
+  exact diagnostics, references/COW, autoload fidelity, and native lowering
+  unsupported until implemented and tested.
+
+## Milestone 1297: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: advance another reference/COW blocker from `GOAL.MD`.
+  Prefer request-bag or `$GLOBALS` alias mutation, reference-return alias
+  binding beyond literal direct-variable arguments, object-property or
+  array-offset alias lifetime behavior, by-reference iteration, or
+  callback/property shapes reached by WordPress. Keep full reference
+  containers, broad copy-on-write, exact warnings, and native lowering
+  unsupported until covered.
+
+## Milestone 1298: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: advance request/SAPI/filesystem/stream
+  behavior needed for real WordPress requests. Prefer session state,
+  uploaded-file metadata, include-path resolution, `php://temp`, stream
+  resource handles, shutdown-time output/header visibility, or host SAPI import
+  scaffolding. Keep native lowering rejected for request/stream state unless
+  runtime support and tests exist.
+
+## Milestone 1299: WordPress DB/Bootstrap Evidence Blocker
+
+- [ ] Compatibility/runtime lane: advance executable WordPress database or
+  bootstrap evidence. Prefer broader `wpdb`/MySQLi result/update/delete
+  shapes, prepared autoload-only updates, object-cache/transient behavior,
+  deterministic bootstrap probes, or another real WordPress blocker. Avoid
+  claiming real MySQL, arbitrary SQL, persistent cache, plugin/theme loading,
+  full request support, or native support without code and tests.
+
+## Milestone 1300: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1296-1299 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

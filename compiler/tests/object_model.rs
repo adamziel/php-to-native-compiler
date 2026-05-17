@@ -3349,6 +3349,87 @@ print_r($methods);
 }
 
 #[test]
+fn trait_visibility_only_adaptations_change_original_method_visibility() {
+    let source = r#"<?php
+trait HookTools {
+    public function boot() {
+        return "boot:" . get_class($this);
+    }
+
+    public function secret() {
+        return "secret:" . get_class($this);
+    }
+}
+
+class Plugin {
+    use HookTools {
+        boot as protected;
+        secret as private;
+    }
+
+    public function callBoot() {
+        return $this->boot();
+    }
+
+    public function callSecret() {
+        return $this->secret();
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->callBoot(), "\n";
+echo $plugin->callSecret(), "\n";
+echo method_exists($plugin, "boot") ? "boot-exists\n" : "missing\n";
+echo method_exists($plugin, "secret") ? "secret-exists\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "boot:Plugin\nsecret:Plugin\nboot-exists\nsecret-exists\nArray\n(\n    [0] => callBoot\n    [1] => callSecret\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert_eq!(
+        class.method("boot").unwrap().visibility(),
+        Visibility::Protected
+    );
+    assert_eq!(
+        class.method("secret").unwrap().visibility(),
+        Visibility::Private
+    );
+}
+
+#[test]
+fn trait_visibility_only_adaptation_requires_existing_trait_method() {
+    let error = runtime_error(
+        r#"<?php
+trait HasHooks {
+    public function hooks() {}
+}
+
+class Plugin {
+    use HasHooks {
+        missing as private;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "unsupported trait use: trait visibility adaptation HasHooks::missing targets a missing method"
+    );
+}
+
+#[test]
 fn class_trait_use_insteadof_winner_can_be_public_aliased() {
     let source = r#"<?php
 interface NamedPlugin {
@@ -8080,14 +8161,14 @@ class Box {
         (
             r#"<?php
 class Box {
-    use Labels {
-        Labels::label as public;
+    use Labels, OtherLabels {
+        label as protected;
     }
 }
 "#,
             4,
-            32,
-            "unsupported trait use adaptation: trait visibility-only adaptations are not implemented",
+            9,
+            "unsupported trait use adaptation: unqualified visibility adaptations with multiple used traits are not implemented",
         ),
         (
             r#"<?php

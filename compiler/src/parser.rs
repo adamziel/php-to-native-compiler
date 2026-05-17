@@ -4,8 +4,8 @@ use crate::ast::{
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitUseDecl, TypeDecl,
-    UnaryOp, UnsetTarget, UseImport,
+    SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl,
+    TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -584,6 +584,7 @@ impl Parser {
             trait_uses.push(TraitUseDecl {
                 name,
                 aliases: Vec::new(),
+                visibility_adaptations: Vec::new(),
                 precedences: Vec::new(),
                 span,
             });
@@ -676,18 +677,46 @@ impl Parser {
                 continue;
             }
             self.consume_trait_adaptation_as()?;
-            let alias_visibility =
-                if let Some(visibility) = self.match_trait_visibility_adaptation() {
-                    if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            unsupported_trait_visibility_only_adaptation_message(),
-                        ));
-                    }
-                    visibility
-                } else {
-                    ClassVisibility::Public
-                };
+            let alias_visibility = if let Some(visibility) =
+                self.match_trait_visibility_adaptation()
+            {
+                if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                    self.consume_keyword(
+                        TokenKind::Semicolon,
+                        "expected ';' after trait method visibility adaptation",
+                    )?;
+                    let target_index = match &trait_name {
+                            Some(name) => trait_uses
+                                .iter()
+                                .position(|trait_use| trait_use.name.eq_ignore_ascii_case(name))
+                                .ok_or_else(|| {
+                                    self.error_at(
+                                        span,
+                                        "unsupported trait use adaptation: trait-qualified visibility adaptations must target a trait in the same use declaration",
+                                    )
+                                })?,
+                            None if trait_uses.len() == 1 => 0,
+                            None => {
+                                return Err(self.error_at(
+                                    span,
+                                    "unsupported trait use adaptation: unqualified visibility adaptations with multiple used traits are not implemented",
+                                ));
+                            }
+                        };
+                    trait_uses[target_index].visibility_adaptations.push(
+                        TraitMethodVisibilityDecl {
+                            trait_name,
+                            method_name,
+                            visibility,
+                            span,
+                        },
+                    );
+                    continue;
+                }
+                visibility
+            } else {
+                ClassVisibility::Public
+            };
             let alias = self.consume_identifier("expected trait method alias after 'as'")?;
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -6604,10 +6633,6 @@ fn unsupported_asymmetric_property_visibility_message() -> &'static str {
 
 fn unsupported_trait_use_message() -> &'static str {
     "unsupported trait use: class-body trait use is implemented only for already-declared traits with public instance methods and simple method aliases"
-}
-
-fn unsupported_trait_visibility_only_adaptation_message() -> &'static str {
-    "unsupported trait use adaptation: trait visibility-only adaptations are not implemented"
 }
 
 impl Parser {

@@ -339,6 +339,53 @@ echo call_user_func_array("tag_option", array(&$cache->cache["options"]["runtime
 }
 
 #[test]
+fn call_user_func_array_binds_reference_return_sources_to_direct_variable_arguments() {
+    let execution = run_source(
+        r#"<?php
+class OptionFilter {
+    public function &mark(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class Cache_Marker {
+    public static function &tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+function &tag_option(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$option = "autoload";
+$alias =& call_user_func_array("tag_option", array(&$option, "function"));
+$alias = $alias . ":alias";
+echo $option, "|", $alias, "\n";
+
+$filter = new OptionFilter();
+$method_alias =& call_user_func_array(array($filter, "mark"), array(&$option, "method"));
+$option = "root";
+echo $method_alias, "|", $alias, "\n";
+
+$static_alias =& call_user_func_array(array("Cache_Marker", "tag"), array(&$option, "static"));
+$static_alias = $static_alias . ":done";
+echo $option, "|", $method_alias, "|", $static_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:function:alias|autoload:function:alias\nroot|root\nroot:static:done|root:static:done|root:static:done"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php

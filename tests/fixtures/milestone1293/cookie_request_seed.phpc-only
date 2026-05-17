@@ -1,0 +1,1 @@
+System PHP CLI does not consume PHPC_COOKIE as SAPI cookie request state; this fixture documents phpc's explicit CLI cookie seed scaffold.

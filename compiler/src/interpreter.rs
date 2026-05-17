@@ -21,7 +21,7 @@ use crate::ast::{
     EnumDecl, Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition,
     InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
     InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator,
-    Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    Stmt, SwitchCase, TraitDecl, TraitUseDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -40,6 +40,7 @@ pub struct RunOptions {
     pub max_execution_steps: Option<usize>,
     pub trace_includes: bool,
     pub query_string: Option<String>,
+    pub cookie_header: Option<String>,
     pub request_body: Option<String>,
     pub request_method: Option<String>,
     pub content_type: Option<String>,
@@ -322,6 +323,24 @@ fn parse_urlencoded_request_pairs(input: &str) -> PhpArray {
             continue;
         }
         let value = Value::String(percent_decode_form_component(raw_value));
+        insert_request_value(&mut array, &key, value);
+    }
+    array
+}
+
+fn parse_cookie_header_pairs(input: &str) -> PhpArray {
+    let mut array = PhpArray::new();
+    for pair in input.split(';') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_form_component(raw_key.trim());
+        if key.is_empty() {
+            continue;
+        }
+        let value = Value::String(percent_decode_form_component(raw_value.trim()));
         insert_request_value(&mut array, &key, value);
     }
     array
@@ -2310,6 +2329,7 @@ impl Interpreter {
         };
         interpreter.initialize_superglobals(
             options.query_string.as_deref().unwrap_or(""),
+            options.cookie_header.as_deref().unwrap_or(""),
             options.request_method.as_deref().unwrap_or("GET"),
             options.content_type.as_deref().unwrap_or(""),
         );
@@ -2343,6 +2363,7 @@ impl Interpreter {
     fn initialize_superglobals(
         &mut self,
         query_string: &str,
+        cookie_header: &str,
         request_method: &str,
         content_type: &str,
     ) {
@@ -2361,10 +2382,12 @@ impl Interpreter {
         server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_FILENAME", Value::String("/index.php".to_string()));
         server.insert("QUERY_STRING", Value::String(query_string.to_string()));
+        server.insert("HTTP_COOKIE", Value::String(cookie_header.to_string()));
         server.insert("REQUEST_METHOD", Value::String(method.clone()));
         server.insert("CONTENT_TYPE", Value::String(content_type.to_string()));
         server.insert("CONTENT_LENGTH", Value::String(content_length));
 
+        let cookie = parse_cookie_header_pairs(cookie_header);
         let get = parse_urlencoded_request_pairs(query_string);
         let post = if method == "POST" && is_form_urlencoded_content_type(content_type) {
             parse_urlencoded_request_pairs(&self.request_body)
@@ -2377,10 +2400,9 @@ impl Interpreter {
         self.global_symbols
             .borrow_mut()
             .insert("_SERVER".to_string(), value_cell(Value::Array(server)));
-        self.global_symbols.borrow_mut().insert(
-            "_COOKIE".to_string(),
-            value_cell(Value::Array(PhpArray::new())),
-        );
+        self.global_symbols
+            .borrow_mut()
+            .insert("_COOKIE".to_string(), value_cell(Value::Array(cookie)));
         self.global_symbols
             .borrow_mut()
             .insert("_GET".to_string(), value_cell(Value::Array(get)));
@@ -5381,7 +5403,13 @@ impl Interpreter {
                 name,
                 args,
                 span: call_span,
-            } => self.call_reference_return_function(name, args, *call_span, scope),
+            } => {
+                if name.eq_ignore_ascii_case("call_user_func_array") {
+                    self.call_user_func_array_reference_return_source(args, *call_span, scope)
+                } else {
+                    self.call_reference_return_function(name, args, *call_span, scope)
+                }
+            }
             Expr::MethodCall {
                 target,
                 method,
@@ -9504,6 +9532,19 @@ impl Interpreter {
             }
         }
 
+        if let Some((option_name, autoload)) = parse_wordpress_option_autoload_update_query(query) {
+            if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
+                let affected_rows = if let Some(option) = options.get_mut(&option_name) {
+                    option.autoload = autoload;
+                    1
+                } else {
+                    0
+                };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
+                return Ok(Value::Bool(true));
+            }
+        }
+
         if let Some((option_name, option_value)) = parse_wordpress_option_update_query(query) {
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
                 let affected_rows = if let Some(option) = options.get_mut(&option_name) {
@@ -13610,6 +13651,386 @@ impl Interpreter {
             reference_bindings,
             Some(caller_scope),
         )
+    }
+
+    fn call_user_func_array_reference_return_source(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "call_user_func_array()",
+                    ArityExpectation::Exactly(2),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let callback = self.evaluate(&args[0], caller_scope)?;
+        match &callback {
+            Value::String(callback_name) => {
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                let Callable::User(function) = callable else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "call_user_func_array()",
+                            "builtin callbacks cannot be used as reference-return sources in the current subset",
+                        ),
+                    ));
+                };
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_reference_return_arguments(
+                        function,
+                        &args[1],
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    None,
+                    None,
+                    reference_bindings,
+                )
+            }
+            Value::Array(callback) => self.call_user_func_array_reference_return_array_callable(
+                callback,
+                &args[1],
+                span,
+                caller_scope,
+            ),
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "closure invocation is not implemented",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "callback must evaluate to string or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn evaluate_call_user_func_array_reference_return_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+        ensure_supported_reference_return_function_metadata(function, span)?;
+
+        let Expr::Array { items, .. } = argument_expr else {
+            let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+            let Value::Array(argument_array) = &argument_array_value else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        format!(
+                            "argument array must be array in the current subset, got {}",
+                            argument_array_value.type_name()
+                        ),
+                    ),
+                ));
+            };
+            ensure_user_function_arity(function, argument_array.len(), span)?;
+            if function
+                .params
+                .iter()
+                .enumerate()
+                .any(|(index, param)| param.by_reference && index < argument_array.len())
+            {
+                return Err(runtime_error(
+                    argument_expr.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference-return alias binding requires an array literal with direct variable reference elements for reached by-reference parameters in the current subset",
+                    ),
+                ));
+            }
+            let positional_args =
+                Self::call_user_func_array_positional_values(argument_array, span)?;
+            return Ok((positional_args, Vec::new()));
+        };
+
+        ensure_user_function_arity(function, items.len(), span)?;
+        if function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && param.is_variadic && index < items.len())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "variadic reference parameter invocation is not implemented",
+                ),
+            ));
+        }
+
+        let mut values = Vec::with_capacity(items.len());
+        let mut reference_bindings = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            if let Some(key_expr) = &item.key {
+                if matches!(
+                    self.evaluate_array_key(key_expr, caller_scope)?,
+                    ArrayKey::String(_)
+                ) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() string-keyed named reference arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
+            }
+
+            let Some(param) = function.params.get(index) else {
+                values.push(self.evaluate(&item.value, caller_scope)?);
+                continue;
+            };
+
+            if param.by_reference {
+                if !item.by_reference {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
+                        ),
+                    ));
+                }
+                let Expr::Variable(caller_name, _) = &item.value else {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference-return alias binding is only implemented for direct variable reference arguments in the current subset",
+                        ),
+                    ));
+                };
+                if caller_scope.is_array_offset_alias_name(caller_name) {
+                    return Err(runtime_error(
+                        item.value.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() reference-return alias binding does not support argument variables routed through array-offset alias metadata in the current subset",
+                        ),
+                    ));
+                }
+                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                    runtime_error(
+                        item.value.span(),
+                        RuntimeError::undefined_variable(caller_name),
+                    )
+                })?;
+                values.push(caller_cell.borrow().clone());
+                reference_bindings.push(ReferenceBinding {
+                    param_name: param.name.clone(),
+                    target: ReferenceBindingTarget::CallerCell(caller_cell),
+                });
+            } else {
+                values.push(self.evaluate(&item.value, caller_scope)?);
+            }
+        }
+
+        Ok((values, reference_bindings))
+    }
+
+    fn call_user_func_array_reference_return_array_callable(
+        &mut self,
+        callback: &PhpArray,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<VariableCell> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_reference_return_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_checked_values(
+                    function,
+                    values,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    reference_bindings,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                if !function.returns_by_reference {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "function does not return by reference",
+                        ),
+                    ));
+                }
+                let (values, reference_bindings) = self
+                    .evaluate_call_user_func_array_reference_return_arguments(
+                        function,
+                        argument_expr,
+                        span,
+                        caller_scope,
+                    )?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_reference_return_function_with_checked_values(
+                    function,
+                    values,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    reference_bindings,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
     }
 
     fn evaluate_call_user_func_array_checked_arguments(
@@ -21650,6 +22071,7 @@ fn composed_trait_methods(
                 RuntimeError::undefined_class(&trait_use.name),
             )
         })?;
+        let visibility_adaptations = trait_visibility_adaptations(trait_use, trait_decl)?;
         for method in &trait_decl.methods {
             let method_key = method.function.name.to_ascii_lowercase();
             if precedence_exclusions.contains(&(key.clone(), method_key)) {
@@ -21658,7 +22080,13 @@ fn composed_trait_methods(
             if class_method_names.contains(&method.function.name.to_ascii_lowercase()) {
                 continue;
             }
-            methods.push(method.clone());
+            let mut composed = method.clone();
+            if let Some(visibility) =
+                visibility_adaptations.get(&composed.function.name.to_ascii_lowercase())
+            {
+                composed.visibility = visibility.clone();
+            }
+            methods.push(composed);
         }
         for alias in &trait_use.aliases {
             let Some(method) = trait_decl.methods.iter().find(|method| {
@@ -21686,6 +22114,34 @@ fn composed_trait_methods(
         }
     }
     Ok(methods)
+}
+
+fn trait_visibility_adaptations(
+    trait_use: &TraitUseDecl,
+    trait_decl: &TraitDecl,
+) -> CompileResult<HashMap<String, ClassVisibility>> {
+    let mut adaptations = HashMap::new();
+    for adaptation in &trait_use.visibility_adaptations {
+        let Some(method) = trait_decl.methods.iter().find(|method| {
+            method
+                .function
+                .name
+                .eq_ignore_ascii_case(&adaptation.method_name)
+        }) else {
+            return Err(runtime_error(
+                adaptation.span,
+                RuntimeError::unsupported_trait_use(format!(
+                    "trait visibility adaptation {}::{} targets a missing method",
+                    trait_decl.name, adaptation.method_name
+                )),
+            ));
+        };
+        adaptations.insert(
+            method.function.name.to_ascii_lowercase(),
+            adaptation.visibility.clone(),
+        );
+    }
+    Ok(adaptations)
 }
 
 fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
@@ -23760,6 +24216,22 @@ fn parse_wordpress_option_value_autoload_update_query(
         return None;
     }
     Some((names[0].clone(), values[0].clone(), autoloads[0].clone()))
+}
+
+fn parse_wordpress_option_autoload_update_query(query: &str) -> Option<(String, String)> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("UPDATE wp_options SET autoload = ")
+        .or_else(|| query.strip_prefix("UPDATE `wp_options` SET `autoload` = "))?;
+    let (autoload_sql, where_sql) = rest
+        .split_once(" WHERE option_name = ")
+        .or_else(|| rest.split_once(" WHERE `option_name` = "))?;
+    let autoloads = parse_sql_single_quoted_list(autoload_sql)?;
+    let names = parse_sql_single_quoted_list(where_sql)?;
+    if autoloads.len() != 1 || names.len() != 1 {
+        return None;
+    }
+    Some((names[0].clone(), autoloads[0].clone()))
 }
 
 fn is_wordpress_option_prepared_value_autoload_update_query(query: &str) -> bool {
