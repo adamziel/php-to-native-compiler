@@ -47,9 +47,20 @@ pub struct NativeValueHandle {
     ptr: *mut Value,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDiagnosticHandle {
+    ptr: *mut NativeDiagnostic,
+}
+
 #[derive(Debug)]
 struct NativeString {
     bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct NativeDiagnostic {
+    message: String,
 }
 
 impl NativeByteBuffer {
@@ -128,6 +139,30 @@ impl NativeValueHandle {
     }
 
     unsafe fn as_ref(&self) -> Option<&Value> {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeDiagnosticHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_message(message: impl Into<String>) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeDiagnostic {
+                message: message.into(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeDiagnostic> {
         unsafe { self.ptr.as_ref() }
     }
 }
@@ -332,15 +367,48 @@ pub unsafe extern "C" fn phpc_native_string_clone_bytes(
 pub unsafe extern "C" fn phpc_native_value_from_string(
     handle: NativeStringHandle,
 ) -> NativeValueHandle {
+    native_value_from_string(handle)
+        .map(NativeValueHandle::from_value)
+        .unwrap_or_else(|_| NativeValueHandle::null())
+}
+
+/// # Safety
+///
+/// `handle` must be null or a handle previously returned by the runtime ABI
+/// and not yet freed. `diagnostic` may be null; when non-null, it must point to
+/// writable storage for one `NativeDiagnosticHandle`. On failure the helper
+/// stores a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_from_string_with_diagnostic(
+    handle: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+    }
+
+    match native_value_from_string(handle) {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(message) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_from_string(handle: NativeStringHandle) -> Result<Value, &'static str> {
     let Some(string) = (unsafe { handle.as_ref() }) else {
-        return NativeValueHandle::null();
+        return Err("native value conversion failed: string handle is null");
     };
 
     let Ok(value) = String::from_utf8(string.bytes.clone()) else {
-        return NativeValueHandle::null();
+        return Err("native value conversion failed: string bytes are not valid UTF-8");
     };
 
-    NativeValueHandle::from_value(Value::String(value))
+    Ok(Value::String(value))
 }
 
 /// # Safety
@@ -373,6 +441,46 @@ pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle
         Ok(()) => output.len(),
         Err(_) => 0,
     }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_message_len(
+    handle: NativeDiagnosticHandle,
+) -> usize {
+    unsafe { handle.as_ref() }
+        .map(|diagnostic| diagnostic.message.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_message_clone_bytes(
+    handle: NativeDiagnosticHandle,
+) -> NativeByteBuffer {
+    unsafe { handle.as_ref() }
+        .map(|diagnostic| NativeByteBuffer::from_vec(diagnostic.message.as_bytes().to_vec()))
+        .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed. Passing any other pointer is undefined
+/// behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_free(handle: NativeDiagnosticHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
 /// # Safety
@@ -4943,6 +5051,81 @@ mod tests {
 
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_string_value_conversion_reports_diagnostics_for_failures() {
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let null_value = unsafe {
+            phpc_native_value_from_string_with_diagnostic(
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(null_value.is_null());
+        assert!(!diagnostic.is_null());
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_message_len(diagnostic) },
+            "native value conversion failed: string handle is null".len()
+        );
+        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
+        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
+        assert_eq!(
+            message_bytes,
+            b"native value conversion failed: string handle is null"
+        );
+        unsafe { phpc_native_byte_buffer_free(message) };
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(null_value) };
+
+        let invalid_bytes = [0xff, b'p', b'h', b'p'];
+        let string =
+            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid_value =
+            unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
+        assert!(invalid_value.is_null());
+        assert!(!diagnostic.is_null());
+        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
+        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
+        assert_eq!(
+            message_bytes,
+            b"native value conversion failed: string bytes are not valid UTF-8"
+        );
+
+        unsafe { phpc_native_byte_buffer_free(message) };
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(invalid_value) };
+        unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_string_value_conversion_clears_diagnostic_on_success() {
+        let input = b"ok";
+        let string = unsafe { phpc_native_string_from_bytes(input.as_ptr(), input.len()) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value =
+            unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
+
+        assert!(!value.is_null());
+        assert!(diagnostic.is_null());
+
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_diagnostic_helpers_accept_null_handles() {
+        let diagnostic = NativeDiagnosticHandle::null();
+
+        assert_eq!(unsafe { phpc_native_diagnostic_message_len(diagnostic) }, 0);
+        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
+        assert!(message.ptr().is_null());
+        assert_eq!(message.len(), 0);
+        assert_eq!(message.cap(), 0);
+
+        unsafe { phpc_native_byte_buffer_free(message) };
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
     }
 
     #[test]

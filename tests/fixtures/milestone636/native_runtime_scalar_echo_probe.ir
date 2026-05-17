@@ -4,8 +4,10 @@
 %phpc.NativeByteBuffer = type { ptr, i64, i64 }
 %phpc.NativeStringHandle = type { ptr }
 %phpc.NativeValueHandle = type { ptr }
+%phpc.NativeDiagnosticHandle = type { ptr }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
+@phpc.probe.invalid = private unnamed_addr constant [1 x i8] c"\FF"
 
 declare i64 @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)
 declare i64 @phpc_native_scalar_echo_write(%phpc.NativeScalarValue, ptr, i64)
@@ -18,9 +20,13 @@ declare ptr @phpc_native_string_bytes(%phpc.NativeStringHandle)
 declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)
 declare void @phpc_native_string_free(%phpc.NativeStringHandle)
 declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)
+declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
 declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
+declare i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)
+declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)
+declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)
 
 define i64 @phpc_probe_scalar_echo_len() {
 entry:
@@ -70,6 +76,22 @@ entry:
   %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
   %written = call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  ret i64 %len
+}
+
+define i64 @phpc_probe_string_to_value_diagnostic() {
+entry:
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  %bytes = getelementptr inbounds [1 x i8], ptr @phpc.probe.invalid, i64 0, i64 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i64 1)
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle %string, ptr %diagnostic_slot)
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  %len = call i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
+  %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
   ret i64 %len

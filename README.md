@@ -318,7 +318,8 @@ incorrect native code.
   for local string paths in statement and expression position, including
   constant/string-concatenated paths resolved relative to the current source
   file or through the current bounded include path, included files executing
-  in caller scope, include return values, and `_once` de-duplication by
+  in caller scope, include return values, missing local `include`/
+  `include_once` warning-plus-`false` recovery, and `_once` de-duplication by
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
@@ -360,7 +361,8 @@ incorrect native code.
   clauses, plus a bounded `NO_BACKSLASH_ESCAPES` branch for those schema
   metadata `LIKE` filters, and one-string-parameter prepared metadata filters
   for the documented `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and
-  `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` forms;
+  `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` forms, including exact
+  `SHOW TABLE STATUS WHERE Name = ?` table-name probes;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -501,9 +503,10 @@ incorrect native code.
   `hasMethod($name)`, `getMethod($name)`, `getMethods([$filter])`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
-  `ReflectionFunction` metadata objects for declared user functions, plus a
-  bounded internal slice for selected WordPress-relevant string, path,
-  formatting, and metadata builtins, with name,
+  `ReflectionFunction` metadata objects for declared user functions and
+  current closure values, with by-value `invoke()`/`invokeArgs()` for ordinary
+  closures, plus a bounded internal slice for selected WordPress-relevant
+  string, path, formatting, and metadata builtins, with name,
   file/start/end/doc-comment, parameter-list, return-type, and
   by-reference-return inspection plus by-value `invoke()`/`invokeArgs()`,
   `ReflectionMethod`
@@ -562,10 +565,11 @@ slice, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
 including leading-backslash fully-qualified function calls such as `\strlen()`,
 leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
-include/require breadth beyond the current narrow local string-path and
-include-path statement/expression slice, eval,
-generators, closure invocation, explicit and implicit capture binding,
-callback integration, named call arguments, call-time by-reference arguments,
+include/require breadth beyond the current narrow local string-path,
+include-path, and missing-include recovery statement/expression slice, eval,
+generators, direct closure invocation, closure callback integration outside
+bounded `ReflectionFunction::invoke()`, explicit and implicit capture binding,
+named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
 `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
@@ -847,12 +851,14 @@ The current native path is focused on straight-line scalar lowering:
 
 The native runtime ABI has an early helper surface for scalar echo conversion,
 owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
-string-handle-to-runtime-value bridge. Normal generated LLVM now uses that ABI
-for a narrow output path: statement-form `echo` and `print` of a direct
-compile-time string value call runtime string/value helpers and
-`phpc_native_value_echo_stdout`. Dynamic string-pointer expression output,
-linked native execution, binary PHP string value handles, diagnostics handles,
-and broad production runtime string-helper lowering are not implemented.
+string-handle-to-runtime-value bridge with diagnostic handles for that
+conversion's null-handle and non-UTF-8 failure cases. Normal generated LLVM now
+uses that ABI for a narrow output path: statement-form `echo` and `print` of a
+direct compile-time string value call runtime string/value helpers and
+`phpc_native_value_echo_stdout`. Dynamic string-pointer expression output beyond
+the documented selected-string slices, linked native execution, binary PHP
+string value handles, general diagnostics, and broad production runtime
+string-helper lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

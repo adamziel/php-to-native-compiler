@@ -170,13 +170,13 @@
   reference-return body shape; the read snapshots the returned cell by value
   and does not bind the read result as an alias. Statement-form reference
   assignment to a direct variable now also accepts direct named and dynamic
-  object-property array-offset sources below those magic properties, such as
+  object-property array-offset and append-offset sources below those magic properties, such as
   `$alias =& $object->missing["slot"];` and
-  `$alias =& $object->{$name}["outer"]["slot"];`, when visible public
+  `$alias =& $object->{$name}["outer"]["slot"];`, plus
+  `$alias =& $object->missing[];` and `$alias =& $object->{$name}[];`, when visible public
   `__get($name)` returns a direct variable by reference; the assigned alias
-  binds to the selected slot under the returned array cell. This does not add
-  append-offset sources below magic properties, non-direct magic-property
-  holder expressions, mixed nested `ArrayAccess` chains, general
+  binds to the selected or appended slot under the returned array cell. This does not add
+  non-direct magic-property holder expressions, mixed nested `ArrayAccess` chains, general
   magic-property reference containers, arbitrary reference expressions,
   broader `__get()` return body shapes, or a general in-call PHP reference
   container. String
@@ -2083,13 +2083,21 @@
   including no-placeholder single-quoted literal lists and prepared
   `IN (?, ...)` lists whose params are all string option names. Plain prepared
   duplicate inserts return `false` with zero affected rows, matching the
-  current statement path. It rejects params arrays whose length does not match
-  the query `?` placeholder count.
+  current statement path. For the bounded dynamic schema island,
+  `mysqli_execute_query()` and `mysqli_stmt_execute(..., array(...))` accept
+  exact prepared `SHOW TABLE STATUS WHERE Name = ?` and
+  ``SHOW TABLE STATUS WHERE `Name` = ?`` probes when the single parameter is
+  an identifier-shaped string table name, returning deterministic
+  table-status rows or an empty placeholder result for missing names. It
+  rejects params arrays whose length does not match the query `?` placeholder
+  count.
   This is not
   broad prepared SQL execution, named params-array support, hidden statement
   status-copy fidelity, mutation SQL beyond those exact `wp_options` state
-  island shapes, host database state, PHP warning/error fidelity, mysqlnd
-  behavior, or native statement lowering.
+  island shapes, arbitrary prepared `SHOW TABLE STATUS` predicates,
+  identifier placeholders, exact table counters/timestamps, host database
+  state, PHP warning/error fidelity, mysqlnd behavior, or native statement
+  lowering.
   The same bounded prepared-result path includes exact `wp_options`
   autoload-list row reads for name/value, name/autoload, name/value/autoload,
   and id/name/value/autoload projections with `WHERE autoload IN (?, ...)` when
@@ -3523,8 +3531,10 @@
   constant/string concatenation, source-file-relative path resolution, bounded
   fallback through the current `set_include_path()` path list, included file
   declaration registration, caller-scope execution, include return values, and
-  `_once` de-duplication by resolved local file. Declaration-order
-  dependencies across included files remain outside this slice.
+  `_once` de-duplication by resolved local file. Missing local `include` and
+  `include_once` reads emit two bounded `E_WARNING` events, return `false` in
+  expression position, and continue execution. Declaration-order dependencies
+  across included files remain outside this slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - one unbracketed named `namespace` declaration per file, plus simple
   top-level class `use` imports with optional `as` aliases. Class declarations
@@ -3726,14 +3736,18 @@
   forms ignore top-level include return values.
   Expression forms return the included file's top-level `return` value, return
   `1` when the file completes normally, and return `true` for `_once`
-  constructs when the resolved file was already loaded. `require_once` and
-  `include_once` de-duplicate by resolved local file, including files loaded
-  first through non-once `require`/`include`. Missing-file include
-  warning/recovery, exact PHP include-path search ordering, stream wrappers,
-  URL includes, `phar://`, opcache behavior, autoload interaction,
-  declaration-order edge cases, source mapping for functions/classes after
-  include, PHP's exact warning-vs-fatal recovery behavior, and native
-  lowering are not implemented.
+  constructs when the resolved file was already loaded. Missing local
+  `include` and `include_once` reads emit two bounded `E_WARNING` events
+  through the current `set_error_handler()` stack or stderr fallback, return
+  `false` in expression position, and do not mark the missing file as loaded
+  for `_once` de-duplication. `require_once` and `include_once` de-duplicate
+  by resolved local file, including files loaded first through non-once
+  `require`/`include`. Missing-file `require` fatal/error recovery, exact PHP
+  include-path search ordering, failed-include realpath-cache side effects,
+  stream wrappers, URL includes, `phar://`, opcache behavior, autoload
+  interaction, declaration-order edge cases, source mapping for
+  functions/classes after include, PHP's exact warning-vs-fatal text and
+  recovery behavior, and native lowering are not implemented.
   Native lowering rejects expression forms such as
   `$result = include 'file.php';` through a dedicated codegen diagnostic that
   names include return values, `_once` de-duplication results, caller-scope
@@ -6354,21 +6368,24 @@
   parameter/default metadata, return type, and by-reference-return predicate,
   and executes them through `invoke()`/`invokeArgs()`.
   `ReflectionFunction::invoke(...$args)` and
-  `ReflectionFunction::invokeArgs($args)` execute declared user functions and
-  those internal builtins over the current by-value argument subset. The
-  constructor also accepts current closure values and exposes bounded metadata
-  for closure name `{closure}`, source file/start/end lines, false doc
-  comments, parameter metadata, return type metadata, and false
-  by-reference-return status. Closure `invoke()`/`invokeArgs()` remains an
-  explicit unsupported boundary because closure invocation itself is not
-  implemented. Other internal functions, exact internal default metadata
-  beyond that named slice, builtin argument shapes not supported by direct
-  calls such as `trim()` custom masks, `substr()` `null` lengths, recursive
-  `count()` mode, and the third by-reference output argument of
-  `is_callable()`, typed parameter/return declarations at invocation time,
-  `invokeArgs()` named-argument semantics for string keys, reference returns,
-  and broader argument/reference/COW behavior remain unsupported for
-  reflection invocation. `new ReflectionParameter($function,
+  `ReflectionFunction::invokeArgs($args)` execute declared user functions,
+  ordinary closure values, and those internal builtins over the current
+  by-value argument subset. Closure reflection invocation uses the captured
+  by-value snapshot stored when the closure was created and positional
+  by-value arguments. The constructor also accepts current closure values and
+  exposes bounded metadata for closure name `{closure}`, source file/start/end
+  lines, false doc comments, parameter metadata, return type metadata, and
+  false by-reference-return status. Other internal functions, exact internal
+  default metadata beyond that named slice, builtin argument shapes not
+  supported by direct calls such as `trim()` custom masks, `substr()` `null`
+  lengths, recursive `count()` mode, and the third by-reference output
+  argument of `is_callable()`, direct `$closure()` invocation, closure
+  callback invocation through `call_user_func()`/`call_user_func_array()`,
+  by-reference closure captures during invocation, closure scope/class
+  rebinding, captured-variable reflection, typed parameter/return declarations
+  at invocation time, `invokeArgs()` named-argument semantics for string keys,
+  reference returns, and broader argument/reference/COW behavior remain
+  unsupported for reflection invocation. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string with an integer position
   or string parameter name; `getDeclaringFunction()` returns a bounded
   `ReflectionFunction` object and `getDeclaringClass()` returns `null` for
@@ -7156,6 +7173,17 @@
   runtime diagnostics. Float identity currently follows Rust/PHP-style `f64`
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
+- Native runtime ABI gaps: the ABI exposes scalar echo helpers, runtime-owned
+  byte buffers, opaque copied string handles, valid-UTF-8 string-to-value
+  handles, stdout echo helpers for those value handles, and a bounded
+  diagnostic-handle path for null string-handle and non-UTF-8 string-byte
+  failures from `phpc_native_value_from_string_with_diagnostic`. Generated
+  `--emit-ir` currently uses the non-diagnostic string/value stdout helper path
+  only for the documented direct and selected string output slices. Linked
+  native execution, binary PHP string value handles, diagnostics for stdout
+  writes or arbitrary runtime failures, request-state handles,
+  array/object/resource/reference ABI shapes, WordPress host-state ABI, and C
+  fallback assembly helper calls remain unsupported.
 - Array gaps: array spread elements, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
   non-variable destructuring targets are rejected with stable parse diagnostics.
@@ -7281,10 +7309,12 @@
 - string offset access
 - references
 - include/require behavior outside the narrow local string-path statement and
-  expression subset: include-path lookup, streams/URLs, `phar://`, autoload
-  interaction, opcache behavior, declaration-order dependencies across
-  required files, exact PHP warning/fatal recovery behavior, and native
-  lowering remain unsupported
+  expression subset: exact include-path search ordering, streams/URLs,
+  `phar://`, autoload interaction, opcache behavior, declaration-order
+  dependencies across required files, failed-include realpath-cache side
+  effects, missing-file `require` fatal/error recovery, exact PHP
+  warning/fatal text and recovery behavior, and native lowering remain
+  unsupported
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
 - namespace forms outside the current one-unbracketed-namespace/simple-class-use

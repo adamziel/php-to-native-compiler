@@ -404,8 +404,10 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         &format!("%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}"),
         "%phpc.NativeStringHandle = type { ptr }",
         "%phpc.NativeValueHandle = type { ptr }",
+        "%phpc.NativeDiagnosticHandle = type { ptr }",
         "@phpc.probe.bytes = private unnamed_addr constant [4 x i8] c\"heap\"",
         "@phpc.probe.string = private unnamed_addr constant [7 x i8] c\"php\\00abi\"",
+        "@phpc.probe.invalid = private unnamed_addr constant [1 x i8] c\"\\FF\"",
         "",
         &format!("declare {usize_type} @phpc_native_scalar_echo_len(%phpc.NativeScalarValue)"),
         &format!(
@@ -424,9 +426,15 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare %phpc.NativeByteBuffer @phpc_native_string_clone_bytes(%phpc.NativeStringHandle)",
         "declare void @phpc_native_string_free(%phpc.NativeStringHandle)",
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)",
+        "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)",
         "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)",
         &format!("declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
         "declare void @phpc_native_value_free(%phpc.NativeValueHandle)",
+        &format!(
+            "declare {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
+        ),
+        "declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)",
+        "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)",
         "",
         &format!("define {usize_type} @phpc_probe_scalar_echo_len() {{"),
         "entry:",
@@ -494,6 +502,28 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
             "  %written = call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)"
         ),
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
+        "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
+        "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
+        &format!("  ret {usize_type} %len"),
+        "}",
+        "",
+        &format!("define {usize_type} @phpc_probe_string_to_value_diagnostic() {{"),
+        "entry:",
+        "  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle",
+        &format!(
+            "  %bytes = getelementptr inbounds [1 x i8], ptr @phpc.probe.invalid, {usize_type} 0, {usize_type} 0"
+        ),
+        &format!(
+            "  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, {usize_type} 1)"
+        ),
+        "  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle %string, ptr %diagnostic_slot)",
+        "  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot",
+        &format!(
+            "  %len = call {usize_type} @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
+        "  %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)",
+        "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)",
+        "  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)",
         "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
         "  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)",
         &format!("  ret {usize_type} %len"),

@@ -60,6 +60,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeDiagnosticHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
@@ -89,6 +93,12 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
             "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)"
         ),
         "{ir}"
@@ -99,6 +109,22 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("declare void @phpc_native_value_free(%phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)"),
         "{ir}"
     );
     assert!(
@@ -118,7 +144,21 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("define i64 @phpc_probe_string_to_value_diagnostic()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)"
+        ),
         "{ir}"
     );
     assert!(
@@ -152,6 +192,16 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i32 @phpc_probe_string_handle_to_value_echo()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i32 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_string_to_value_diagnostic()"),
         "{ir}"
     );
 }
@@ -210,6 +260,16 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_string_handle_to_value_echo()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_string_to_value_diagnostic()"),
         "{ir}"
     );
 }

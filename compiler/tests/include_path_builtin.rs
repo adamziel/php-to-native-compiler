@@ -53,6 +53,35 @@ echo "|loaded=" . $loaded;
 }
 
 #[test]
+fn missing_include_emits_warnings_returns_false_and_continues() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function capture_include_warning($errno, $errstr) {
+    echo "|warning:" . $errno;
+    echo ":" . (str_contains($errstr, "missing-wordpress-") ? "path" : "missing");
+    echo ":" . (str_contains($errstr, "Failed to open stream") ? "open" : (str_contains($errstr, "Failed opening") ? "opening" : "other"));
+    return true;
+}
+
+set_error_handler("capture_include_warning", E_WARNING);
+$result = include __DIR__ . "/missing-wordpress-optional.php";
+echo "|include=" . ($result === false ? "false" : "value");
+$once = include_once __DIR__ . "/missing-wordpress-once.php";
+echo "|once=" . ($once === false ? "false" : "value");
+echo "|continued";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "|warning:2:path:open|warning:2:path:opening|include=false|warning:2:path:open|warning:2:path:opening|once=false|continued"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn include_path_builtins_reject_forms_outside_current_subset() {
     let get_too_many = runtime_error("<?php\necho get_include_path('extra');\n");
     assert_eq!(get_too_many.line, 2);

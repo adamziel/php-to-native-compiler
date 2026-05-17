@@ -1,0 +1,8 @@
+warning:2:path:open:include_missing_warning_recovery.php:13
+warning:2:path:opening:include_missing_warning_recovery.php:13
+include=false
+warning:2:path:open:include_missing_warning_recovery.php:16
+warning:2:path:opening:include_missing_warning_recovery.php:16
+include_once=false
+included-after-missing
+loaded=yes

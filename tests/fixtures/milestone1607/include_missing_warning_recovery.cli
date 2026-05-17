@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1607/include_missing_warning_recovery.php

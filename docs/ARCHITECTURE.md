@@ -208,11 +208,16 @@ shape; the interpreter maps that to the backing property array alias root plus
 any nested child-key suffix instead of creating a real reference container.
 Append-offset `ArrayAccess` reference sources such as `$bag[]` and
 `$holder->bag[]` use the same bridge and model PHP's `offsetGet(null)` call as
-the backing property array's empty-string key for that exact body shape. It
+the backing property array's empty-string key for that exact body shape.
+Statement-form direct-variable reference assignment from append offsets below
+reference-returning magic `__get()` properties, such as
+`$alias =& $object->missing[]` and `$alias =& $object->{$name}[]`, temporarily
+roots the returned direct-variable cell and appends through the same bounded
+array-offset alias metadata used for direct array append references. It
 does not make callback argument arrays, non-public object-property
 array bridges, dynamic ArrayAccess roots beyond direct dynamic property-held
 sources, non-direct holder expressions, mixed nested `ArrayAccess` chains,
-magic-property references, arbitrary append ArrayAccess bodies,
+general magic-property reference containers, arbitrary append ArrayAccess bodies,
 or stored array-offset metadata into general runtime reference
 containers. By-reference
 `foreach` currently consumes direct visible named and dynamic object-property
@@ -903,13 +908,16 @@ The first native-runtime ABI prerequisite lives in
 `null`, booleans, integers, and floats, plus exported constructor symbols in
 `php_runtime`. It also has probe-only owned byte-buffer helpers, an opaque
 copied PHP string-handle helper surface, and a bounded valid-UTF-8
-string-handle-to-runtime-value bridge. This is intentionally only an ABI seed
-for future generated-code runtime helper calls. The compiler-side helper probe
-renders `usize`-shaped helper signatures from an explicit pointer-width target
-so the ABI sketch can distinguish 32-bit and 64-bit targets. Linked native
-execution, runtime helper calls from normal generated IR, production string
-helper lowering, string interning, binary PHP string value handles, arrays,
-objects, references, copy-on-write, stack frames, diagnostics, and request or
+string-handle-to-runtime-value bridge. It also exposes a bounded diagnostic
+handle path for native string-to-value conversion failures when a null string
+handle or non-UTF-8 byte payload is supplied. This is intentionally only an ABI
+seed for future generated-code runtime helper calls. The compiler-side helper
+probe renders `usize`-shaped helper signatures from an explicit pointer-width
+target so the ABI sketch can distinguish 32-bit and 64-bit targets. Linked
+native execution, broad runtime helper calls from normal generated IR,
+production string helper lowering, string interning, binary PHP string value
+handles, arrays, objects, references, copy-on-write, stack frames, general
+diagnostics, and request or
 WordPress host state are still not implemented.
 
 ## Native Codegen
@@ -1277,7 +1285,10 @@ It does not
 model PHP zvals, symbol-table storage, PHP numeric coercion,
 references/copy-on-write, broad dynamic string-pointer output,
 locale/version-specific float formatting, integer overflow promotion, assembly
-linking/execution, or native PHP error objects.
+linking/execution, or native PHP error objects. The native runtime ABI probe has
+diagnostic-handle calls for string-to-value conversion failures, but normal
+generated LLVM does not branch on helper failure or surface those diagnostics
+yet.
 Finite same-type float arithmetic and finite float unary-minus results are
 bounded and tracked only for later scalar folds such as strict identity when
 all possible results are proven. Float overflow, `INF`, and `NAN`
@@ -2074,7 +2085,8 @@ still work. The prepared statement path routes one string filter parameter
 from `mysqli_execute_query()` or `mysqli_stmt_execute(..., array(...))` into
 that same recorded schema metadata for the covered `SHOW TABLES`, `SHOW TABLE
 STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` filter
-forms; it does not substitute arbitrary SQL parameters. The same placeholder
+forms, including exact `SHOW TABLE STATUS WHERE Name = ?` table-name probes;
+it does not substitute arbitrary SQL parameters. The same placeholder
 transaction and savepoint helpers that
 snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
@@ -2829,15 +2841,18 @@ the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
 `function_exists`, and `php_sapi_name`. Closure expressions also register a
-request-local `ReflectionFunction` metadata snapshot keyed by closure id, so
-`new ReflectionFunction($closure)` can expose the bounded `{closure}` name,
-current source file/start/end line metadata, parameter metadata, return type,
-false doc-comment metadata, and false by-reference-return status without
-executing the closure body. The function path intentionally rejects other
-internal functions, closure reflection invocation, by-reference invocation,
-typed parameter/return declarations during invocation, and reference returns
-until those callable execution and aliasing sources exist, and doc-comment
-association does not yet model attributes or every PHP trivia edge case.
+request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
+by-value snapshot keyed by closure id, so `new ReflectionFunction($closure)`
+can expose the bounded `{closure}` name, current source file/start/end line
+metadata, parameter metadata, return type, false doc-comment metadata, false
+by-reference-return status, and execute the body through `invoke()` or
+`invokeArgs()` for the current untyped positional by-value argument slice. The
+function path intentionally rejects other internal functions, direct closure
+callback dispatch, by-reference closure captures during invocation,
+by-reference invocation, typed parameter/return declarations during
+invocation, and reference returns until those callable execution and aliasing
+sources exist, and doc-comment association does not yet model attributes or
+every PHP trivia edge case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected
@@ -3008,17 +3023,22 @@ local files in statement and expression position. It uses these rules:
 - expression forms return the included file's top-level return value, `1` for
   normal completion, or `true` when a `_once` construct skips an already loaded
   file
+- missing local `include` and `include_once` reads emit two bounded
+  `E_WARNING` diagnostics through the current error-handler stack or stderr
+  fallback, return `false` in expression position, continue execution, and do
+  not mark the missing file as loaded for `_once` de-duplication
 - native lowering rejects include/require until file loading, scope effects,
   and return-value behavior have explicit lowering support
 
-Unsupported include/require behavior remains: missing-file warning/recovery for
-executed `include` statements, exact PHP include-path search ordering,
+Unsupported include/require behavior remains: missing-file `require`
+fatal/error recovery, exact PHP include-path search ordering,
 process-current-working-directory behavior beyond the default `"."` include
-path entry and fallback used when no source file is available, stream
-wrappers, `phar://`, URL includes, autoload interaction, opcache behavior,
-declaration-order dependencies such as a required file declaring `class Child
-extends Base` only after requiring the base class, exact source mapping for
-declarations after include, and PHP's warning-vs-fatal recovery details.
+path entry and fallback used when no source file is available, failed-include
+realpath-cache side effects, stream wrappers, `phar://`, URL includes,
+autoload interaction, opcache behavior, declaration-order dependencies such as
+a required file declaring `class Child extends Base` only after requiring the
+base class, exact source mapping for declarations after include, and exact
+PHP warning-vs-fatal text and recovery details.
 
 ## Eval Fallback Design
 

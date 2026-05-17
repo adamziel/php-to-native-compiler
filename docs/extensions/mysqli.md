@@ -854,6 +854,15 @@ rows for the primary `option_id` index and unique `option_name` index. They do
 not read a host database, execute CREATE/ALTER TABLE, model dbDelta diffs,
 mutate schema, inspect real indexes/collations beyond those fixed markers, or
 model warning/error fidelity.
+For dynamic schema metadata recorded through the bounded `CREATE TABLE` path,
+prepared `SHOW TABLE STATUS WHERE Name = ?` probes, including
+``WHERE `Name` = ?`` spelling, return deterministic table-status rows through
+`mysqli_execute_query()` and `mysqli_stmt_execute(..., array(...))` when the
+single parameter is an identifier-shaped string table name. Missing names
+return an empty placeholder result. This does not add arbitrary prepared
+`SHOW TABLE STATUS` predicates, identifier placeholders, joined metadata
+queries, exact table counters/timestamps, host database inspection, or native
+lowering.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

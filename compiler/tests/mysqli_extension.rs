@@ -6150,6 +6150,37 @@ echo "|mode-explicit=", mysqli_num_rows($explicit);
 }
 
 #[test]
+fn mysqli_prepared_table_status_filters_exact_wordpress_schema_name() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_status_exact (ID bigint(20) unsigned NOT NULL auto_increment, option_name varchar(191) NOT NULL default '', option_value longtext NOT NULL, PRIMARY KEY  (ID), KEY option_name (option_name)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+$exact = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE Name = ?", array("wp_probe_status_exact"));
+$row = mysqli_fetch_assoc($exact);
+echo "exact=", mysqli_num_rows($exact), ":", $row["Name"], ":", $row["Collation"];
+$ticked = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE `Name` = ?", array("wp_probe_status_exact"));
+$ticked_row = mysqli_fetch_assoc($ticked);
+echo "|ticked=", mysqli_num_rows($ticked), ":", $ticked_row["Name"];
+$missing = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE Name = ?", array("wp_probe_status_missing"));
+echo "|missing=", mysqli_num_rows($missing);
+$stmt = mysqli_prepare($handle, "SHOW TABLE STATUS WHERE Name = ?");
+mysqli_stmt_execute($stmt, array("wp_probe_status_exact"));
+$result = mysqli_stmt_get_result($stmt);
+$stmt_row = mysqli_fetch_assoc($result);
+echo "|stmt=", mysqli_num_rows($result), ":", $stmt_row["Name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exact=1:wp_probe_status_exact:utf8mb4_unicode_520_ci|ticked=1:wp_probe_status_exact|missing=0|stmt=1:wp_probe_status_exact"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

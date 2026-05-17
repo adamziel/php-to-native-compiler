@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1606/magic_get_array_append_reference_source.php
+get:missing
+from-alias|from-store
+get:dynamicMissing
+from-dynamic|from-dynamic-store
+0

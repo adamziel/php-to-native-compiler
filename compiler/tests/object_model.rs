@@ -1188,6 +1188,57 @@ echo $dynamic;
 }
 
 #[test]
+fn reference_assignment_binds_magic_get_array_append_source() {
+    let source = r#"<?php
+$store = [];
+$dynamicStore = [];
+
+class RefMagicArrayAppendBox {
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $store;
+        return $store;
+    }
+}
+
+class RefMagicDynamicArrayAppendBox {
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $dynamicStore;
+        return $dynamicStore;
+    }
+}
+
+$box = new RefMagicArrayAppendBox();
+$alias =& $box->missing[];
+$alias = "from-alias";
+echo $store[0], "|";
+$store[0] = "from-store";
+echo $alias, "\n";
+
+$property = "dynamicMissing";
+$dynamicBox = new RefMagicDynamicArrayAppendBox();
+$dynamic =& $dynamicBox->{$property}[];
+$dynamic = "from-dynamic";
+echo $dynamicStore[0], "|";
+$dynamicStore[0] = "from-dynamic-store";
+echo $dynamic;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:missing\n",
+            "from-alias|from-store\n",
+            "get:dynamicMissing\n",
+            "from-dynamic|from-dynamic-store",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_set_runs_for_missing_direct_property_writes() {
     let source = r#"<?php
 class Bag {
@@ -5837,19 +5888,23 @@ echo "arrow|", $arrowReflection->getName(), "|", $arrowReflection->getNumberOfPa
 }
 
 #[test]
-fn reflection_function_rejects_closure_invocation_boundary() {
-    let error = runtime_error(
+fn reflection_function_invokes_bounded_closure_callbacks() {
+    let execution = run_source(
         r#"<?php
-$callback = function () { return "ok"; };
+$prefix = "wp";
+$callback = function ($hook, $priority = 10) use ($prefix) {
+    return $prefix . ":" . $hook . ":" . $priority;
+};
+$prefix = "changed";
 $function = new ReflectionFunction($callback);
-echo $function->invoke();
+echo $function->invoke("init"), "\n";
+echo $function->invokeArgs(array("save_post", 20));
 "#,
-    );
+    )
+    .unwrap();
 
-    assert!(error.message.contains("ReflectionFunction::invoke"));
-    assert!(error
-        .message
-        .contains("closure reflection invocation is not implemented"));
+    assert_eq!(execution.stdout, "wp:init:10\nwp:save_post:20");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

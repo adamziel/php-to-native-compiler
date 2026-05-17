@@ -146,6 +146,8 @@ struct Interpreter {
     reflection_classes: HashMap<i64, ReflectionClassState>,
     reflection_functions: HashMap<i64, ReflectionFunctionState>,
     closure_reflection_functions: HashMap<i64, ReflectionFunctionState>,
+    closure_functions: HashMap<i64, Rc<FunctionDecl>>,
+    closure_values: HashMap<i64, PhpClosure>,
     reflection_methods: HashMap<i64, ReflectionMethodState>,
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
@@ -368,6 +370,7 @@ struct ReflectionFunctionState {
     name: String,
     is_internal: bool,
     is_closure: bool,
+    closure_id: Option<i64>,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -3334,6 +3337,8 @@ impl Interpreter {
             reflection_classes: HashMap::new(),
             reflection_functions: HashMap::new(),
             closure_reflection_functions: HashMap::new(),
+            closure_functions: HashMap::new(),
+            closure_values: HashMap::new(),
             reflection_methods: HashMap::new(),
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
@@ -5448,26 +5453,40 @@ impl Interpreter {
             return Ok((Flow::Normal, Value::Bool(true)));
         }
 
-        let source = fs::read_to_string(&path.read_path).map_err(|error| {
-            if !required {
-                return runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        construct,
-                        "missing-file warning recovery is not implemented",
+        let source = match fs::read_to_string(&path.read_path) {
+            Ok(source) => source,
+            Err(error) if !required => {
+                self.emit_warning(
+                    &format!("{construct}()"),
+                    format!(
+                        "{construct}({}): Failed to open stream: {error}",
+                        path.source_file.display()
                     ),
-                );
+                    span,
+                )?;
+                self.emit_warning(
+                    &format!("{construct}()"),
+                    format!(
+                        "{construct}(): Failed opening '{}' for inclusion (include_path='{}')",
+                        path.source_file.display(),
+                        self.include_path
+                    ),
+                    span,
+                )?;
+                return Ok((Flow::Normal, Value::Bool(false)));
             }
-            Diagnostic::new(
-                Phase::Io,
-                span.line,
-                span.column,
-                format!(
-                    "failed to read required file {}: {error}",
-                    path.source_file.display()
-                ),
-            )
-        })?;
+            Err(error) => {
+                return Err(Diagnostic::new(
+                    Phase::Io,
+                    span.line,
+                    span.column,
+                    format!(
+                        "failed to read required file {}: {error}",
+                        path.source_file.display()
+                    ),
+                ));
+            }
+        };
         self.cache_bounded_realpath_entry_for_local_path(&path.read_path);
         let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
         self.required_once.insert(include_key);
@@ -7252,6 +7271,18 @@ impl Interpreter {
                             return Ok(());
                         }
                     }
+                    if let Some((alias, _)) = self
+                        .evaluate_magic_get_array_append_reference_source_alias(
+                            object,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
+                    }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, property, span, scope,
                     )?;
@@ -7279,6 +7310,18 @@ impl Interpreter {
                             scope.bind_static_to_array_offset_alias(name, alias);
                             return Ok(());
                         }
+                    }
+                    if let Some((alias, _)) = self
+                        .evaluate_magic_get_array_append_reference_source_alias(
+                            object,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        scope.bind_static_to_array_offset_alias(name, alias);
+                        return Ok(());
                     }
                     self.reject_object_property_array_access_reference_source_if_needed(
                         object, &property, span, scope,
@@ -8396,6 +8439,50 @@ impl Interpreter {
                         span,
                         RuntimeError::invalid_array_access(
                             "cannot bind missing magic __get array offset reference source"
+                                .to_string(),
+                        ),
+                    )
+                })?;
+                Ok(Some((alias, value)))
+            }
+            Err(error) => Err(runtime_error(span, error)),
+        }
+    }
+
+    fn evaluate_magic_get_array_append_reference_source_alias(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        keys: Vec<ArrayKey>,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(ArrayOffsetAlias, Value)>> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(None);
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
+            Ok(_) => Ok(None),
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                let Some(cell) =
+                    self.call_magic_get_reference_return_cell(object, property, span)?
+                else {
+                    return Ok(None);
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.bind_static_to_cell(&temp_name, cell);
+                let alias = scope.append_array_offset_reference_alias(
+                    &temp_name,
+                    keys,
+                    Value::Null,
+                    span,
+                )?;
+                let value = scope.read_array_offset_alias(&alias).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(
+                            "cannot bind missing magic __get appended array offset reference source"
                                 .to_string(),
                         ),
                     )
@@ -18673,13 +18760,16 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         if state.is_closure {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionFunction::invoke",
-                    "closure reflection invocation is not implemented",
-                ),
-            ));
+            let Some(closure_id) = state.closure_id else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionFunction::invoke",
+                        "closure reflection metadata is missing in the current subset",
+                    ),
+                ));
+            };
+            return self.invoke_reflection_closure(closure_id, values, span);
         }
         let function = match self.lookup_function(&state.name) {
             Some(Callable::User(function)) => function,
@@ -18703,6 +18793,73 @@ impl Interpreter {
             None,
             Vec::new(),
             None,
+        )
+    }
+
+    fn invoke_reflection_closure(
+        &mut self,
+        closure_id: i64,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure_id)
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionFunction::invoke",
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        let closure = self
+            .closure_values
+            .get(&closure_id)
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ReflectionFunction::invoke",
+                        "closure capture metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure
+            .captures()
+            .iter()
+            .any(PhpClosureCapture::by_reference)
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionFunction::invoke",
+                    "by-reference closure captures are not implemented for reflection invocation",
+                ),
+            ));
+        }
+
+        let function = function.as_ref();
+        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_supported_function_signature(function, values.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let prebound_locals = closure
+            .captures()
+            .iter()
+            .map(|capture| (capture.name().to_string(), capture.value().clone()))
+            .collect();
+        self.call_user_function_with_checked_values_and_locals(
+            function,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+            prebound_locals,
         )
     }
 
@@ -21653,6 +21810,7 @@ impl Interpreter {
         self.closure_reflection_functions.insert(
             id,
             reflection_function_state_from_closure(
+                id,
                 params,
                 return_type,
                 body,
@@ -21660,11 +21818,23 @@ impl Interpreter {
                 span,
             ),
         );
-        Ok(Value::Closure(PhpClosure::new(
+        self.closure_functions.insert(
             id,
-            is_arrow,
-            captured_values,
-        )))
+            Rc::new(FunctionDecl {
+                name: "{closure}".to_string(),
+                params: params.to_vec(),
+                return_type: return_type.cloned(),
+                returns_by_reference: false,
+                body: body.to_vec(),
+                is_nested: false,
+                end_line: reflection_closure_end_line(body, span),
+                doc_comment: None,
+                span,
+            }),
+        );
+        let closure = PhpClosure::new(id, is_arrow, captured_values);
+        self.closure_values.insert(id, closure.clone());
+        Ok(Value::Closure(closure))
     }
 
     fn call_function(
@@ -27360,6 +27530,29 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         reference_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<Value> {
+        self.call_user_function_with_checked_values_and_locals(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            reference_bindings,
+            reference_scope,
+            Vec::new(),
+        )
+    }
+
+    fn call_user_function_with_checked_values_and_locals(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        reference_scope: Option<&mut SymbolTable>,
+        prebound_locals: Vec<(String, Value)>,
+    ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -27370,6 +27563,9 @@ impl Interpreter {
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
+        }
+        for (name, value) in prebound_locals {
+            local_scope.write_static(&name, value);
         }
         let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
@@ -37446,6 +37642,7 @@ fn reflection_function_state_from_decl(
         name: function.name.clone(),
         is_internal: false,
         is_closure: false,
+        closure_id: None,
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -37457,6 +37654,7 @@ fn reflection_function_state_from_decl(
 }
 
 fn reflection_function_state_from_closure(
+    closure_id: i64,
     params: &[FunctionParam],
     return_type: Option<&TypeDecl>,
     body: &[Stmt],
@@ -37467,6 +37665,7 @@ fn reflection_function_state_from_closure(
         name: "{closure}".to_string(),
         is_internal: false,
         is_closure: true,
+        closure_id: Some(closure_id),
         file_name,
         start_line: span.line,
         end_line: reflection_closure_end_line(body, span),
@@ -37597,6 +37796,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         name: name.to_string(),
         is_internal: true,
         is_closure: false,
+        closure_id: None,
         file_name: None,
         start_line: 0,
         end_line: 0,
@@ -39671,6 +39871,25 @@ fn wordpress_dynamic_prepared_schema_result_for_query(
                 .into_iter()
                 .filter_map(|table_name| tables.get(&table_name))
                 .map(dynamic_schema_table_status_row)
+                .collect();
+            return Ok(Some(MysqliPendingResultState {
+                fields: dynamic_schema_table_status_fields(),
+                rows,
+            }));
+        }
+    }
+
+    if let Some(input) = query
+        .strip_prefix("SHOW TABLE STATUS WHERE Name = ")
+        .or_else(|| query.strip_prefix("SHOW TABLE STATUS WHERE `Name` = "))
+    {
+        if let Some(table_filter) =
+            parse_prepared_schema_exact_placeholder_filter(input, params, function, span)?
+        {
+            let rows = tables
+                .get(table_filter.pattern())
+                .map(dynamic_schema_table_status_row)
+                .into_iter()
                 .collect();
             return Ok(Some(MysqliPendingResultState {
                 fields: dynamic_schema_table_status_fields(),

@@ -41,6 +41,11 @@ pub struct NativeStringHandle {
 pub struct NativeValueHandle {
     ptr: *mut Value,
 }
+
+#[repr(C)]
+pub struct NativeDiagnosticHandle {
+    ptr: *mut NativeDiagnostic,
+}
 ```
 
 The exported constructor symbols are:
@@ -63,9 +68,13 @@ The first scalar output helper symbols are:
 - `phpc_native_string_clone_bytes(NativeStringHandle) -> NativeByteBuffer`
 - `phpc_native_string_free(NativeStringHandle)`
 - `phpc_native_value_from_string(NativeStringHandle) -> NativeValueHandle`
+- `phpc_native_value_from_string_with_diagnostic(NativeStringHandle, *mut NativeDiagnosticHandle) -> NativeValueHandle`
 - `phpc_native_value_echo_bytes(NativeValueHandle) -> NativeByteBuffer`
 - `phpc_native_value_echo_stdout(NativeValueHandle) -> usize`
 - `phpc_native_value_free(NativeValueHandle)`
+- `phpc_native_diagnostic_message_len(NativeDiagnosticHandle) -> usize`
+- `phpc_native_diagnostic_message_clone_bytes(NativeDiagnosticHandle) -> NativeByteBuffer`
+- `phpc_native_diagnostic_free(NativeDiagnosticHandle)`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
@@ -99,13 +108,22 @@ or change normal generated string/echo lowering.
 `phpc_native_value_from_string` clones a valid UTF-8 native string handle into
 an opaque runtime-owned `Value::String` handle. The source string handle remains
 owned by the caller and must still be freed separately. Null string handles and
-non-UTF-8 byte payloads return a null value handle until diagnostics handles and
-binary PHP string values have native ABI coverage. `phpc_native_value_echo_bytes`
+non-UTF-8 byte payloads return a null value handle. The opt-in
+`phpc_native_value_from_string_with_diagnostic` variant preserves that return
+shape and, when the caller supplies a non-null diagnostic out pointer, stores a
+runtime-owned diagnostic handle for null string handles or non-UTF-8 byte
+payloads. Diagnostic message helpers expose the stable message byte length and a
+runtime-owned message copy; callers must free diagnostic handles with
+`phpc_native_diagnostic_free` and copied message buffers with
+`phpc_native_byte_buffer_free`. This diagnostic slice covers only native
+string-to-value conversion failures; it does not provide a general exception,
+warning, or errno channel. Binary PHP string values still lack native ABI
+coverage. `phpc_native_value_echo_bytes`
 returns runtime-owned echo bytes for the current value handle, and
 `phpc_native_value_echo_stdout` writes the current value handle's PHP echo bytes
 to stdout and returns the number of bytes written. Null handles and host write
-failures return zero until diagnostics handles exist. `phpc_native_value_free`
-releases the value handle.
+failures return zero until stdout diagnostics have ABI coverage.
+`phpc_native_value_free` releases the value handle.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -203,15 +221,25 @@ and passes the selected pointer plus selected length through
 `phpc_native_value_echo_stdout`, and the handle free helpers for statement-form
 `echo` and `print`.
 
+Milestone 1609 adds the first bounded diagnostics handle slice for native
+runtime ABI failures. `phpc_native_value_from_string_with_diagnostic` reports
+null string-handle and non-UTF-8 string-byte conversion failures through an
+opaque runtime-owned diagnostic handle, and the deterministic probe now includes
+a failing string-to-value conversion path plus diagnostic message length,
+message clone, and free calls. Normal generated LLVM output still uses the
+existing non-diagnostic `phpc_native_value_from_string` helper and does not
+branch on helper failures yet.
+
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
-handles beyond valid UTF-8 byte payloads, diagnostics handles, request state,
-arrays, objects, resources, references, WordPress host state, and C fallback
-assembly helper calls remain outside this ABI slice. The snapshot uses the
-selected target's `usize`/pointer-width shape; a real linked native backend
-still needs full target data layout, calling-convention validation, runtime
-linking, and runtime helper emission before broader helper calls can execute
-truthfully for all supported targets.
+handles beyond valid UTF-8 byte payloads, diagnostics outside this
+string-to-value conversion helper, request state, arrays, objects, resources,
+references, WordPress host state, and C fallback assembly helper calls remain
+outside this ABI slice. The snapshot uses the selected target's
+`usize`/pointer-width shape; a real linked native backend still needs full
+target data layout, calling-convention validation, runtime linking, and runtime
+helper emission before broader helper calls can execute truthfully for all
+supported targets.
 
 ## Verification
 
@@ -222,6 +250,7 @@ cargo test -p php_runtime native_scalar_abi -- --test-threads=1
 cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1
 cargo test -p php_runtime native_string_handle -- --test-threads=1
 cargo test -p php_runtime native_string -- --test-threads=1
+cargo test -p php_runtime native_diagnostic -- --test-threads=1
 cargo test -p phpc --test native_runtime_abi -- --test-threads=1
 ```
 
@@ -242,11 +271,15 @@ The tests pin:
   including embedded NUL bytes, independent source-handle lifetime, value
   echo-byte cloning, null string handles, non-UTF-8 rejection, null-handle
   stdout echo behavior, and value-handle release.
+- opaque runtime-owned diagnostic handles for string-to-value conversion
+  failures, including stable message bytes for null string handles and
+  non-UTF-8 byte payloads, success-path diagnostic clearing, null diagnostic
+  helper behavior, message-buffer cloning, and diagnostic release.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
-  byte-buffer, string-handle, value-handle, and value stdout helper
-  declarations plus the probe calls.
+  byte-buffer, string-handle, value-handle, value stdout helper, and diagnostic
+  helper declarations plus the probe calls.
 - the normal generated `--emit-ir` CLI path for statement-form `print` and
   `echo` of direct compile-time string values through the runtime string/value
   stdout helpers.
@@ -262,17 +295,18 @@ The tests pin:
 This ABI does not yet provide:
 
 - string interning, mutable string storage, binary PHP string value conversion,
-  diagnostics for failed handle conversion or stdout writes, or production
-  lowering of PHP strings through runtime helpers beyond the scalar echo
+  diagnostics beyond string-to-value conversion failures, stdout write
+  diagnostics, or production lowering of PHP strings through runtime helpers
+  beyond the scalar echo
   owned-byte helper, copied raw-byte buffer helper, opaque copied string-handle
-  helper, valid UTF-8 string-handle-to-value helper, the narrow statement-form
-  direct string `echo`/`print` stdout helper path, and the narrow
-  selected string-pointer `echo`/`print` stdout helper paths;
+  helper, valid UTF-8 string-handle-to-value helpers, the narrow
+  statement-form direct string `echo`/`print` stdout helper path, and the
+  narrow selected string-pointer `echo`/`print` stdout helper paths;
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
   selected string-pointer `echo`/`print` expressions;
-- symbol tables, stack frames, call lookup, or diagnostics;
+- symbol tables, stack frames, call lookup, or general diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.
 
