@@ -5287,6 +5287,50 @@ echo "|missing=", mysqli_num_rows($missing);
 }
 
 #[test]
+fn mysqli_query_filters_bounded_wordpress_schema_metadata_with_underscore_and_escaped_like() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_meta (meta_id bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(255) NULL, metadata varchar(20) NULL, PRIMARY KEY  (meta_id), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "CREATE TABLE wpXprobeXmeta (id bigint(20) unsigned NOT NULL, PRIMARY KEY  (id)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+$underscore = mysqli_query($handle, "SHOW TABLES LIKE 'wp_probe_meta'");
+echo "underscore=", mysqli_num_rows($underscore), ":";
+while ($table = mysqli_fetch_row($underscore)) {
+    echo $table[0], ";";
+}
+$escaped = mysqli_query($handle, "SHOW TABLES LIKE 'wp\\_probe\\_meta'");
+echo "|escaped=", mysqli_num_rows($escaped), ":";
+while ($table = mysqli_fetch_row($escaped)) {
+    echo $table[0], ";";
+}
+$single = mysqli_query($handle, "SHOW TABLE STATUS LIKE 'wp\\_probe\\_met_'");
+echo "|status=", mysqli_num_rows($single), ":";
+while ($row = mysqli_fetch_assoc($single)) {
+    echo $row["Name"], ":", $row["Collation"], ";";
+}
+$columns = mysqli_query($handle, "SHOW FULL COLUMNS FROM `wp_probe_meta` LIKE 'meta\\_%'");
+echo "|columns=", mysqli_num_rows($columns), ":";
+while ($column = mysqli_fetch_assoc($columns)) {
+    echo $column["Field"], ";";
+}
+$where = mysqli_query($handle, "SHOW COLUMNS FROM wp_probe_meta WHERE Field LIKE 'meta__d'");
+echo "|where=", mysqli_num_rows($where), ":";
+while ($column = mysqli_fetch_assoc($where)) {
+    echo $column["Field"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "underscore=2:wpXprobeXmeta;wp_probe_meta;|escaped=1:wp_probe_meta;|status=1:wp_probe_meta:utf8mb4_unicode_ci;|columns=2:meta_id;meta_key;|where=1:meta_id;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

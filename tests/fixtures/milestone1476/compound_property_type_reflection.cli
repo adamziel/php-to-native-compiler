@@ -1,0 +1,9 @@
+run compound_property_type_reflection.php
+exit: 0
+stdout:
+OtherHook|TaggedHook
+ReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1
+ReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1478/session_malformed_file_recovery.php

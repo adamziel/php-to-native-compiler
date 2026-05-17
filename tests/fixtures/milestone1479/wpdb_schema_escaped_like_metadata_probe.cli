@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1479/wpdb_schema_escaped_like_metadata_probe.php

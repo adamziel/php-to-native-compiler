@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 14);
+    assert_eq!(classes.classes().len(), 16);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -50,7 +50,9 @@ echo "ready\n";
     assert_eq!(classes.classes()[9].name(), "ReflectionParameter");
     assert_eq!(classes.classes()[10].name(), "ReflectionType");
     assert_eq!(classes.classes()[11].name(), "ReflectionNamedType");
-    assert_eq!(classes.classes()[12].name(), "ReflectionProperty");
+    assert_eq!(classes.classes()[12].name(), "ReflectionUnionType");
+    assert_eq!(classes.classes()[13].name(), "ReflectionIntersectionType");
+    assert_eq!(classes.classes()[14].name(), "ReflectionProperty");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4339,7 +4341,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionProperty\n    [13] => Box\n    [14] => Profile\n)\n15|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionUnionType\n    [13] => ReflectionIntersectionType\n    [14] => ReflectionProperty\n    [15] => Box\n    [16] => Profile\n)\n17|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4360,7 +4362,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionProperty\n    [13] => App\\Mode\n    [14] => App\\Status\n)\n15\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => ReflectionParameter\n    [10] => ReflectionType\n    [11] => ReflectionNamedType\n    [12] => ReflectionUnionType\n    [13] => ReflectionIntersectionType\n    [14] => ReflectionProperty\n    [15] => App\\Mode\n    [16] => App\\Status\n)\n17\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5260,6 +5262,91 @@ $registry->instance = $other;
     assert_eq!(
         write_error.message,
         "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+    );
+}
+
+#[test]
+fn typed_properties_accept_bounded_union_and_intersection_property_types() {
+    let execution = run_source(
+        r#"<?php
+interface HookContract {}
+interface TaggedContract {}
+class Hook implements HookContract {}
+class TaggedHook extends Hook implements TaggedContract {}
+class OtherHook {}
+
+class Registry {
+    public HookContract|OtherHook|null $union = null;
+    public static HookContract|OtherHook $staticUnion;
+    public HookContract&TaggedContract $intersection;
+    public static HookContract&TaggedContract $staticIntersection;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function type_names($type) {
+    $names = array();
+    foreach ($type->getTypes() as $inner) {
+        $names[] = $inner->getName() . ":" . yn($inner->isBuiltin()) . ":" . yn($inner->allowsNull());
+    }
+    return implode(",", $names);
+}
+
+$registry = new Registry();
+$registry->union = new Hook();
+Registry::$staticUnion = new OtherHook();
+$registry->intersection = new TaggedHook();
+Registry::$staticIntersection = new TaggedHook();
+
+$union = (new ReflectionProperty(Registry::class, "union"))->getType();
+$intersection = (new ReflectionProperty(Registry::class, "intersection"))->getType();
+echo get_class($registry->union), "|", get_class(Registry::$staticUnion), "|", get_class($registry->intersection), "|", get_class(Registry::$staticIntersection), "\n";
+echo get_class($union), "|", yn($union instanceof ReflectionType), "|", yn($union->allowsNull()), "|", type_names($union), "\n";
+echo get_class($intersection), "|", yn($intersection instanceof ReflectionType), "|", yn($intersection->allowsNull()), "|", type_names($intersection);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Hook|OtherHook|TaggedHook|TaggedHook\nReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1\nReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let union_error = runtime_error(
+        r#"<?php
+interface HookContract {}
+class OtherHook {}
+class Bad {}
+class Registry { public HookContract|OtherHook $union; }
+$registry = new Registry();
+$registry->union = new Bad();
+"#,
+    );
+    assert_eq!(union_error.line, 7);
+    assert_eq!(union_error.column, 1);
+    assert_eq!(
+        union_error.message,
+        "invalid property access: typed property Registry::$union expects HookContract|OtherHook, got object"
+    );
+
+    let intersection_error = runtime_error(
+        r#"<?php
+interface HookContract {}
+interface TaggedContract {}
+class Hook implements HookContract {}
+class Registry { public HookContract&TaggedContract $intersection; }
+$registry = new Registry();
+$registry->intersection = new Hook();
+"#,
+    );
+    assert_eq!(intersection_error.line, 7);
+    assert_eq!(intersection_error.column, 1);
+    assert_eq!(
+        intersection_error.message,
+        "invalid property access: typed property Registry::$intersection expects HookContract&TaggedContract, got object"
     );
 }
 
@@ -9521,12 +9608,12 @@ if (true) {
         (
             r#"<?php
 class Box {
-    public int|string $id;
+    public (Countable&Iterator)|ArrayAccess $id;
 }
 "#,
             3,
             12,
-            "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support",
+            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
         ),
         (
             r#"<?php

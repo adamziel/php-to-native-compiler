@@ -223,6 +223,57 @@ echo $items["slot"], "|", $store->args[0], "|", $copy[0];
 }
 
 #[test]
+fn array_reference_literals_assigned_to_append_offsets_feed_call_user_func_array() {
+    let execution = run_source(
+        r#"<?php
+class RefcowLiteralAppendStore {
+    public $groups = [];
+}
+
+function mark_refcow_literal_append(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+function &pick_refcow_literal_append(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$value = "seed";
+$args = [];
+$args[] = array(&$value, "direct");
+call_user_func_array("mark_refcow_literal_append", $args[0]);
+echo $value, "|", $args[0][0], "\n";
+
+$alias =& call_user_func_array("pick_refcow_literal_append", $args[0]);
+$alias = $alias . ":alias";
+echo $value, "|", $args[0][0], "|", $alias, "\n";
+
+$items = ["slot" => "array"];
+$registry = ["groups" => []];
+$registry["groups"][] = array(&$items["slot"], "nested");
+$copy = $registry["groups"][0];
+$copy[0] = "copied";
+echo $items["slot"], "|", $registry["groups"][0][0], "|", $copy[0], "\n";
+
+$property_items = ["slot" => "property"];
+$store = new RefcowLiteralAppendStore();
+$store->groups[] = array(&$property_items["slot"], "property");
+$stored = $store->groups[0];
+call_user_func_array("mark_refcow_literal_append", $stored);
+echo $property_items["slot"], "|", $store->groups[0][0], "|", $stored[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "seed:direct|seed:direct\nseed:direct:direct:alias|seed:direct:direct:alias|seed:direct:direct:alias\ncopied|copied|copied\nproperty:property|property:property|property:property"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_copies_preserve_direct_reference_element_identity() {
     let execution = run_source(
         r#"<?php

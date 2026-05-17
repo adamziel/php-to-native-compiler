@@ -255,6 +255,46 @@ echo "|session:" . (isset($_SESSION) ? "set" : "unset");
 }
 
 #[test]
+fn session_start_warns_and_recovers_from_malformed_session_file() {
+    let save_path = unique_session_save_path("phpc-session-file-malformed");
+    fs::create_dir_all(&save_path).unwrap();
+    fs::write(
+        save_path.join("sess_phpcmalformed"),
+        "token|s:5:\"short\";bad",
+    )
+    .unwrap();
+    let save_path_php = save_path.display().to_string().replace('\\', "\\\\");
+    let source = format!(
+        r#"<?php
+function malformed_session_file_warning($errno, $errstr, $errfile, $errline) {{
+    echo "warning:" . $errno;
+    echo ":" . (str_contains($errstr, "Malformed session file") ? "malformed" : "other");
+    echo ":" . basename($errfile) . ":" . $errline;
+    return true;
+}}
+ini_set("session.save_path", "{save_path_php}");
+set_error_handler("malformed_session_file_warning", E_WARNING);
+session_id("phpcmalformed");
+$started = session_start(["use_cookies" => false]);
+echo "|return:" . ($started ? "true" : "false");
+echo "|status:" . (session_status() === PHP_SESSION_ACTIVE ? "active" : "none");
+echo "|session:" . (isset($_SESSION["token"]) ? $_SESSION["token"] : "empty");
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:malformed:Command line code:11|return:true|status:active|session:empty"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(save_path.join("sess_phpcmalformed"));
+    let _ = fs::remove_dir(save_path);
+}
+
+#[test]
 fn session_start_while_active_emits_notice_and_keeps_session_open() {
     let execution = run_source(
         r#"<?php

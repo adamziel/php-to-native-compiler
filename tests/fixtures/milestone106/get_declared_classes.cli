@@ -14,11 +14,13 @@ Array
     [9] => ReflectionParameter
     [10] => ReflectionType
     [11] => ReflectionNamedType
-    [12] => ReflectionProperty
-    [13] => Box
-    [14] => Profile
+    [12] => ReflectionUnionType
+    [13] => ReflectionIntersectionType
+    [14] => ReflectionProperty
+    [15] => Box
+    [16] => Profile
 )
-15|Exception|stdClass|mysqli
+17|Exception|stdClass|mysqli
 Exception|stdClass|mysqli--- stdout end ---
 stderr:
 --- stderr end ---

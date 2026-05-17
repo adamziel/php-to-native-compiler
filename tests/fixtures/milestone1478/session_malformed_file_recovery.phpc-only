@@ -1,0 +1,1 @@
+phpc emits one bounded malformed-session-file recovery warning and starts with an empty session array; system PHP's file-session diagnostics and recovery behavior vary by version and handler configuration.

@@ -2168,8 +2168,38 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionNamedType core metadata should not duplicate methods");
         }
+        let reflection_union_type_id = classes.declare_class("ReflectionUnionType").expect(
+            "core class table should contain ReflectionNamedType before ReflectionUnionType",
+        );
+        classes
+            .set_parent(reflection_union_type_id, reflection_type_id)
+            .expect("ReflectionUnionType should extend ReflectionType");
+        let reflection_union_type = classes
+            .get_mut(reflection_union_type_id)
+            .expect("declared ReflectionUnionType class id should resolve");
+        for method in ["getTypes"] {
+            reflection_union_type
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionUnionType core metadata should not duplicate methods");
+        }
+        let reflection_intersection_type_id = classes
+            .declare_class("ReflectionIntersectionType")
+            .expect(
+            "core class table should contain ReflectionUnionType before ReflectionIntersectionType",
+        );
+        classes
+            .set_parent(reflection_intersection_type_id, reflection_type_id)
+            .expect("ReflectionIntersectionType should extend ReflectionType");
+        let reflection_intersection_type = classes
+            .get_mut(reflection_intersection_type_id)
+            .expect("declared ReflectionIntersectionType class id should resolve");
+        for method in ["getTypes"] {
+            reflection_intersection_type
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionIntersectionType core metadata should not duplicate methods");
+        }
         let reflection_property_id = classes.declare_class("ReflectionProperty").expect(
-            "core class table should contain ReflectionNamedType before ReflectionProperty",
+            "core class table should contain ReflectionIntersectionType before ReflectionProperty",
         );
         let reflection_property = classes
             .get_mut(reflection_property_id)
@@ -3467,6 +3497,58 @@ pub fn coerce_property_value_with_object_type_resolver<F>(
 where
     F: Fn(&PhpObject, &str) -> bool,
 {
+    coerce_property_value_with_object_type_resolver_dyn(
+        type_decl,
+        value,
+        class_name,
+        property_name,
+        &object_type_resolver,
+    )
+}
+
+fn coerce_property_value_with_object_type_resolver_dyn(
+    type_decl: &str,
+    value: Value,
+    class_name: &str,
+    property_name: &str,
+    object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
+) -> RuntimeResult<Value> {
+    if type_decl.contains('|') {
+        for part in type_decl.split('|') {
+            if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
+                part.trim(),
+                value.clone(),
+                class_name,
+                property_name,
+                object_type_resolver,
+            ) {
+                return Ok(value);
+            }
+        }
+        return Err(typed_property_type_error(
+            class_name,
+            property_name,
+            type_decl,
+            value.type_name(),
+        ));
+    }
+
+    if type_decl.contains('&') {
+        for part in type_decl.split('&') {
+            coerce_property_value_with_object_type_resolver_dyn(
+                part.trim(),
+                value.clone(),
+                class_name,
+                property_name,
+                object_type_resolver,
+            )
+            .map_err(|_| {
+                typed_property_type_error(class_name, property_name, type_decl, value.type_name())
+            })?;
+        }
+        return Ok(value);
+    }
+
     let without_nullable = type_decl.strip_prefix('?').unwrap_or(type_decl);
     let normalized = without_nullable
         .strip_prefix('\\')
@@ -8265,9 +8347,33 @@ mod tests {
         assert!(reflection_named_type.method("getName").is_some());
         assert!(reflection_named_type.method("isBuiltin").is_some());
 
+        let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
+        assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
+        assert_eq!(reflection_union_type.id().index(), 12);
+        assert_eq!(
+            reflection_union_type.parent_id(),
+            Some(reflection_type.id())
+        );
+        assert!(reflection_union_type.properties().is_empty());
+        assert!(reflection_union_type.method("getTypes").is_some());
+
+        let reflection_intersection_type =
+            classes.lookup_class("reflectionintersectiontype").unwrap();
+        assert_eq!(
+            reflection_intersection_type.name(),
+            "ReflectionIntersectionType"
+        );
+        assert_eq!(reflection_intersection_type.id().index(), 13);
+        assert_eq!(
+            reflection_intersection_type.parent_id(),
+            Some(reflection_type.id())
+        );
+        assert!(reflection_intersection_type.properties().is_empty());
+        assert!(reflection_intersection_type.method("getTypes").is_some());
+
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 12);
+        assert_eq!(reflection_property.id().index(), 14);
         assert!(reflection_property.parent_id().is_none());
         assert!(reflection_property.properties().is_empty());
         assert!(reflection_property.constant("IS_PUBLIC").is_some());

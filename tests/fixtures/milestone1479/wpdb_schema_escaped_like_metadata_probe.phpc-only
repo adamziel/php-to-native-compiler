@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for escaped and underscore wildcard SHOW TABLES, SHOW TABLE STATUS, and SHOW COLUMNS metadata LIKE filters; system PHP needs a real database connection and is not comparable.

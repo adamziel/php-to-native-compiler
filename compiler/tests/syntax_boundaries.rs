@@ -1260,10 +1260,10 @@ fn unsupported_abstract_final_class_constant_declarations_have_stable_parse_erro
 fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
     let cases = [
         (
-            "<?php\nclass Value {\n    public int|string $id = 1;\n}\n",
+            "<?php\nclass Value {\n    public (Countable&Iterator)|ArrayAccess $id;\n}\n",
             3,
             12,
-            "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support",
+            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
         ),
     ];
 

@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1477/reference_array_literals_append_targets.php
+seed:direct|seed:direct
+seed:direct:direct:alias|seed:direct:direct:alias|seed:direct:direct:alias
+copied|copied|copied
+property:property|property:property|property:property

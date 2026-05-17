@@ -231,13 +231,19 @@
   detaches only the callee's local parameter name; later local writes do not
   mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
-  Direct variable, direct array-offset, direct visible object-property, and
-  direct public dynamic-property assignments from reference array literals now preserve
+  Direct variable, direct array-offset, direct append-offset, nested
+  append-offset, direct visible object-property, direct visible
+  object-property append-offset, and direct public dynamic-property
+  assignments from reference array literals now preserve
   covered reference elements for later stored-array callback use, for example
   `$args = array(&$value); call_user_func_array($callback, $args);`,
   `$registry["args"] = array(&$value); call_user_func_array($callback,
   $registry["args"]);`, and
-  `$store->args = array("value" => &$object->items[$key]);`. Dynamic-property
+  `$store->args = array("value" => &$object->items[$key]);`, plus append
+  target forms such as `$args[] = array(&$value);`,
+  `$registry["groups"][] = array(&$value);`, and
+  `$store->groups[] = array(&$items["slot"]);`. Append targets record the
+  covered literal slots below the actual appended integer key. Dynamic-property
   targets use the evaluated public property name, such as
   `$store->{$name} = array(&$value);`. The covered
   reference element sources are direct variables, direct array offsets, and
@@ -245,9 +251,9 @@
   assignment targets may also already be backed by covered array-offset alias
   metadata, such as
   `$args =& $registry["args"]; $args = array(&$value);`.
-  Dynamic-property append-offset sources, `ArrayAccess` roots outside the
-  direct `offsetGet()` bridge, reference array literals assigned into
-  append-offset or other non-variable targets, reference
+  Dynamic-property append-offset targets, `ArrayAccess` append targets,
+  `ArrayAccess` roots outside the direct `offsetGet()` bridge, reference
+  array literals assigned into other non-variable targets, reference
   elements from arbitrary expressions, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   array offsets and direct visible named object-property arrays, direct reference assignment between
@@ -903,9 +909,12 @@
   id before start, fresh starts load a PHP-compatible `sess_<id>` file from
   that path when present, and `session_write_close()` writes string-keyed
   scalar and array session values back to that file for later `phpc run`
-  invocations. If an explicit non-empty id contains characters outside that
-  bounded file-safe subset, `session_start()` returns `false`, emits a bounded
-  `E_WARNING`, and leaves session status, headers, and `$_SESSION` unchanged.
+  invocations. If the existing session file is not valid for the current
+  bounded scalar/array decoder, `session_start()` emits a bounded
+  recoverable `E_WARNING` and continues with an empty `$_SESSION` array. If an
+  explicit non-empty id contains characters outside that bounded file-safe
+  subset, `session_start()` returns `false`, emits a bounded `E_WARNING`, and
+  leaves session status, headers, and `$_SESSION` unchanged.
   A fresh successful start appends a deterministic
   `Set-Cookie: PHPSESSID=<id>` line to the same
   CLI header log exposed by `headers_list()`, unless the bounded
@@ -922,8 +931,8 @@
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
   keeps the session active even if `read_and_close` was requested. Session
   file locking, save handlers, session module configuration, integer top-level
-  session keys, object/resource session serialization, malformed session-file
-  recovery diagnostics, session cookie encoding,
+  session keys, object/resource session serialization, exact malformed
+  session-file recovery parity, session cookie encoding,
   expiration-date formatting, cookie replacement, cache headers, garbage
   collection, broader PHP session-id policy, trans-sid
   behavior, exact warning text, reference aliases that survive `_SESSION` root
@@ -2072,9 +2081,11 @@
   `SHOW [FULL] COLUMNS FROM <table> WHERE Field = '<column>'`,
   `SHOW [FULL] COLUMNS FROM <table> WHERE Field LIKE '<pattern>'`, and
   `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS FROM <table>` probes read that
-  recorded shape, and bounded `LIKE` filters support `%` wildcards with
-  deterministic sorted table/status rows while preserving exact matching for
-  patterns without `%`. `SHOW CREATE TABLE <table>` returns a deterministic
+  recorded shape, and bounded `LIKE` filters support `%` wildcards, `_`
+  single-character wildcards, and backslash-escaped `%`, `_`, and `\` literal
+  characters with deterministic sorted table/status rows while preserving
+  exact matching for patterns without unescaped wildcard characters.
+  `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, simple
@@ -2088,7 +2099,7 @@
   indexes, index ordering/opclass/parser metadata, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
-  `_` wildcard and escape semantics in metadata `LIKE` filters, arbitrary
+  custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms,
   dbDelta diff generation, real DDL execution, transactions for schema state,
@@ -2972,7 +2983,9 @@
   before start and the session id contains only ASCII letters, digits,
   underscores, or hyphens, the same close/start lifecycle writes and reloads
   PHP-compatible `sess_<id>` files for string-keyed scalar and array
-  `$_SESSION` data across separate `phpc run` invocations. Session file
+  `$_SESSION` data across separate `phpc run` invocations. Malformed or
+  unsupported existing session files emit one bounded warning and recover with
+  an empty session array. Session file
   locking, save handlers,
   `session_name()`, `session_destroy()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
@@ -2980,7 +2993,7 @@
   the documented session-start options, session cookie encoding,
   expiration-date formatting, cookie replacement, cache headers, garbage
   collection, integer top-level session keys, object/resource session
-  serialization, malformed session-file recovery diagnostics, exact warning text, reference
+  serialization, exact malformed session-file recovery parity, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
   lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
@@ -3432,7 +3445,8 @@
   reports false and `empty(...)` reports true. Direct writes to declared typed
   instance and static properties enforce the current simple named type subset
   for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
-  nullable `?T`, literal `true`/`false`, and class-name object values,
+  nullable `?T`, literal `true`/`false`, class-name object values, bounded
+  union property types, and bounded pure intersection property types,
   including objects whose runtime class extends the declared property type and
   objects whose runtime class or inherited parent class implements a declared
   user-interface property type. Runtime object relationship metadata records
@@ -3455,9 +3469,8 @@
   beyond the current metadata in typed-property
   compatibility checks, references, property writes through
   complex alias paths, readonly properties, property hooks, static typed
-  property unset, and native lowering remain unsupported. Compound
-  union/intersection/DNF property type objects remain unsupported until
-  `ReflectionUnionType`/`ReflectionIntersectionType` exist.
+  property unset, parenthesized DNF property types, exact PHP union scalar
+  coercion preference rules, and native lowering remain unsupported.
   Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
@@ -5881,10 +5894,11 @@
   `isBuiltin()` for the current parsed type string, and
   `ReflectionParameter::allowsNull()` reports untyped, nullable `?T`, `null`
   union member, `mixed`, and typed-default-`null` cases in the current method
-  parameter slice. Direct user instantiation of `ReflectionType` and
-  `ReflectionNamedType` is rejected; these objects are only materialized by the
-  supported `ReflectionParameter::getType()` path. Compound union/intersection
-  type objects remain unsupported.
+  parameter slice. Direct user instantiation of `ReflectionType`,
+  `ReflectionNamedType`, `ReflectionUnionType`, and
+  `ReflectionIntersectionType` is rejected; these objects are only materialized
+  by the supported reflection `getType()` paths. Compound parameter type
+  objects remain unsupported.
   `new ReflectionProperty($object_or_class, $property)` creates a bounded
   metadata object for properties declared on current user classes, including
   inherited public and protected properties. `ReflectionClass::hasProperty()`,
@@ -5893,11 +5907,15 @@
   child class. `ReflectionProperty` supports `getName()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `hasDefaultValue()`, `getDefaultValue()`,
-  `hasType()`, and `getType()` for current untyped properties and bounded
-  simple named typed properties with or without explicit defaults. For those typed
-  properties, `getType()` returns a request-local `ReflectionNamedType` object
-  with `getName()`, `allowsNull()`, and `isBuiltin()` support; untyped
-  properties still return `null`. `hasDefaultValue()` reports false for
+  `hasType()`, and `getType()` for current untyped properties, bounded simple
+  named typed properties, bounded union typed properties, and bounded pure
+  intersection typed properties with or without explicit defaults. For simple
+  named typed properties, `getType()` returns a request-local
+  `ReflectionNamedType` object with `getName()`, `allowsNull()`, and
+  `isBuiltin()` support. For bounded compound property types, `getType()`
+  returns `ReflectionUnionType` or `ReflectionIntersectionType` with
+  `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
+  objects; untyped properties still return `null`. `hasDefaultValue()` reports false for
   uninitialized typed properties without explicit defaults, and
   `getDefaultValue()` returns `null` for that bounded PHP-compatible metadata
   path.
@@ -7524,18 +7542,18 @@
   by-reference and variadic flags, and type-presence checks without materialized
   compound `ReflectionType` objects. `ReflectionProperty` currently supports
   only declared user-class property metadata for the methods documented above,
-  plus simple named typed property metadata with bounded uninitialized-slot
-  state for properties without explicit defaults. Runtime typed-property
-  enforcement is limited to the simple named type subset documented in the
-  object/class model section, including weak scalar coercions and inherited
-  class-name plus declared user-interface object assignment checks;
-  interface aliases, broader built-in/internal interface catalog behavior,
-  union/intersection type objects, complex reference/COW interactions, and
+  plus simple named, bounded union, and bounded pure intersection typed
+  property metadata with bounded uninitialized-slot state for properties
+  without explicit defaults. Runtime typed-property enforcement is limited to
+  the named and compound property type subset documented in the object/class
+  model section, including weak scalar coercions and inherited class-name plus
+  declared user-interface object assignment checks; broader built-in/internal
+  interface catalog behavior, exact PHP union scalar coercion preference rules,
+  parenthesized DNF property types, complex reference/COW interactions, and
   native lowering remain unsupported. Attributes,
   file/line/doc-comment metadata,
   extension/internal method/property/parameter metadata, parameter and property
-  attributes, `ReflectionUnionType`/
-  `ReflectionIntersectionType`, default constant-name introspection, function/closure
+  attributes, default constant-name introspection, function/closure
   `ReflectionParameter` targets, reflection invocation/value mutation,
   `ReflectionClass::getProperties()` filter masks, exact `ReflectionException`
   behavior, namespace/import alias expansion beyond parsed class-like names,

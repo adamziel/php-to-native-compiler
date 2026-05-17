@@ -1639,18 +1639,24 @@ assigned by reference through the covered direct array-offset target path use
 the existing alias metadata as a copy-in/writeback bridge, including for
 normal callback invocations of reference-returning user functions or public
 array-callable methods that mutate reached by-reference parameters.
-Direct variable, direct array-offset, and direct visible object-property
-assignments from reference array literals now add the selected literal slot to
-the same bounded alias metadata used by direct reference assignment, so
-`$args = array(&$value)`, `$registry["args"] = array(&$value)`, and
-`$store->args = array("value" => &$object->items[$key])` can be used later as
-stored `call_user_func_array()` argument arrays. If the assigned direct
-variable is already backed by covered array-offset alias metadata, such as
-`$args =& $registry["args"]`, the literal reference slots are recorded below
-that aliased target path. This is still keyed alias metadata over materialized
-array values, not a runtime reference container. Reference array literals
-assigned into dynamic properties or other non-variable targets, reference
-elements from arbitrary expressions, stored arrays without
+Direct variable, direct array-offset, direct append-offset, nested
+append-offset, direct visible object-property, and direct visible
+object-property append-offset assignments from reference array literals now add
+the selected literal slot to the same bounded alias metadata used by direct
+reference assignment, so `$args = array(&$value)`,
+`$registry["args"] = array(&$value)`,
+`$store->args = array("value" => &$object->items[$key])`,
+`$args[] = array(&$value)`, `$registry["groups"][] = array(&$value)`, and
+`$store->groups[] = array(&$items["slot"])` can be used later as stored
+`call_user_func_array()` argument arrays. Append targets first materialize the
+array value at the runtime append key and then record literal reference slots
+below that key. If the assigned direct variable is already backed by covered
+array-offset alias metadata, such as `$args =& $registry["args"]`, the literal
+reference slots are recorded below that aliased target path. This is still
+keyed alias metadata over materialized array values, not a runtime reference
+container. Reference array literals assigned into dynamic-property append
+targets, `ArrayAccess` append targets, or other non-variable targets,
+reference elements from arbitrary expressions, stored arrays without
 covered reference-assigned slots,
 execution past unknown or duplicate string-keyed argument names, variadic
 named callback arguments, positional arguments after string-keyed named
@@ -1735,7 +1741,10 @@ lowering remain outside the model.
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
 `session.save_path` was set through `ini_set()` and the current id is bounded
-to ASCII letters, digits, underscores, or hyphens. If an explicit non-empty id
+to ASCII letters, digits, underscores, or hyphens. When that file exists but
+the current bounded scalar/array session decoder cannot parse it,
+`session_start()` routes one recoverable warning and recovers with an empty
+session array. If an explicit non-empty id
 falls outside that bounded file-safe subset, the start returns `false`, routes a
 bounded `E_WARNING`, and does not mark the session active, append headers, or
 materialize `$_SESSION`. Without a file it falls back to the request-local
@@ -1763,8 +1772,8 @@ returns `false`, leaves session status/data unchanged, and routes a bounded
 applying options. Cache-header emission, cookie encoding, expiration-date
 formatting, replacement policy, trans-sid behavior, locking, save handlers,
 garbage collection, broader PHP session-id policy, integer top-level session
-keys, object/resource session serialization, malformed session-file recovery
-diagnostics, option effects beyond the documented session-start options, exact
+keys, object/resource session serialization, exact malformed-session recovery
+parity, option effects beyond the documented session-start options, exact
 warning text, reference aliases across `_SESSION` root replacement, and native
 lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
@@ -2574,13 +2583,17 @@ function or closure parameter targets, method invocation, exact exception
 objects, compound type objects, or native lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,
-and optional simple named property type metadata. The interpreter answers name,
-declaring class, modifier-mask, visibility/static predicates, default-value
-availability and value, and `hasType()`/`getType()`. Bounded typed properties
-must have explicit constant-expression defaults; their type metadata
-materializes the existing request-local `ReflectionNamedType` object. The
-runtime does not enforce property types and does not model uninitialized typed
-property slots, union/intersection property type objects, or native lowering.
+and optional property type metadata. The interpreter answers name, declaring
+class, modifier-mask, visibility/static predicates, default-value availability
+and value, and `hasType()`/`getType()`. Simple named property types materialize
+the existing request-local `ReflectionNamedType` object. Bounded union and pure
+intersection property types materialize request-local `ReflectionUnionType` or
+`ReflectionIntersectionType` objects whose `getTypes()` entries are
+`ReflectionNamedType` objects. Runtime typed-property enforcement reuses the
+current scalar coercion and class/interface relationship checks for those
+bounded property type shapes. Parenthesized DNF property types, exact PHP union
+scalar coercion preference rules, reference/COW interactions, and native
+lowering remain unsupported.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

@@ -1047,10 +1047,8 @@ impl Parser {
                 return Err(self.error_at(hook_span, unsupported_property_hook_message()));
             }
             let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
-            if type_decl.text.contains('|') || type_decl.text.contains('&') {
-                return Err(
-                    self.error_at(type_decl.span, unsupported_compound_property_type_message())
-                );
+            if type_decl.text.contains('|') && type_decl.text.contains('&') {
+                return Err(self.error_at(type_decl.span, unsupported_dnf_type_message()));
             }
             let (name, span) = self.consume_variable_with_span("expected property name")?;
             let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
@@ -5269,6 +5267,30 @@ impl Parser {
         type_decl: &TypeDecl,
         expr: &Expr,
     ) -> CompileResult<()> {
+        if type_decl.text.contains('|') {
+            if type_decl.text.split('|').any(|part| {
+                let part = TypeDecl {
+                    text: part.trim().to_string(),
+                    span: type_decl.span,
+                };
+                self.ensure_supported_typed_property_default_expr(&part, expr)
+                    .is_ok()
+            }) {
+                return Ok(());
+            }
+            return Err(self.error_at(
+                expr.span(),
+                "unsupported typed property default: literal defaults must match the declared property type in the current metadata subset",
+            ));
+        }
+
+        if type_decl.text.contains('&') {
+            return Err(self.error_at(
+                expr.span(),
+                "unsupported typed property default: intersection-typed properties cannot use literal defaults in the current metadata subset",
+            ));
+        }
+
         let without_nullable = type_decl.text.strip_prefix('?').unwrap_or(&type_decl.text);
         let type_name = without_nullable
             .strip_prefix('\\')
@@ -6312,10 +6334,6 @@ fn unsupported_return_type_message() -> &'static str {
 
 fn unsupported_property_type_message() -> &'static str {
     "unsupported property type declaration: property type metadata supports only simple named property types in the current subset"
-}
-
-fn unsupported_compound_property_type_message() -> &'static str {
-    "unsupported property type declaration: union and intersection property types require ReflectionUnionType or ReflectionIntersectionType support"
 }
 
 fn unsupported_readonly_property_message() -> &'static str {

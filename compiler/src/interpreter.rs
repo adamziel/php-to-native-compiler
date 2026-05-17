@@ -134,6 +134,7 @@ struct Interpreter {
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_named_types: HashMap<i64, ReflectionNamedTypeState>,
+    reflection_compound_types: HashMap<i64, ReflectionCompoundTypeState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -332,11 +333,23 @@ struct ReflectionPropertyState {
     type_decl: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ReflectionNamedTypeState {
     name: String,
     allows_null: bool,
     is_builtin: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReflectionCompoundTypeState {
+    kind: ReflectionCompoundTypeKind,
+    types: Vec<ReflectionNamedTypeState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReflectionCompoundTypeKind {
+    Union,
+    Intersection,
 }
 
 #[derive(Debug, Clone)]
@@ -3114,6 +3127,7 @@ impl Interpreter {
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
             reflection_named_types: HashMap::new(),
+            reflection_compound_types: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -5834,6 +5848,8 @@ impl Interpreter {
         }
         if declared_class_name.eq_ignore_ascii_case("ReflectionType")
             || declared_class_name.eq_ignore_ascii_case("ReflectionNamedType")
+            || declared_class_name.eq_ignore_ascii_case("ReflectionUnionType")
+            || declared_class_name.eq_ignore_ascii_case("ReflectionIntersectionType")
         {
             return Err(runtime_error(
                 span,
@@ -8136,13 +8152,21 @@ impl Interpreter {
                     && matches!(value, Value::Array(_))
                     && !array_literal_references.is_empty()
                 {
-                    return Err(runtime_error(
+                    self.reject_array_access_reference_target_if_needed(name, *span, scope)?;
+                    let target_alias = scope.append_array_offset_reference_alias(
+                        name,
+                        Vec::new(),
+                        value.clone(),
                         *span,
-                        RuntimeError::unsupported_call(
-                            "array assignment",
-                            "append-offset reference array literal assignment targets are not implemented in the current subset",
-                        ),
-                    ));
+                    )?;
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        target_alias.root,
+                        target_alias.keys,
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                    return Ok(value);
                 }
                 let target_key = key.clone();
                 let mut slot = scope
@@ -8267,9 +8291,48 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
                 if name == "GLOBALS" {
-                    Self::write_global_nested_array_append(&keys, value.clone(), *span, scope)?;
+                    if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                        let target_alias = scope.append_global_array_offset_reference_alias(
+                            keys,
+                            value.clone(),
+                            *span,
+                        )?;
+                        self.bind_array_literal_references_to_alias_root_with_prefix(
+                            target_alias.root,
+                            target_alias.keys,
+                            array_literal_references,
+                            expr.span(),
+                            scope,
+                        )?;
+                    } else {
+                        Self::write_global_nested_array_append(&keys, value.clone(), *span, scope)?;
+                    }
+                    return Ok(value);
+                }
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    self.reject_array_access_reference_target_if_needed(name, *span, scope)?;
+                    let target_alias = scope.append_array_offset_reference_alias(
+                        name,
+                        keys,
+                        value.clone(),
+                        *span,
+                    )?;
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        target_alias.root,
+                        target_alias.keys,
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
                     return Ok(value);
                 }
                 Self::write_nested_array_append(name, &keys, value.clone(), *span, scope)?;
@@ -8382,7 +8445,35 @@ impl Interpreter {
                     .iter()
                     .map(|index| self.evaluate_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
-                let value = self.evaluate(expr, scope)?;
+                let (value, array_literal_references) = match expr {
+                    Expr::Array { items, span } => {
+                        let (value, references) =
+                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                        (value, references)
+                    }
+                    _ => (self.evaluate(expr, scope)?, Vec::new()),
+                };
+                if matches!(value, Value::Array(_)) && !array_literal_references.is_empty() {
+                    self.reject_object_property_array_access_reference_target_if_needed(
+                        object, property, *span, scope,
+                    )?;
+                    let root =
+                        self.context_object_property_alias_root(object, property, *span, scope)?;
+                    let target_alias = scope.append_object_property_array_offset_reference_alias(
+                        root,
+                        keys,
+                        value.clone(),
+                        *span,
+                    )?;
+                    self.bind_array_literal_references_to_alias_root_with_prefix(
+                        target_alias.root,
+                        target_alias.keys,
+                        array_literal_references,
+                        expr.span(),
+                        scope,
+                    )?;
+                    return Ok(value);
+                }
                 self.write_object_property_nested_array_append(
                     object,
                     property,
@@ -10755,6 +10846,37 @@ impl Interpreter {
         Ok(Value::Object(PhpObject::from_class_with_id(
             class, object_id,
         )))
+    }
+
+    fn create_reflection_compound_type_object(
+        &mut self,
+        state: ReflectionCompoundTypeState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_name = match state.kind {
+            ReflectionCompoundTypeKind::Union => "ReflectionUnionType",
+            ReflectionCompoundTypeKind::Intersection => "ReflectionIntersectionType",
+        };
+        let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class(format!("{class_name} core placeholder")),
+            )
+        })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core reflection compound type class id should resolve");
+        self.reflection_compound_types.insert(object_id, state);
+        Ok(Value::Object(
+            PhpObject::from_class_with_inherited_metadata_with_id(
+                class,
+                &[],
+                vec!["ReflectionType".to_string()],
+                object_id,
+            ),
+        ))
     }
 
     fn call_mysqli_real_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -15977,6 +16099,15 @@ impl Interpreter {
         {
             return self.call_reflection_named_type_method(object, method_name, args, span);
         }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("ReflectionUnionType")
+            || object
+                .class_name()
+                .eq_ignore_ascii_case("ReflectionIntersectionType")
+        {
+            return self.call_reflection_compound_type_method(object, method_name, args, span);
+        }
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
             let receiver_class_name = self
@@ -16689,6 +16820,11 @@ impl Interpreter {
                 let Some(type_decl) = state.type_decl.as_deref() else {
                     return Ok(Value::Null);
                 };
+                if let Some(compound_state) =
+                    reflection_compound_type_state_from_property(type_decl)
+                {
+                    return self.create_reflection_compound_type_object(compound_state, span);
+                }
                 let Some(type_state) = reflection_named_type_state_from_property(type_decl) else {
                     return Ok(Value::Null);
                 };
@@ -16752,6 +16888,61 @@ impl Interpreter {
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("ReflectionNamedType::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_reflection_compound_type_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_compound_types
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{}::{method_name}()", object.class_name()),
+                        "missing reflection compound type runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "allowsnull" => {
+                expect_expr_arity("ReflectionType::allowsNull", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.kind == ReflectionCompoundTypeKind::Union
+                        && state.types.iter().any(|type_state| type_state.allows_null),
+                ))
+            }
+            "gettypes" => {
+                expect_expr_arity(
+                    &format!("{}::getTypes", object.class_name()),
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                let mut types = PhpArray::new();
+                for type_state in state.types {
+                    let value = self.create_reflection_named_type_object(type_state, span)?;
+                    types
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Array(types))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
             )),
         }
     }
@@ -26058,7 +26249,7 @@ impl Interpreter {
             ));
         }
         let session_data = self
-            .load_session_file()
+            .load_session_file(span)?
             .or_else(|| self.session_store.get(&self.session_id).cloned())
             .unwrap_or_else(PhpArray::new);
         self.global_symbols.borrow_mut().insert(
@@ -26105,10 +26296,22 @@ impl Interpreter {
         Some(Path::new(&save_path).join(format!("sess_{}", self.session_id)))
     }
 
-    fn load_session_file(&self) -> Option<PhpArray> {
-        let path = self.session_file_path()?;
-        let data = fs::read_to_string(path).ok()?;
-        parse_php_session_file(&data)
+    fn load_session_file(&mut self, span: Span) -> CompileResult<Option<PhpArray>> {
+        let Some(path) = self.session_file_path() else {
+            return Ok(None);
+        };
+        let Some(data) = fs::read_to_string(path).ok() else {
+            return Ok(None);
+        };
+        if let Some(session) = parse_php_session_file(&data) {
+            return Ok(Some(session));
+        }
+        self.emit_warning(
+            "session_start()",
+            "Malformed session file is outside the current bounded scalar/array subset; starting with empty session data",
+            span,
+        )?;
+        Ok(Some(PhpArray::new()))
     }
 
     fn persist_session_file(&self, session_data: &PhpArray) {
@@ -33115,6 +33318,25 @@ fn reflection_named_type_state_from_property(type_decl: &str) -> Option<Reflecti
     })
 }
 
+fn reflection_compound_type_state_from_property(
+    type_decl: &str,
+) -> Option<ReflectionCompoundTypeState> {
+    let (kind, separator) = if type_decl.contains('|') && !type_decl.contains('&') {
+        (ReflectionCompoundTypeKind::Union, '|')
+    } else if type_decl.contains('&') && !type_decl.contains('|') {
+        (ReflectionCompoundTypeKind::Intersection, '&')
+    } else {
+        return None;
+    };
+
+    let mut types = Vec::new();
+    for part in type_decl.split(separator) {
+        let type_state = reflection_named_type_state_from_property(part.trim())?;
+        types.push(type_state);
+    }
+    Some(ReflectionCompoundTypeState { kind, types })
+}
+
 fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Expr>) -> bool {
     let Some(type_decl) = type_decl else {
         return true;
@@ -34781,7 +35003,17 @@ struct WordPressSchemaColumnQuery {
 #[derive(Clone)]
 enum WordPressSchemaNameFilter {
     Exact(String),
-    Like(String),
+    Like {
+        pattern: String,
+        tokens: Vec<WordPressSchemaLikeToken>,
+    },
+}
+
+#[derive(Clone)]
+enum WordPressSchemaLikeToken {
+    Literal(char),
+    AnyOne,
+    AnyMany,
 }
 
 enum WordPressSchemaAlterOperation {
@@ -34805,9 +35037,7 @@ fn wordpress_dynamic_schema_result_for_query(
 
     if let Some(table_filter) = query
         .strip_prefix("SHOW TABLES LIKE ")
-        .and_then(parse_sql_single_quoted_list)
-        .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
-        .map(wordpress_schema_name_like_filter)
+        .and_then(parse_sql_single_quoted_schema_like_filter)
     {
         let mut table_names = tables
             .keys()
@@ -34976,9 +35206,7 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
     let column_filter = if rest.is_empty() {
         None
     } else if let Some(like) = rest.strip_prefix("LIKE ") {
-        Some(parse_sql_single_quoted_list(like).and_then(|values| {
-            (values.len() == 1).then(|| wordpress_schema_name_like_filter(values[0].clone()))
-        })?)
+        Some(parse_sql_single_quoted_schema_like_filter(like)?)
     } else if let Some(field) = rest
         .strip_prefix("WHERE Field = ")
         .or_else(|| rest.strip_prefix("WHERE `Field` = "))
@@ -34993,9 +35221,7 @@ fn parse_dynamic_schema_show_columns_query(query: &str) -> Option<WordPressSchem
         .strip_prefix("WHERE Field LIKE ")
         .or_else(|| rest.strip_prefix("WHERE `Field` LIKE "))
     {
-        Some(parse_sql_single_quoted_list(field).and_then(|values| {
-            (values.len() == 1).then(|| wordpress_schema_name_like_filter(values[0].clone()))
-        })?)
+        Some(parse_sql_single_quoted_schema_like_filter(field)?)
     } else {
         return None;
     };
@@ -35015,73 +35241,126 @@ fn schema_column_matches_filter(
         .unwrap_or(true)
 }
 
-fn wordpress_schema_name_like_filter(pattern: String) -> WordPressSchemaNameFilter {
-    if pattern.contains('%') {
-        WordPressSchemaNameFilter::Like(pattern)
-    } else {
-        WordPressSchemaNameFilter::Exact(pattern)
-    }
-}
-
 fn wordpress_schema_name_matches_filter(name: &str, filter: &WordPressSchemaNameFilter) -> bool {
     match filter {
         WordPressSchemaNameFilter::Exact(expected) => name == expected,
-        WordPressSchemaNameFilter::Like(pattern) => {
-            wordpress_schema_name_matches_like(name, pattern)
+        WordPressSchemaNameFilter::Like { tokens, .. } => {
+            wordpress_schema_name_matches_like(name, tokens)
         }
     }
 }
 
-fn wordpress_schema_name_matches_like(name: &str, pattern: &str) -> bool {
-    if pattern == "%" {
-        return true;
-    }
+fn wordpress_schema_name_matches_like(name: &str, tokens: &[WordPressSchemaLikeToken]) -> bool {
+    let chars = name.chars().collect::<Vec<_>>();
+    let mut matches = vec![vec![false; chars.len() + 1]; tokens.len() + 1];
+    matches[0][0] = true;
 
-    let pieces = pattern.split('%').collect::<Vec<_>>();
-    if pieces.len() == 1 {
-        return name == pattern;
-    }
-
-    let mut rest = name;
-    let mut start = 0;
-    if !pattern.starts_with('%') {
-        let first = pieces.first().copied().unwrap_or_default();
-        if !rest.starts_with(first) {
-            return false;
+    for token_index in 0..tokens.len() {
+        for char_index in 0..=chars.len() {
+            if !matches[token_index][char_index] {
+                continue;
+            }
+            match &tokens[token_index] {
+                WordPressSchemaLikeToken::Literal(expected) => {
+                    if chars.get(char_index) == Some(expected) {
+                        matches[token_index + 1][char_index + 1] = true;
+                    }
+                }
+                WordPressSchemaLikeToken::AnyOne => {
+                    if char_index < chars.len() {
+                        matches[token_index + 1][char_index + 1] = true;
+                    }
+                }
+                WordPressSchemaLikeToken::AnyMany => {
+                    matches[token_index + 1][char_index] = true;
+                    if char_index < chars.len() {
+                        matches[token_index][char_index + 1] = true;
+                    }
+                }
+            }
         }
-        start = 1;
-        rest = &rest[first.len()..];
     }
 
-    let end = if pattern.ends_with('%') {
-        pieces.len()
-    } else {
-        pieces.len().saturating_sub(1)
-    };
-    for piece in pieces[start..end].iter().filter(|piece| !piece.is_empty()) {
-        let Some(index) = rest.find(piece) else {
-            return false;
-        };
-        rest = &rest[index + piece.len()..];
-    }
-
-    if !pattern.ends_with('%') {
-        return pieces
-            .last()
-            .map(|last| rest.ends_with(last))
-            .unwrap_or(true);
-    }
-
-    true
+    matches[tokens.len()][chars.len()]
 }
 
 impl WordPressSchemaNameFilter {
     fn pattern(&self) -> &str {
         match self {
             WordPressSchemaNameFilter::Exact(pattern)
-            | WordPressSchemaNameFilter::Like(pattern) => pattern,
+            | WordPressSchemaNameFilter::Like { pattern, .. } => pattern,
         }
     }
+}
+
+fn parse_sql_single_quoted_schema_like_filter(input: &str) -> Option<WordPressSchemaNameFilter> {
+    let mut rest = input.trim();
+    let (filter, next) = parse_sql_single_quoted_schema_like_value(rest)?;
+    rest = next.trim_start();
+    if rest.is_empty() {
+        Some(filter)
+    } else {
+        None
+    }
+}
+
+fn parse_sql_single_quoted_schema_like_value(
+    input: &str,
+) -> Option<(WordPressSchemaNameFilter, &str)> {
+    let rest = input.strip_prefix('\'')?;
+    let mut pattern = String::new();
+    let mut tokens = Vec::new();
+    let mut has_wildcard = false;
+    let mut chars = rest.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if ch == '\'' {
+            if let Some((_, '\'')) = chars.peek().copied() {
+                chars.next();
+                pattern.push('\'');
+                tokens.push(WordPressSchemaLikeToken::Literal('\''));
+                continue;
+            }
+            let filter = if has_wildcard {
+                WordPressSchemaNameFilter::Like { pattern, tokens }
+            } else {
+                WordPressSchemaNameFilter::Exact(pattern)
+            };
+            return Some((filter, &rest[index + ch.len_utf8()..]));
+        }
+        if ch == '\\' {
+            let (_, escaped) = chars.next()?;
+            let literal = match escaped {
+                '0' => '\0',
+                '\'' => '\'',
+                '"' => '"',
+                'b' => '\u{0008}',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'Z' => '\u{001A}',
+                '\\' => '\\',
+                '%' => '%',
+                '_' => '_',
+                other => other,
+            };
+            pattern.push(literal);
+            tokens.push(WordPressSchemaLikeToken::Literal(literal));
+            continue;
+        }
+        pattern.push(ch);
+        match ch {
+            '%' => {
+                has_wildcard = true;
+                tokens.push(WordPressSchemaLikeToken::AnyMany);
+            }
+            '_' => {
+                has_wildcard = true;
+                tokens.push(WordPressSchemaLikeToken::AnyOne);
+            }
+            literal => tokens.push(WordPressSchemaLikeToken::Literal(literal)),
+        }
+    }
+    None
 }
 
 fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, &str)> {
@@ -35107,9 +35386,7 @@ fn parse_schema_identifier_with_optional_suffix(input: &str) -> Option<(String, 
 fn parse_dynamic_schema_show_table_status_query(query: &str) -> Option<WordPressSchemaNameFilter> {
     if let Some(table_filter) = query
         .strip_prefix("SHOW TABLE STATUS LIKE ")
-        .and_then(parse_sql_single_quoted_list)
-        .and_then(|values| (values.len() == 1).then(|| values[0].clone()))
-        .map(wordpress_schema_name_like_filter)
+        .and_then(parse_sql_single_quoted_schema_like_filter)
     {
         return Some(table_filter);
     }

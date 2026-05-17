@@ -17,8 +17,10 @@ Array
     [9] => ReflectionParameter
     [10] => ReflectionType
     [11] => ReflectionNamedType
-    [12] => ReflectionProperty
-    [13] => App\State\Box
-    [14] => App\State\Mode
-    [15] => App\State\Status
+    [12] => ReflectionUnionType
+    [13] => ReflectionIntersectionType
+    [14] => ReflectionProperty
+    [15] => App\State\Box
+    [16] => App\State\Mode
+    [17] => App\State\Status
 )

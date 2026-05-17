@@ -208,33 +208,35 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1476 targets compound property type
-  objects, readonly/property-hook behavior, attributes/metadata/reflection,
-  magic hooks reached by WordPress, broader autoload/class-alias lifecycle
-  parity, interface diagnostics, or broader class metadata behavior.
-- Reference/COW lane: Milestone 1477 targets real reference containers,
-  append-offset reference-literal assignment targets, non-public dynamic
-  property alias roots, magic-property reference containers, arbitrary
+- Object/interface lane: Milestone 1481 targets readonly/property-hook
+  behavior, attributes/metadata/reflection, compound parameter/return
+  reflection type objects, magic hooks reached by WordPress, broader
+  autoload/class-alias lifecycle parity, interface diagnostics, or broader
+  class metadata behavior.
+- Reference/COW lane: Milestone 1482 targets real reference containers,
+  non-public dynamic property alias roots, magic-property reference containers,
+  arbitrary
   reference expressions, dynamic `ArrayAccess` roots, mixed nested
   `ArrayAccess` chains, alias cleanup, broader array/object copy-on-write,
   exact alias destruction ordering, by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1478 targets session file
-  locking, save handlers, garbage collection, malformed session-file recovery,
-  broader PHP session-id policy, cookie encoding, expiration/deletion/
-  replacement semantics, cache headers, broader session option effects, exact
-  diagnostics, binary reads, shutdown ordering, include-path/stat-cache
-  behavior, stream wrappers/contexts, request-body lifetime, host filesystem
-  edge cases, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1479 targets real SQL parsing slices,
+- Request/SAPI/filesystem/stream lane: Milestone 1483 targets session file
+  locking, save handlers, garbage collection, broader PHP session-id policy,
+  cookie encoding, expiration/deletion/replacement semantics, cache headers,
+  broader session option effects, exact diagnostics, binary reads, shutdown
+  ordering, include-path/stat-cache behavior, stream wrappers/contexts,
+  request-body lifetime, host filesystem edge cases, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1484 targets real SQL parsing slices,
   dbDelta diff generation, schema rollback, expression indexes, host database
-  inspection, `_` wildcard or escaped metadata `LIKE`, broader `wpdb`/MySQLi
-  result or mutation behavior, prepared option/transient query shapes,
-  object-cache/transient persistence, hooks under realistic callback shapes,
-  deterministic plugin/theme loading probes, or a bootstrap/request probe that
-  moves past its next real blocker.
-- Tests/docs lane: Milestone 1480 is the next tests/docs slot after the next
+  inspection, broader `wpdb`/MySQLi result or mutation behavior, prepared
+  option/transient query shapes, object-cache/transient persistence, hooks
+  under realistic callback shapes, deterministic plugin/theme loading probes,
+  or a bootstrap/request probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1485 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
+Milestones 1476 through 1479 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1480 refreshed the queue and recorded the
+full-gate result.
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
 592, 597, 602, 607, 612, 617, 1201, 1206, 1211, 1216, 1221, 1226, 1231, 1236, 1241, 1246, 1251, 1256, 1261, 1266, 1271, 1276, 1281, 1286, 1291, 1301, 1306, 1311, 1316, 1321, 1326, 1331, 1336, 1341, 1346, 1351, 1356, 1361, 1366, 1371, 1376, 1381, 1386, 1391, 1396, 1401, 1406, 1411, 1416, 1421, 1426, 1431, 1436, 1441, and 1446 closed recent parser slots, Milestones 565, 568,
 572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, 615, 1204, 1209, 1214, and 1219 closed recent

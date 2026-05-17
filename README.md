@@ -83,12 +83,15 @@ was closed. When `ini_set("session.save_path", $path)` supplies an explicit
 local save path and `session_id($id)` supplies a bounded alphanumeric,
 underscore, or hyphen id before start, `session_start()`/`session_write_close()`
 also load and write PHP-compatible `sess_<id>` files for scalar and array
-string-keyed session values across separate `phpc run` invocations. Starting a
-session with an explicit id outside that bounded file-safe subset returns
-`false` with a bounded warning before headers or `$_SESSION` are changed.
+string-keyed session values across separate `phpc run` invocations. Malformed
+or unsupported existing session files emit one bounded recoverable warning and
+recover with an empty session array. Starting a session with an explicit id
+outside that bounded file-safe subset returns `false` with a bounded warning
+before headers or `$_SESSION` are changed.
 Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
-beyond the documented session-start options, cookie encoding,
+beyond the documented session-start options, exact malformed-session recovery
+parity, cookie encoding,
 expiration-date formatting, cookie replacement, and cache-header emission
 remain unsupported. `fopen()` can create bounded
 interpreter-owned `php://memory`,
@@ -430,7 +433,9 @@ incorrect native code.
   `isBuiltin()`, bounded `ReflectionProperty` metadata for declared
   user-class properties with declaring-class, visibility/static modifier,
   default-value, simple named typed-property inspection through
-  `ReflectionNamedType`, and bounded uninitialized typed-property slots for
+  `ReflectionNamedType`, bounded compound property type inspection through
+  `ReflectionUnionType`/`ReflectionIntersectionType`, and bounded
+  uninitialized typed-property slots for
   properties without explicit defaults, with runtime typed-property writes
   accepting inherited class-name objects and declared user-interface
   implementors in the current object metadata model, declared trait
@@ -523,9 +528,11 @@ protected-method, constructor, method inheritance
 visibility/staticness/signature-count/type-text, and class-constant slice,
 typed property compatibility beyond exact same-text inherited metadata, weak
 scalar coercions, inherited class-name typed-property write checks, declared
-user-interface typed-property write checks, and current or newly registered
-class/interface alias typed-property write checks, compound/DNF-shaped typed property
-declarations, readonly property metadata and write-once enforcement, promoted
+user-interface typed-property write checks, current or newly registered
+class/interface alias typed-property write checks, and bounded union/pure
+intersection property type checks, parenthesized DNF-shaped typed property
+declarations, exact PHP union scalar coercion preference rules, readonly
+property metadata and write-once enforcement, promoted
 constructor properties,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
@@ -607,19 +614,25 @@ direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
-Direct variable, direct array-offset, and direct visible object-property
-assignments from reference
+Direct variable, direct array-offset, direct append-offset, nested
+append-offset, direct visible object-property, and direct visible
+object-property append-offset assignments from reference
 array literals, such as
 `$args = array(&$value)`,
 `$registry["args"] = array(&$value)`, and
-`$store->args = array("value" => &$object->items[$key])`, preserve covered
-direct variable, direct array-offset, and direct visible object-property
-array-offset reference elements for later stored-array callback invocation and
-reference-return alias binding. The same covered reference elements are
+`$store->args = array("value" => &$object->items[$key])`, plus
+`$args[] = array(&$value)`, `$registry["groups"][] = array(&$value)`, and
+`$store->groups[] = array(&$items["slot"])`, preserve covered direct
+variable, direct array-offset, and direct visible object-property array-offset
+reference elements for later stored-array callback invocation and
+reference-return alias binding. Append targets record the literal slots below
+the actual appended integer key. The same covered reference elements are
 preserved when the assigned direct variable is already backed by covered
 array-offset alias metadata, such as
 `$args =& $registry["args"]; $args = array(&$value)`. Reference array
-literals assigned into dynamic properties or other non-variable targets,
+literals assigned into dynamic properties outside the documented direct public
+property assignment shape, dynamic-property append targets, `ArrayAccess`
+append targets, or other non-variable targets,
 reference elements from arbitrary expressions, executing
 unknown or duplicate string-keyed argument names beyond the stable diagnostic
 path, positional arguments after string-keyed named arguments, variadic named
