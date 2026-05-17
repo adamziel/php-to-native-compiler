@@ -4,6 +4,160 @@
 
 Implemented:
 
+- Added Milestone 1460, the WordPress-focused queue refresh for the 1456-1459
+  implementation batch. The batch closed inherited class-name typed-property
+  assignment checks, alias-backed stored reference array literals, bounded
+  session cookie-header emission with `use_cookies => false`, and deterministic
+  `SHOW CREATE TABLE` over the MySQLi schema-state island. Focused integrated
+  checks passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-integrated-1456-1459
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: the four targeted Rust tests
+  passed; milestone fixtures 1456-1459 each passed; system PHP comparisons
+  passed for 1456 and 1457 with `1` comparison and `0` skips each, while the
+  SAPI/header and MySQLi state-island fixtures 1458 and 1459 passed with `0`
+  comparisons and `1` documented `phpc-only` skip each; `cargo fmt --check`,
+  `cargo check -p phpc`, and `git diff --check` passed. Manual full gate then
+  passed before checkpoint with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-1456-1460 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test` completed
+  successfully, `phpc test` reported `1541` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1541` fixture tests
+  passed with `0` failures, `902` system PHP comparisons, and `639`
+  `phpc-only` skipped fixtures.
+
+- Added Milestone 1459, a bounded WordPress DB/bootstrap evidence slice for
+  deterministic `SHOW CREATE TABLE` over the existing per-handle MySQLi
+  dynamic schema island. `CREATE TABLE` plus bounded `ALTER TABLE`
+  add/drop-index and add-column mutations now feed a generated MySQL-shaped
+  `SHOW CREATE TABLE` row with `Table` and `Create Table` fields, preserving
+  recorded column order, nullability, defaults, auto-increment markers,
+  primary keys, unique/non-unique keys, multi-column indexes, prefix sub-parts,
+  and table collation. The new `milestone1459` fixture proves a small
+  `wpdb`-shaped schema probe through `phpc run`. This does not add real MySQL
+  connectivity, arbitrary SQL parsing, dbDelta diff generation, schema
+  rollback, host database inspection, expression indexes, index
+  ordering/opclass metadata, exact MySQL `SHOW CREATE TABLE` formatting for
+  all column attributes, full `wpdb`, persistent object cache, or native
+  database lowering. Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-wpdb-1459 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo fmt --check`; `cargo test -p phpc --test
+  mysqli_extension
+  mysqli_query_exposes_bounded_wordpress_schema_show_create_table --
+  --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1459/wpdb_show_create_table_probe.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1459`;
+  `cargo run -q -p phpc -- test --compare-php
+  tests/fixtures/milestone1459` passed with `0` comparisons and `1`
+  documented `phpc-only` skip; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1459` reported `1` passed
+  fixture, `0` comparisons, and `1` `phpc-only` skip; `cargo run -q -p phpc
+  -- test --list-fixtures tests/fixtures/milestone1459` reported `1`
+  fixture, `1` CLI exercise, and `0` `.phpc-only` reason gaps; `cargo run -q
+  -p phpc -- compile
+  tests/fixtures/milestone1459/wpdb_show_create_table_probe.php --emit-ir`
+  rejected native lowering at the existing object/class boundary; full
+  affected `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed with `164` tests; `cargo check -p phpc`; and scoped
+  `git diff --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1458, bounded session cookie-header emission and a small
+  `session_start()` option-effect slice for the request/SAPI runtime. Fresh
+  successful `session_start()` calls now append
+  `Set-Cookie: PHPSESSID=<id>` to the deterministic CLI header log exposed by
+  `headers_list()`, while `session_start(["use_cookies" => false])`
+  suppresses that bounded header for the start. Existing request-local
+  session snapshots, `read_and_close`, active-session restart notices, and
+  output-started warning behavior are preserved. The new `milestone1458`
+  fixture is marked `phpc-only` because system PHP CLI does not expose the
+  same deterministic in-process header log through `headers_list()`. Full
+  cookie attributes and encoding, cache limiter headers, trans-sid behavior,
+  cookie replacement semantics, cross-process session files, file locking,
+  save handlers, strict id validation, garbage collection, exact PHP warning
+  text, and native session lowering remain unsupported. Focused verification
+  passed with `CARGO_TARGET_DIR=/tmp/phpc-target-sapi-1458
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  session_builtin
+  session_start_emits_cookie_header_unless_use_cookies_is_false --
+  --test-threads=1`; full affected `cargo test -p phpc --test
+  session_builtin -- --test-threads=1`; `cargo run -p phpc -- test
+  tests/fixtures/milestone1458`; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone1458` passed with `0` comparisons and `1`
+  documented `phpc-only` skip; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1458/session_cookie_header_option.php`;
+  `cargo fmt --check`; and scoped `git diff --check` passed. Full expensive
+  `tools/run-tests.sh`, checkpoint, commit, and push were deferred per lane
+  instructions.
+
+- Added Milestone 1456, a bounded object/runtime typed-property slice for
+  inherited class-name assignment checks. Normal object instantiation now
+  stores ancestor class-name metadata on runtime objects, and declared
+  instance/static typed-property writes accept objects whose runtime class
+  extends the declared property type while preserving the existing rejection
+  for unrelated objects. The new `milestone1456` fixture proves the `phpc run`
+  CLI path and matches system PHP for covered instance/static inherited
+  class-name assignments. This does not add interface-name typed-property
+  compatibility, class aliases in typed-property compatibility checks,
+  union/intersection/DNF property type writes, readonly properties, property
+  hooks, references/COW property paths, or native lowering.
+  Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-object-1456 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test object_model
+  typed_properties_accept_inherited_class_name_assignments --
+  --test-threads=1`; full affected `cargo test -p phpc --test object_model
+  -- --test-threads=1`; direct `cargo run -q -p phpc -- run
+  tests/fixtures/milestone1456/typed_property_inherited_class_assignments.php`;
+  direct `php
+  tests/fixtures/milestone1456/typed_property_inherited_class_assignments.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1456`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1456` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1456` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1456` reported `1` fixture, `1`
+  CLI exercise, and `0` `.phpc-only` reason gaps; `cargo run -q -p phpc --
+  compile
+  tests/fixtures/milestone1456/typed_property_inherited_class_assignments.php
+  --emit-ir` rejected native lowering at the existing object/class boundary;
+  and `cargo fmt --check` passed. Full expensive `tools/run-tests.sh`,
+  checkpoint, commit, and push were deferred per lane instructions.
+
+- Added Milestone 1457, a bounded reference/COW slice for reference array
+  literals assigned by value through an alias-backed direct variable target.
+  If a direct variable is already backed by covered array-offset alias
+  metadata, such as `$args =& $registry["args"]`, assigning
+  `$args = array(&$value)` or `$args = array(&$items["slot"])` now records
+  the literal reference slots below the aliased target path. Later stored-array
+  `call_user_func_array()` invocation, reference-return alias binding through
+  the alias variable, copied stored arrays, and the underlying registry-style
+  slot observe the same covered source alias. This remains bounded alias
+  metadata, not real PHP reference containers. It does not add non-variable
+  assignment targets, arbitrary reference expressions, dynamic `ArrayAccess`
+  roots, nested mixed `ArrayAccess` chains, alias cleanup after replacing
+  containing properties, broader array/object copy-on-write, exact alias
+  destruction ordering, by-reference foreach breadth, or native lowering.
+  Focused verification passed with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-refcow-1457 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0`: `cargo test -p phpc --test
+  array_reference_literals -- --test-threads=1`; direct `cargo run -q -p
+  phpc -- run
+  tests/fixtures/milestone1457/reference_array_literals_alias_backed_target.php`;
+  direct `php
+  tests/fixtures/milestone1457/reference_array_literals_alias_backed_target.php`;
+  `cargo run -q -p phpc -- test tests/fixtures/milestone1457`; `cargo run
+  -q -p phpc -- test --compare-php tests/fixtures/milestone1457` passed with
+  `1` comparison and `0` skips; `cargo run -q -p phpc -- test
+  --compare-php-json tests/fixtures/milestone1457` reported `1` passed
+  fixture, `1` comparison, and `0` skips; `cargo run -q -p phpc -- test
+  --list-fixtures tests/fixtures/milestone1457` reported `1` fixture, `1`
+  CLI exercise, and `0` `.phpc-only` reason gaps; `cargo run -q -p phpc --
+  compile
+  tests/fixtures/milestone1457/reference_array_literals_alias_backed_target.php
+  --emit-ir` rejected native lowering at the existing user-function boundary;
+  `cargo fmt --check`, `cargo check -p phpc`, and scoped `git diff --check`
+  passed. Full expensive `tools/run-tests.sh`, checkpoint, commit, and push
+  were deferred per lane instructions.
+
 - Added Milestone 1455, the WordPress-focused queue refresh for the 1451-1454
   implementation batch. The batch closed weak scalar coercions for declared
   typed-property writes, bounded stored reference array literals, request-local

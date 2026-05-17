@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone1457/reference_array_literals_alias_backed_target.php
+exit: 0
+stdout:
+direct:literal|direct:literal|direct:literal
+direct:literal:literal:alias|direct:literal:literal:alias|direct:literal:literal:alias|direct:literal:literal:alias
+copy|copy|copy|copy
+--- stdout end ---
+stderr:
+--- stderr end ---

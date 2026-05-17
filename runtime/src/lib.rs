@@ -2702,6 +2702,7 @@ pub struct PhpObject {
     id: i64,
     class_id: ClassId,
     class_name: String,
+    ancestor_class_names: Vec<String>,
     properties: Rc<RefCell<Vec<ObjectProperty>>>,
 }
 
@@ -2720,9 +2721,37 @@ impl PhpObject {
         Self::from_class_with_inherited_properties_with_id(class, &[], id)
     }
 
+    pub fn from_class_with_inherited_metadata_with_id(
+        class: &PhpClassMetadata,
+        inherited_properties: &[PhpObjectPropertyInitializer],
+        ancestor_class_names: Vec<String>,
+        id: i64,
+    ) -> Self {
+        Self::from_class_with_inherited_properties_and_ancestors_with_id(
+            class,
+            inherited_properties,
+            ancestor_class_names,
+            id,
+        )
+    }
+
     pub fn from_class_with_inherited_properties_with_id(
         class: &PhpClassMetadata,
         inherited_properties: &[PhpObjectPropertyInitializer],
+        id: i64,
+    ) -> Self {
+        Self::from_class_with_inherited_properties_and_ancestors_with_id(
+            class,
+            inherited_properties,
+            Vec::new(),
+            id,
+        )
+    }
+
+    fn from_class_with_inherited_properties_and_ancestors_with_id(
+        class: &PhpClassMetadata,
+        inherited_properties: &[PhpObjectPropertyInitializer],
+        ancestor_class_names: Vec<String>,
         id: i64,
     ) -> Self {
         let mut properties = Vec::new();
@@ -2759,6 +2788,7 @@ impl PhpObject {
             id,
             class_id: class.id(),
             class_name: class.name().to_string(),
+            ancestor_class_names,
             properties: Rc::new(RefCell::new(properties)),
         }
     }
@@ -2818,8 +2848,17 @@ impl PhpObject {
             id,
             class_id: self.class_id,
             class_name: self.class_name.clone(),
+            ancestor_class_names: self.ancestor_class_names.clone(),
             properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
         }
+    }
+
+    pub fn is_instance_of_class_name(&self, class_name: &str) -> bool {
+        self.class_name.eq_ignore_ascii_case(class_name)
+            || self
+                .ancestor_class_names
+                .iter()
+                .any(|ancestor| ancestor.eq_ignore_ascii_case(class_name))
     }
 
     pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {
@@ -3381,7 +3420,7 @@ pub fn coerce_property_value(
         (Value::Bool(false), "bool" | "false") => true,
         (Value::Array(_), "array") => true,
         (Value::Object(_), "object") => true,
-        (Value::Object(object), type_name) => object.class_name().eq_ignore_ascii_case(type_name),
+        (Value::Object(object), type_name) => object.is_instance_of_class_name(type_name),
         _ => false,
     };
 

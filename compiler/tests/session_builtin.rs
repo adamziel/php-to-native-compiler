@@ -32,7 +32,36 @@ echo count(headers_list());
 
     assert_eq!(
         execution.stdout,
-        "none|empty-id|started|active|phpctestsession|admin:2|0"
+        "none|empty-id|started|active|phpctestsession|admin:2|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_start_emits_cookie_header_unless_use_cookies_is_false() {
+    let execution = run_source(
+        r#"<?php
+session_id("phpccookie");
+$out = array();
+$first = session_start();
+$headers = headers_list();
+$out[] = $first ? "started" : "failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+session_write_close();
+header_remove();
+session_id("phpcnocookie");
+$second = session_start(["use_cookies" => false]);
+$out[] = $second ? "second" : "second-failed";
+$out[] = count(headers_list());
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "started|1|Set-Cookie: PHPSESSID=phpccookie|second|0"
     );
     assert_eq!(execution.exit_code, 0);
 }

@@ -1,0 +1,11 @@
+wp_probe_links
+CREATE TABLE `wp_probe_links` (
+  `link_id` bigint(20) unsigned NOT NULL auto_increment,
+  `link_url` varchar(255) NOT NULL DEFAULT '',
+  `link_name` varchar(255) NOT NULL DEFAULT '',
+  `link_visible` varchar(20) NOT NULL DEFAULT 'Y',
+  `link_updated` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  PRIMARY KEY (`link_id`),
+  KEY `link_name` (`link_name`(191)),
+  KEY `visible_name` (`link_visible`,`link_name`(191))
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

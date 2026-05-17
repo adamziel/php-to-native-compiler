@@ -5022,6 +5022,63 @@ Box::$ready = array();
 }
 
 #[test]
+fn typed_properties_accept_inherited_class_name_assignments() {
+    let execution = run_source(
+        r#"<?php
+class Hook {}
+class ActionHook extends Hook {}
+class FilterHook extends ActionHook {}
+class OtherHook {}
+
+class Registry {
+    public Hook $instance;
+    public static Hook $shared;
+}
+
+$registry = new Registry();
+$registry->instance = new ActionHook();
+Registry::$shared = new FilterHook();
+echo get_class($registry->instance), "|", get_class(Registry::$shared);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ActionHook|FilterHook");
+    assert_eq!(execution.exit_code, 0);
+
+    let write_error = runtime_error(
+        r#"<?php
+class Hook {}
+class OtherHook {}
+class Registry { public Hook $instance; }
+$registry = new Registry();
+$registry->instance = new OtherHook();
+"#,
+    );
+    assert_eq!(write_error.line, 6);
+    assert_eq!(write_error.column, 1);
+    assert_eq!(
+        write_error.message,
+        "invalid property access: typed property Registry::$instance expects Hook, got object"
+    );
+
+    let static_write_error = runtime_error(
+        r#"<?php
+class Hook {}
+class OtherHook {}
+class Registry { public static Hook $shared; }
+Registry::$shared = new OtherHook();
+"#,
+    );
+    assert_eq!(static_write_error.line, 5);
+    assert_eq!(static_write_error.column, 9);
+    assert_eq!(
+        static_write_error.message,
+        "invalid property access: typed property Registry::$shared expects Hook, got object"
+    );
+}
+
+#[test]
 fn typed_property_unset_restores_uninitialized_instance_slots() {
     let execution = run_source(
         r#"<?php

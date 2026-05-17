@@ -236,10 +236,12 @@
   `$args = array(&$value); call_user_func_array($callback, $args);` and
   `$args = array("value" => &$object->items[$key]);`. The covered reference
   element sources are direct variables, direct array offsets, and direct
-  visible named object-property array offsets. Dynamic-property append-offset
-  sources, `ArrayAccess` roots outside the direct `offsetGet()` bridge,
-  reference array literals assigned into non-variable or alias-backed variable
-  targets, reference
+  visible named object-property array offsets. The assignment target may also
+  be a direct variable already backed by covered array-offset alias metadata,
+  such as `$args =& $registry["args"]; $args = array(&$value);`.
+  Dynamic-property append-offset sources, `ArrayAccess` roots outside the
+  direct `offsetGet()` bridge, reference array literals assigned into
+  non-variable targets, reference
   elements from arbitrary expressions, direct stored arrays whose reached slots were not
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
@@ -887,7 +889,10 @@
   made to visible `$_SESSION` while the session is closed do not become the
   next active session data unless another active close persists them.
   `session_start(["read_and_close" => true])` also reloads the current
-  request-local snapshot and immediately closes the status. Starting a
+  request-local snapshot and immediately closes the status. A fresh successful
+  start appends a deterministic `Set-Cookie: PHPSESSID=<id>` line to the same
+  CLI header log exposed by `headers_list()`, unless the bounded
+  `use_cookies` option is falsey for that start. Starting a
   session after unbuffered output returns `false` and emits a bounded
   `E_WARNING` through the current `set_error_handler()` stack or stderr
   fallback. Calling `session_start()` while the bounded session is already
@@ -895,11 +900,12 @@
   fallback, returns `true`, leaves the existing `$_SESSION` data visible, and
   keeps the session active even if `read_and_close` was requested. Session
   file persistence across `phpc run` processes, session file locking, save
-  handlers, session module configuration, session cookies/cache headers,
-  garbage collection, strict id validation, trans-sid behavior, exact warning
-  text, reference aliases that survive `_SESSION` root replacement on restart,
-  full PHP reference containers, broader copy-on-write, exact alias
-  destruction ordering, and native lowering remain unsupported.
+  handlers, session module configuration, full session cookie attributes and
+  encoding, cache headers, garbage collection, strict id validation, trans-sid
+  behavior, exact warning text, reference aliases that survive `_SESSION` root
+  replacement on restart, full PHP reference containers, broader
+  copy-on-write, exact alias destruction ordering, and native lowering remain
+  unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   and `class Child extends Parent { ... }` with
@@ -1613,7 +1619,9 @@
   literals such as `$args = array(&$value)` and
   `$args = array("value" => &$object->items[$key])` preserve those same
   covered reference slots for later stored-array callback invocation and
-  reference-return alias binding. Stored direct arrays whose reached slots
+  reference-return alias binding, including when the assigned direct variable
+  is already backed by covered array-offset alias metadata. Stored direct
+  arrays whose reached slots
   were not assigned by reference or by a covered reference array literal,
   unknown or duplicate
   string-keyed argument names, positional arguments after string-keyed named
@@ -2035,14 +2043,17 @@
   changes rename matching recorded index parts. Later exact `SHOW TABLES LIKE
   '<table>'`, `DESCRIBE`/`DESC <table>`,
   `SHOW [FULL] COLUMNS FROM <table>`, and `SHOW INDEX`/`SHOW INDEXES`/
-  `SHOW KEYS FROM <table>` probes read that recorded shape, including
+  `SHOW KEYS FROM <table>` probes read that recorded shape, and
+  `SHOW CREATE TABLE <table>` returns a deterministic MySQL-shaped create
+  statement for the same recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, simple
   defaults, auto-increment extras, prefix sub-part lengths, and placeholder
   collation metadata for character/text columns. This does not add real SQL
   parsing, arbitrary DDL beyond those exact `ALTER TABLE` shapes, expression
-  indexes, index ordering/opclass/parser metadata, dbDelta diff generation, real DDL
-  execution, transactions for schema state, host database inspection, or
-  native database lowering. For an
+  indexes, index ordering/opclass/parser metadata, exact MySQL
+  `SHOW CREATE TABLE` formatting for all column attributes,
+  dbDelta diff generation, real DDL execution, transactions for schema state,
+  host database inspection, or native database lowering. For an
   exact current synthetic WordPress option write,
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records a deterministic `option_id`, the string option
@@ -2207,11 +2218,14 @@
   `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
   `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
   same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
-  `SHOW [FULL] COLUMNS`, and `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` probes.
+  `SHOW [FULL] COLUMNS`, `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS`, and
+  deterministic `SHOW CREATE TABLE` probes.
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, arbitrary column alteration beyond the
-  exact direct shapes listed above, expression indexes, index ordering/opclass/parser metadata, dbDelta diff
-  generation, schema transaction rollback, or real index behavior,
+  exact direct shapes listed above, expression indexes, index
+  ordering/opclass/parser metadata, exact MySQL `SHOW CREATE TABLE`
+  formatting for every column attribute, dbDelta diff generation, schema
+  transaction rollback, or real index behavior,
   ordering/collation fidelity, SQL `LIKE` wildcard semantics beyond the
   bounded trailing-percent option-name prefix shape, autoload mutation beyond
   the exact insert and update shapes listed above,
@@ -2877,11 +2891,15 @@
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
   deterministic id when none was set, and materializes `$_SESSION` as an empty
-  root superglobal when no unbuffered output has started. The
+  root superglobal when no unbuffered output has started. Fresh starts append
+  a deterministic `Set-Cookie: PHPSESSID=<id>` line to the same CLI header log
+  exposed by `headers_list()`. The
   `read_and_close` option is recognized with PHP truthiness: when truthy, the
   session is materialized and then immediately closed back to
   `PHP_SESSION_NONE` while leaving `$_SESSION` visible for the rest of the
-  request. If unbuffered output has already started, `session_start()` returns
+  request. The `use_cookies` option is recognized with PHP truthiness: when
+  falsey, the bounded session cookie header is not appended for that start.
+  If unbuffered output has already started, `session_start()` returns
   `false` and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback before applying options.
   Calling it while the bounded session is already active emits a bounded
@@ -2902,9 +2920,10 @@
   session file locking, save handlers, `session_name()`, `session_destroy()`,
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, strict id validation, option effects beyond
-  `read_and_close`, session cookies/cache headers, garbage collection, exact
-  warning text, reference aliases that survive `_SESSION` root replacement on
-  restart, and native lowering remain unsupported.
+  `read_and_close` and `use_cookies`, full session cookie attributes and
+  encoding, cache headers, garbage collection, exact warning text, reference
+  aliases that survive `_SESSION` root replacement on restart, and native
+  lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
   direct variable output arguments for the filename and line. It returns
   `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
@@ -3354,7 +3373,8 @@
   reports false and `empty(...)` reports true. Direct writes to declared typed
   instance and static properties enforce the current simple named type subset
   for `int`, `float`, `string`, `bool`, `array`, `object`, `mixed`, `null`,
-  nullable `?T`, literal `true`/`false`, and exact class-name object values;
+  nullable `?T`, literal `true`/`false`, and class-name object values,
+  including objects whose runtime class extends the declared property type;
   weak scalar coercions are covered for writes to `int`, `float`, `bool`, and
   `string`, including numeric strings and bool/int/float/string conversions in
   the current scalar value model. Integer writes to `float` are stored as
@@ -3364,9 +3384,10 @@
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
   `get_object_vars()` excludes the slot, and a later direct write may
   initialize it again. Exact PHP deprecation/warning emission for lossy scalar
-  coercions, inherited class-name assignment checks, references, property
-  writes through complex alias paths, readonly properties, property hooks,
-  static typed property unset, and native lowering remain unsupported. Compound
+  coercions, interface-name typed-property compatibility, class aliases in
+  typed-property compatibility checks, references, property writes through
+  complex alias paths, readonly properties, property hooks, static typed
+  property unset, and native lowering remain unsupported. Compound
   union/intersection/DNF property type objects remain unsupported until
   `ReflectionUnionType`/`ReflectionIntersectionType` exist.
   Methods
@@ -7438,9 +7459,10 @@
   plus simple named typed property metadata with bounded uninitialized-slot
   state for properties without explicit defaults. Runtime typed-property
   enforcement is limited to the simple named type subset documented in the
-  object/class model section; weak scalar coercions, inherited class-name
-  checks, union/intersection type objects, complex reference/COW interactions,
-  and native lowering remain unsupported. Attributes,
+  object/class model section, including weak scalar coercions and inherited
+  class-name object assignment checks; interface-name compatibility,
+  union/intersection type objects, complex reference/COW interactions, and
+  native lowering remain unsupported. Attributes,
   file/line/doc-comment metadata,
   extension/internal method/property/parameter metadata, parameter and property
   attributes, `ReflectionUnionType`/

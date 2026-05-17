@@ -44,6 +44,27 @@ echo $value, "|", $args[0];
 }
 
 #[test]
+fn array_reference_literals_assigned_to_alias_backed_variable_feed_call_user_func_array() {
+    let execution = run_source(
+        r#"<?php
+function mark(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+$value = "seed";
+$registry = [];
+$args =& $registry["args"];
+$args = array(&$value, "stored");
+call_user_func_array("mark", $args);
+echo $value, "|", $args[0], "|", $registry["args"][0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:stored|seed:stored|seed:stored");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reference_elements_stored_by_value_preserve_array_offset_aliases() {
     let execution = run_source(
         r#"<?php
@@ -57,6 +78,25 @@ echo $items["slot"], "|", $args[0], "|", $copy[0];
     .unwrap();
 
     assert_eq!(execution.stdout, "copy|copy|copy");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_reference_literals_assigned_to_alias_backed_variable_preserve_array_offset_aliases() {
+    let execution = run_source(
+        r#"<?php
+$items = ["slot" => "seed"];
+$registry = [];
+$args =& $registry["args"];
+$args = array(&$items["slot"]);
+$copy = $registry["args"];
+$copy[0] = "copy";
+echo $items["slot"], "|", $args[0], "|", $registry["args"][0], "|", $copy[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "copy|copy|copy|copy");
     assert_eq!(execution.exit_code, 0);
 }
 

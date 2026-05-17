@@ -1637,11 +1637,13 @@ Direct variable assignments from reference array literals now add the selected
 literal slot to the same bounded alias metadata used by direct reference
 assignment, so `$args = array(&$value)` and
 `$args = array("value" => &$object->items[$key])` can be used later as stored
-`call_user_func_array()` argument arrays. This is still keyed alias metadata
-over materialized array values, not a runtime reference container. Reference
-array literals assigned into non-variable or alias-backed variable targets,
-reference elements from arbitrary expressions, stored arrays without covered
-reference-assigned slots,
+`call_user_func_array()` argument arrays. If the assigned direct variable is
+already backed by covered array-offset alias metadata, such as
+`$args =& $registry["args"]`, the literal reference slots are recorded below
+that aliased target path. This is still keyed alias metadata over materialized
+array values, not a runtime reference container. Reference array literals
+assigned into non-variable targets, reference elements from arbitrary
+expressions, stored arrays without covered reference-assigned slots,
 execution past unknown or duplicate string-keyed argument names, variadic
 named callback arguments, positional arguments after string-keyed named
 arguments, closure invocation, `__invoke`, broader
@@ -1725,7 +1727,11 @@ lowering remain outside the model.
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a request-local snapshot keyed by the current
 session id, or from an empty array when no snapshot exists, and marks the
-session active. `session_write_close()` stores the active `$_SESSION` array
+session active. A fresh successful start appends a deterministic
+`Set-Cookie: PHPSESSID=<id>` line to the same request-local CLI header log used
+by `header()`, `setcookie()`, and `headers_list()`; the bounded `use_cookies`
+session option suppresses that line when it is falsey.
+`session_write_close()` stores the active `$_SESSION` array
 back into that request-local snapshot map before closing the status. A later
 `session_start()` for the same id replaces the visible root from the last
 closed snapshot, so edits made while the session was closed are not promoted
@@ -1734,10 +1740,11 @@ and immediately closes the bounded status back to `PHP_SESSION_NONE` while
 keeping the in-memory session array visible. After unbuffered output it
 returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
-applying options. Session cookie/cache-header emission, cross-process file
-persistence, locking, save handlers, option effects beyond `read_and_close`,
-exact warning text, reference aliases across `_SESSION` root replacement, and
-native lowering remain outside the model.
+applying options. Cache-header emission, full session cookie attributes and
+encoding, trans-sid behavior, cross-process file persistence, locking, save
+handlers, option effects beyond `read_and_close` and `use_cookies`, exact
+warning text, reference aliases across `_SESSION` root replacement, and native
+lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost

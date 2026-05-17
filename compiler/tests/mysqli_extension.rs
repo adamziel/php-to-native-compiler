@@ -5159,6 +5159,30 @@ while ($index = mysqli_fetch_assoc($indexes)) {
 }
 
 #[test]
+fn mysqli_query_exposes_bounded_wordpress_schema_show_create_table() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_links (link_id bigint(20) unsigned NOT NULL auto_increment, link_url varchar(255) NOT NULL default '', link_name varchar(255) NOT NULL default '', link_visible varchar(20) NOT NULL default 'Y', PRIMARY KEY  (link_id), KEY link_visible (link_visible), KEY link_name (link_name(191))) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_links ADD COLUMN link_updated datetime NOT NULL default '0000-00-00 00:00:00', DROP KEY link_visible, ADD KEY visible_name (link_visible, link_name(191))");
+$result = mysqli_query($handle, "SHOW CREATE TABLE `wp_probe_links`");
+echo mysqli_num_fields($result), ":";
+$row = mysqli_fetch_assoc($result);
+echo $row["Table"], "|";
+echo $row["Create Table"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:wp_probe_links|CREATE TABLE `wp_probe_links` (\n  `link_id` bigint(20) unsigned NOT NULL auto_increment,\n  `link_url` varchar(255) NOT NULL DEFAULT '',\n  `link_name` varchar(255) NOT NULL DEFAULT '',\n  `link_visible` varchar(20) NOT NULL DEFAULT 'Y',\n  `link_updated` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',\n  PRIMARY KEY (`link_id`),\n  KEY `link_name` (`link_name`(191)),\n  KEY `visible_name` (`link_visible`,`link_name`(191))\n) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

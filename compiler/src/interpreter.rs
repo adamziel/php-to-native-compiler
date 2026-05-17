@@ -2335,6 +2335,40 @@ impl SymbolTable {
         Ok(())
     }
 
+    fn bind_alias_backed_array_offset_to_reference_alias(
+        &mut self,
+        array_name: &str,
+        keys: &[ArrayKey],
+        source_alias: ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some(mut aliases) = self.array_offset_aliases_for_name_with_suffix(array_name, keys)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind alias-backed array-offset reference source".to_string(),
+                ),
+            ));
+        };
+        aliases.insert(0, source_alias);
+        for alias in &aliases {
+            self.materialize_array_offset_alias(alias, span)?;
+        }
+        if !self.write_array_offset_aliases(&aliases, value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "cannot bind alias-backed array-offset reference source".to_string(),
+                ),
+            ));
+        }
+        self.bind_anonymous_array_offset_alias_group(aliases.clone());
+        self.sync_alias_roots(&aliases);
+        Ok(())
+    }
+
     fn array_offset_aliases_for_name_with_suffix(
         &self,
         name: &str,
@@ -5800,13 +5834,15 @@ impl Interpreter {
         let object_id = self.allocate_object_id();
 
         let inherited_properties = self.inherited_instance_properties(class_id);
+        let ancestor_class_names = self.inherited_class_names(class_id);
         let class = self
             .classes
             .get(class_id)
             .expect("class id should resolve to class metadata");
-        let object = PhpObject::from_class_with_inherited_properties_with_id(
+        let object = PhpObject::from_class_with_inherited_metadata_with_id(
             class,
             &inherited_properties,
+            ancestor_class_names,
             object_id,
         );
         self.apply_instance_property_defaults(&object, class_id)?;
@@ -6194,6 +6230,24 @@ impl Interpreter {
             }));
         }
         properties
+    }
+
+    fn inherited_class_names(&self, class_id: ClassId) -> Vec<String> {
+        let mut ancestors = Vec::new();
+        let mut current = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata")
+            .parent_id();
+        while let Some(ancestor_id) = current {
+            let ancestor = self
+                .classes
+                .get(ancestor_id)
+                .expect("ancestor class id should resolve to metadata");
+            ancestors.push(ancestor.name().to_string());
+            current = ancestor.parent_id();
+        }
+        ancestors
     }
 
     fn apply_instance_property_defaults(
@@ -7858,15 +7912,6 @@ impl Interpreter {
                     _ => (self.evaluate(expr, scope)?, Vec::new()),
                 };
                 let target_is_alias = scope.is_array_offset_alias_name(name);
-                if target_is_alias && !array_literal_references.is_empty() {
-                    return Err(runtime_error(
-                        expr.span(),
-                        RuntimeError::unsupported_call(
-                            "array literal",
-                            "reference array literals assigned through an alias-backed variable target are not implemented in the current subset",
-                        ),
-                    ));
-                }
                 if !target_is_alias {
                     let object_alias_fallbacks = scope.public_object_roots_alias_fallbacks(name);
                     scope.remove_static_root_from_array_offset_aliases(name);
@@ -7959,18 +8004,28 @@ impl Interpreter {
                             source_alias,
                             value,
                         } => {
-                            let target_alias = ArrayOffsetAlias {
-                                root: ArrayOffsetAliasRoot::StaticArray {
-                                    name: name.to_string(),
-                                },
-                                keys: vec![key],
-                            };
-                            scope.bind_array_offset_alias_to_reference_alias(
-                                target_alias,
-                                source_alias,
-                                value,
-                                expr.span(),
-                            )?;
+                            if target_is_alias {
+                                scope.bind_alias_backed_array_offset_to_reference_alias(
+                                    name,
+                                    std::slice::from_ref(&key),
+                                    source_alias,
+                                    value,
+                                    expr.span(),
+                                )?;
+                            } else {
+                                let target_alias = ArrayOffsetAlias {
+                                    root: ArrayOffsetAliasRoot::StaticArray {
+                                        name: name.to_string(),
+                                    },
+                                    keys: vec![key],
+                                };
+                                scope.bind_array_offset_alias_to_reference_alias(
+                                    target_alias,
+                                    source_alias,
+                                    value,
+                                    expr.span(),
+                                )?;
+                            }
                         }
                     }
                 }
@@ -25654,6 +25709,14 @@ impl Interpreter {
                 _ => None,
             })
             .is_some_and(Value::is_truthy);
+        let use_cookies = args
+            .first()
+            .and_then(|value| match value {
+                Value::Array(options) => options.get(ArrayKey::String("use_cookies".into())),
+                _ => None,
+            })
+            .map(Value::is_truthy)
+            .unwrap_or(true);
 
         if self.session_status == PHP_SESSION_ACTIVE {
             self.emit_notice(
@@ -25667,6 +25730,10 @@ impl Interpreter {
         self.session_status = PHP_SESSION_ACTIVE;
         if self.session_id.is_empty() {
             self.session_id = "phpc-session".to_string();
+        }
+        if use_cookies {
+            self.response_headers
+                .push(format!("Set-Cookie: PHPSESSID={}", self.session_id));
         }
         let session_data = self
             .session_store
@@ -34333,6 +34400,23 @@ fn wordpress_dynamic_schema_result_for_query(
         return None;
     }
 
+    let show_create_table = query
+        .strip_prefix("SHOW CREATE TABLE ")
+        .and_then(parse_schema_table_identifier);
+    if let Some(table_name) = show_create_table {
+        let table = tables.get(&table_name)?;
+        return Some(MysqliPendingResultState {
+            fields: vec!["Table".to_string(), "Create Table".to_string()],
+            rows: vec![vec![
+                ("Table".to_string(), Value::String(table.name.clone())),
+                (
+                    "Create Table".to_string(),
+                    Value::String(dynamic_schema_create_table_sql(table)),
+                ),
+            ]],
+        });
+    }
+
     let describe_table = query
         .strip_prefix("DESCRIBE ")
         .or_else(|| query.strip_prefix("DESC "))
@@ -34955,6 +35039,80 @@ fn dynamic_schema_index_row(
         ("Visible".to_string(), Value::String("YES".to_string())),
         ("Expression".to_string(), Value::Null),
     ]
+}
+
+fn dynamic_schema_create_table_sql(table: &WordPressSchemaTableState) -> String {
+    let mut lines = Vec::new();
+    for column in &table.columns {
+        lines.push(format!(
+            "  {} {}",
+            quote_schema_identifier(&column.name),
+            dynamic_schema_column_sql(column)
+        ));
+    }
+    for index in &table.indexes {
+        lines.push(format!("  {}", dynamic_schema_index_sql(index)));
+    }
+
+    format!(
+        "CREATE TABLE {} (\n{}\n) DEFAULT CHARSET=utf8mb4 COLLATE={}",
+        quote_schema_identifier(&table.name),
+        lines.join(",\n"),
+        table.collation
+    )
+}
+
+fn dynamic_schema_column_sql(column: &WordPressSchemaColumnState) -> String {
+    let mut sql = column.ty.clone();
+    if column.nullable {
+        sql.push_str(" NULL");
+    } else {
+        sql.push_str(" NOT NULL");
+    }
+    if let Some(default) = &column.default {
+        sql.push_str(" DEFAULT ");
+        sql.push_str(&quote_schema_string(default));
+    }
+    if column.auto_increment {
+        sql.push_str(" auto_increment");
+    }
+    sql
+}
+
+fn dynamic_schema_index_sql(index: &WordPressSchemaIndexState) -> String {
+    let parts = index
+        .parts
+        .iter()
+        .map(|part| {
+            let mut sql = quote_schema_identifier(&part.column_name);
+            if let Some(sub_part) = part.sub_part {
+                sql.push('(');
+                sql.push_str(&sub_part.to_string());
+                sql.push(')');
+            }
+            sql
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    if index.key_name == "PRIMARY" {
+        format!("PRIMARY KEY ({parts})")
+    } else if index.non_unique {
+        format!("KEY {} ({parts})", quote_schema_identifier(&index.key_name))
+    } else {
+        format!(
+            "UNIQUE KEY {} ({parts})",
+            quote_schema_identifier(&index.key_name)
+        )
+    }
+}
+
+fn quote_schema_identifier(identifier: &str) -> String {
+    format!("`{}`", identifier.replace('`', "``"))
+}
+
+fn quote_schema_string(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 fn wordpress_options_schema_result_for_query(query: &str) -> Option<MysqliPendingResultState> {
