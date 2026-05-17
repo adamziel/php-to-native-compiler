@@ -92,6 +92,72 @@ echo interface_exists("LoadedContract") ? "interface" : "missing-interface";
 }
 
 #[test]
+fn new_expressions_invoke_string_autoload_callbacks() {
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-autoload-new-expression-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let named_include_path = fixture_dir.join("LoadedBox.inc");
+    fs::write(
+        &named_include_path,
+        r#"<?php
+class LoadedBox {
+    public $name;
+
+    public function __construct($name = "named") {
+        $this->name = $name;
+    }
+}
+"#,
+    )
+    .unwrap();
+    let dynamic_include_path = fixture_dir.join("DynamicBox.inc");
+    fs::write(
+        &dynamic_include_path,
+        r#"<?php
+class DynamicBox {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let source = r#"<?php
+function LoadClass($class) {
+    echo "load:", $class, "\n";
+    require_once __DIR__ . "/" . $class . ".inc";
+}
+
+spl_autoload_register("LoadClass");
+
+$box = new LoadedBox();
+echo $box->name, "\n";
+
+$class = "DynamicBox";
+$dynamic = new $class("dynamic");
+echo $dynamic->name;
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "load:LoadedBox\nnamed\nload:DynamicBox\ndynamic"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(named_include_path);
+    let _ = fs::remove_file(dynamic_include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn emit_ir_rejects_direct_spl_autoload_register_until_native_autoloading_exists() {
     let error = emit_ir_source("<?php\nspl_autoload_register('MissingAutoloader');\n").unwrap_err();
 

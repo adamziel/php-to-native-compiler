@@ -62,8 +62,9 @@ materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 session persistence, locking, save handlers, and cookie emission remain
 unsupported. `fopen()` can create bounded interpreter-owned `php://memory`,
 `php://temp`, and local UTF-8 file stream resources for simple read/write flows
-through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`, and
-`fclose()`; unsupported wrappers, contexts/filters, binary byte fidelity,
+through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
+`feof()`, `ftell()`, `fseek()`, and `fclose()`; unsupported wrappers,
+contexts/filters, binary byte fidelity,
 permissions/locking, warning recovery, temp-file spillover, and native stream
 resources remain unsupported. Native lowering still rejects request/session/
 stream state until a native runtime ABI exists.
@@ -151,8 +152,10 @@ incorrect native code.
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
   object-property array roots, plus direct free-function, direct visible
-  instance-method, and direct named-static-method reference-return iterable
-  roots when the returned direct variable is backed by a caller variable cell,
+  instance-method, direct named-static-method, method-context
+  `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
+  `call_user_func_array()` reference-return iterable roots when the returned
+  direct variable is backed by a caller variable cell,
   and
   positional statement-form
   `list($a, $b) = expr;` plus `[$a, $b] = expr;` assignment over numeric
@@ -181,7 +184,8 @@ incorrect native code.
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
-  shapes and selected prepared option-name-list and autoload-list result sets;
+  shapes and selected prepared option-name-list, name/autoload-list, and
+  autoload-list result sets;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -252,7 +256,9 @@ incorrect native code.
   and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
-  instantiation through the current class table for `new $class(...)`,
+  instantiation for `new $class(...)`; missing named or direct-variable
+  string class names invoke currently registered string user-function
+  autoload callbacks before the class table is rechecked,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -343,8 +349,8 @@ conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery beyond string user-function callbacks
-registered through `spl_autoload_register()` for `class_exists()` and
-`interface_exists()` misses,
+registered through `spl_autoload_register()` for `class_exists()`,
+`interface_exists()`, and missing `new` class instantiation,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -459,7 +465,7 @@ direct `str_ends_with(...)` string-suffix calls,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `fopen()`/`fwrite()`/`fread()`/`rewind()`/`stream_get_contents()`/
-`fclose()` stream-resource calls,
+`feof()`/`ftell()`/`fseek()`/`fclose()` stream-resource calls,
 direct `filesize(...)` local filesystem metadata calls,
 direct `filemtime(...)` local filesystem metadata calls,
 direct `getcwd()` current-directory calls,

@@ -1,0 +1,9 @@
+self:a|self:b|self:b
+direct
+parent:a|parent:b|parent:b
+direct
+static:a|static:b|static:b
+direct
+class:a|class:b|class:b
+object:a|object:b|object:b
+callback:a|callback:b|callback:b

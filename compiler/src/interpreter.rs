@@ -235,6 +235,7 @@ struct MemoryStream {
     readable: bool,
     writable: bool,
     append: bool,
+    eof: bool,
 }
 
 #[derive(Debug)]
@@ -243,6 +244,7 @@ struct FileStream {
     readable: bool,
     writable: bool,
     append: bool,
+    eof: bool,
 }
 
 #[derive(Debug)]
@@ -2773,10 +2775,18 @@ impl Interpreter {
                     keys: Vec::new(),
                 })
             }
-            Expr::Call { name, .. } if self.direct_function_call_returns_by_reference(name) => {
+            Expr::Call { name, .. }
+                if self.direct_function_call_returns_by_reference(name)
+                    || name.eq_ignore_ascii_case("call_user_func_array") =>
+            {
                 self.by_reference_foreach_reference_return_root(iterable, scope, span)
             }
-            Expr::MethodCall { .. } | Expr::StaticMethodCall { .. } => {
+            Expr::MethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. } => {
                 self.by_reference_foreach_reference_return_root(iterable, scope, span)
             }
             expr if self.is_temporary_by_reference_foreach_iterable(expr) => {
@@ -4902,6 +4912,9 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let class_name = self.resolve_new_class_name(class_name, span, scope)?;
+        if self.classes.lookup_class(&class_name).is_none() {
+            self.run_autoload_callbacks(&class_name, AutoloadKind::Class, span)?;
+        }
         let (class_id, declared_class_name) = {
             let class = self
                 .classes
@@ -9494,6 +9507,53 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_name_autoload_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "autoload".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if is_wordpress_option_prepared_name_autoload_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_name_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_name".to_string(), "autoload".to_string()],
+                    rows,
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         if is_wordpress_option_prepared_name_value_autoload_select_names_query(query) {
             let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
             let rows = connection_handle_id
@@ -9641,6 +9701,23 @@ impl Interpreter {
                             "option_value".to_string(),
                             "autoload".to_string(),
                         ],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
+
+            if let Some(filter) = parse_wordpress_options_name_autoload_row_select_query(query) {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| wordpress_option_name_autoload_rows_for_filter(options, &filter))
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec!["option_name".to_string(), "autoload".to_string()],
                         rows,
                     }));
                 }
@@ -10752,6 +10829,21 @@ impl Interpreter {
                             "option_value".to_string(),
                             "autoload".to_string(),
                         ],
+                        rows,
+                    );
+                }
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_name_autoload_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows = wordpress_option_name_autoload_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec!["option_name".to_string(), "autoload".to_string()],
                         rows,
                     );
                 }
@@ -17904,6 +17996,7 @@ impl Interpreter {
                     readable: stream_mode.readable,
                     writable: stream_mode.writable,
                     append: stream_mode.append,
+                    eof: false,
                 }),
             );
         } else {
@@ -17928,6 +18021,7 @@ impl Interpreter {
                 readable: stream_mode.readable,
                 writable: stream_mode.writable,
                 append: stream_mode.append,
+                eof: false,
             };
             if stream.append {
                 stream.file.seek(SeekFrom::End(0)).map_err(|error| {
@@ -18056,6 +18150,7 @@ impl Interpreter {
                     stream.buffer.push_str(data);
                 }
                 stream.position = end;
+                stream.eof = false;
             }
             StreamResource::File(stream) => {
                 if !stream.writable {
@@ -18087,6 +18182,7 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                stream.eof = false;
             }
         }
         Ok(Value::Int(data.len() as i64))
@@ -18132,6 +18228,7 @@ impl Interpreter {
                 let start = stream.position.min(stream.buffer.len());
                 let end = utf8_boundary_at_or_before(&stream.buffer, start + length);
                 stream.position = end;
+                stream.eof = end >= stream.buffer.len() && end - start < length;
                 Ok(Value::String(stream.buffer[start..end].to_string()))
             }
             StreamResource::File(stream) => {
@@ -18154,6 +18251,7 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                stream.eof = read < length;
                 buffer.truncate(read);
                 let contents = String::from_utf8(buffer).map_err(|error| {
                     runtime_error(
@@ -18172,7 +18270,10 @@ impl Interpreter {
     fn call_rewind(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("rewind", args, 1, span)?;
         match self.stream_mut("rewind", &args[0], span)? {
-            StreamResource::Memory(stream) => stream.position = 0,
+            StreamResource::Memory(stream) => {
+                stream.position = 0;
+                stream.eof = false;
+            }
             StreamResource::File(stream) => {
                 if stream.writable {
                     stream.file.flush().map_err(|error| {
@@ -18194,6 +18295,7 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                stream.eof = false;
             }
         }
         Ok(Value::Bool(true))
@@ -18214,6 +18316,7 @@ impl Interpreter {
                 }
                 let start = utf8_boundary_at_or_before(&stream.buffer, stream.position);
                 stream.position = stream.buffer.len();
+                stream.eof = true;
                 Ok(Value::String(stream.buffer[start..].to_string()))
             }
             StreamResource::File(stream) => {
@@ -18236,7 +18339,134 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                stream.eof = true;
                 Ok(Value::String(contents))
+            }
+        }
+    }
+
+    fn call_feof(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("feof", args, 1, span)?;
+        match self.stream_mut("feof", &args[0], span)? {
+            StreamResource::Memory(stream) => Ok(Value::Bool(stream.eof)),
+            StreamResource::File(stream) => Ok(Value::Bool(stream.eof)),
+        }
+    }
+
+    fn call_ftell(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ftell", args, 1, span)?;
+        match self.stream_mut("ftell", &args[0], span)? {
+            StreamResource::Memory(stream) => Ok(Value::Int(stream.position as i64)),
+            StreamResource::File(stream) => {
+                let position = stream.file.stream_position().map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ftell()",
+                            format!("local file stream position failed: {error}"),
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(position as i64))
+            }
+        }
+    }
+
+    fn call_fseek(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "fseek()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let offset = match &args[1] {
+            Value::Int(offset) => *offset,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fseek()",
+                        format!(
+                            "offset argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let whence = match args.get(2) {
+            Some(Value::Int(whence @ 0..=2)) => *whence,
+            Some(Value::Int(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fseek()",
+                        "whence argument must be SEEK_SET, SEEK_CUR, or SEEK_END in the current subset",
+                    ),
+                ));
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "fseek()",
+                        format!(
+                            "whence argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => 0,
+        };
+        match self.stream_mut("fseek", &args[0], span)? {
+            StreamResource::Memory(stream) => {
+                let base = match whence {
+                    0 => 0_i64,
+                    1 => stream.position as i64,
+                    2 => stream.buffer.len() as i64,
+                    _ => unreachable!(),
+                };
+                let Some(position) = base.checked_add(offset) else {
+                    return Ok(Value::Int(-1));
+                };
+                if position < 0 {
+                    return Ok(Value::Int(-1));
+                }
+                stream.position = position as usize;
+                stream.eof = false;
+                Ok(Value::Int(0))
+            }
+            StreamResource::File(stream) => {
+                if stream.writable {
+                    stream.file.flush().map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "fseek()",
+                                format!("local file stream flush failed: {error}"),
+                            ),
+                        )
+                    })?;
+                }
+                let seek_from = match whence {
+                    0 if offset >= 0 => SeekFrom::Start(offset as u64),
+                    0 => return Ok(Value::Int(-1)),
+                    1 => SeekFrom::Current(offset),
+                    2 => SeekFrom::End(offset),
+                    _ => unreachable!(),
+                };
+                match stream.file.seek(seek_from) {
+                    Ok(_) => {
+                        stream.eof = false;
+                        Ok(Value::Int(0))
+                    }
+                    Err(_) => Ok(Value::Int(-1)),
+                }
             }
         }
     }
@@ -20280,6 +20510,9 @@ impl Interpreter {
             "fread" => self.call_fread(&args, span),
             "rewind" => self.call_rewind(&args, span),
             "stream_get_contents" => self.call_stream_get_contents(&args, span),
+            "feof" => self.call_feof(&args, span),
+            "ftell" => self.call_ftell(&args, span),
+            "fseek" => self.call_fseek(&args, span),
             "fclose" => self.call_fclose(&args, span),
             "filesize" => {
                 expect_arity(name, &args, 1, span)?;
@@ -26000,6 +26233,9 @@ fn is_builtin(name: &str) -> bool {
             | "fread"
             | "rewind"
             | "stream_get_contents"
+            | "feof"
+            | "ftell"
+            | "fseek"
             | "fclose"
             | "filesize"
             | "filemtime"
@@ -26244,6 +26480,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
+        "SEEK_SET" => Some(Value::Int(0)),
+        "SEEK_CUR" => Some(Value::Int(1)),
+        "SEEK_END" => Some(Value::Int(2)),
         "MYSQLI_REPORT_OFF" => Some(Value::Int(PHP_MYSQLI_REPORT_OFF)),
         "MYSQLI_REPORT_ERROR" => Some(Value::Int(PHP_MYSQLI_REPORT_ERROR)),
         "MYSQLI_REPORT_STRICT" => Some(Value::Int(PHP_MYSQLI_REPORT_STRICT)),
@@ -26794,6 +27033,24 @@ fn is_wordpress_option_prepared_name_value_select_autoloads_query(query: &str) -
     .is_some()
 }
 
+fn is_wordpress_option_prepared_name_autoload_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, autoload FROM wp_options WHERE option_name IN (",
+        "SELECT `option_name`, `autoload` FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_name_autoload_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT option_name, autoload FROM wp_options WHERE autoload IN (",
+        "SELECT `option_name`, `autoload` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
 fn is_wordpress_option_prepared_name_value_autoload_select_names_query(query: &str) -> bool {
     parse_wordpress_option_prepared_placeholder_names(
         query.trim(),
@@ -26937,6 +27194,30 @@ fn parse_wordpress_options_row_select_query(query: &str) -> Option<WordPressOpti
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
+fn parse_wordpress_options_name_autoload_row_select_query(
+    query: &str,
+) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_name, autoload FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT `option_name`, `autoload` FROM `wp_options`"))?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
 fn parse_wordpress_options_name_value_autoload_row_select_query(
     query: &str,
 ) -> Option<WordPressOptionsRowFilter> {
@@ -27033,6 +27314,55 @@ fn wordpress_option_rows_for_filter(
                     (
                         "option_value".to_string(),
                         Value::String(option.value.clone()),
+                    ),
+                ]
+            })
+        })
+        .collect()
+}
+
+fn wordpress_option_name_autoload_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::AutoloadValues(values) => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    values.contains(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![
+                    ("option_name".to_string(), Value::String(name)),
+                    (
+                        "autoload".to_string(),
+                        Value::String(option.autoload.clone()),
                     ),
                 ]
             })

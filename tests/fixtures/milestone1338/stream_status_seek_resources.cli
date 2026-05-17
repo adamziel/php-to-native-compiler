@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+8|more|3|ca|more|more|12|7|cache|more|closed
+--- stdout end ---
+stderr:
+--- stderr end ---

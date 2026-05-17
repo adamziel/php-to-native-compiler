@@ -536,21 +536,26 @@
   including visible non-public properties from valid method contexts. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
-  `foreach ($bag->items($items) as &$value)`, and direct named-static-method
-  call iterables such as `foreach (Bag::items($items) as &$value)` are also
-  executable when the called user function or method is declared as returning
-  by reference, returns a direct variable, and that returned variable is backed
-  by a direct caller variable cell, such as a by-reference parameter, or by the
-  current direct static-local cell slice. After loop completion the loop
+  `foreach ($bag->items($items) as &$value)`, direct named-static-method
+  call iterables such as `foreach (Bag::items($items) as &$value)`,
+  method-context `self::items($items)`, `parent::items($items)`, and
+  `static::items($items)` iterables, dynamic static receiver iterables such as
+  `foreach ($class::items($items) as &$value)` and
+  `foreach ($object::items($items) as &$value)`, and bounded
+  `call_user_func_array()` callback iterables are also executable when the
+  called user function or method is declared as returning by reference,
+  returns a direct variable, and that returned variable is backed by a direct
+  caller variable cell, such as a by-reference parameter, or by the current
+  direct static-local cell slice. After loop completion the loop
   variable remains routed to the last
   successfully iterated existing slot until `unset($value)` detaches it. Empty
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
   ArrayAccess iterables, dynamic-property iterable roots, non-string-keyed `$GLOBALS` roots,
-  callback, `self::`/`parent::`/`static::`, and dynamic static receiver
-  reference-returning call iterables, reference-return iterables that return
-  properties, array offsets, expressions, or nested-control-flow returns,
+  reference-return iterables that return properties, array offsets,
+  expressions, or nested-control-flow returns, callback forms outside the
+  bounded `call_user_func_array()` slice, magic `__callStatic` return sources,
   foreach destructuring, array/object/ArrayAccess offset loop variables,
   nested-offset loop values, and native lowering remain unsupported.
 - `break;` for the innermost currently executing `while`, `for`,
@@ -751,8 +756,9 @@
   Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
-  name resolved through the current class table. Classes without `__construct`
-  are supported only with no constructor arguments. Declared or inherited
+  name. Missing class names invoke currently registered string user-function
+  autoload callbacks once before the class table is rechecked. Classes without
+  `__construct` are supported only with no constructor arguments. Declared or inherited
   public instance `__construct` methods execute with scoped `$this`,
   positional arguments, and the current default-parameter subset. Successfully
   allocated objects whose class declares or inherits a public non-static
@@ -764,8 +770,9 @@
   parameterless shape; non-public, static, or parameterized destructors report
   stable runtime boundaries before object allocation. Dynamic class
   variables with non-string values report a stable runtime boundary, and
-  dynamic strings naming missing classes use the current undefined-class
-  diagnostic. Instantiating an abstract class reports a stable runtime boundary;
+  dynamic strings still missing after the current string-callback autoload path
+  use the current undefined-class diagnostic. Instantiating an abstract class
+  reports a stable runtime boundary;
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
@@ -904,12 +911,14 @@
   `__isset($name)`, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `PREG_SPLIT_DELIM_CAPTURE`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
+  `SORT_NUMERIC`, `SORT_STRING`, `SEEK_SET`, `SEEK_CUR`, `SEEK_END`,
+  `PHP_VERSION_ID`, `PHP_VERSION`, and
   `PHP_INT_MAX`, and `PHP_SAPI`. The small integer constants evaluate to
   their documented PHP values (`CASE_LOWER` `0`, `CASE_UPPER` `1`,
   `ARRAY_FILTER_USE_KEY` `2`, `ARRAY_FILTER_USE_BOTH` `1`,
   `PREG_SPLIT_DELIM_CAPTURE` `2`, `SORT_REGULAR` `0`, `SORT_NUMERIC` `1`,
-  and `SORT_STRING` `2`), and `PHP_VERSION_ID` evaluates to the current
+  `SORT_STRING` `2`, `SEEK_SET` `0`, `SEEK_CUR` `1`, and `SEEK_END` `2`),
+  and `PHP_VERSION_ID` evaluates to the current
   deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION` evaluates
   to the deterministic
   compatibility string `8.3.0`, `PHP_INT_MAX` evaluates to the
@@ -1020,7 +1029,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
@@ -1644,8 +1653,8 @@
   delete shape, host database state, PHP warning/error fidelity, mysqlnd
   behavior, or native statement lowering.
   The same bounded prepared-result path includes exact `wp_options`
-  autoload-list row reads for name/value, name/value/autoload, and
-  id/name/value/autoload projections with `WHERE autoload IN (?, ...)` when
+  autoload-list row reads for name/value, name/autoload, name/value/autoload,
+  and id/name/value/autoload projections with `WHERE autoload IN (?, ...)` when
   every placeholder is a string autoload value. Rows are deterministic over the
   placeholder state island; this is not arbitrary SQL filtering, collation
   fidelity, real MySQL, full `wpdb`, references/copy-on-write, or native
@@ -1853,6 +1862,8 @@
   `WHERE option_name IN (...)` shapes return recorded name/value rows through
   the same placeholder result path. The same all-row, autoload-filtered, and
   explicit-name-list shapes are also supported for the exact
+  `SELECT option_name, autoload FROM wp_options ...` projection, returning
+  recorded option-name and autoload columns, for the exact
   `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
   returning recorded option-name, value, and autoload columns, and for the
   exact
@@ -1870,7 +1881,7 @@
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond the exact insert and
   update shapes listed above,
-  arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/name-value/name-autoload/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
@@ -1890,7 +1901,8 @@
   query also returns a recorded option-name/option-value row for string
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
-  `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`
+  `SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
+  `SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
   and
   `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
   prepared shapes also return deterministic row sets for string option-name
@@ -2123,15 +2135,19 @@
   writes string data at the current cursor, or at EOF for append mode, and
   returns the written byte count; `fread($stream, $length)` reads up to a
   non-negative integer length; `rewind($stream)` resets the cursor;
-  `stream_get_contents($stream)` returns remaining UTF-8 contents; and
-  `fclose($stream)` closes the resource. Local file streams use host files and
-  UTF-8 text only. This is a deterministic WordPress request/runtime
+  `stream_get_contents($stream)` returns remaining UTF-8 contents;
+  `ftell($stream)` returns the current byte cursor; `fseek($stream, $offset,
+  $whence = SEEK_SET)` supports integer offsets with `SEEK_SET`, `SEEK_CUR`,
+  and `SEEK_END`; `feof($stream)` reports the bounded EOF flag set by reads
+  that exhaust the stream; and `fclose($stream)` closes the resource. Local
+  file streams use host files and UTF-8 text only. This is a deterministic WordPress request/runtime
   compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
   wrappers, wrapper metadata, filters, contexts, binary/non-UTF-8 byte
   fidelity, large `php://temp` spill-to-disk behavior, permissions policy,
-  locking, EOF/status APIs, warning plus `false` recovery, exact resource
-  ids/types, references/copy-on-write, and native stream resources remain
-  unsupported. Direct native stream-resource calls stop at a dedicated
+  locking, `fstat()`/`stream_get_meta_data()` and broader status APIs,
+  warning plus `false` recovery, exact resource ids/types,
+  references/copy-on-write, and native stream resources remain unsupported.
+  Direct native stream-resource calls stop at a dedicated
   resource/stream codegen boundary, while function-table introspection
   recognizes the known builtin names.
   `filesize($path)` accepts one string local path, rejects stream-wrapper
@@ -2222,7 +2238,8 @@
   closure expressions or string callback names plus optional boolean flags and
   returns `true`. String user-function callbacks are recorded, honor the
   current boolean `prepend` flag, and are invoked by truthy-autoload
-  `class_exists()` and `interface_exists()` misses so they can include local
+  `class_exists()`/`interface_exists()` misses and missing `new ClassName(...)`
+  / direct-variable `new $class(...)` instantiation so they can include local
   files that declare class/interface metadata. Closure callbacks remain a
   registration-only shape and report a stable unsupported autoload boundary if
   a lookup needs to invoke them. Autoload unregistering, autoload functions,
@@ -3931,7 +3948,7 @@
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `session_start`, `session_status`, `session_id`, `session_write_close`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -4305,7 +4322,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
   `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -4484,7 +4501,7 @@
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`,
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fclose`, `filesize`, `filemtime`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4994,7 +5011,8 @@
   offsets/lengths, include-path lookup, `open_basedir` and stat-cache
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
-  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, and `fclose`
+  `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`,
+  `ftell`, `fseek`, and `fclose`
   accept the same current bounded `php://memory`, `php://temp`, and local
   UTF-8 file stream resource subset as the builtin section above; direct
   native calls reject under a dedicated stream-resource boundary until native
@@ -5037,7 +5055,8 @@
   function-table introspection recognizes the name.
   `spl_autoload_register` accepts closure and string callbacks in `phpc run`;
   string user-function callbacks are stored for truthy-autoload
-  `class_exists()` and `interface_exists()` misses, while closure invocation
+  `class_exists()`/`interface_exists()` misses and missing `new` class
+  instantiation, while closure invocation
   and direct native calls still reject under explicit boundaries. Native
   function-table introspection recognizes the name.
   `get_class($object)` returns the declared class name for current minimal
@@ -5047,8 +5066,9 @@
   declared class name for current minimal object values. `class_exists($name)`
   and `class_exists($name, $autoload)` accept string class names, return whether
   the current parsed program declared that class, and accept current bool-like
-  scalar autoload flags. Truthy autoload misses invoke currently registered
-  string user-function autoload callbacks before the metadata check returns.
+  scalar autoload flags. Truthy autoload misses and missing `new` class
+  instantiation invoke currently registered string user-function autoload
+  callbacks before the metadata check returns.
   `null`, arrays,
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.

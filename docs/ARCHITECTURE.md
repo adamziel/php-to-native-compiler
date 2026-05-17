@@ -106,11 +106,13 @@ current literal argument-array/direct-variable-reference-element slice. They do
 not promote callback argument arrays, object-property array bridges, or stored
 array-offset metadata into general runtime reference containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
-instance-method, and direct named-static-method reference-return iterable roots
-from this machinery, including bounded direct caller-cell and direct
-static-local cell cases. Callback, `self::`/`parent::`/`static::`, dynamic static
-receiver, property-return, array-offset-return, and expression-return iterable
-roots remain outside the executable foreach slice.
+instance-method, direct named-static-method, method-context
+`self::`/`parent::`/`static::`, dynamic static receiver, and bounded
+`call_user_func_array()` reference-return iterable roots from this machinery,
+including bounded direct caller-cell and direct static-local cell cases.
+Property-return, array-offset-return, expression-return, magic
+`__callStatic`, and callback forms outside the bounded `call_user_func_array()`
+slice remain outside the executable foreach slice.
 Whole-variable assignment to a direct array root and whole-property assignment
 to a declared public object-property root drop stale aliases for that root
 before the replacement value is observed by future copies. Reassigning the
@@ -359,7 +361,9 @@ Implemented now:
   metadata, and return type metadata,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
-  through the current class table for `new $class(...)`,
+  for `new $class(...)`; missing named or direct-variable string class names
+  invoke the current string user-function autoload callbacks before the class
+  table is rechecked,
   bounded dynamic property-name reads/writes for existing public slots,
   `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
   class's dynamic table-name slots, and bounded `clone` expressions that
@@ -1773,13 +1777,17 @@ $mode)` and `fopen("php://temp", $mode)` allocate request-local resource ids
 backed by a Rust string buffer for simple `r`, `w`, `a`, or `c` modes with
 optional `+`, `b`, or `t` flags. `fopen($localPath, $mode)` uses a host local
 file handle for the same simple mode grammar. `fwrite()`, `fread()`,
-`rewind()`, `stream_get_contents()`, and `fclose()` mutate or consume the
-resource cursor; append-mode writes are routed to EOF. Local file reads remain
-UTF-8 text reads. This gives WordPress-style temporary request and cache-file
-streams an executable path without claiming full PHP resources: sockets,
-HTTP/FTP/phar wrappers, contexts, filters, stream metadata, EOF/status APIs,
-binary/non-UTF-8 byte strings, `php://temp` spill-to-disk thresholds,
-permissions policy, locking, warning plus `false` recovery,
+`rewind()`, `stream_get_contents()`, `feof()`, `ftell()`, `fseek()`, and
+`fclose()` mutate, consume, or inspect the resource cursor; append-mode writes
+are routed to EOF. `fseek()` supports the built-in `SEEK_SET`, `SEEK_CUR`, and
+`SEEK_END` constants for the current memory/temp/local-file resource set, and
+`feof()` tracks the bounded EOF flag produced by exhaustive reads. Local file
+reads remain UTF-8 text reads. This gives WordPress-style temporary request
+and cache-file streams an executable path without claiming full PHP resources:
+sockets, HTTP/FTP/phar wrappers, contexts, filters, broader stream metadata
+such as `fstat()`/`stream_get_meta_data()`, binary/non-UTF-8 byte strings,
+`php://temp` spill-to-disk thresholds, permissions policy, locking, warning
+plus `false` recovery,
 references/copy-on-write, and exact resource id/type behavior remain out of
 scope. Native stream-resource calls reject before lowering under a dedicated
 resource boundary, while function-table introspection recognizes the names.
@@ -2078,6 +2086,9 @@ class metadata table by string class name, using the same case-insensitive
 class lookup as instantiation. The autoload flag accepts current bool-like
 scalar values; when truthy and the initial lookup misses, currently registered
 string user-function autoload callbacks run before the metadata check returns.
+Missing named or direct-variable string class names in `new` expressions use
+the same bounded string-callback autoload path before reporting the current
+undefined-class diagnostic.
 `null`, arrays, objects, references, and exact PHP
 deprecation/`TypeError` behavior remain unsupported for that flag.
 `interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,

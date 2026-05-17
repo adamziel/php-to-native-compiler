@@ -6,7 +6,10 @@ object-execution slice, not full PHP object execution.
 The current implementation parses top-level class declarations into metadata,
 including a single `extends Parent` link between declared classes, and can
 evaluate `new ClassName(...)` for declared classes, including public or
-inherited public instance `__construct` execution. Successfully allocated
+inherited public instance `__construct` execution. Missing named classes and
+direct-variable string dynamic class names in `new` expressions invoke the
+current string user-function autoload callbacks before the class table is
+rechecked. Successfully allocated
 objects whose class declares or inherits a public non-static no-argument
 `__destruct` method are queued for shutdown destructor execution, including
 clones created through the current shallow clone slice. It stores class identity
@@ -78,7 +81,8 @@ default values or `null` for properties without defaults.
 metadata and, when their autoload flag is truthy, invoke currently registered
 string user-function autoload callbacks on misses before rechecking metadata.
 Those callbacks can use the current include/require path to load local files
-that declare additional class/interface metadata. `trait_exists()` and
+that declare additional class/interface metadata; missing `new` class lookup
+uses the same bounded string-callback path. `trait_exists()` and
 `enum_exists()` check declared top-level trait and unit-enum metadata without
 triggering autoloading. `class_exists()` reports true for declared enums in
 the current class-like metadata slice.
@@ -458,8 +462,9 @@ instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
 binding, magic methods beyond the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
-autoloading beyond string user-function callbacks for `class_exists()` and
-`interface_exists()` misses, anonymous classes, attributes, reflection, dynamic property
+autoloading beyond string user-function callbacks for `class_exists()`,
+`interface_exists()`, and missing `new` class instantiation, anonymous
+classes, attributes, reflection, dynamic property
 semantics beyond current `stdClass` public slot materialization,
 cloning beyond the current shallow clone plus bounded visible non-static
 `__clone` dispatch slice, serialization hooks, broader visibility enforcement,

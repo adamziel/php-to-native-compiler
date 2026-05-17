@@ -363,6 +363,8 @@ Exact option-row reads for
 'on', 'auto-on', 'auto' )`, and exact `WHERE option_name IN (...)` shapes
 return recorded option-name/option-value rows. The same all-row,
 autoload-filtered, and explicit-name-list shapes are also supported for the
+exact `SELECT option_name, autoload FROM wp_options ...` projection, returning
+recorded option-name and autoload columns, for the
 exact
 `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
 returning recorded option-name, value, and autoload columns, and for the exact
@@ -379,7 +381,7 @@ doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond the exact insert and
 update shapes listed above, arbitrary
-projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
+projection beyond exact option id/name/value/autoload/name-value/name-autoload/full-row/full-row-with-id shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond exact
@@ -399,7 +401,8 @@ empty placeholder result. The exact
 also returns a recorded option-name/option-value row for string option-name
 parameters on the same handle through the same prepared result paths; missing
 names return an empty zero-field placeholder result. The exact
-`SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`
+`SELECT option_name, option_value FROM wp_options WHERE option_name IN (?, ...)`,
+`SELECT option_name, autoload FROM wp_options WHERE option_name IN (?, ...)`
 and
 `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name IN (?, ...)`
 prepared shapes also return deterministic row sets for string option-name
@@ -418,6 +421,7 @@ skip missing names. Backticked table/column spellings are accepted for this
 full-row prepared name-list slice. The
 exact
 `SELECT option_name, option_value FROM wp_options WHERE autoload IN (?, ...)`,
+`SELECT option_name, autoload FROM wp_options WHERE autoload IN (?, ...)`,
 `SELECT option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`,
 and
 `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN (?, ...)`

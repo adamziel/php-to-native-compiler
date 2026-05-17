@@ -1,0 +1,10 @@
+run autoload_new_expression.php
+--- stdout begin ---
+load:LoadedBox
+named
+load:DynamicBox
+dynamic
+--- stdout end ---
+--- stderr begin ---
+--- stderr end ---
+exit 0

@@ -523,6 +523,116 @@ echo $items["z"], "|", $item;
 }
 
 #[test]
+fn foreach_by_reference_binds_extended_reference_return_iterables_to_caller_cell() {
+    let execution = run_source(
+        r#"<?php
+function &items_callback(&$items) {
+    return $items;
+}
+
+class BaseBag {
+    public static function &items(&$items) {
+        return $items;
+    }
+}
+
+class ChildBag extends BaseBag {
+    public static function &items(&$items) {
+        return $items;
+    }
+
+    public function runSelf(&$items) {
+        foreach (self::items($items) as $key => &$item) {
+            $item = "self:" . $key;
+            if ($key === "a") {
+                $items["b"] = "bee";
+            }
+        }
+        echo $items["a"], "|", $items["b"], "|", $item, "\n";
+        unset($item);
+    }
+
+    public function runParent(&$items) {
+        foreach (parent::items($items) as $key => &$item) {
+            $item = "parent:" . $key;
+            if ($key === "a") {
+                $items["b"] = "bee";
+            }
+        }
+        echo $items["a"], "|", $items["b"], "|", $item, "\n";
+        unset($item);
+    }
+
+    public function runStatic(&$items) {
+        foreach (static::items($items) as $key => &$item) {
+            $item = "static:" . $key;
+            if ($key === "a") {
+                $items["b"] = "bee";
+            }
+        }
+        echo $items["a"], "|", $items["b"], "|", $item, "\n";
+        unset($item);
+    }
+}
+
+$bag = new ChildBag();
+
+$items = ["a" => "aye"];
+$bag->runSelf($items);
+$items["b"] = "direct";
+echo $items["b"], "\n";
+
+$items = ["a" => "aye"];
+$bag->runParent($items);
+$items["b"] = "direct";
+echo $items["b"], "\n";
+
+$items = ["a" => "aye"];
+$bag->runStatic($items);
+$items["b"] = "direct";
+echo $items["b"], "\n";
+
+$items = ["a" => "aye"];
+$class = "ChildBag";
+foreach ($class::items($items) as $key => &$item) {
+    $item = "class:" . $key;
+    if ($key === "a") {
+        $items["b"] = "bee";
+    }
+}
+echo $items["a"], "|", $items["b"], "|", $item, "\n";
+unset($item);
+
+$items = ["a" => "aye"];
+foreach ($bag::items($items) as $key => &$item) {
+    $item = "object:" . $key;
+    if ($key === "a") {
+        $items["b"] = "bee";
+    }
+}
+echo $items["a"], "|", $items["b"], "|", $item, "\n";
+unset($item);
+
+$items = ["a" => "aye"];
+foreach (call_user_func_array("items_callback", array(&$items)) as $key => &$item) {
+    $item = "callback:" . $key;
+    if ($key === "a") {
+        $items["b"] = "bee";
+    }
+}
+echo $items["a"], "|", $items["b"], "|", $item;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "self:a|self:b|self:b\ndirect\nparent:a|parent:b|parent:b\ndirect\nstatic:a|static:b|static:b\ndirect\nclass:a|class:b|class:b\nobject:a|object:b|object:b\ncallback:a|callback:b|callback:b"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php
