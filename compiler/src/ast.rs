@@ -540,6 +540,7 @@ pub struct InterfaceMethodDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDecl {
     pub name: String,
+    pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<ClassMethodDecl>,
     pub span: Span,
 }

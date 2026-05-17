@@ -1520,7 +1520,7 @@ fn unsupported_trait_declaration_has_stable_parse_errors() {
             "<?php\ntrait Reusable {\n    public $value;\n}\n",
             3,
             5,
-            "unsupported trait member declaration: trait properties, constants, and nested trait use are not implemented",
+            "unsupported trait member declaration: trait properties and nested trait use are not implemented",
         ),
         (
             "<?php\nif (true) {\n    trait Nested {}\n}\n",

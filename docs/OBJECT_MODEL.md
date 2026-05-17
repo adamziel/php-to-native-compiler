@@ -88,7 +88,11 @@ a same-block explicit-public alias, such as
 `TraitA::method insteadof TraitB; TraitA::method as public alias;`; the
 original method and alias are both ordinary public methods for dispatch,
 `method_exists()`, `get_class_methods()`, and current interface method-presence
-checks.
+checks. Public constants declared by already-declared traits as
+`const NAME = ...` or `public const NAME = ...` are composed into consuming
+classes as ordinary public class constants and can be resolved through the
+current `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
+`static::CONST` class-constant paths.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -401,7 +405,9 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface constants, full interface signature
 enforcement,
-trait properties/constants, static/abstract/final or non-public trait methods,
+trait properties, non-public/typed/abstract/final/static trait constants,
+multi-constant trait declarations, trait constant adaptations, conflicting
+trait/class constants, static/abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded single-loser `insteadof` shape,
 trait aliases beyond the current simple public, qualified public-alias, and
 same-block winner public-alias slices, protected/private visibility changes,

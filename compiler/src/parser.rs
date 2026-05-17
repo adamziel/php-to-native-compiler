@@ -473,17 +473,76 @@ impl Parser {
         let name = self.consume_identifier("expected trait name")?;
         let name = self.resolve_declared_class_name(&name);
         self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
+        let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("trait member");
-            methods.push(self.parse_trait_method()?);
+            if self.check_trait_constant_declaration() {
+                constants.push(self.parse_trait_constant()?);
+            } else {
+                methods.push(self.parse_trait_method()?);
+            }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after trait body")?;
         Ok(Stmt::Trait(TraitDecl {
             name,
+            constants,
             methods,
             span,
         }))
+    }
+
+    fn parse_trait_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        self.match_identifier("const");
+        let const_span = self.previous().span;
+        if modifiers.is_static {
+            return Err(self.error_at(
+                const_span,
+                "unsupported trait constant declaration: static trait constants are not implemented",
+            ));
+        }
+        if modifiers.is_abstract || modifiers.is_final {
+            return Err(self.error_at(
+                modifiers.abstract_or_final_span().unwrap_or(const_span),
+                "unsupported trait constant declaration: abstract/final trait constants are not implemented",
+            ));
+        }
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
+            return Err(self.error_at(
+                const_span,
+                "unsupported trait constant declaration: only public trait constants are implemented",
+            ));
+        }
+        if matches!(self.peek().kind, TokenKind::Identifier(_))
+            && matches!(self.peek_next().kind, TokenKind::Identifier(_))
+        {
+            return Err(self.error_at(
+                self.peek().span,
+                "unsupported trait constant declaration: typed trait constants are not implemented",
+            ));
+        }
+        let (name, name_span) =
+            self.consume_identifier_with_span("expected trait constant name after const")?;
+        self.consume_keyword(TokenKind::Equal, "expected '=' after trait constant name")?;
+        let value = self.parse_expression()?;
+        self.ensure_supported_const_declaration_expr(&value)?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported trait constant declaration: multiple trait constants in one declaration are not implemented",
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after trait constant declaration",
+        )?;
+        Ok(ClassConstantDecl {
+            name,
+            visibility: ClassVisibility::Public,
+            value,
+            span: name_span,
+        })
     }
 
     fn parse_trait_method(&mut self) -> CompileResult<ClassMethodDecl> {
@@ -6145,7 +6204,7 @@ fn unsupported_magic_constant_message(name: &str) -> String {
         return "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented".to_string();
     }
     if name == "__TRAIT__" {
-        return "unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented".to_string();
+        return "unsupported magic constant __TRAIT__: trait context evaluation requires original trait method context tracking through class composition, which is not implemented".to_string();
     }
     if name == "__NAMESPACE__" {
         return "unsupported magic constant __NAMESPACE__: namespace context evaluation requires namespace-aware name resolution, which is not implemented".to_string();
@@ -6376,7 +6435,7 @@ fn unsupported_nested_trait_declaration_message() -> &'static str {
 }
 
 fn unsupported_trait_member_declaration_message() -> &'static str {
-    "unsupported trait member declaration: trait properties, constants, and nested trait use are not implemented"
+    "unsupported trait member declaration: trait properties and nested trait use are not implemented"
 }
 
 fn unsupported_trait_method_message() -> &'static str {
@@ -6515,6 +6574,25 @@ impl Parser {
                 TokenKind::Variable(_) => return false,
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
                 _ => {}
+            }
+        }
+        false
+    }
+
+    fn check_trait_constant_declaration(&self) -> bool {
+        let mut index = self.current;
+        while index < self.tokens.len() {
+            match &self.tokens[index].kind {
+                TokenKind::Public
+                | TokenKind::Protected
+                | TokenKind::Private
+                | TokenKind::Static
+                | TokenKind::Abstract
+                | TokenKind::Final => {
+                    index += 1;
+                }
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return true,
+                _ => return false,
             }
         }
         false

@@ -231,10 +231,10 @@ incorrect native code.
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata with concrete-class public method
-  presence checks, declared trait metadata for empty traits and simple public
-  instance trait methods, simple class-body `use TraitName;` and
-  `use TraitA, TraitB;` composition for already-declared traits, plus simple
-  public trait method alias adaptations such as
+  presence checks, declared trait metadata for empty traits, public trait
+  constants, and simple public instance trait methods, simple class-body
+  `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
+  traits, plus simple public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }`, and bounded
   public instance conflict resolution such as
@@ -265,9 +265,11 @@ actual PHP warning/notice suppression for `@expr`,
 multiple-interface inheritance, interface constants, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs
 beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
-checks, trait properties/constants,
-static/abstract/final or non-public trait methods, conflicting trait
-composition outside the bounded single-loser `insteadof` shape, aliases
+checks, trait properties, non-public/typed/abstract/final/static trait
+constants, multi-constant trait declarations, trait constant adaptations,
+conflicting trait/class constants, static/abstract/final or non-public trait
+methods, conflicting trait composition outside the bounded single-loser
+`insteadof` shape, aliases
 beyond the current simple public, qualified public-alias, and same-block
 winner public-alias slices,
 protected/private visibility changes, visibility-only adaptations, unqualified
@@ -334,10 +336,12 @@ instance methods, named static method calls, `self::` static method calls, and
 late-bound `static::` static method calls.
 `call_user_func_array()` also has a bounded string user-callback and public
 object-method callback slice for unkeyed literal argument arrays containing
-direct-variable reference elements such as `array(&$value)`. Stored reference
-arrays, keyed reference argument arrays, static method array-callable reference
-parameters, callback object-property array arguments, dynamic static receiver
-and `parent::` object-property array arguments, broader aliasing, and full
+direct-variable reference elements such as `array(&$value)`, plus direct public
+object-property array-offset elements such as `array(&$object->items[$key])`
+through copy-in/writeback. Stored reference arrays, keyed reference argument
+arrays, static method array-callable reference parameters, non-public or
+dynamic callback object-property array arguments, dynamic static receiver and
+`parent::` object-property array arguments, broader aliasing, and full
 copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
@@ -376,7 +380,8 @@ direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `getcwd()` current-directory calls,
 direct `php_sapi_name()` SAPI identity calls,
-direct `ob_start()`/`ob_get_level()`/`ob_get_clean()` output-buffer calls,
+direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()`
+output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/`setcookie()`
 response header-state calls,
 direct `realpath(...)` filesystem canonicalization calls,

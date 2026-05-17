@@ -805,7 +805,7 @@ class Box {
     assert_eq!(error.column, 16);
     assert_eq!(
         error.message,
-        "unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented"
+        "unsupported magic constant __TRAIT__: trait context evaluation requires original trait method context tracking through class composition, which is not implemented"
     );
 }
 

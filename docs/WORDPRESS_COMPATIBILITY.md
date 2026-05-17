@@ -227,6 +227,18 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1264, that synthetic add-option smoke also reads the
+reinserted option's deterministic placeholder row id with the exact
+`SELECT option_id FROM wp_options WHERE option_name = ... LIMIT 1` shape after
+duplicate rejection. The generated bootstrap shim and front-controller path
+prove the row id is still `2` after the duplicate add is rejected, emitting
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db|added-db:no|id=2`
+(`stdout_bytes: 101` in normalized output). This is executable evidence for
+one bounded placeholder option-id read only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -277,16 +289,18 @@ options arrays, deletion cookies, cookie encoding fidelity, output-started
 tracking, web-server/SAPI network emission, exact warnings, or native
 header-state lowering.
 
-After Milestone 1258, `phpc run` has a bounded interpreter-owned output-buffer
-stack for `ob_start()`, `ob_get_level()`, and `ob_get_clean()`: echoed and
-printed output is captured while a buffer is active, `ob_get_clean()` returns
-the innermost captured string and closes that buffer, and unclosed buffers are
-flushed outward when execution completes. This supports small
-WordPress-shaped bootstrap/rendering paths that capture generated markup in
-the current CLI scaffold only. It does not implement callbacks, chunk sizes,
-flags, flush/end/status/list variants, output handler nesting semantics,
-output-started/header interaction, fatal-error cleanup, exact warnings, SAPI
-network emission, or native output-buffer lowering.
+After Milestone 1263, `phpc run` has a bounded interpreter-owned output-buffer
+stack for `ob_start()`, `ob_get_level()`, `ob_get_contents()`, and
+`ob_get_clean()`: echoed and printed output is captured while a buffer is
+active, `ob_get_contents()` returns the innermost captured string without
+closing that buffer, `ob_get_clean()` returns the innermost captured string and
+closes that buffer, and unclosed buffers are flushed outward when execution
+completes. This supports small WordPress-shaped bootstrap/rendering paths that
+capture or inspect generated markup in the current CLI scaffold only. It does
+not implement callbacks, chunk sizes, flags, flush/end/status/list variants,
+output handler nesting semantics, output-started/header interaction,
+fatal-error cleanup, exact warnings, SAPI network emission, or native
+output-buffer lowering.
 
 ## Current Probe Status
 

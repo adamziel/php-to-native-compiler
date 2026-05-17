@@ -26,6 +26,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-17T02:05:00Z
+
+- Checkpoint before this task:
+  `075ccd47 runtime: add WordPress buffering interface and db slices`, pushed
+  to `origin/master`.
+- Task attempted: reconcile the long-term full PHP/WordPress compatibility
+  goal into `GOAL.MD`, then complete Milestones 1261-1265 with four
+  WordPress-focused implementation lanes plus queue refresh.
+- Files changed: `GOAL.MD` now includes explicit compatibility success
+  criteria and a gap ledger for PHP semantics, runtime/extensions, WordPress,
+  and native compilation. Implementation work added bounded public trait
+  constants composed into consuming classes, callback-dispatched
+  object-property array by-reference arguments for `call_user_func_array()`,
+  bounded `ob_get_contents()` over interpreter output buffers, deterministic
+  `wp_options.option_id` state and exact option-id selects in the placeholder
+  MySQLi state island, focused tests and fixtures, plus `README.md`,
+  `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/extensions/mysqli.md`, and this
+  memory file.
+- Tests run and result: focused lane checks passed for trait constants,
+  callback object-property array reference arguments, output-buffer contents
+  peeking, MySQLi option-id reads, WordPress inventory probes, milestone
+  fixtures/PHP comparisons, legacy trait and magic-constant boundary fixtures,
+  fixture manifests, formatting, and diff hygiene. The serialized checkpoint
+  gate passed after refreshing stale `__TRAIT__` CLI snapshots:
+  `cargo test` completed successfully, `phpc test` reported `1388` fixture
+  tests passed with `0` failures, and `phpc test --compare-php` reported
+  `1388` fixture tests passed with `0` failures, `796` system PHP
+  comparisons, and `592` skipped `phpc-only` fixtures.
+- Remaining semantic gaps: the new `GOAL.MD` ledger names the hard remaining
+  work: full reference containers, broad copy-on-write, dynamic lookup and
+  magic methods, complete trait/interface/object/exception semantics, broad
+  standard-library and extension fidelity, stream/resource handling, real
+  request/SAPI state, real database behavior, WordPress plugin/theme/admin/REST
+  flows, and native runtime integration.
+- Next concrete task: push checkpoint `7aa9f05b`, clean dedicated target
+  directories, close completed workers, then start Milestones 1266-1269 in
+  separate worktrees drawn from the `GOAL.MD` compatibility ledger.
+
 ## Loop Event 2026-05-17T01:08:00Z
 
 - Checkpoint before this task:

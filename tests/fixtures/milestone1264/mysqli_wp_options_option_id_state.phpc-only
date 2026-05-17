@@ -1,0 +1,1 @@
+uses deterministic placeholder mysqli/wp_options state instead of a real MySQL server

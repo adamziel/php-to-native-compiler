@@ -2691,6 +2691,96 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_composes_public_trait_constants() {
+    let source = r#"<?php
+trait HookDefaults {
+    public const ACTION = "init";
+    const PRIORITY = 10;
+
+    public function hookKey() {
+        return self::ACTION . ":" . static::PRIORITY;
+    }
+}
+
+class Plugin {
+    use HookDefaults;
+
+    public static function action() {
+        return self::ACTION;
+    }
+}
+
+class ChildPlugin extends Plugin {
+    public const PRIORITY = 20;
+}
+
+echo Plugin::ACTION, "\n";
+echo Plugin::PRIORITY, "\n";
+echo Plugin::action(), "\n";
+
+$plugin = new Plugin();
+echo $plugin->hookKey(), "\n";
+
+$child = new ChildPlugin();
+echo $child->hookKey(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "init\n10\ninit\ninit:10\ninit:20\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    let action = class.constant("ACTION").unwrap();
+    assert_eq!(action.visibility(), Visibility::Public);
+    let priority = class.constant("PRIORITY").unwrap();
+    assert_eq!(priority.visibility(), Visibility::Public);
+}
+
+#[test]
+fn class_trait_use_rejects_conflicting_trait_constants() {
+    let error = runtime_error(
+        r#"<?php
+trait PrimaryConfig {
+    public const OPTION = "primary";
+}
+
+trait FallbackConfig {
+    public const OPTION = "fallback";
+}
+
+class Plugin {
+    use PrimaryConfig, FallbackConfig;
+}
+"#,
+    );
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(
+        error.message,
+        "class Plugin already defines constant OPTION"
+    );
+
+    let class_override = runtime_error(
+        r#"<?php
+trait PrimaryConfig {
+    public const OPTION = "primary";
+}
+
+class Plugin {
+    use PrimaryConfig;
+    public const OPTION = "class";
+}
+"#,
+    );
+
+    assert_eq!(
+        class_override.message,
+        "class Plugin already defines constant OPTION"
+    );
+}
+
+#[test]
 fn class_trait_use_alias_adaptation_composes_public_instance_method_aliases() {
     let source = r#"<?php
 interface Registrable {
@@ -7389,6 +7479,36 @@ trait Logs {
             3,
             22,
             "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+        ),
+        (
+            r#"<?php
+trait Logs {
+    protected const CHANNEL = "debug";
+}
+"#,
+            3,
+            15,
+            "unsupported trait constant declaration: only public trait constants are implemented",
+        ),
+        (
+            r#"<?php
+trait Logs {
+    public const string CHANNEL = "debug";
+}
+"#,
+            3,
+            18,
+            "unsupported trait constant declaration: typed trait constants are not implemented",
+        ),
+        (
+            r#"<?php
+trait Logs {
+    public const CHANNEL = "debug", FALLBACK = "info";
+}
+"#,
+            3,
+            35,
+            "unsupported trait constant declaration: multiple trait constants in one declaration are not implemented",
         ),
         (
             r#"<?php

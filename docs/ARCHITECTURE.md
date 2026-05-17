@@ -171,11 +171,16 @@ declaration; composition registers the winner and skips the named loser method.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
-Trait properties/constants, static/abstract/final or non-public trait methods,
+Public trait constants declared as `const NAME = ...` or
+`public const NAME = ...` with the current class-constant expression subset are
+composed into consuming classes and resolve through the existing
+`ClassName::CONST`, `self::CONST`, and `static::CONST` paths. Trait
+properties, non-public/typed/abstract/final/static trait constants,
+multi-constant trait declarations, trait constant adaptations, conflicting
+trait/class constants, static/abstract/final or non-public trait methods,
 broad conflict resolution, protected/private visibility changes,
 visibility-only adaptations, unqualified or multi-loser `insteadof`,
-qualified or multi-trait alias edge cases beyond the current winner-alias
-slice,
+qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
 
@@ -485,12 +490,16 @@ reference-container identity.
 `call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks and public object-method
 array callbacks where the argument array is an unkeyed literal containing
-`&$directVariable` elements for reached by-reference parameters. This
-deliberately does not model full PHP reference containers, stored reference
-arrays, keyed reference argument arrays, callback-dispatched object-property
-array arguments, dynamic static receiver or `parent::` object-property array
-arguments, static method array-callable reference parameters, broader reference
-returns, exact by-reference `foreach`, or copy-on-write.
+`&$directVariable` elements for reached by-reference parameters. The same
+callback path can also copy in and write back direct public object-property
+array-offset elements such as `&$object->items[$group][$key]`, using the
+bounded output-parameter bridge rather than in-call reference-container
+identity. This deliberately does not model full PHP reference containers,
+stored reference arrays, keyed reference argument arrays, non-public or
+dynamic property callback arguments, dynamic static receiver or `parent::`
+object-property array arguments, static method array-callable reference
+parameters, broader reference returns, exact by-reference `foreach`, or
+copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1396,15 +1405,16 @@ insertion order with either an empty default separator or a string separator.
 Native function-table introspection recognizes the name, while direct native
 calls reject until array iteration, string allocation, and conversion
 diagnostics have a lowered runtime model.
-`ob_start()`, `ob_get_level()`, and `ob_get_clean()` are interpreter-only
-output-buffer boundaries for the current WordPress request/rendering path. The
-interpreter keeps a stack of string buffers; PHP-visible output appends to the
-innermost active buffer, `ob_get_clean()` pops and returns that buffer, and
-remaining buffers flush outward to stdout when execution completes or the
-bounded `exit()` path returns. Native function-table introspection recognizes
-the names, while direct native calls reject until generated code has stdout
-capture buffers, shutdown flushing, output-started/header interaction, SAPI
-integration, and exact diagnostics.
+`ob_start()`, `ob_get_level()`, `ob_get_contents()`, and `ob_get_clean()` are
+interpreter-only output-buffer boundaries for the current WordPress
+request/rendering path. The interpreter keeps a stack of string buffers;
+PHP-visible output appends to the innermost active buffer, `ob_get_contents()`
+peeks at that buffer without closing it, `ob_get_clean()` pops and returns that
+buffer, and remaining buffers flush outward to stdout when execution completes
+or the bounded `exit()` path returns. Native function-table introspection
+recognizes the names, while direct native calls reject until generated code has
+stdout capture buffers, shutdown flushing, output-started/header interaction,
+SAPI integration, and exact diagnostics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, appends the raw header line to deterministic in-process CLI request

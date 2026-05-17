@@ -155,6 +155,7 @@ struct ActiveForeachReference {
 
 #[derive(Clone)]
 struct WordPressOptionState {
+    option_id: i64,
     value: String,
     autoload: String,
 }
@@ -7988,20 +7989,21 @@ impl Interpreter {
                     state.buffered_result_cursor = 0;
                     return Ok(Value::Bool(false));
                 }
-                options.insert(
-                    option_name.clone(),
-                    WordPressOptionState {
-                        value: option_value.clone(),
-                        autoload: autoload.clone(),
-                    },
-                );
-                self.mysqli_affected_rows.insert(handle_id, 1);
                 let next_insert_id = self
                     .mysqli_insert_ids
                     .get(&handle_id)
                     .copied()
                     .unwrap_or(0)
                     .saturating_add(1);
+                options.insert(
+                    option_name.clone(),
+                    WordPressOptionState {
+                        option_id: next_insert_id,
+                        value: option_value.clone(),
+                        autoload: autoload.clone(),
+                    },
+                );
+                self.mysqli_affected_rows.insert(handle_id, 1);
                 self.mysqli_insert_ids.insert(handle_id, next_insert_id);
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
@@ -8025,21 +8027,27 @@ impl Interpreter {
                         ),
                     ));
                 };
-                let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
-                    option_name.clone(),
-                    WordPressOptionState {
-                        value: option_value.clone(),
-                        autoload: autoload.clone(),
-                    },
-                );
-                let affected_rows = if previous.is_some() { 2 } else { 1 };
-                self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 let next_insert_id = self
                     .mysqli_insert_ids
                     .get(&handle_id)
                     .copied()
                     .unwrap_or(0)
                     .saturating_add(1);
+                let options = self.mysqli_wp_options.entry(handle_id).or_default();
+                let option_id = options
+                    .get(option_name)
+                    .map(|option| option.option_id)
+                    .unwrap_or(next_insert_id);
+                let previous = options.insert(
+                    option_name.clone(),
+                    WordPressOptionState {
+                        option_id,
+                        value: option_value.clone(),
+                        autoload: autoload.clone(),
+                    },
+                );
+                let affected_rows = if previous.is_some() { 2 } else { 1 };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 self.mysqli_insert_ids.insert(handle_id, next_insert_id);
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
@@ -8063,21 +8071,22 @@ impl Interpreter {
                         ),
                     ));
                 };
-                let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
-                    option_name.clone(),
-                    WordPressOptionState {
-                        value: option_value.clone(),
-                        autoload: autoload.clone(),
-                    },
-                );
-                let affected_rows = if previous.is_some() { 2 } else { 1 };
-                self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 let next_insert_id = self
                     .mysqli_insert_ids
                     .get(&handle_id)
                     .copied()
                     .unwrap_or(0)
                     .saturating_add(1);
+                let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                    option_name.clone(),
+                    WordPressOptionState {
+                        option_id: next_insert_id,
+                        value: option_value.clone(),
+                        autoload: autoload.clone(),
+                    },
+                );
+                let affected_rows = if previous.is_some() { 2 } else { 1 };
+                self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 self.mysqli_insert_ids.insert(handle_id, next_insert_id);
                 let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                 state.executed_result = None;
@@ -8191,6 +8200,30 @@ impl Interpreter {
                         ("option_name".to_string(), Value::String(option_name)),
                         ("option_value".to_string(), Value::String(option_value)),
                     ]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
+        if matches!(
+            query,
+            "SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `option_id` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
+            if let Some(option_id) = match (connection_handle_id, params) {
+                (Some(handle_id), [Value::String(option_name)]) => self
+                    .mysqli_wp_options
+                    .get(&handle_id)
+                    .and_then(|options| options.get(option_name))
+                    .map(|option| option.option_id),
+                _ => None,
+            } {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec!["option_id".to_string()],
+                    rows: vec![vec![("option_id".to_string(), Value::Int(option_id))]],
                 }));
             }
             return Ok(Some(MysqliPendingResultState {
@@ -8945,21 +8978,27 @@ impl Interpreter {
         if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_insert_on_duplicate_query(query)
         {
-            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
-                option_name,
-                WordPressOptionState {
-                    value: option_value,
-                    autoload,
-                },
-            );
-            let affected_rows = if previous.is_some() { 2 } else { 1 };
-            self.mysqli_affected_rows.insert(handle_id, affected_rows);
             let next_insert_id = self
                 .mysqli_insert_ids
                 .get(&handle_id)
                 .copied()
                 .unwrap_or(0)
                 .saturating_add(1);
+            let options = self.mysqli_wp_options.entry(handle_id).or_default();
+            let option_id = options
+                .get(&option_name)
+                .map(|option| option.option_id)
+                .unwrap_or(next_insert_id);
+            let previous = options.insert(
+                option_name,
+                WordPressOptionState {
+                    option_id,
+                    value: option_value,
+                    autoload,
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
             self.mysqli_insert_ids.insert(handle_id, next_insert_id);
             return Ok(Value::Bool(true));
         }
@@ -8967,21 +9006,22 @@ impl Interpreter {
         if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_replace_query(query)
         {
-            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
-                option_name,
-                WordPressOptionState {
-                    value: option_value,
-                    autoload,
-                },
-            );
-            let affected_rows = if previous.is_some() { 2 } else { 1 };
-            self.mysqli_affected_rows.insert(handle_id, affected_rows);
             let next_insert_id = self
                 .mysqli_insert_ids
                 .get(&handle_id)
                 .copied()
                 .unwrap_or(0)
                 .saturating_add(1);
+            let previous = self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                option_name,
+                WordPressOptionState {
+                    option_id: next_insert_id,
+                    value: option_value,
+                    autoload,
+                },
+            );
+            let affected_rows = if previous.is_some() { 2 } else { 1 };
+            self.mysqli_affected_rows.insert(handle_id, affected_rows);
             self.mysqli_insert_ids.insert(handle_id, next_insert_id);
             return Ok(Value::Bool(true));
         }
@@ -8994,20 +9034,21 @@ impl Interpreter {
                 self.mysqli_affected_rows.insert(handle_id, 0);
                 return Ok(Value::Bool(false));
             }
-            options.insert(
-                option_name,
-                WordPressOptionState {
-                    value: option_value,
-                    autoload,
-                },
-            );
-            self.mysqli_affected_rows.insert(handle_id, 1);
             let next_insert_id = self
                 .mysqli_insert_ids
                 .get(&handle_id)
                 .copied()
                 .unwrap_or(0)
                 .saturating_add(1);
+            options.insert(
+                option_name,
+                WordPressOptionState {
+                    option_id: next_insert_id,
+                    value: option_value,
+                    autoload,
+                },
+            );
+            self.mysqli_affected_rows.insert(handle_id, 1);
             self.mysqli_insert_ids.insert(handle_id, next_insert_id);
             return Ok(Value::Bool(true));
         }
@@ -9069,6 +9110,23 @@ impl Interpreter {
                     span,
                     vec!["autoload".to_string()],
                     vec![vec![("autoload".to_string(), Value::String(autoload))]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(option_name) = parse_wordpress_option_id_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(option_id) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .map(|option| option.option_id)
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec!["option_id".to_string()],
+                    vec![vec![("option_id".to_string(), Value::Int(option_id))]],
                 );
             }
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
@@ -12862,35 +12920,56 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let Expr::Variable(caller_name, _) = &item.value else {
+                if let Expr::Variable(caller_name, _) = &item.value {
+                    if caller_scope.is_array_offset_alias_name(caller_name) {
+                        return Err(runtime_error(
+                            item.value.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "call_user_func_array() reference array elements routed through array-offset alias metadata are not implemented",
+                            ),
+                        ));
+                    }
+                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                        runtime_error(
+                            item.value.span(),
+                            RuntimeError::undefined_variable(caller_name),
+                        )
+                    })?;
+                    values.push(caller_cell.borrow().clone());
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::CallerCell(caller_cell),
+                    });
+                } else if let Some((alias, value)) = self
+                    .evaluate_public_object_property_array_reference_argument(
+                        &item.value,
+                        caller_scope,
+                    )?
+                {
+                    if function.returns_by_reference {
+                        return Err(runtime_error(
+                            item.value.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias),
+                    });
+                } else {
                     return Err(runtime_error(
                         item.value.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation is only implemented for direct variable array elements in the current subset",
-                        ),
-                    ));
-                };
-                if caller_scope.is_array_offset_alias_name(caller_name) {
-                    return Err(runtime_error(
-                        item.value.span(),
-                        RuntimeError::unsupported_call(
-                            callable_name(&function.name),
-                            "call_user_func_array() reference array elements routed through array-offset alias metadata are not implemented",
+                            "call_user_func_array() reference parameter invocation is only implemented for direct variable and direct public object-property array-offset array elements in the current subset",
                         ),
                     ));
                 }
-                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                    runtime_error(
-                        item.value.span(),
-                        RuntimeError::undefined_variable(caller_name),
-                    )
-                })?;
-                values.push(caller_cell.borrow().clone());
-                reference_bindings.push(ReferenceBinding {
-                    param_name: param.name.clone(),
-                    target: ReferenceBindingTarget::CallerCell(caller_cell),
-                });
             } else {
                 values.push(self.evaluate(&item.value, caller_scope)?);
             }
@@ -15058,6 +15137,16 @@ impl Interpreter {
         Ok(Value::Int(self.output_buffers.len() as i64))
     }
 
+    fn call_ob_get_contents(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ob_get_contents", args, 0, span)?;
+        Ok(self
+            .output_buffers
+            .last()
+            .cloned()
+            .map(Value::String)
+            .unwrap_or(Value::Bool(false)))
+    }
+
     fn call_ob_get_clean(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ob_get_clean", args, 0, span)?;
         Ok(self
@@ -17082,6 +17171,7 @@ impl Interpreter {
             "restore_error_handler" => self.call_restore_error_handler(args, span),
             "ob_start" => self.call_ob_start(&args, span),
             "ob_get_level" => self.call_ob_get_level(&args, span),
+            "ob_get_contents" => self.call_ob_get_contents(&args, span),
             "ob_get_clean" => self.call_ob_get_clean(&args, span),
             "header" => self.call_header(&args, span),
             "header_remove" => self.call_header_remove(&args, span),
@@ -19872,6 +19962,10 @@ fn register_class_member_runtime_tables(
     class_id: ClassId,
     class: &ClassDecl,
 ) -> CompileResult<()> {
+    for constant in composed_trait_constants(class, trait_lookup)? {
+        class_constants.insert((class_id, constant.name.clone()), constant);
+    }
+
     for method in composed_trait_methods(class, trait_lookup)? {
         let key = (class_id, method.function.name.to_ascii_lowercase());
         method_signatures.insert(key.clone(), method_signature(&method.function));
@@ -20004,6 +20098,16 @@ fn register_class_members(
         .set_interfaces(id, interfaces)
         .map_err(|error| runtime_error(class.span, error))?;
 
+    for constant in composed_trait_constants(class, trait_lookup)? {
+        let visibility = runtime_visibility(constant.visibility);
+        let metadata_constant = PhpClassConstantMetadata::new(&constant.name, visibility);
+        classes
+            .get_mut(id)
+            .expect("declared class id should resolve to class metadata")
+            .add_constant(metadata_constant)
+            .map_err(|error| runtime_error(constant.span, error))?;
+    }
+
     for method in composed_trait_methods(class, trait_lookup)? {
         let visibility = runtime_visibility(method.visibility);
         validate_final_method_override(classes, id, &class.name, &method, final_methods)
@@ -20122,6 +20226,24 @@ fn register_class_members(
         .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn composed_trait_constants(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<Vec<ClassConstantDecl>> {
+    let mut constants = Vec::new();
+    for trait_use in &class.trait_uses {
+        let key = trait_use.name.to_ascii_lowercase();
+        let trait_decl = trait_lookup.get(&key).ok_or_else(|| {
+            runtime_error(
+                trait_use.span,
+                RuntimeError::undefined_class(&trait_use.name),
+            )
+        })?;
+        constants.extend(trait_decl.constants.iter().cloned());
+    }
+    Ok(constants)
 }
 
 fn composed_trait_methods(
@@ -21541,6 +21663,7 @@ fn is_builtin(name: &str) -> bool {
             | "restore_error_handler"
             | "ob_start"
             | "ob_get_level"
+            | "ob_get_contents"
             | "ob_get_clean"
             | "header"
             | "header_remove"
@@ -22079,6 +22202,22 @@ fn parse_wordpress_option_autoload_select_query(query: &str) -> Option<String> {
             query.strip_prefix("SELECT `autoload` FROM `wp_options` WHERE `option_name` = ")
         })?;
     let rest = rest.strip_suffix(" LIMIT 1").unwrap_or(rest);
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
+fn parse_wordpress_option_id_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_id FROM wp_options WHERE option_name = ")
+        .or_else(|| query.strip_prefix("SELECT option_id FROM `wp_options` WHERE option_name = "))
+        .or_else(|| {
+            query.strip_prefix("SELECT `option_id` FROM `wp_options` WHERE `option_name` = ")
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1")?;
     let values = parse_sql_single_quoted_list(rest)?;
     if values.len() != 1 {
         return None;

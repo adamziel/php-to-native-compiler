@@ -78,20 +78,22 @@
   copied into the callee parameter, and written back to the same slot when the
   callee returns normally or with `return`. This
   object-property argument path does not expose a general in-call PHP
-  reference container. The same direct-variable cell
-  binding is supported for string user-function callbacks and public
+  reference container. String user-function callbacks and public
   `[object, method]` instance callbacks invoked through
-  `call_user_func_array($callback, array(&$value, ...))` when the argument array
-  is an unkeyed literal and each reached by-reference callback parameter
-  receives a by-reference direct variable element. `unset($param)` detaches
-  only the callee's local parameter name; later local writes do not mutate the
-  caller variable or write back through the object-property argument path.
+  `call_user_func_array($callback, array(&$value, ...))` also support
+  by-reference direct variable elements through the same direct-variable cell
+  binding. The callback path additionally accepts by-reference direct public
+  object-property array-offset elements such as
+  `array(&$object->items[$group][$key], ...)` as a bounded
+  copy-in/writeback path. `unset($param)` detaches only the callee's local
+  parameter name; later local writes do not mutate the caller variable or write
+  back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, callback-dispatched object-property array, dynamic static receiver,
-  `parent::`, and reference-returning function or method forms remain
-  unsupported for object-property array reference arguments. This is still a
-  bounded direct-variable alias and public object-property output path, not
-  full PHP reference containers or copy-on-write.
+  array, dynamic static receiver, `parent::`, static method array-callable, and
+  reference-returning function or method forms remain unsupported for
+  object-property array reference arguments. This is still a bounded
+  direct-variable alias and public object-property output path, not full PHP
+  reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -878,7 +880,7 @@
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
-  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_clean`, `date_default_timezone_set`,
+  `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -936,7 +938,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`,
-  `ob_start`, `ob_get_level`, `ob_get_clean`, `header`,
+  `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -1613,11 +1615,12 @@
   placeholders with zero rows and zero fields without executing SQL. For an
   exact current synthetic WordPress option write,
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
-  `mysqli_query()` records the string option value in per-placeholder-handle
-  state, sets `mysqli_affected_rows($handle)` to `1`, advances deterministic
+  `mysqli_query()` records a deterministic `option_id`, the string option
+  value, and autoload flag in per-placeholder-handle state, sets
+  `mysqli_affected_rows($handle)` to `1`, advances deterministic
   `mysqli_insert_id($handle)` when the option name is not already recorded,
   returns `false` with affected rows `0` for duplicate exact plain option
-  inserts while preserving the existing value/autoload and insert id, accepts exact
+  inserts while preserving the existing option id/value/autoload and insert id, accepts exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
   ON DUPLICATE KEY UPDATE ...` option upserts that update existing recorded
   options with `mysqli_affected_rows($handle) === 2`, insert missing options
@@ -1641,6 +1644,9 @@
   `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` returns
   the recorded autoload value through that same placeholder result/fetch path.
   The exact
+  `SELECT option_id FROM wp_options WHERE option_name = ... LIMIT 1` returns
+  the recorded deterministic option id through that same placeholder
+  result/fetch path. The exact
   `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
   shape returns the recorded value and autoload columns together
   through the same placeholder result/fetch path.
@@ -1659,7 +1665,7 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  arbitrary projection beyond exact option value/autoload/name-value shapes,
+  arbitrary projection beyond exact option id/value/autoload/name-value shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -1684,14 +1690,21 @@
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array($name))`; missing names return
   an empty zero-field placeholder result. The exact
+  `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query
+  returns recorded deterministic option-id rows for string option-name
+  parameters on the same handle through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query, array($name))`; missing names return
+  an empty zero-field placeholder result. The exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
   prepared statement records string option-name, option-value, and autoload
   parameters on the same handle, updates statement and connection affected-row
   metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
-  exposes later exact option-value reads through the same state island when
-  the option name is not already recorded. Duplicate exact prepared plain
-  option inserts return `false`, set statement and connection affected rows to
-  `0`, and preserve the existing value/autoload and insert id. The exact
+  exposes later exact option-id and option-value reads through the same state
+  island when the option name is not already recorded. Duplicate exact
+  prepared plain option inserts return `false`, set statement and connection
+  affected rows to `0`, and preserve the existing option id/value/autoload and
+  insert id. The exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
   ON DUPLICATE KEY UPDATE ...` prepared statement records string parameters on
   the same handle for the current exact WordPress-style option upsert shapes,
@@ -1715,7 +1728,8 @@
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, real unique-index enforcement, no-op update
   affected-row fidelity, non-string parameter coercion, result binding fidelity
-  beyond exact metadata, host database execution, PDO, or native lowering. For the
+  beyond exact metadata, real auto-increment fidelity, host database execution,
+  PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -1938,7 +1952,9 @@
   buffer, and returns `true`. While a buffer is active, PHP-visible output from
   `echo`, `print`, `exit("...")`, `var_dump()`, and `print_r()` is appended to
   the innermost buffer instead of final stdout. `ob_get_level()` accepts no
-  arguments and returns the active buffer depth. `ob_get_clean()` accepts no
+  arguments and returns the active buffer depth. `ob_get_contents()` accepts no
+  arguments and returns the innermost active buffer contents without closing
+  that buffer, or `false` when no buffer is active. `ob_get_clean()` accepts no
   arguments, pops the innermost buffer, and returns its captured string, or
   `false` when no buffer is active. Any buffers still active at normal program
   completion or bounded `exit()` are flushed outward to stdout. Callbacks,
@@ -2229,8 +2245,10 @@
   nested class declarations, broader inheritance forms beyond declared
   single-parent class `extends` and already-declared interface parent lists,
   interface constants, non-public or
-  static interface methods, trait properties/constants, static/abstract/final
-  or non-public trait methods, adaptation blocks beyond the current simple
+  static interface methods, trait properties,
+  non-public/typed/abstract/final/static trait constants, multi-constant trait
+  declarations, trait constant adaptations, conflicting trait/class constants,
+  static/abstract/final or non-public trait methods, adaptation blocks beyond the current simple
   method alias and single-loser `insteadof` shapes, broad conflict
   resolution, visibility adaptations,
   `__TRAIT__` context,
@@ -2465,7 +2483,7 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public instance methods, and are available through
+  supported public constants and public instance methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
@@ -3947,7 +3965,7 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `basename`, `dirname`, `extension_loaded`, `ob_start`,
-  `ob_get_level`, `ob_get_clean`, `mysqli_connect`,
+  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
@@ -3980,7 +3998,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
-  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_clean`, `header`,
+  `mysqli_init`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
@@ -4111,7 +4129,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_starts_with`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
-  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_clean`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4159,7 +4177,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `ob_start`,
-  `ob_get_level`, `ob_get_clean`, `header`,
+  `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `header`,
   `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
@@ -4450,7 +4468,7 @@
   `mysqli_use_result(...)`/`mysqli_reap_async_query(...)`/`mysqli_poll(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls
   still reject under the function-call boundary.
-  `ob_start`, `ob_get_level`, and `ob_get_clean` accept the same current
+  `ob_start`, `ob_get_level`, `ob_get_contents`, and `ob_get_clean` accept the same current
   output-buffer subset as the builtin section above; direct native calls reject
   under the output-buffer boundary, while native function-table introspection
   recognizes the names.
@@ -4646,9 +4664,10 @@
   program; the autoload flag accepts current bool-like scalar values and does
   not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
-  trait names and perform case-insensitive lookup against empty top-level
-  traits declared in the current parsed program; the autoload flag accepts
-  current bool-like scalar values and does not trigger autoloading.
+  trait names and perform case-insensitive lookup against top-level traits
+  declared in the current parsed program, including traits with currently
+  supported public constants and public instance methods; the autoload flag
+  accepts current bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names and perform case-insensitive lookup against top-level unit enums
   declared in the current parsed program; the autoload flag accepts current
@@ -4689,10 +4708,14 @@
   interface entries are not represented.
   `get_declared_traits()` returns a zero-indexed array containing only the
   current parsed program's top-level trait names in declaration order,
-  including traits with supported public instance methods. Simple class-body
-  `use TraitName;`, repeated simple trait-use declarations, and
-  `use TraitA, TraitB;` compose already-declared public instance trait methods
-  onto the consuming class metadata. Simple method alias adaptation shapes such
+  including traits with supported public constants and public instance methods.
+  Simple class-body `use TraitName;`, repeated simple trait-use declarations,
+  and `use TraitA, TraitB;` compose already-declared public trait constants and
+  public instance trait methods onto the consuming class metadata. Trait
+  constants declared as `const NAME = ...` or `public const NAME = ...` use the
+  current class-constant expression subset and resolve as ordinary public class
+  constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
+  late-bound `static::CONST`. Simple method alias adaptation shapes such
   as `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
   for public instance trait methods; the original method remains available,
@@ -5229,8 +5252,10 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface constants, interface implementation enforcement, interface
   inheritance, built-in/internal interface catalogs,
-  trait properties/constants, static/abstract/final and non-public trait
-  methods, conflicting trait composition outside the bounded single-loser
+  trait properties, non-public/typed/abstract/final/static trait constants,
+  multi-constant trait declarations, trait constant adaptations, conflicting
+  trait/class constants, static/abstract/final and non-public trait methods,
+  conflicting trait composition outside the bounded single-loser
   `insteadof` shape,
   trait aliases beyond the current simple public, qualified public-alias, and
   same-block winner public-alias slices, visibility changes other than
@@ -5547,8 +5572,8 @@
   diagnostics, reflection behavior, and native lowering
 - magic constants other than `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__CLASS__`, and `__METHOD__`, such as `__TRAIT__` and
-  `__NAMESPACE__`; `__TRAIT__` specifically fails because trait declarations,
-  trait use, and trait-context tracking are not implemented, and
+  `__NAMESPACE__`; `__TRAIT__` specifically fails because original trait
+  method context tracking through class composition is not implemented, and
   `__NAMESPACE__` specifically fails because namespace-aware name resolution is
   not implemented. `__FUNCTION__`, `__CLASS__`, and `__METHOD__` are limited to
   current user-function and declared-method contexts plus top-level
@@ -6540,7 +6565,7 @@
   shim: filename/line output arguments, output-started tracking, output
   buffers, SAPI differences, exact warnings, and native lowering beyond
   function-table introspection
-- `ob_start()`/`ob_get_level()`/`ob_get_clean()` behavior beyond the current
+- `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_clean()` behavior beyond the current
   no-argument interpreter-owned buffer stack: callbacks, chunk sizes, flags,
   flush/end/status/list variants, output handler nesting semantics,
   output-started/header interaction, fatal-error cleanup, exact warnings, and

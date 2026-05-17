@@ -3145,6 +3145,53 @@ echo $prepared_row["option_value"], ":", $prepared_row["autoload"];
 }
 
 #[test]
+fn mysqli_query_reads_current_wordpress_option_id_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$result = mysqli_query($handle, "SELECT option_id FROM wp_options WHERE option_name = 'siteurl' LIMIT 1");
+$row = mysqli_fetch_assoc($result);
+echo mysqli_num_rows($result);
+echo ":";
+echo mysqli_num_fields($result);
+echo ":";
+echo $row["option_id"];
+echo "|";
+echo mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'duplicate', 'no')") ? "duplicate" : "rejected";
+echo "|";
+$again = mysqli_query($handle, "SELECT `option_id` FROM `wp_options` WHERE `option_name` = 'siteurl' LIMIT 1");
+$again_row = mysqli_fetch_assoc($again);
+echo $again_row["option_id"];
+echo "|";
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('home', 'https://home.test', 'yes')");
+$direct = mysqli_execute_query($handle, "SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1", array("home"));
+$direct_row = mysqli_fetch_assoc($direct);
+echo $direct_row["option_id"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT `option_id` FROM `wp_options` WHERE `option_name` = ? LIMIT 1");
+$name = "siteurl";
+mysqli_stmt_bind_param($stmt, "s", $name);
+echo mysqli_stmt_execute($stmt) ? "executed" : "failed";
+echo "|";
+$prepared = mysqli_stmt_get_result($stmt);
+$prepared_row = mysqli_fetch_assoc($prepared);
+echo $prepared_row["option_id"];
+echo "|";
+$missing = mysqli_query($handle, "SELECT option_id FROM wp_options WHERE option_name = 'missing' LIMIT 1");
+echo mysqli_num_rows($missing);
+echo ":";
+echo mysqli_num_fields($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1:1:1|rejected|1|2|executed|1|0:0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_records_escaped_wordpress_option_literals() {
     let execution = run_source(
         r#"<?php

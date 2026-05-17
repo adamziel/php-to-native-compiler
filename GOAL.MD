@@ -38,6 +38,104 @@ runtime fallback zones, but those fallback zones must be explicit and tested,
 and they must remain stepping stones toward compatibility rather than excuses to
 avoid difficult semantics.
 
+## Compatibility Success Criteria
+
+Full PHP and WordPress compatibility is not a single milestone. Treat it as a
+set of measurable gates:
+
+1. Language semantics: supported PHP syntax must parse into real AST nodes and
+   execute with PHP-compatible observable behavior, including errors and edge
+   cases where tests pin them.
+2. Runtime value model: values must support PHP references, copy-on-write,
+   arrays, objects, resources, exceptions, type coercions, and alias lifetime
+   rules without relying on ad hoc special cases for each reached fixture.
+3. Standard library and extensions: builtins and extensions needed by real
+   applications must either execute faithfully or fail through named,
+   documented boundaries. WordPress-critical surfaces include filesystem,
+   streams, PCRE, date/time, JSON, mbstring/iconv-like string handling, hash,
+   sessions/cookies, output buffering, mysqli/mysqlnd, and error handling.
+4. Multi-file execution: include/require, namespace/import behavior,
+   autoloading, conditional declarations, process globals, and request-local
+   state must work across real application trees.
+5. Web/SAPI behavior: request input, response headers, cookies, output
+   buffering, uploaded files, environment/server variables, shutdown/error
+   handlers, and CLI/web differences must be modeled explicitly.
+6. WordPress execution: WordPress core must run through front-end, admin,
+   AJAX, REST, cron, XML-RPC, install/update, plugin, and theme flows against
+   a real or faithfully emulated database/filesystem surface.
+7. Native compiler path: `phpc compile --emit-ir` and `--emit-asm` must grow
+   from scalar lowering toward runtime-integrated PHP execution while rejecting
+   unsupported lowering before emitting misleading native code.
+8. Evidence: every claimed feature needs implementation code, tests, a CLI
+   exercise path, documentation, and named unsupported edge cases.
+
+## Compatibility Gap Ledger
+
+Use this ledger to keep the remaining difficult work visible. The active
+milestone queue in `docs/NEXT_TASKS.md` should draw from these gaps until the
+gate above is satisfied.
+
+### PHP Language Semantics
+
+- Full PHP references: reference containers, reference-returning expressions,
+  by-reference `foreach`, alias lifetime/destruction order, reference arrays,
+  object/array/reference interaction, and exact warnings/notices.
+- Copy-on-write: arrays, strings, objects, references, function parameters,
+  returns, object properties, superglobals, and included-file boundaries need a
+  general COW model instead of the current bounded alias metadata.
+- Dynamic lookup: variable variables, dynamic function/method/static/property
+  names, late static binding edge cases, `__call`, `__callStatic`, `__get`,
+  `__set`, `__isset`, `__unset`, autoloading, and magic constants must become
+  broad semantics rather than narrow reached slices.
+- Object model: traits, interfaces, enums, anonymous classes, constants,
+  properties, visibility, variance, inheritance compatibility, constructor and
+  destructor behavior, clone behavior, serialization hooks, exceptions, and
+  reflection still need broad PHP fidelity.
+- Control flow and errors: throw/catch/finally unwinding, fatal/recoverable
+  error distinctions, warning/notice suppression, shutdown behavior, generators,
+  fibers, and exact exit/fatal cleanup remain major work.
+
+### Runtime, Standard Library, and Extensions
+
+- Standard library coverage must move from reached builtin slices to coherent
+  modules: strings, arrays, math, sorting, regex, date/time, JSON, hashing,
+  filesystem/path, streams, process/environment, output buffering, sessions,
+  cookies, filters, encoding, and reflection.
+- Extension behavior must be either implemented or explicitly unavailable with
+  stable diagnostics. WordPress-relevant priorities are mysqli/mysqlnd, PCRE,
+  JSON, mbstring/iconv-like string behavior, hash, curl/HTTP, XML, ZIP, GD or
+  image metadata surfaces, OpenSSL, and sodium/password hashing.
+- Resource values and stream wrappers need real runtime representation:
+  `php://input`, `php://temp`, file handles, directory handles, sockets/HTTP,
+  stat caches, include paths, permissions, locking, and metadata.
+
+### WordPress Compatibility
+
+- Bootstrap evidence is still bounded. Current probes prove selected
+  deterministic CLI/bootstrap paths and synthetic `wpdb`/object-cache/option
+  behavior, not real WordPress support.
+- Real database support is missing: connections, authentication, charset and
+  collation state, arbitrary SQL, prepared statements, result sets, errors,
+  transactions, indexes/constraints, persistence, and mysqlnd/mysqli fidelity.
+- Real request support is missing: query/body parsing, cookies, headers,
+  output-started semantics, uploaded files, REST routing, admin/AJAX request
+  state, nonce/session/user/auth flows, rewrite rules, and web-server SAPI
+  differences.
+- WordPress subsystems still need executable evidence: plugin loading,
+  themes/templates, hooks under realistic callback shapes, object cache
+  persistence, options/transients, roles/capabilities, REST API, HTTP API,
+  cron, media/filesystem updates, localization, block rendering, and install
+  or upgrade flows.
+
+### Native Compilation
+
+- The native path is intentionally narrower than `phpc run`. It still needs a
+  runtime ABI for PHP values, heap allocation, arrays, objects, references,
+  COW, function/method dispatch, includes, exceptions, resources, request
+  state, output buffering, filesystem/database calls, and extension shims.
+- Unsupported native lowering must continue to be explicit and tested until
+  the runtime ABI exists for the feature being lowered.
+
 ## What We Have Been Doing
 
 The work so far has been building the substrate for compatibility without lying

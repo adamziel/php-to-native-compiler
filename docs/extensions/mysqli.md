@@ -291,11 +291,12 @@ behavior, or native lowering.
 For direct `mysqli_query()`, the runtime has one bounded per-placeholder-handle
 state island for exact WordPress-shaped option writes and reads:
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
-records the string option value, sets `mysqli_affected_rows($handle)` to `1`,
-and advances deterministic `mysqli_insert_id($handle)` when the option name is
-not already recorded. A duplicate exact plain option insert returns `false`,
-sets affected rows to `0`, leaves the existing value/autoload and insert id in
-place, and still uses the current clean placeholder diagnostic state. Exact
+records a deterministic `option_id`, the string option value, and autoload
+flag, sets `mysqli_affected_rows($handle)` to `1`, and advances deterministic
+`mysqli_insert_id($handle)` when the option name is not already recorded. A
+duplicate exact plain option insert returns `false`, sets affected rows to
+`0`, leaves the existing option id/value/autoload and insert id in place, and
+still uses the current clean placeholder diagnostic state. Exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
 ON DUPLICATE KEY UPDATE ...` option upserts update existing recorded options
 with `mysqli_affected_rows($handle) === 2`, insert missing options with
@@ -318,6 +319,10 @@ helpers. A later exact
 `SELECT autoload FROM wp_options WHERE option_name = ... LIMIT 1` can return
 the recorded autoload value through the same placeholder result/fetch path.
 The exact
+`SELECT option_id FROM wp_options WHERE option_name = ... LIMIT 1` shape can
+return the recorded deterministic option id through the same placeholder
+result/fetch path.
+The exact
 `SELECT option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
 shape can return the recorded value and autoload columns together through the
 same placeholder result/fetch path.
@@ -335,7 +340,7 @@ quotes, backslashes, newlines, and carriage returns, plus doubled single
 quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
-projection beyond exact option value/autoload/name-value shapes,
+projection beyond exact option id/value/autoload/name-value shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -360,15 +365,21 @@ parameters on the same handle through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array($name))`; missing names return an
 empty zero-field placeholder result. The exact
+`SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query returns
+recorded deterministic option-id rows for string option-name parameters on the
+same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query, array($name))`; missing names return an
+empty zero-field placeholder result. The exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
 prepared statement records string option-name, option-value, and autoload
 parameters on the same handle, updates statement and connection affected-row
 metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
-exposes later exact option-value reads through the same state island when the
-option name is not already recorded. A duplicate exact prepared plain option
-insert returns `false`, updates statement and connection affected-row metadata
-to `0`, leaves the existing value/autoload and insert id in place, and still
-uses the current clean placeholder diagnostic state. The exact
+exposes later exact option-id and option-value reads through the same state
+island when the option name is not already recorded. A duplicate exact
+prepared plain option insert returns `false`, updates statement and connection
+affected-row metadata to `0`, leaves the existing option id/value/autoload and
+insert id in place, and still uses the current clean placeholder diagnostic
+state. The exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
 ON DUPLICATE KEY UPDATE ...` prepared statement records string parameters on
 the same handle for the current exact WordPress-style option upsert shapes,
@@ -392,7 +403,8 @@ missing option names as successful zero-row deletes. Prepared mutation SQL
 without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
 affected-row fidelity, non-string parameter coercion, result binding fidelity
-beyond exact metadata, host database execution, PDO, or native lowering.
+beyond exact metadata, real auto-increment fidelity, host database execution,
+PDO, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

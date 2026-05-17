@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1262/callback_object_property_array_reference_parameter.php
+> stdout
+cold:function:method
+cold:function:method
+> stderr
+
+> exit
+0

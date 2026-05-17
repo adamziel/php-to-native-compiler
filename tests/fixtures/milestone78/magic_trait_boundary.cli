@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/milestone78/magic_trait_boundary.php:4:16: unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented
+parse error at tests/fixtures/milestone78/magic_trait_boundary.php:4:16: unsupported magic constant __TRAIT__: trait context evaluation requires original trait method context tracking through class composition, which is not implemented
 --- stderr end ---

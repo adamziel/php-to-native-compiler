@@ -124,8 +124,8 @@ const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lower
 const ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION: &str = "assembly request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, and $_FILES until native request-state storage, SAPI population, variables_order policy, upload metadata, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 const ASSEMBLY_HEADER_STATE_REJECTION: &str = "assembly header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
-const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), and ob_get_clean() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
-const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), and ob_get_clean() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), and ob_get_clean() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
+const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), and ob_get_clean() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -188,7 +188,7 @@ fn is_header_state_builtin(name: &str) -> bool {
 fn is_output_buffer_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "ob_start" | "ob_get_level" | "ob_get_clean"
+        "ob_start" | "ob_get_level" | "ob_get_contents" | "ob_get_clean"
     )
 }
 
@@ -6951,6 +6951,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "restore_error_handler"
             | "ob_start"
             | "ob_get_level"
+            | "ob_get_contents"
             | "ob_get_clean"
             | "header"
             | "header_remove"
