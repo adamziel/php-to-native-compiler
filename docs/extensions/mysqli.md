@@ -333,19 +333,23 @@ including the current backticked table/column spelling, are accepted through
 `mysqli_stmt_execute()` and `mysqli_execute_query($handle, $query, array(...))`
 when every placeholder value is a string option name; duplicate names are
 de-duplicated for affected-row accounting. Exact
-`DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` and prepared
-`DELETE FROM wp_options WHERE option_name LIKE ?` shapes remove deterministic
-trailing-percent option-name prefix matches, including backticked table/column
-spellings and escaped transient prefixes such as `\_transient\_%`. This gives
-the current transient-shaped cleanup probe a deterministic option-state path
-for literal/prepared name lists and prefix deletes. An exact WordPress-shaped
+`DELETE FROM wp_options WHERE option_name LIKE '<prefix>%'` removes
+deterministic trailing-percent option-name prefix matches. Prepared
+`DELETE FROM wp_options WHERE option_name LIKE ?` shapes, including
+backticked table/column spellings and an exact trailing single-character
+`ESCAPE '<char>'` clause, remove option names through the same bounded
+MySQL-like `LIKE` matcher used by prepared option-row scans, so `%`, `_`, and
+escaped wildcard literals such as `\_transient\_%` or `!_transient!_%` are
+distinguished. This gives the current transient-shaped cleanup probe a
+deterministic option-state path for literal/prepared name lists and prepared
+LIKE deletes. An exact WordPress-shaped
 `DELETE a, b FROM wp_options a, wp_options b ...` transient cleanup shape
 also deletes payload rows and matching timeout rows when the supported
 payload prefix, timeout prefix, `CONCAT`/`SUBSTRING` timeout expression, and
 threshold match. This is not broad `DELETE` SQL, arbitrary multi-table
-deletes, subquery support, arbitrary predicates, general SQL `LIKE` wildcard
-semantics, non-string option-name params, real index/lock behavior, or host
-database execution. A later exact
+deletes, subquery support, arbitrary predicates, direct literal-delete
+`ESCAPE` clauses, SQL-mode-aware prepared deletes, non-string option-name
+params, real index/lock behavior, or host database execution. A later exact
 `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1` can
 return that value through the existing placeholder `mysqli_result` and fetch
 helpers. A later exact
@@ -575,8 +579,10 @@ existing recorded option for a string option-name parameter on the same
 handle, updates statement and connection affected-row metadata, and treats
 missing option names as successful zero-row deletes. The exact
 `DELETE FROM wp_options WHERE option_name LIKE ?` prepared statement removes
-recorded options whose names match one string trailing-percent prefix pattern
-and updates statement and connection affected-row metadata. The exact
+recorded options whose names match one string MySQL-like pattern parameter,
+including `%`, `_`, backslash escapes, and an exact trailing
+single-character `ESCAPE '<char>'` clause, and updates statement and
+connection affected-row metadata. The exact
 prepared WordPress transient pair cleanup shape over `wp_options` aliases `a`
 and `b` also removes reached payload rows plus matching timeout rows and
 updates statement and connection affected-row metadata. Prepared mutation SQL
@@ -584,7 +590,7 @@ without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
 affected-row fidelity, prepared mutation shapes beyond the exact option value,
 value/autoload, autoload-only, insert, replace, upsert, equality delete,
-name-list delete, prefix delete, and transient pair cleanup forms listed
+name-list delete, prepared LIKE delete, and transient pair cleanup forms listed
 above, arbitrary projections, non-string parameter coercion, result binding
 fidelity beyond exact metadata, real auto-increment fidelity, host database
 execution, PDO, or native lowering.

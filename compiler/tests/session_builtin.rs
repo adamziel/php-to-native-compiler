@@ -34,7 +34,7 @@ echo count(headers_list());
 
     assert_eq!(
         execution.stdout,
-        "none|empty-id|started|active|phpctestsession|admin:2|1"
+        "none|empty-id|started|active|phpctestsession|admin:2|4"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -63,7 +63,41 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "started|1|Set-Cookie: PHPSESSID=phpccookie|second|0"
+        "started|4|Set-Cookie: PHPSESSID=phpccookie|second|3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn session_start_emits_default_nocache_headers() {
+    let execution = run_source(
+        r#"<?php
+session_id("phpccache");
+$out = array();
+$started = session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = $started ? "started" : "failed";
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+header("Cache-Control: custom");
+session_write_close();
+session_id("phpccachetwo");
+session_start(["use_cookies" => false]);
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "started|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: no-store, no-cache, must-revalidate|Pragma: no-cache|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: no-store, no-cache, must-revalidate|Pragma: no-cache"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -93,7 +127,7 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "started|1|Set-Cookie: PHPSESSID=phpcattrs; Max-Age=3600; path=/wp-admin; domain=example.test; secure; HttpOnly; SameSite=Lax"
+        "started|4|Set-Cookie: PHPSESSID=phpcattrs; Max-Age=3600; path=/wp-admin; domain=example.test; secure; HttpOnly; SameSite=Lax"
     );
     assert_eq!(execution.exit_code, 0);
 }

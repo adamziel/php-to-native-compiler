@@ -5308,6 +5308,36 @@ echo $method->invokeArgs($runner, array("save_post", 20)), "|", implode(",", $ru
 }
 
 #[test]
+fn reflection_method_invokes_public_static_methods() {
+    let execution = run_source(
+        r#"<?php
+class BaseHook {
+    public static function attach($hook, $priority = 10) {
+        return static::class . ":" . $hook . ":" . $priority;
+    }
+}
+
+class ChildHook extends BaseHook {}
+
+$base = new ReflectionMethod(BaseHook::class, "attach");
+echo $base->invoke(null, "init"), "\n";
+echo $base->invokeArgs(new BaseHook(), array("save_post", 20)), "\n";
+
+$child = new ReflectionMethod(ChildHook::class, "attach");
+echo $child->invoke(null, "plugins_loaded"), "\n";
+echo $child->invokeArgs(new ChildHook(), array("shutdown", 50));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "BaseHook:init:10\nBaseHook:save_post:20\nChildHook:plugins_loaded:10\nChildHook:shutdown:50"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_function_reports_bounded_source_metadata() {
     let execution = run_source_with_source_file(
         r#"<?php

@@ -29,6 +29,11 @@ use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
 
 pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 128;
+const SESSION_NOCACHE_HEADERS: [&str; 3] = [
+    "Expires: Thu, 19 Nov 1981 08:52:00 GMT",
+    "Cache-Control: no-store, no-cache, must-revalidate",
+    "Pragma: no-cache",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -362,6 +367,7 @@ struct ReflectionFunctionState {
 
 #[derive(Debug, Clone)]
 struct ReflectionMethodState {
+    reflected_class_id: Option<ClassId>,
     declaring_class_name: String,
     declaring_kind: ReflectionClassKind,
     declaring_class_id: Option<ClassId>,
@@ -11326,6 +11332,7 @@ impl Interpreter {
                 let signature_key = (declaring_class_id, metadata.name().to_ascii_lowercase());
                 let signature = self.method_signatures.get(&signature_key);
                 Ok(ReflectionMethodState {
+                    reflected_class_id: Some(class_id),
                     declaring_class_name,
                     declaring_kind: ReflectionClassKind::Class,
                     declaring_class_id: Some(declaring_class_id),
@@ -11365,6 +11372,7 @@ impl Interpreter {
                 {
                     if method.function.name.eq_ignore_ascii_case(method_name) {
                         return Ok(ReflectionMethodState {
+                            reflected_class_id: None,
                             declaring_class_name: declaring_interface,
                             declaring_kind: ReflectionClassKind::Interface,
                             declaring_class_id: None,
@@ -11410,6 +11418,7 @@ impl Interpreter {
                 for method in &trait_decl.methods {
                     if method.function.name.eq_ignore_ascii_case(method_name) {
                         return Ok(ReflectionMethodState {
+                            reflected_class_id: None,
                             declaring_class_name: trait_decl.name.clone(),
                             declaring_kind: ReflectionClassKind::Trait,
                             declaring_class_id: None,
@@ -12968,8 +12977,9 @@ impl Interpreter {
         if is_wordpress_option_prepared_delete_prefix_query(&query) {
             if let Some(handle_id) = connection_handle_id {
                 if self.mysqli_wp_options.contains_key(&handle_id) {
-                    let prefix = wordpress_option_name_delete_prefix_from_prepared_params(
+                    let filter = wordpress_option_name_delete_like_filter_from_prepared_params(
                         function,
+                        &query,
                         &bound_parameters,
                         span,
                     )?;
@@ -12977,7 +12987,7 @@ impl Interpreter {
                         .mysqli_wp_options
                         .get_mut(&handle_id)
                         .expect("checked wp_options state should exist");
-                    let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                    let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                     self.mysqli_affected_rows.insert(handle_id, affected_rows);
                     let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
                     state.executed_result = None;
@@ -14353,13 +14363,14 @@ impl Interpreter {
         }
 
         if is_wordpress_option_prepared_delete_prefix_query(&query) {
-            let prefix = wordpress_option_name_delete_prefix_from_prepared_params(
+            let filter = wordpress_option_name_delete_like_filter_from_prepared_params(
                 "mysqli_execute_query()",
+                &query,
                 &params,
                 span,
             )?;
             if let Some(options) = self.mysqli_wp_options.get_mut(&handle_id) {
-                let affected_rows = delete_wordpress_options_by_prefix(options, &prefix);
+                let affected_rows = delete_wordpress_options_by_filter(options, &filter);
                 self.mysqli_affected_rows.insert(handle_id, affected_rows);
                 return Ok(Value::Bool(true));
             }
@@ -17973,15 +17984,6 @@ impl Interpreter {
                 ),
             ));
         };
-        if state.is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    "static method reflection invocation is not implemented",
-                ),
-            ));
-        }
         if state.visibility != Visibility::Public {
             return Err(runtime_error(
                 span,
@@ -17990,6 +17992,45 @@ impl Interpreter {
                     "non-public method reflection invocation is not implemented",
                 ),
             ));
+        }
+
+        if state.is_static {
+            match target {
+                Value::Null | Value::Object(_) => {}
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionMethod::invoke",
+                            format!(
+                                "target must be null or object for static method invocation in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+
+            let function = self.method_function(
+                declaring_class_id,
+                &state.declaring_class_name,
+                &state.name,
+                span,
+            )?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, values.len(), span)?;
+            ensure_supported_function_signature(function, values.len(), span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            let called_class_id = state.reflected_class_id.unwrap_or(declaring_class_id);
+            return self.call_user_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(declaring_class_id),
+                Some(called_class_id),
+                Vec::new(),
+                None,
+            );
         }
 
         let Value::Object(object) = target else {
@@ -25812,7 +25853,7 @@ impl Interpreter {
         if let Some((holder, property, indices)) =
             Self::collect_object_property_array_index_path(target, index)
         {
-            return self.evaluate_non_direct_holder_array_access_reference_argument(
+            return self.evaluate_non_direct_holder_object_property_array_reference_argument(
                 holder,
                 property,
                 indices,
@@ -25826,7 +25867,7 @@ impl Interpreter {
         {
             let property =
                 self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
-            return self.evaluate_non_direct_holder_array_access_reference_argument(
+            return self.evaluate_non_direct_holder_object_property_array_reference_argument(
                 holder,
                 &property,
                 indices,
@@ -25838,7 +25879,7 @@ impl Interpreter {
         Ok(None)
     }
 
-    fn evaluate_non_direct_holder_array_access_reference_argument(
+    fn evaluate_non_direct_holder_object_property_array_reference_argument(
         &mut self,
         holder: &Expr,
         property: &str,
@@ -25868,7 +25909,7 @@ impl Interpreter {
             indices,
             arg,
             caller_scope,
-            false,
+            true,
         )
     }
 
@@ -28170,6 +28211,7 @@ impl Interpreter {
                 cookie_samesite.as_deref(),
             ));
         }
+        self.append_session_cache_headers();
         let session_data = self
             .load_session_file(span)?
             .or_else(|| self.session_store.get(&self.session_id).cloned())
@@ -28185,6 +28227,19 @@ impl Interpreter {
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn append_session_cache_headers(&mut self) {
+        for header in SESSION_NOCACHE_HEADERS {
+            if let Some(name) = header_name(header) {
+                self.response_headers.retain(|existing| {
+                    header_name(existing)
+                        .map(|existing_name| !header_names_equal(existing_name, name))
+                        .unwrap_or(true)
+                });
+            }
+            self.response_headers.push(header.to_string());
+        }
     }
 
     fn current_session_array(&self) -> PhpArray {
@@ -40023,12 +40078,35 @@ fn is_wordpress_option_prepared_delete_names_query(query: &str) -> bool {
 }
 
 fn is_wordpress_option_prepared_delete_prefix_query(query: &str) -> bool {
+    wordpress_option_prepared_delete_like_escape_char(query).is_some()
+}
+
+fn wordpress_option_prepared_delete_like_escape_char(query: &str) -> Option<char> {
+    let (query, escape_char) = strip_wordpress_option_prepared_like_escape_suffix(query)?;
     matches!(
-        query.trim(),
+        query,
         "DELETE FROM wp_options WHERE option_name LIKE ?"
             | "DELETE FROM wp_options WHERE `option_name` LIKE ?"
             | "DELETE FROM `wp_options` WHERE `option_name` LIKE ?"
     )
+    .then_some(escape_char)
+}
+
+fn strip_wordpress_option_prepared_like_escape_suffix(query: &str) -> Option<(&str, char)> {
+    let query = query.trim();
+    let Some((base, escape_sql)) = query.rsplit_once(" ESCAPE ") else {
+        return Some((query, '\\'));
+    };
+    let (escape, rest) = parse_sql_single_quoted_value(escape_sql.trim())?;
+    if !rest.trim().is_empty() {
+        return None;
+    }
+    let mut chars = escape.chars();
+    let escape_char = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    Some((base.trim_end(), escape_char))
 }
 
 fn is_wordpress_option_prepared_delete_expired_timeout_prefix_query(query: &str) -> bool {
@@ -40342,30 +40420,32 @@ fn wordpress_option_name_like_filter_from_prepared_params(
     Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
-fn wordpress_option_name_delete_prefix_from_prepared_params(
+fn wordpress_option_name_delete_like_filter_from_prepared_params(
     function: &str,
+    query: &str,
     params: &[Value],
     span: Span,
-) -> CompileResult<String> {
+) -> CompileResult<WordPressOptionsRowFilter> {
     let [Value::String(pattern)] = params else {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options option-name LIKE prefix delete requires one string pattern parameter in the current subset",
+                "prepared wp_options option-name LIKE delete requires one string pattern parameter in the current subset",
             ),
         ));
     };
-    let pattern = pattern.replace("\\_", "_");
-    parse_wordpress_option_name_prefix_like_pattern(&pattern).ok_or_else(|| {
-        runtime_error(
+    let escape_char = wordpress_option_prepared_delete_like_escape_char(query).unwrap_or('\\');
+    let Some(filter) = parse_schema_like_pattern(pattern, escape_char, false) else {
+        return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 function,
-                "prepared wp_options option-name LIKE prefix delete supports only a trailing-percent prefix pattern in the current subset",
+                "prepared wp_options option-name LIKE delete contains an unterminated escape sequence in the current subset",
             ),
-        )
-    })
+        ));
+    };
+    Ok(WordPressOptionsRowFilter::OptionNameLike(filter))
 }
 
 fn wordpress_option_expired_timeout_prefix_filter_from_prepared_params(

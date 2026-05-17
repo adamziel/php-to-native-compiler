@@ -97,7 +97,8 @@ cookie headers from the host SAPI, merge cookies into `$_REQUEST`, handle
 malformed or edge-case PHP request names with exact `parse_str()` behavior,
 parse multipart uploads, create temporary upload files, validate host upload
 state beyond the explicit seed, model failed-upload provenance, lock session
-files, dispatch session save handlers, emit session cache headers, or model
+files, dispatch session save handlers, configure session cache limiters, or
+model cache-header variants beyond the default no-cache trio or
 `variables_order`/`request_order`. The only cross-process session persistence
 path is the bounded `session.save_path`/`session_id()` file slice documented
 below.
@@ -124,17 +125,19 @@ slot is materialized and copied into the callee parameter, then the final
 parameter value is written back to the visible property slot after normal
 return. Public slots use public alias metadata; private/protected slots use
 context-aware alias metadata when reached from a valid method visibility
-context. Direct user-function calls also accept non-direct holder
-property-held `ArrayAccess` offset arguments, such as
-`handler($holders["bag"]->store["outer"]["slot"])`, when evaluating the
-holder once yields an object whose visible selected property holds an
-`ArrayAccess` object using the exact bounded by-reference
-`offsetGet($offset) { return $this->property[$offset]; }` bridge. That path
-uses the existing private temporary object root and writes back through the
-backing property array alias metadata. These bridges intentionally do not
-provide in-call reference-container identity and do not cover plain
-non-direct object-property arrays, mixed nested `ArrayAccess` chains, magic
-property references, or arbitrary reference expressions.
+context. Direct user-function calls also accept non-direct holder plain
+object-property array-offset arguments, such as
+`handler($holders["bag"]->items["outer"]["slot"])`, when evaluating the
+holder once yields an object whose selected property is visible in the current
+context. The path uses the existing private temporary object root and writes
+back through the property array alias metadata. The same non-direct holder
+path continues to cover property-held `ArrayAccess` offset arguments, such as
+`handler($holders["bag"]->store["outer"]["slot"])`, when the selected visible
+property holds an `ArrayAccess` object using the exact bounded by-reference
+`offsetGet($offset) { return $this->property[$offset]; }` bridge. These
+bridges intentionally do not provide in-call reference-container identity and
+do not cover mixed nested `ArrayAccess` chains, magic property references, or
+arbitrary reference expressions.
 Direct object-variable clone assignments also mirror public object-property
 alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
@@ -1869,7 +1872,10 @@ session option suppresses that line when it is falsey. The bounded
 `cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
 `cookie_httponly`, and `cookie_samesite` options only format deterministic
 attributes on that in-memory header log; they do not model cookie encoding,
-expiration-date formatting, replacement policy, or host SAPI emission.
+expiration-date formatting, replacement policy, or host SAPI emission. A fresh
+successful start also appends the bounded default no-cache session headers to
+the same CLI header log: `Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
+`Cache-Control: no-store, no-cache, must-revalidate`, and `Pragma: no-cache`.
 `session_write_close()` stores the active `$_SESSION` array
 back into that request-local snapshot map and, when the bounded save-path/id
 file slice is active, writes string-keyed scalar and array values back to
@@ -1881,9 +1887,10 @@ and immediately closes the bounded status back to `PHP_SESSION_NONE` while
 keeping the in-memory session array visible. After unbuffered output it
 returns `false`, leaves session status/data unchanged, and routes a bounded
 `E_WARNING` through the current error-handler stack or stderr fallback before
-applying options. Cache-header emission, cookie encoding, expiration-date
-formatting, replacement policy, trans-sid behavior, locking, save handlers,
-garbage collection, broader PHP session-id policy, integer top-level session
+applying options. Session cache-limiter configuration and cache-header variants
+beyond that default no-cache trio, cookie encoding, expiration-date formatting,
+replacement policy, trans-sid behavior, locking, save handlers, garbage
+collection, broader PHP session-id policy, integer top-level session
 keys, object/resource session serialization, exact malformed-session recovery
 parity, option effects beyond the documented session-start options, exact
 warning text, reference aliases across `_SESSION` root replacement, and native

@@ -2804,6 +2804,38 @@ echo $dynamic->dynamicBag["outer"]["slot"];
 }
 
 #[test]
+fn reference_parameter_accepts_non_direct_holder_plain_property_array_source() {
+    let execution = run_source(
+        r#"<?php
+class Bag {
+    public $items = ["outer" => ["slot" => "seed"]];
+    public $dynamicItems = ["outer" => ["slot" => "dynamic"]];
+}
+
+function touch_slot(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+}
+
+$holders = [];
+$primary = new Bag();
+$holders["primary"] = $primary;
+touch_slot($holders["primary"]->items["outer"]["slot"], "named");
+echo $primary->items["outer"]["slot"], "\n";
+
+$dynamic = new Bag();
+$holders["dynamic"] = $dynamic;
+$property = "dynamicItems";
+touch_slot($holders["dynamic"]->{$property}["outer"]["slot"], "selected");
+echo $dynamic->dynamicItems["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "seed:named\ndynamic:selected");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
     let execution = run_source(
         r#"<?php

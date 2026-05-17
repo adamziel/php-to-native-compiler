@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1548/session_cache_headers.php
+started|active|3|Expires: Thu, 19 Nov 1981 08:52:00 GMT|Cache-Control: no-store, no-cache, must-revalidate|Pragma: no-cache

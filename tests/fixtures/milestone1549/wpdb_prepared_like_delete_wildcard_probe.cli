@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1549/wpdb_prepared_like_delete_wildcard_probe.php

@@ -175,11 +175,11 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded public
-`ReflectionProperty::getValue()`/`setValue()` mutation, by-reference
-user-function parameters over non-direct holder `ArrayAccess` offset roots,
-bounded request-local stat-cache behavior for `filesize()`/`filemtime()`, and
-prepared `wp_options` option-name `LIKE ?` wildcard matching.
+The latest WordPress-focused batch closed bounded public static
+`ReflectionMethod::invoke()`/`invokeArgs()`, by-reference user-function
+parameters over non-direct holder plain object-property array roots, bounded
+default session no-cache header emission, and prepared `wp_options`
+`DELETE ... option_name LIKE ?` wildcard matching.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream

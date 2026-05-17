@@ -1,0 +1,4 @@
+BaseHook:init:10
+BaseHook:save_post:20
+ChildHook:plugins_loaded:10
+ChildHook:shutdown:50

@@ -75,7 +75,10 @@ header to the same CLI header log exposed by `headers_list()`;
 header for the start. Bounded session cookie attributes from
 `cookie_lifetime`, `cookie_path`, `cookie_domain`, `cookie_secure`,
 `cookie_httponly`, and `cookie_samesite` options are appended to that
-deterministic header.
+deterministic header. Successful fresh starts also append the bounded default
+no-cache session headers (`Expires`, `Cache-Control`, and `Pragma`) to the
+CLI header log, including starts that suppress the cookie with
+`use_cookies=false`.
 `session_write_close()` stores a request-local snapshot for the current
 session id, so a later `session_start()` reloads the last closed data instead
 of preserving mutations made to visible `$_SESSION` while the bounded session
@@ -92,7 +95,8 @@ Locking, save handlers, garbage collection, broader PHP session-id policy,
 integer top-level session keys, object/resource session values, option effects
 beyond the documented session-start options, exact malformed-session recovery
 parity, session-cookie encoding/expiration/replacement beyond the documented
-`session_start()` attribute scaffold, and cache-header emission remain
+`session_start()` attribute scaffold, session cache-limiter configuration,
+and cache-header variants beyond the default no-cache trio remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
 expiration dates with host-clock-derived `Max-Age`, attributes, and
@@ -602,7 +606,8 @@ beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
 `ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
 and trait method source-file persistence, reflection invocation beyond the
-current by-value user function/public method slice, non-public or dynamic
+current by-value user function/public method slice, now including public
+static method invocation, non-public or dynamic
 `ReflectionProperty` value mutation, recursive trait metadata reflection, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
@@ -644,6 +649,11 @@ instance methods, named static method calls, `self::` static method calls, and
 `parent::` instance/static method calls, and late-bound `static::` static
 method calls. The object-property slice includes public properties and
 private/protected properties reached from valid method visibility contexts.
+Direct user-function calls additionally accept non-direct holder plain
+object-property array-offset arguments such as
+`handler($holders["bag"]->items["outer"]["slot"])`, including dynamic selected
+visible properties, by evaluating the holder once and writing callee mutations
+back through the selected property array slot.
 Mutations before `unset($param)` are written back; later writes to the
 detached local parameter are not.
 `call_user_func_array()` also has a bounded string user-callback, public

@@ -1,0 +1,10 @@
+run tests/fixtures/milestone1546/reflection_static_method_invocation.php
+exit: 0
+stdout:
+BaseHook:init:10
+BaseHook:save_post:20
+ChildHook:plugins_loaded:10
+ChildHook:shutdown:50
+--- stdout end ---
+stderr:
+--- stderr end ---

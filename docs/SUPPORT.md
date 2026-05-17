@@ -123,17 +123,20 @@
   callee returns normally or with `return`. This
   direct array-offset and object-property argument path does not expose a
   general in-call PHP reference container. Direct user-function by-reference
-  calls also accept non-direct holder property-held `ArrayAccess` offset
-  arguments such as `handler($holders["bag"]->store["outer"]["slot"])` and
+  calls also accept non-direct holder plain object-property array-offset
+  arguments such as `handler($holders["bag"]->items["outer"]["slot"])` and
   dynamic selected properties such as
   `handler($holders["bag"]->{$name}["outer"]["slot"])` when the evaluated
-  holder object exposes the selected visible property, that property holds an
-  `ArrayAccess` object, and public by-reference `offsetGet($offset)` has the
-  exact bounded body `return $this->property[$offset];`; the holder expression
-  is evaluated once and writes route through the backing property array slot.
-  This does not add plain non-direct object-property array references, mixed
-  nested `ArrayAccess` chains, magic-property reference containers, arbitrary
-  reference expressions, or a general in-call PHP reference container. String
+  holder object exposes the selected visible property; the holder expression
+  is evaluated once and writes route through that property array slot. The
+  same non-direct holder path also accepts property-held `ArrayAccess` offset
+  arguments such as `handler($holders["bag"]->store["outer"]["slot"])` when
+  the selected visible property holds an `ArrayAccess` object and public
+  by-reference `offsetGet($offset)` has the exact bounded body
+  `return $this->property[$offset];`; writes route through the backing
+  property array slot. This does not add mixed nested `ArrayAccess` chains,
+  magic-property reference containers, arbitrary reference expressions, or a
+  general in-call PHP reference container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -1016,7 +1019,11 @@
   `cookie_httponly`, and `cookie_samesite` options append deterministic
   `Max-Age`, `path`, `domain`, `secure`, `HttpOnly`, and `SameSite`
   attributes to that session cookie header when supplied with supported value
-  types. Starting a
+  types. Fresh successful starts also append deterministic default no-cache
+  session headers (`Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
+  `Cache-Control: no-store, no-cache, must-revalidate`, and
+  `Pragma: no-cache`) to the same CLI header log, including starts where
+  `use_cookies` suppresses the session cookie. Starting a
   session after unbuffered output returns `false` and emits a bounded
   `E_WARNING` through the current `set_error_handler()` stack or stderr
   fallback. Calling `session_start()` while the bounded session is already
@@ -1026,7 +1033,8 @@
   file locking, save handlers, session module configuration, integer top-level
   session keys, object/resource session serialization, exact malformed
   session-file recovery parity, session cookie encoding,
-  expiration-date formatting, cookie replacement, cache headers, garbage
+  expiration-date formatting, cookie replacement, cache-limiter configuration
+  and cache-header variants beyond the default no-cache trio, garbage
   collection, broader PHP session-id policy, trans-sid
   behavior, exact warning text, reference aliases that survive `_SESSION` root
   replacement on restart, full PHP reference containers, broader
@@ -1982,7 +1990,14 @@
   `DELETE FROM wp_options WHERE option_name IN (?, ...)` statements, including
   the current backticked table/column spelling, when every placeholder is a
   string option name; it removes each distinct reached option name and updates
-  statement and connection affected-row metadata. The same state island also
+  statement and connection affected-row metadata. Exact prepared
+  `DELETE FROM wp_options WHERE option_name LIKE ?` statements over the same
+  state island remove option names through the bounded MySQL-like wildcard
+  matcher, including `%`, `_`, backslash-escaped wildcard literals, and an
+  exact trailing single-character `ESCAPE '<char>'` clause for the backticked
+  or plain table/column spellings. This does not add direct literal-delete
+  `ESCAPE` clauses, SQL-mode-aware prepared deletes, arbitrary predicates, or
+  host database execution. The same state island also
   accepts one exact WordPress-shaped prepared transient payload pair delete
   over `wp_options` aliases `a` and `b`, with payload and timeout
   trailing-percent patterns plus a decimal threshold; it deletes each reached
@@ -3143,6 +3158,11 @@
   `PHP_SESSION_NONE` while leaving `$_SESSION` visible for the rest of the
   request. The `use_cookies` option is recognized with PHP truthiness: when
   falsey, the bounded session cookie header is not appended for that start.
+  Fresh successful starts append deterministic default no-cache session
+  headers (`Expires: Thu, 19 Nov 1981 08:52:00 GMT`,
+  `Cache-Control: no-store, no-cache, must-revalidate`, and
+  `Pragma: no-cache`) to the same CLI header log, including starts where
+  `use_cookies` suppresses the session cookie.
   The `cookie_lifetime` option accepts an int and appends a deterministic
   positive `Max-Age` attribute. `cookie_path`, `cookie_domain`, and
   `cookie_samesite` accept strings and append non-empty `path`, `domain`, and
@@ -3181,7 +3201,8 @@
   `session_abort()`, `session_reset()`, `session_unset()`,
   `session_cache_*()`, broader PHP session-id policy, option effects beyond
   the documented session-start options, session cookie encoding,
-  expiration-date formatting, cookie replacement, cache headers, garbage
+  expiration-date formatting, cookie replacement, cache-limiter configuration
+  and cache-header variants beyond the default no-cache trio, garbage
   collection, integer top-level session keys, object/resource session
   serialization, exact malformed session-file recovery parity, exact warning text, reference
   aliases that survive `_SESSION` root replacement on restart, and native
@@ -6119,10 +6140,13 @@
   reflection keeps parsed line/doc-comment metadata in the current request but
   does not yet persist declaration source-file paths.
   `ReflectionMethod::invoke($object, ...$args)` and
-  `ReflectionMethod::invokeArgs($object, $args)` execute public non-static
-  declared user-class methods over the current by-value argument subset and
-  preserve object identity for `$this` mutations. Static methods, non-public
-  methods, interface and trait method targets, internal methods,
+  `ReflectionMethod::invokeArgs($object, $args)` execute public declared
+  user-class methods over the current by-value argument subset. Non-static
+  method invocation preserves object identity for `$this` mutations. Static
+  method invocation accepts `null` or an object target, ignores the target
+  object like PHP, and preserves the reflected class for inherited
+  `static::` lookup. Non-public methods, interface and trait method targets,
+  internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection
