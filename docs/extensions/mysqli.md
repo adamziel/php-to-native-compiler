@@ -292,7 +292,10 @@ For direct `mysqli_query()`, the runtime has one bounded per-placeholder-handle
 state island for exact WordPress-shaped option writes and reads:
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
 records the string option value, sets `mysqli_affected_rows($handle)` to `1`,
-and advances deterministic `mysqli_insert_id($handle)`. Exact
+and advances deterministic `mysqli_insert_id($handle)` when the option name is
+not already recorded. A duplicate exact plain option insert returns `false`,
+sets affected rows to `0`, leaves the existing value/autoload and insert id in
+place, and still uses the current clean placeholder diagnostic state. Exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
 ON DUPLICATE KEY UPDATE ...` option upserts update existing recorded options
 with `mysqli_affected_rows($handle) === 2`, insert missing options with
@@ -328,8 +331,9 @@ quotes, backslashes, newlines, and carriage returns, plus doubled single
 quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond exact writes, arbitrary
-projection beyond exact option value/autoload/name-value shapes, real
-unique-index enforcement, no-op update affected-row fidelity, real
+projection beyond exact option value/autoload/name-value shapes,
+unique-index enforcement beyond exact plain option-insert duplicate-name
+rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
 transaction isolation/locking/savepoint behavior, host database execution,
 PDO, broad prepared-statement mutation state, warning/error fidelity, or
@@ -350,7 +354,11 @@ names return an empty zero-field placeholder result. The exact
 prepared statement records string option-name, option-value, and autoload
 parameters on the same handle, updates statement and connection affected-row
 metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
-exposes later exact option-value reads through the same state island. The exact
+exposes later exact option-value reads through the same state island when the
+option name is not already recorded. A duplicate exact prepared plain option
+insert returns `false`, updates statement and connection affected-row metadata
+to `0`, leaves the existing value/autoload and insert id in place, and still
+uses the current clean placeholder diagnostic state. The exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
 ON DUPLICATE KEY UPDATE ...` prepared statement records string parameters on
 the same handle for the current exact WordPress-style option upsert shapes,

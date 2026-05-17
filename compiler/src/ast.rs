@@ -526,6 +526,7 @@ pub struct ClassDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InterfaceDecl {
     pub name: String,
+    pub parents: Vec<String>,
     pub methods: Vec<InterfaceMethodDecl>,
     pub span: Span,
 }

@@ -2069,6 +2069,34 @@ echo $cache->cache["options"]["alloptions"];
 }
 
 #[test]
+fn named_static_reference_parameters_write_back_direct_object_property_array_arguments() {
+    let execution = run_source(
+        r#"<?php
+class WP_Object_Cache {
+    public $cache = [];
+}
+
+class Cache_Marker {
+    public static function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+    }
+}
+
+$cache = new WP_Object_Cache();
+$seen = "start";
+Cache_Marker::tag($seen, "var");
+$cache->cache["options"]["alloptions"] = "cold";
+Cache_Marker::tag($cache->cache["options"]["alloptions"], "static");
+echo $seen, "|", $cache->cache["options"]["alloptions"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "start:var|cold:static");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_object_property_nested_array_append_target_aliases_direct_variable_source()
 {
     let execution = run_source(

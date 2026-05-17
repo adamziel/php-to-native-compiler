@@ -64,17 +64,19 @@
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
   provide a by-reference parameter are supported only for direct variable
-  arguments in the current user-function, instance-method, and constructor
-  dispatch paths: the callee local parameter shares the caller's variable cell
-  during execution, so writes through the parameter are visible to other reads
-  of the caller variable before the call returns. Direct public
+  arguments in the current user-function, instance-method, constructor, and
+  named static method dispatch paths: the callee local parameter shares the
+  caller's variable cell during execution, so writes through the parameter are
+  visible to other reads of the caller variable before the call returns.
+  Direct public
   object-property array-offset arguments such as
-  `handler($object->items[$group][$key])` are supported for user functions and
-  instance methods as a bounded output-parameter path: the selected public
-  property array slot is materialized when needed, copied into the callee
-  parameter, and written back to the same slot when the callee returns
-  normally or with `return`. This object-property argument path does not expose
-  a general in-call PHP reference container. The same direct-variable cell
+  `handler($object->items[$group][$key])` are supported for user functions,
+  instance methods, and named static method calls as a bounded
+  output-parameter path: the selected public property array slot is
+  materialized when needed, copied into the callee parameter, and written back
+  to the same slot when the callee returns normally or with `return`. This
+  object-property argument path does not expose a general in-call PHP
+  reference container. The same direct-variable cell
   binding is supported for string user-function callbacks and public
   `[object, method]` instance callbacks invoked through
   `call_user_func_array($callback, array(&$value, ...))` when the argument array
@@ -83,10 +85,11 @@
   only the callee's local parameter name; later local writes do not mutate the
   caller variable or write back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, callback-dispatched object-property array, and reference-returning
-  function forms remain unsupported. This is still a bounded direct-variable
-  alias and public object-property output path, not full PHP reference
-  containers or copy-on-write.
+  array, callback-dispatched object-property array, dynamic static receiver,
+  `self::`, `parent::`, `static::`, and reference-returning function or method
+  forms remain unsupported for object-property array reference arguments. This
+  is still a bounded direct-variable alias and public object-property output
+  path, not full PHP reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -648,7 +651,8 @@
   violations report stable runtime boundaries. Method required-parameter
   compatibility violations report stable runtime boundaries. Concrete classes
   that implement declared user interfaces, including through inherited
-  `implements` metadata, must expose public methods with the required
+  `implements` metadata and the current single already-declared parent
+  interface inheritance slice, must expose public methods with the required
   interface method names and must not require more parameters than those
   interface methods at class registration time. For interface method parameter
   type metadata, implementations may omit an interface parameter type or use
@@ -659,7 +663,7 @@
   interface method requires the implementation to declare the same return type
   text case-insensitively. Full PHP method signature variance,
   class/interface return covariance and type subtyping, type aliases,
-  union/intersection canonicalization, interface inheritance,
+  union/intersection canonicalization, multiple interface inheritance,
   built-in/internal interface method enforcement, named arguments,
   trait composition beyond the current public-method and simple-alias slice,
   exact PHP `Error` objects, and readonly class semantics
@@ -929,7 +933,7 @@
   `mysqli_data_seek`, `mysqli_field_seek`, `mysqli_field_tell`, `mysqli_free_result`, `mysqli_more_results`,
   `mysqli_next_result`, `mysqli_store_result`, `mysqli_use_result`,
   `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`, `mysqli_init`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `abs`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -953,8 +957,8 @@
   current concrete-class registration check verifies the required public
   non-static methods with no required parameters, and false for the current
   scalar/null/non-iterable object values. Direct concrete
-  `implements Traversable` is a stable runtime boundary until broader engine
-  interface inheritance semantics exist.
+  `implements Traversable` is a stable runtime boundary until broader
+  built-in engine interface inheritance semantics exist.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -1607,7 +1611,9 @@
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`,
   `mysqli_query()` records the string option value in per-placeholder-handle
   state, sets `mysqli_affected_rows($handle)` to `1`, advances deterministic
-  `mysqli_insert_id($handle)`, accepts exact
+  `mysqli_insert_id($handle)` when the option name is not already recorded,
+  returns `false` with affected rows `0` for duplicate exact plain option
+  inserts while preserving the existing value/autoload and insert id, accepts exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)
   ON DUPLICATE KEY UPDATE ...` option upserts that update existing recorded
   options with `mysqli_affected_rows($handle) === 2`, insert missing options
@@ -1646,7 +1652,8 @@
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
   arbitrary projection beyond exact option value/autoload/name-value shapes,
-  real unique-index enforcement, no-op update affected-row fidelity, real
+  unique-index enforcement beyond exact plain option-insert duplicate-name
+  rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
   transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
@@ -1667,7 +1674,10 @@
   prepared statement records string option-name, option-value, and autoload
   parameters on the same handle, updates statement and connection affected-row
   metadata to `1`, advances deterministic `mysqli_insert_id($handle)`, and
-  exposes later exact option-value reads through the same state island. The exact
+  exposes later exact option-value reads through the same state island when
+  the option name is not already recorded. Duplicate exact prepared plain
+  option inserts return `false`, set statement and connection affected rows to
+  `0`, and preserve the existing value/autoload and insert id. The exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)
   ON DUPLICATE KEY UPDATE ...` prepared statement records string parameters on
   the same handle for the current exact WordPress-style option upsert shapes,
@@ -1936,6 +1946,13 @@
   normalization, status-header removal, output-sent warnings, SAPI/web-server
   behavior, exact diagnostics, partial-output behavior, and native lowering
   remain unsupported.
+  `setcookie($name, $value = "")` accepts a string name and optional string
+  value, appends `Set-Cookie: name=value` to the same deterministic CLI header
+  log used by `header()`/`headers_list()`, and returns `true`. Expiration,
+  path, domain, secure, HttpOnly, SameSite, options arrays, deletion cookies,
+  cookie-name/value encoding, duplicate/replacement policy, output-started
+  warnings, SAPI/web-server emission, exact diagnostics, and native lowering
+  remain unsupported.
   `headers_sent()` accepts no arguments and returns `false` in the current
   CLI runtime shim. Filename/line output arguments, output-started tracking,
   output buffers, SAPI differences, exact warnings, and native lowering remain
@@ -1958,7 +1975,9 @@
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `interface_exists`
   accepts string names and checks the bounded core interface catalog plus
-  current declared interface metadata without autoloading, `trait_exists`
+  current declared interface metadata without autoloading, including child
+  interfaces declared with the current single already-declared parent
+  inheritance form, `trait_exists`
   accepts string names and checks current declared
   trait metadata without autoloading,
   `enum_exists` accepts string names and checks current declared unit-enum
@@ -2183,7 +2202,8 @@
   not implemented
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
-  single-parent `extends`, interface inheritance/constants/non-public or
+  single-parent class `extends` and single-parent interface `extends`,
+  multiple interface inheritance, interface constants, non-public or
   static interface methods, trait properties/constants, static/abstract/final
   or non-public trait methods, adaptation blocks beyond the current simple
   method alias and single-loser `insteadof` shapes, broad conflict
@@ -2478,7 +2498,11 @@
   Class `implements` clauses accept comma-separated class-like names and record
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes. For interfaces declared in the current
-  parsed program, concrete classes must expose public methods with the required
+  parsed program, one already-declared parent interface may be named with
+  `interface Child extends Parent`; concrete classes implementing the child
+  must also expose the parent's required public method names, and relationship
+  checks record both the child and parent interface names. For declared
+  interfaces, concrete classes must expose public methods with the required
   interface method names, current supported non-static method shape, and no
   more required parameters than the interface method, and must pass the current
   bounded parameter-type metadata check: an implementation may omit an
@@ -2493,7 +2517,8 @@
   satisfy non-static interface method requirements. This is a bounded
   public-method compatibility check only, not full parameter type
   compatibility, broader return type covariance/contravariance, full signature
-  variance, class or interface type subtyping, type-alias/import resolution,
+  variance, class or interface type subtyping, multiple interface inheritance,
+  forward parent-interface resolution, type-alias/import resolution,
   union/intersection canonicalization, or exact PHP error-object behavior.
   Unresolved interface names remain relationship metadata only. Most
   built-in/internal interface names are still metadata-only, except for the
@@ -3930,7 +3955,7 @@
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_reap_async_query`, `mysqli_poll`, `mysqli_report`,
   `mysqli_init`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`,
+  `header_remove`, `headers_list`, `headers_sent`, `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -4108,7 +4133,7 @@
   `mysqli_get_warnings`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_escape_string`, `mysqli_store_result`,
   `mysqli_use_result`, `mysqli_report`, `mysqli_init`, `header`,
-  `header_remove`, `headers_list`, `headers_sent`, `assert`,
+  `header_remove`, `headers_list`, `headers_sent`, `setcookie`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
@@ -4137,8 +4162,8 @@
   current concrete-class registration check verifies the required public
   non-static methods with no required parameters, and false for the current
   scalar/null/non-iterable object values. Direct concrete
-  `implements Traversable` is a stable runtime boundary until broader engine
-  interface inheritance semantics exist.
+  `implements Traversable` is a stable runtime boundary until broader
+  built-in engine interface inheritance semantics exist.
   `is_callable($value)` supports the current string function-name subset: it
   returns true for names that resolve to current user functions or documented
   callable builtins, and false for missing names or non-string values.
@@ -4413,6 +4438,10 @@
   `headers_sent` accepts the same current no-argument `false` subset as the
   builtin section above; direct native `headers_sent(...)` calls reject under
   the header-state boundary, while native function-table introspection
+  recognizes the name.
+  `setcookie` accepts the same current simple CLI `Set-Cookie` append subset
+  as the builtin section above; direct native `setcookie(...)` calls reject
+  under the header-state boundary, while native function-table introspection
   recognizes the name.
   `php_sapi_name` accepts the same current no-argument deterministic `cli`
   subset as the builtin section above; direct native `php_sapi_name(...)`
@@ -5438,8 +5467,8 @@
   constructors, and static constructors currently fail with stable runtime
   diagnostics
 - unsupported class forms including nested/conditional declarations, broader
-  inheritance rules beyond the current single-parent metadata chain, interface
-  method enforcement, interface constants, interface inheritance,
+  inheritance rules beyond the current single-parent metadata chain, multiple
+  interface inheritance, interface constants, full interface signature enforcement,
   built-in/internal interface catalogs, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
@@ -6213,8 +6242,10 @@
 - exception objects and exception handling beyond the current throw/normal-try
   runtime boundaries; native throw and try-block lowering are still separate
   explicit boundaries
-- interface inheritance/implementation enforcement, trait composition, and enum
-  case objects/backed values/methods/interfaces
+- broad interface implementation enforcement beyond the current
+  public-method/signature metadata slice, multiple interface inheritance,
+  trait composition beyond the current public method/adaptation subset, and
+  enum case objects/backed values/methods/interfaces
 - generator functions, generator objects, `yield`, `yield from` delegation,
   key/value yields, by-reference yields, `send`/`throw`/`return` generator
   semantics, `Traversable` forwarding, and native lowering
@@ -6467,6 +6498,13 @@
   normalization, status-header removal, output-sent warnings, SAPI/web-server
   behavior, exact diagnostics, partial-output behavior, and native lowering
   beyond function-table introspection
+- `setcookie()` behavior beyond accepting a string name and optional string
+  value, appending a simple `Set-Cookie: name=value` line to deterministic CLI
+  request state, and returning `true`: expiration, path, domain, secure,
+  HttpOnly, SameSite, options arrays, deletion cookies, cookie-name/value
+  encoding, duplicate/replacement policy, output-started warnings,
+  SAPI/web-server emission, exact diagnostics, and native lowering beyond
+  function-table introspection
 - `headers_sent()` behavior beyond the current no-argument always-`false`
   shim: filename/line output arguments, output-started tracking, output
   buffers, SAPI differences, exact warnings, and native lowering beyond

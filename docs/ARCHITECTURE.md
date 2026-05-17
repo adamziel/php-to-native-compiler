@@ -51,12 +51,13 @@ preserves that slot's reference identity across a copied direct array. When an
 array-offset or public object-property array-offset reference target is bound
 from a direct variable that already shares a direct variable-to-variable cell,
 the interpreter rewires every direct name in that small source cell group to
-the selected slot alias. By-reference user-function and instance-method
-parameters can also accept a direct public object-property array-offset
-argument through a narrower output-parameter bridge: the caller slot is
-materialized and copied into the callee parameter, then the final parameter
-value is written back to the public property slot after normal return. That
-bridge intentionally does not provide in-call reference-container identity.
+the selected slot alias. By-reference user-function, instance-method, and
+named static method parameters can also accept a direct public object-property
+array-offset argument through a narrower output-parameter bridge: the caller
+slot is materialized and copied into the callee parameter, then the final
+parameter value is written back to the public property slot after normal
+return. That bridge intentionally does not provide in-call reference-container
+identity.
 Direct object-variable clone assignments also mirror public object-property
 alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
@@ -177,6 +178,17 @@ qualified or multi-trait alias edge cases beyond the current winner-alias
 slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
+
+Top-level interface declarations are parsed as metadata for public method
+signatures. The current inheritance slice accepts a single already-declared
+user parent interface, such as `interface Child extends Parent`, and flattens
+that parent name into concrete class `implements` relationship metadata. Class
+registration enforces public method presence for both child and parent
+interface methods, including methods supplied by the current public trait
+composition and alias subset. Multiple parent interfaces, interface constants,
+forward parent-interface resolution, full variance/signature enforcement,
+built-in/internal interface inheritance catalogs, exact PHP diagnostics, and
+native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and
@@ -1249,8 +1261,8 @@ Interpreter `is_iterable()` also recognizes object metadata that records
 `implements Iterator` or `implements IteratorAggregate` after concrete class
 registration verifies the required public non-static methods with no required
 parameters. Direct concrete `implements Traversable` remains a runtime
-boundary until broader engine interface inheritance semantics exist; this is
-not native lowering or object iterator execution.
+boundary until broader built-in engine interface inheritance semantics exist;
+this is not native lowering or object iterator execution.
 Direct `is_callable($value)` calls fold when `$value` is an already-lowerable
 string value with a uniform known lookup result in the documented builtin
 table, or when `$value` is an already-lowerable non-string scalar/null value,
@@ -1390,6 +1402,11 @@ bounded subset: no arguments clear the log, and one string removes entries
 whose raw header line has exactly that field name before the first colon. It
 still does not detect output-sent state, model status headers, normalize header
 names, or model full SAPI removal behavior.
+`setcookie()` is another interpreter-only header-state boundary. The current
+slice accepts a string cookie name plus an optional string value, appends a
+simple `Set-Cookie: name=value` line to the same deterministic CLI header log,
+and returns `true`; full cookie attributes, encoding, output-started behavior,
+SAPI emission, and native lowering remain outside the model.
 `headers_sent()` is an interpreter-only web/SAPI boundary. The current
 no-argument slice returns `false` so reached WordPress guard branches can
 continue, but filename/line output arguments, output-started tracking, output
@@ -1877,16 +1894,18 @@ internal names can participate in relationships without being declared. For
 interfaces declared in the current parsed program, runtime class registration
 checks concrete classes, including concrete children of abstract implementors,
 for public methods with the required interface method names and the current
-supported non-static method shape. Implementations may omit an interface
-parameter type or repeat the same type text case-insensitively, but may not add
-a parameter type to an untyped interface parameter or substitute a different
-type for a typed interface parameter. Implementations may add a return type to
-an untyped interface method, but a typed interface method requires the
-implementation to declare the same return type text case-insensitively. Public
-static methods do not satisfy non-static interface method requirements. This is
-a bounded compatibility check only; full parameter variance, broader return
-type covariance/contravariance, type subtyping, alias/import resolution,
-union/intersection canonicalization, interface inheritance, broad
+supported non-static method shape. Single already-declared parent interfaces
+are flattened into both relationship metadata and method-presence checks.
+Implementations may omit an interface parameter type or repeat the same type
+text case-insensitively, but may not add a parameter type to an untyped
+interface parameter or substitute a different type for a typed interface
+parameter. Implementations may add a return type to an untyped interface
+method, but a typed interface method requires the implementation to declare the
+same return type text case-insensitively. Public static methods do not satisfy
+non-static interface method requirements. This is a bounded compatibility check
+only; full parameter variance, broader return type covariance/contravariance,
+type subtyping, alias/import resolution, union/intersection canonicalization,
+multiple interface inheritance, forward parent-interface resolution, broad
 built-in/internal interface method enforcement beyond the current
 `Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
 objects, autoload behavior, and native lowering remain separate work. A bounded

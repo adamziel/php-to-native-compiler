@@ -2365,6 +2365,87 @@ class Child extends Base {}
 }
 
 #[test]
+fn interface_inheritance_required_methods_and_relationships_are_enforced() {
+    let execution = run_source(
+        r#"<?php
+interface Hookable {
+    public function register_hooks();
+}
+
+interface PluginContract extends Hookable {
+    public function label();
+}
+
+trait HasHooks {
+    public function hooks() {
+        return "hooks:" . get_class($this);
+    }
+}
+
+trait HasLabel {
+    public function label() {
+        return "label:" . get_class($this);
+    }
+}
+
+class Plugin implements PluginContract {
+    use HasHooks, HasLabel {
+        HasHooks::hooks as public register_hooks;
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin instanceof Hookable ? "instanceof-parent\n" : "missing-parent\n";
+echo is_a($plugin, "Hookable") ? "is-a-parent\n" : "missing-is-a\n";
+echo is_subclass_of($plugin, "Hookable") ? "subclass-parent\n" : "missing-subclass\n";
+echo $plugin->register_hooks(), "\n";
+echo $plugin->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "instanceof-parent\nis-a-parent\nsubclass-parent\nhooks:Plugin\nlabel:Plugin"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let missing_parent_method = runtime_error(
+        r#"<?php
+interface Hookable {
+    public function register_hooks();
+}
+
+interface PluginContract extends Hookable {
+    public function label();
+}
+
+class Plugin implements PluginContract {
+    public function label() {}
+}
+"#,
+    );
+    assert_eq!(missing_parent_method.line, 10);
+    assert_eq!(missing_parent_method.column, 1);
+    assert_eq!(
+        missing_parent_method.message,
+        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Hookable::register_hooks()"
+    );
+
+    let missing_parent_interface = runtime_error(
+        r#"<?php
+interface PluginContract extends Hookable {}
+"#,
+    );
+    assert_eq!(missing_parent_interface.line, 2);
+    assert_eq!(missing_parent_interface.column, 1);
+    assert_eq!(
+        missing_parent_interface.message,
+        "unsupported class inheritance for PluginContract: interface PluginContract extends missing or unsupported parent interface Hookable"
+    );
+}
+
+#[test]
 fn core_interface_catalog_reports_bounded_internal_interfaces() {
     let execution = run_source(
         r#"<?php

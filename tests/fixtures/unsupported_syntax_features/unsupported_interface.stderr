@@ -1,2 +1,2 @@
-parse error at 2:22: unsupported interface inheritance: interface extends clauses are not implemented
+parse error at 2:41: unsupported interface inheritance: multiple parent interfaces are not implemented
 

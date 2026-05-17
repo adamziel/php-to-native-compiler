@@ -54,10 +54,12 @@ current called class and forwards that context into nested calls.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
-$allow_string])` as an exact-class or single-parent ancestor metadata check,
-without interface relationship traversal. `is_subclass_of($object_or_class,
+$allow_string])` as an exact-class, single-parent class ancestor, or recorded
+interface metadata check. The current interface traversal includes
+already-declared single-parent interface inheritance. `is_subclass_of($object_or_class,
 $class_name[, $allow_string])` validates the same relationship-check boundary
-and walks the current single-parent metadata chain. `get_parent_class($object_or_class)`
+and walks the current single-parent class metadata chain plus recorded
+interface metadata. `get_parent_class($object_or_class)`
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
@@ -68,7 +70,10 @@ user interface, top-level trait, and top-level unit-enum metadata
 without triggering autoloading. `class_exists()` reports true for declared
 enums in the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
-interfaces and top-level traits in declaration order. Simple public instance
+interfaces and top-level traits in declaration order. A declared interface may
+extend one already-declared user interface; concrete implementors of the child
+interface must expose both the child and parent public method names, and
+relationship checks also recognize the parent interface. Simple public instance
 methods from already-declared traits may be composed into a class with
 `use TraitName;`, repeated simple trait-use declarations, or
 `use TraitA, TraitB;` and called through ordinary object method dispatch.
@@ -394,7 +399,8 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, interface inheritance, interface enforcement,
+conditional class declarations, multiple interface inheritance, interface constants,
+full interface signature enforcement,
 trait properties/constants, static/abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded single-loser `insteadof` shape,
 trait aliases beyond the current simple public, qualified public-alias, and

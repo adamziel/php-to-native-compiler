@@ -1464,10 +1464,10 @@ fn emit_ir_rejects_instanceof_expression_at_codegen_boundary() {
 fn unsupported_interface_declaration_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\ninterface Renderable extends Displayable {}\n",
+            "<?php\ninterface Renderable extends Displayable, Loggable {}\n",
             2,
-            22,
-            "unsupported interface inheritance: interface extends clauses are not implemented",
+            41,
+            "unsupported interface inheritance: multiple parent interfaces are not implemented",
         ),
         (
             "<?php\ninterface Renderable {\n    const NAME = \"view\";\n}\n",

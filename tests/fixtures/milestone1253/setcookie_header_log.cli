@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1253/setcookie_header_log.php

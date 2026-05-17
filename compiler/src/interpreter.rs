@@ -7956,7 +7956,17 @@ impl Interpreter {
                         ),
                     ));
                 };
-                self.mysqli_wp_options.entry(handle_id).or_default().insert(
+                let options = self.mysqli_wp_options.entry(handle_id).or_default();
+                if options.contains_key(option_name) {
+                    self.mysqli_affected_rows.insert(handle_id, 0);
+                    let state = self.mysqli_statement_state_mut(function, stmt_id, span)?;
+                    state.executed_result = None;
+                    state.affected_rows = 0;
+                    state.buffered_result = None;
+                    state.buffered_result_cursor = 0;
+                    return Ok(Value::Bool(false));
+                }
+                options.insert(
                     option_name.clone(),
                     WordPressOptionState {
                         value: option_value.clone(),
@@ -8934,7 +8944,12 @@ impl Interpreter {
         if let Some((option_name, option_value, autoload)) =
             parse_wordpress_option_insert_query(query)
         {
-            self.mysqli_wp_options.entry(handle_id).or_default().insert(
+            let options = self.mysqli_wp_options.entry(handle_id).or_default();
+            if options.contains_key(&option_name) {
+                self.mysqli_affected_rows.insert(handle_id, 0);
+                return Ok(Value::Bool(false));
+            }
+            options.insert(
                 option_name,
                 WordPressOptionState {
                     value: option_value,
@@ -10771,13 +10786,11 @@ impl Interpreter {
             )?;
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
-            ensure_supported_function_signature(function, args.len(), span)?;
+            ensure_supported_function_metadata(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
-            let mut values = Vec::with_capacity(args.len());
-            for arg in args {
-                values.push(self.evaluate(arg, caller_scope)?);
-            }
+            let (values, reference_bindings) =
+                self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
             return self.call_user_function_with_checked_values(
                 function,
@@ -10785,8 +10798,8 @@ impl Interpreter {
                 None,
                 Some(declaring_class_id),
                 Some(class_id),
-                Vec::new(),
-                None,
+                reference_bindings,
+                Some(caller_scope),
             );
         }
 
@@ -15064,6 +15077,56 @@ impl Interpreter {
         Ok(Value::Null)
     }
 
+    fn call_setcookie(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "setcookie()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let name = match &args[0] {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "setcookie()",
+                        format!(
+                            "name argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let value = match args.get(1) {
+            Some(Value::String(value)) => value.as_str(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "setcookie()",
+                        format!(
+                            "value argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => "",
+        };
+
+        self.response_headers
+            .push(format!("Set-Cookie: {name}={value}"));
+        Ok(Value::Bool(true))
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -16927,6 +16990,7 @@ impl Interpreter {
             "header_remove" => self.call_header_remove(&args, span),
             "headers_list" => self.call_headers_list(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
+            "setcookie" => self.call_setcookie(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -19626,6 +19690,21 @@ fn register_interface_name(
         ));
     }
 
+    for parent_name in &interface.parents {
+        if !interface_lookup.contains_key(&parent_name.to_ascii_lowercase()) {
+            return Err(runtime_error(
+                interface.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &interface.name,
+                    format!(
+                        "interface {} extends missing or unsupported parent interface {}",
+                        interface.name, parent_name
+                    ),
+                ),
+            ));
+        }
+    }
+
     let interface = Rc::new(interface.clone());
     interfaces.push(interface.clone());
     interface_lookup.insert(key, interface);
@@ -19823,8 +19902,9 @@ fn register_class_members(
             .set_parent(id, parent_id)
             .map_err(|error| runtime_error(class.span, error))?;
     }
+    let interfaces = expanded_class_interface_names(interface_lookup, &class.interfaces);
     classes
-        .set_interfaces(id, class.interfaces.clone())
+        .set_interfaces(id, interfaces)
         .map_err(|error| runtime_error(class.span, error))?;
 
     for method in composed_trait_methods(class, trait_lookup)? {
@@ -20051,6 +20131,67 @@ fn trait_precedence_exclusions(
     Ok(exclusions)
 }
 
+fn expanded_class_interface_names(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    direct_interfaces: &[String],
+) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for interface_name in direct_interfaces {
+        push_interface_with_parents(interface_lookup, interface_name, &mut names, &mut seen);
+    }
+    names
+}
+
+fn push_interface_with_parents(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface_name: &str,
+    names: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    let key = interface_name.to_ascii_lowercase();
+    if !seen.insert(key.clone()) {
+        return;
+    }
+    names.push(interface_name.to_string());
+    let Some(interface) = interface_lookup.get(&key) else {
+        return;
+    };
+    for parent_name in &interface.parents {
+        push_interface_with_parents(interface_lookup, parent_name, names, seen);
+    }
+}
+
+fn expanded_interface_methods<'a>(
+    interface_lookup: &'a HashMap<String, Rc<InterfaceDecl>>,
+    interface: &'a InterfaceDecl,
+) -> Vec<(String, &'a InterfaceMethodDecl)> {
+    let mut methods = Vec::new();
+    let mut visited = HashSet::new();
+    collect_interface_methods(interface_lookup, interface, &mut methods, &mut visited);
+    methods
+}
+
+fn collect_interface_methods<'a>(
+    interface_lookup: &'a HashMap<String, Rc<InterfaceDecl>>,
+    interface: &'a InterfaceDecl,
+    methods: &mut Vec<(String, &'a InterfaceMethodDecl)>,
+    visited: &mut HashSet<String>,
+) {
+    let key = interface.name.to_ascii_lowercase();
+    if !visited.insert(key) {
+        return;
+    }
+    for parent_name in &interface.parents {
+        if let Some(parent) = interface_lookup.get(&parent_name.to_ascii_lowercase()) {
+            collect_interface_methods(interface_lookup, parent, methods, visited);
+        }
+    }
+    for method in &interface.methods {
+        methods.push((interface.name.clone(), method));
+    }
+}
+
 fn validate_interface_method_implementation(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
@@ -20069,18 +20210,22 @@ fn validate_interface_method_implementation(
             continue;
         };
 
-        for method in &interface.methods {
+        let interface_methods = expanded_interface_methods(interface_lookup, interface);
+        for (method_interface_name, method) in interface_methods {
             let lookup_name = method.function.name.to_ascii_lowercase();
             if !covered_names.insert(format!(
                 "{}::{lookup_name}",
-                interface.name.to_ascii_lowercase()
+                method_interface_name.to_ascii_lowercase()
             )) {
                 continue;
             }
             let Some((declaring_class_id, declaring_class_name, class_method)) =
                 find_public_method(classes, class_id, &lookup_name)
             else {
-                missing.push(format!("{}::{}()", interface.name, method.function.name));
+                missing.push(format!(
+                    "{method_interface_name}::{}()",
+                    method.function.name
+                ));
                 continue;
             };
 
@@ -20090,7 +20235,7 @@ fn validate_interface_method_implementation(
                     format!(
                         "concrete class {} must implement interface method {}::{}() as {} method; found {} {}::{}()",
                         class.name,
-                        interface.name,
+                        method_interface_name,
                         method.function.name,
                         method_static_name(false),
                         method_static_name(class_method.is_static()),
@@ -20115,7 +20260,7 @@ fn validate_interface_method_implementation(
                         "method {}::{}() cannot require more parameters than interface method {}::{}()",
                         declaring_class_name,
                         class_method.name(),
-                        interface.name,
+                        method_interface_name,
                         method.function.name
                     ),
                 ));
@@ -20130,7 +20275,7 @@ fn validate_interface_method_implementation(
             );
             validate_interface_parameter_type_compatibility(
                 &class.name,
-                interface,
+                &method_interface_name,
                 method,
                 declaring_class_name,
                 class_method.name(),
@@ -20138,7 +20283,7 @@ fn validate_interface_method_implementation(
             )?;
             validate_interface_return_type_compatibility(
                 &class.name,
-                interface,
+                &method_interface_name,
                 method,
                 declaring_class_name,
                 class_method.name(),
@@ -20351,7 +20496,7 @@ fn validate_core_interface_required_methods(
 
 fn validate_interface_parameter_type_compatibility(
     class_name: &str,
-    interface: &InterfaceDecl,
+    interface_name: &str,
     interface_method: &InterfaceMethodDecl,
     declaring_class_name: &str,
     class_method_name: &str,
@@ -20382,7 +20527,7 @@ fn validate_interface_parameter_type_compatibility(
                         class_method_name,
                         class_type,
                         class_param.name,
-                        interface.name,
+                        interface_name,
                         interface_method.function.name
                     ),
                 ));
@@ -20398,7 +20543,7 @@ fn validate_interface_parameter_type_compatibility(
                         class_method_name,
                         class_param.name,
                         class_type,
-                        interface.name,
+                        interface_name,
                         interface_method.function.name,
                         interface_type
                     ),
@@ -20413,7 +20558,7 @@ fn validate_interface_parameter_type_compatibility(
 
 fn validate_interface_return_type_compatibility(
     class_name: &str,
-    interface: &InterfaceDecl,
+    interface_name: &str,
     interface_method: &InterfaceMethodDecl,
     declaring_class_name: &str,
     class_method_name: &str,
@@ -20438,7 +20583,7 @@ fn validate_interface_return_type_compatibility(
                 declaring_class_name,
                 class_method_name,
                 interface_type,
-                interface.name,
+                interface_name,
                 interface_method.function.name
             ),
         )),
@@ -20452,7 +20597,7 @@ fn validate_interface_return_type_compatibility(
                     declaring_class_name,
                     class_method_name,
                     class_type,
-                    interface.name,
+                    interface_name,
                     interface_method.function.name,
                     interface_type
                 ),
@@ -21301,6 +21446,7 @@ fn is_builtin(name: &str) -> bool {
             | "header_remove"
             | "headers_list"
             | "headers_sent"
+            | "setcookie"
             | "assert"
             | "get_class"
             | "is_object"

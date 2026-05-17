@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), and headers_sent() until native response-header storage, output-started tracking, status-code handling, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
+const LLVM_HEADER_STATE_REJECTION: &str = "LLVM header-state lowering rejects header(), header_remove(), headers_list(), headers_sent(), and setcookie() until native response-header storage, output-started tracking, status-code handling, cookie formatting, SAPI emission, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded CLI header-state behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -117,6 +117,57 @@ echo count(headers_list());
     .unwrap();
 
     assert_eq!(execution.stdout, "yes|callable|null|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn setcookie_appends_set_cookie_header_to_current_cli_header_log() {
+    let execution = run_source(
+        r#"<?php
+echo count(headers_list());
+$result = setcookie("wordpress_test_cookie", "WP Cookie check");
+echo "|";
+echo $result ? "true" : "false";
+echo "|";
+setcookie("empty_cookie");
+$headers = headers_list();
+echo count($headers);
+echo "|";
+echo $headers[0];
+echo "|";
+echo $headers[1];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|true|2|Set-Cookie: wordpress_test_cookie=WP Cookie check|Set-Cookie: empty_cookie="
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn setcookie_is_available_through_string_valued_calls() {
+    let execution = run_source(
+        r#"<?php
+$call = "setcookie";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$result = $call("wordpress_test_cookie", "1");
+echo $result ? "|true" : "|false";
+echo "|";
+$headers = headers_list();
+echo $headers[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|true|Set-Cookie: wordpress_test_cookie=1"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -263,6 +314,57 @@ echo header_remove("A", "B");
 }
 
 #[test]
+fn setcookie_rejects_forms_outside_current_subset() {
+    let missing = runtime_error(
+        r#"<?php
+echo setcookie();
+"#,
+    );
+    assert_eq!(missing.line, 2);
+    assert_eq!(missing.column, 6);
+    assert_eq!(
+        missing.message,
+        "arity mismatch for setcookie(): expected 1 to 2 argument(s), got 0"
+    );
+
+    let non_string_name = runtime_error(
+        r#"<?php
+echo setcookie(42);
+"#,
+    );
+    assert_eq!(non_string_name.line, 2);
+    assert_eq!(non_string_name.column, 6);
+    assert_eq!(
+        non_string_name.message,
+        "unsupported call setcookie(): name argument must be string in the current subset, got int"
+    );
+
+    let non_string_value = runtime_error(
+        r#"<?php
+echo setcookie("wordpress_test_cookie", 1);
+"#,
+    );
+    assert_eq!(non_string_value.line, 2);
+    assert_eq!(non_string_value.column, 6);
+    assert_eq!(
+        non_string_value.message,
+        "unsupported call setcookie(): value argument must be string in the current subset, got int"
+    );
+
+    let too_many = runtime_error(
+        r#"<?php
+echo setcookie("A", "B", 0);
+"#,
+    );
+    assert_eq!(too_many.line, 2);
+    assert_eq!(too_many.column, 6);
+    assert_eq!(
+        too_many.message,
+        "arity mismatch for setcookie(): expected 1 to 2 argument(s), got 3"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_header_until_native_runtime_call_lowering_exists() {
     let error = emit_ir_source(
         r#"<?php
@@ -318,6 +420,16 @@ fn emit_ir_rejects_headers_sent_until_native_header_state_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_setcookie_until_native_header_state_exists() {
+    let error = emit_ir_source("<?php\nsetcookie('wordpress_test_cookie', '1');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_HEADER_STATE_REJECTION);
+}
+
+#[test]
 fn emit_ir_includes_header_in_native_callable_lookup_table() {
     let ir = emit_ir_source(
         r#"<?php
@@ -329,11 +441,13 @@ echo function_exists("headers_list") ? "1" : "0";
 echo is_callable("headers_list") ? "1" : "0";
 echo function_exists("headers_sent") ? "1" : "0";
 echo is_callable("headers_sent") ? "1" : "0";
+echo function_exists("setcookie") ? "1" : "0";
+echo is_callable("setcookie") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 8, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

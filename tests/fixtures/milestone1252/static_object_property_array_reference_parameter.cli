@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1252/static_object_property_array_reference_parameter.php
+start:var|cold:static

@@ -201,6 +201,19 @@ connectivity, arbitrary SQL, broad `wpdb`, full WordPress option APIs,
 plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
 support.
 
+After Milestone 1254, that same synthetic add-option smoke also attempts a
+second `add_option('blogdescription', 'duplicate-db')` after the option has
+already been reinserted. The exact direct
+`INSERT INTO wp_options (option_name, option_value, autoload) VALUES (...)`
+state island now rejects the duplicate option name, leaves the cached and
+database-backed value as `added-db`, and the probe emits
+`cache-db|updated|fresh-db|deleted|missing|added|added-db|duplicate-rejected|added-db`
+(`stdout_bytes: 84` in normalized output). This is executable evidence for
+bounded duplicate-add rejection only; it does not claim persistent
+object-cache behavior, broad uniqueness/index fidelity, real MySQL errors,
+arbitrary SQL, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1228, `phpc run` seeds `$_COOKIE` as a deterministic empty
 auto-global array and routes direct function-scope reads/writes through the
 root symbol table. This supports executable WordPress-shaped cookie guards such
@@ -242,6 +255,15 @@ case folding, whitespace normalization, status-header removal,
 duplicate/replacement policy, output-started tracking, web-server/SAPI network
 emission, exact warnings, or native header-state lowering.
 
+After Milestone 1253, `setcookie($name, $value = "")` appends a simple
+`Set-Cookie: name=value` line into that same deterministic CLI header log and
+returns `true` for string name/value arguments. This supports small
+WordPress-shaped cookie-setting paths in the current CLI scaffold only. It
+does not implement expiration, path, domain, secure, HttpOnly, SameSite,
+options arrays, deletion cookies, cookie encoding fidelity, output-started
+tracking, web-server/SAPI network emission, exact warnings, or native
+header-state lowering.
+
 ## Current Probe Status
 
 The direct `wp-settings.php` probe still fails because it is not a valid
@@ -264,7 +286,10 @@ separately after exercising the exact direct `wp_options` DELETE shape through
 a minimal wrapper and clearing the bounded in-memory cache slot. The Milestone
 1249 add-option smoke records a later option-cache add byte count separately
 after exercising the exact direct `wp_options` INSERT shape through a minimal
-wrapper and refreshing the bounded in-memory cache. Known
+wrapper and refreshing the bounded in-memory cache. The Milestone 1254
+duplicate-add smoke records a later option-cache byte count after proving a
+second exact direct option insert is rejected without replacing the previously
+cached/database-backed value. Known
 historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local
@@ -773,7 +798,7 @@ historical blockers and remaining full-support gaps include:
   `wp-includes/l10n.php:1428`. Current later milestones add bounded
   `Countable`, `Iterator`, and `IteratorAggregate` method-shape checks, but
   this is still not broad interface method enforcement, interface constants,
-  interface inheritance, built-in/internal interface catalogs,
+  multiple interface inheritance, built-in/internal interface catalogs,
   variance/signature checks, autoload-triggered interface discovery, exact PHP
   fatal behavior, native lowering, or WordPress bootstrap support.
   Milestone 762 implements the bounded object-handle `=&` slice needed for

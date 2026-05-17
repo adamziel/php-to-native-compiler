@@ -678,11 +678,15 @@ impl Parser {
         }
         let name = self.consume_identifier("expected interface name")?;
         let name = self.resolve_declared_class_name(&name);
+        let mut parents = Vec::new();
         if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_interface_inheritance_message(),
-            ));
+            parents.push(self.consume_class_like_name("expected interface name after 'extends'")?);
+            if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_multiple_interface_inheritance_message(),
+                ));
+            }
         }
 
         self.consume_keyword(TokenKind::LBrace, "expected interface body")?;
@@ -695,6 +699,7 @@ impl Parser {
 
         Ok(Stmt::Interface(InterfaceDecl {
             name,
+            parents,
             methods,
             span,
         }))
@@ -6389,8 +6394,8 @@ fn unsupported_nested_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: only top-level interface declarations are implemented"
 }
 
-fn unsupported_interface_inheritance_message() -> &'static str {
-    "unsupported interface inheritance: interface extends clauses are not implemented"
+fn unsupported_multiple_interface_inheritance_message() -> &'static str {
+    "unsupported interface inheritance: multiple parent interfaces are not implemented"
 }
 
 fn unsupported_interface_constant_message() -> &'static str {

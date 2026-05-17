@@ -1,2 +1,2 @@
 <?php
-interface Child extends Parent {}
+interface Child extends Parent, OtherParent {}

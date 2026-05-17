@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone1251/interface_inheritance_method_presence.php
+instanceof-parent
+is-a-parent
+subclass-parent
+hooks:Plugin
+label:Plugin
