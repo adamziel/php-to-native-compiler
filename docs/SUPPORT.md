@@ -91,13 +91,21 @@
   direct public object-property array-offset elements such as
   `array(&$object->items[$group][$key], ...)` and
   `array(10 => &$object->items[$group][$key], ...)` as a bounded
-  copy-in/writeback path. `unset($param)` detaches only the callee's local
-  parameter name; later local writes do not mutate the caller variable or write
-  back through the object-property argument path.
-  Non-public, dynamic-property, append-offset, ArrayAccess, stored reference
-  array, dynamic static receiver, string-keyed named callback argument arrays,
-  and reference-returning function or method forms remain unsupported for
-  object-property array reference arguments. This is still a bounded
+  copy-in/writeback path. Direct stored argument arrays are also accepted when
+  the reached by-reference slots were previously assigned by reference through
+  the covered direct array-offset target path, for example
+  `$args[0] =& $value; call_user_func_array($callback, $args);`. This stored
+  array path preserves covered aliases to direct variables, copied reference
+  arrays, request bags such as `$_REQUEST`, and public object-property array
+  slots through the existing alias metadata. `unset($param)` detaches only the
+  callee's local parameter name; later local writes do not mutate the caller
+  variable or write back through the object-property argument path.
+  Non-public, dynamic-property, append-offset, ArrayAccess, reference array
+  literals stored by value, direct stored arrays whose reached slots were not
+  assigned by reference, dynamic static receiver, string-keyed named callback
+  argument arrays, and reference-returning function or method forms remain
+  unsupported for object-property and stored-array reference arguments. This is
+  still a bounded
   direct-variable alias and public object-property output path, not full PHP
   reference containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
@@ -602,19 +610,21 @@
   unsupported.
 - `$_GET`, `$_POST`, and `$_REQUEST` are seeded as bounded root superglobals
   for `phpc run`. By default they are empty ordered arrays. When
-  `PHPC_QUERY_STRING` is set, the runtime parses flat
-  `application/x-www-form-urlencoded` query pairs into `$_GET`; when
-  `PHPC_REQUEST_METHOD=POST`, `PHPC_CONTENT_TYPE` is
-  `application/x-www-form-urlencoded` (parameters such as `; charset=UTF-8`
-  are accepted), and `PHPC_REQUEST_BODY` is set, it parses flat form pairs into
-  `$_POST`. `$_REQUEST` is initialized by merging the parsed GET values and
-  then parsed POST values, with later POST keys replacing earlier GET keys.
-  Direct function-scope reads and writes route through the root symbol table
-  without `global` declarations. Nested/bracketed request names, duplicate-key
-  array collection, cookie merging, multipart uploads, `variables_order`,
-  `request_order`, host SAPI imports, `$GLOBALS` aliasing,
-  references, copy-on-write, exact warning behavior, and native lowering remain
-  unsupported.
+  `PHPC_QUERY_STRING` is set, the runtime parses URL-encoded query pairs into
+  `$_GET`, including bracketed names such as `filter[post_status]=publish`,
+  repeated `ids[]=10&ids[]=11` append collection, and duplicate scalar keys
+  with last-write-wins behavior. When `PHPC_REQUEST_METHOD=POST`,
+  `PHPC_CONTENT_TYPE` is `application/x-www-form-urlencoded` (parameters such
+  as `; charset=UTF-8` are accepted), and `PHPC_REQUEST_BODY` is set, it parses
+  the same bounded URL-encoded forms into `$_POST`. `$_REQUEST` is initialized
+  by merging the parsed GET values and then parsed POST values at top-level
+  keys, with later POST keys replacing earlier GET keys. Direct function-scope
+  reads and writes route through the root symbol table without `global`
+  declarations. Exact `parse_str()` handling for malformed bracket names,
+  max-input-vars limits, dotted/spaced name normalization, cookie merging,
+  multipart uploads, `variables_order`, `request_order`, host SAPI imports,
+  `$GLOBALS` aliasing, references, copy-on-write, exact warning behavior, and
+  native lowering remain unsupported.
 - `$_FILES` is seeded as a bounded root superglobal for `phpc run` with an
   empty ordered array. Direct function-scope reads and writes of `$_FILES`
   route through the root symbol table without a `global $_FILES` declaration,
@@ -1267,17 +1277,25 @@
   to current user functions or documented callable builtins, public
   `[object, method]` instance callbacks, public `[class, method]` static
   callbacks, and integer-keyed ordered arrays expanded as positional argument
-  lists. For string user-function callbacks and public `[object, method]`
-  instance callbacks, a literal argument array may pass direct variables to
-  reached by-reference parameters with unkeyed elements such as
-  `array(&$value)`, and writes through the callback parameter update that
-  caller variable. Stored argument arrays containing reference elements,
-  keyed literal argument arrays for reached by-reference parameters,
-  non-literal argument arrays for reached by-reference parameters, reference
-  elements that are not direct variables, variables already routed through
-  array-offset alias metadata, static method by-reference array callbacks,
-  closure and `__invoke` callbacks, non-public methods, other callable array
-  shapes, exact PHP warning behavior, and native lowering remain unsupported.
+  lists. For string user-function callbacks, public `[object, method]`
+  instance callbacks, and public `[class, method]` static callbacks, literal
+  argument arrays may pass direct variables or direct public object-property
+  array offsets to reached by-reference parameters with unkeyed or
+  integer-keyed elements such as `array(&$value)` or
+  `array(10 => &$object->items[$key])`. Direct stored argument arrays may also
+  satisfy reached by-reference parameters when those slots were assigned by
+  reference through the covered direct array-offset target path, such as
+  `$args[0] =& $value`. Writes through the callback parameter update the
+  covered caller variable, request-bag/global alias group, stored array slot,
+  or public object-property array slot through the bounded alias/writeback
+  metadata. Reference array literals stored by value, stored direct arrays
+  whose reached slots were not assigned by reference, string-keyed named
+  reference argument arrays, reference elements that are not direct variables
+  or direct public object-property array offsets in the literal path, variables
+  already routed through array-offset alias metadata in literal reference
+  elements, closure and `__invoke` callbacks, non-public methods, other
+  callable array shapes, reference-returning callbacks through stored array
+  slots, exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -1683,6 +1701,11 @@
   `SELECT option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
   shape returns the recorded option name, value, and autoload columns together
   through the same placeholder result/fetch path.
+  The exact
+  `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ... LIMIT 1`
+  shape returns the deterministic option id plus the recorded option name,
+  value, and autoload columns together through the same placeholder
+  result/fetch path.
   Exact option-row reads for
   `SELECT option_name, option_value FROM wp_options`,
   `SELECT option_name, option_value FROM wp_options WHERE autoload IN ( 'yes',
@@ -1691,9 +1714,13 @@
   the same placeholder result path. The same all-row, autoload-filtered, and
   explicit-name-list shapes are also supported for the exact
   `SELECT option_name, option_value, autoload FROM wp_options ...` projection,
-  returning recorded option-name, value, and autoload columns. All and
-  autoload-filtered row reads use deterministic option-name ordering; explicit
-  `IN (...)` reads preserve the requested name order and skip missing names.
+  returning recorded option-name, value, and autoload columns, and for the
+  exact
+  `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+  projection, returning deterministic option-id, name, value, and autoload
+  columns. All and autoload-filtered row reads use deterministic option-name
+  ordering; explicit `IN (...)` reads preserve the requested name order and
+  skip missing names.
   Missing option names still return an empty placeholder result. The exact
   single-quoted literal parser for those direct option shapes accepts the
   current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
@@ -1702,7 +1729,7 @@
   This state island is not broad SQL parsing, SQL-mode-aware escaping,
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond exact inserts,
-  arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/name-value/full-row/full-row-with-id shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth, real
@@ -1736,6 +1763,11 @@
   query returns recorded option-name/value/autoload rows for string
   option-name parameters on the same handle through the same prepared result
   paths; missing names return an empty zero-field placeholder result. The exact
+  `SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1`
+  query returns recorded deterministic option-id/name/value/autoload rows for
+  string option-name parameters on the same handle through the same prepared
+  result paths; missing names return an empty zero-field placeholder result.
+  The exact
   `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns recorded deterministic option-id rows for string option-name
   parameters on the same handle through
@@ -4665,10 +4697,10 @@
   under the function-call boundary, while native function-table introspection
   recognizes the name.
   `call_user_func_array` accepts the same current string/array callable,
-  integer-keyed positional argument-array, and unkeyed literal direct-variable
-  or direct public object-property array-offset by-reference string/function,
-  public object-method, or public class-string static-method callback argument
-  subset as the builtin section above;
+  integer-keyed positional argument-array, literal direct-variable or direct
+  public object-property array-offset by-reference argument, and direct stored
+  reference-array string/function, public object-method, or public class-string
+  static-method callback argument subset as the builtin section above;
   direct native `call_user_func_array(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
@@ -4801,7 +4833,11 @@
   `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`;
   both the original method and alias are ordinary public methods for dispatch,
   `method_exists()`, `get_class_methods()`, and current interface
-  method-presence checks. Built-in/internal trait entries are not represented.
+  method-presence checks. If the consuming class declares a public instance
+  method with the same name as a composed public trait method or alias, the
+  class method takes precedence and the trait method is skipped in the
+  effective class method table, including for current interface method checks.
+  Built-in/internal trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -5328,8 +5364,8 @@
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
   trait/class constants, static/abstract/final and non-public trait methods,
-  conflicting trait composition outside the bounded single-loser
-  `insteadof` shape,
+  conflicting trait composition outside class-method precedence and the
+  bounded single-loser `insteadof` shape,
   trait aliases beyond the current simple public, qualified public-alias, and
   same-block winner public-alias slices, visibility changes other than
   explicit `public` on an alias,
@@ -6680,11 +6716,12 @@
   `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
   exact warning behavior, and native lowering
 - `$_GET`, `$_POST`, and `$_REQUEST` behavior beyond the current explicit
-  flat URL-encoded CLI seed and direct root-symbol routing: nested/bracketed
-  request names, duplicate-key array collection, multipart uploads,
-  `variables_order`, `request_order`, cookie merging into `$_REQUEST`, host
-  environment imports, `$GLOBALS` aliasing, references/copy-on-write,
-  mutation-ordering fidelity, exact warning behavior, and native lowering
+  bounded URL-encoded CLI seed and direct root-symbol routing: exact
+  `parse_str()` handling for malformed bracket names, max-input-vars limits,
+  dotted/spaced name normalization, multipart uploads, `variables_order`,
+  `request_order`, cookie merging into `$_REQUEST`, host environment imports,
+  `$GLOBALS` aliasing, references/copy-on-write, mutation-ordering fidelity,
+  exact warning behavior, and native lowering
 - `$_FILES` behavior beyond the current deterministic empty array seed and
   direct root-symbol routing: multipart/form upload parsing, temporary upload
   file state, upload error metadata population, `is_uploaded_file()`/

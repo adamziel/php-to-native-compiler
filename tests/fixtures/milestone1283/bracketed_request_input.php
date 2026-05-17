@@ -1,0 +1,20 @@
+<?php
+echo isset($_GET["filter"]["post_status"]) ? $_GET["filter"]["post_status"] : "empty";
+echo "|";
+echo isset($_GET["ids"][0]) ? $_GET["ids"][0] : "empty";
+echo ",";
+echo isset($_GET["ids"][1]) ? $_GET["ids"][1] : "empty";
+echo "|";
+echo isset($_GET["rows"][0]["id"]) ? $_GET["rows"][0]["id"] : "empty";
+echo "|";
+echo isset($_GET["dup"]) ? $_GET["dup"] : "empty";
+echo "|";
+echo isset($_POST["meta"]["_wpnonce"]) ? $_POST["meta"]["_wpnonce"] : "empty";
+echo "|";
+echo isset($_POST["ids"][2]) ? $_POST["ids"][2] : "empty";
+echo ",";
+echo isset($_POST["ids"][3]) ? $_POST["ids"][3] : "empty";
+echo "|";
+echo isset($_REQUEST["dup"]) ? $_REQUEST["dup"] : "empty";
+echo "|";
+echo isset($_REQUEST["submit"]) ? $_REQUEST["submit"] : "empty";

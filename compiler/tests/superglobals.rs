@@ -278,6 +278,60 @@ echo isset($_REQUEST["action"]) ? "request" : "no-request";
 }
 
 #[test]
+fn request_bag_superglobals_parse_bracketed_names_and_duplicate_keys() {
+    let program = parse(
+        r#"<?php
+echo $_GET["filter"]["post_status"];
+echo "|";
+echo $_GET["ids"][0];
+echo ",";
+echo $_GET["ids"][1];
+echo "|";
+echo $_GET["rows"][0]["id"];
+echo ":";
+echo $_GET["rows"][1]["id"];
+echo "|";
+echo $_GET["dup"];
+echo "|";
+echo $_POST["meta"]["_wpnonce"];
+echo "|";
+echo $_POST["ids"][2];
+echo ",";
+echo $_POST["ids"][3];
+echo "|";
+echo $_REQUEST["dup"];
+echo "|";
+echo $_REQUEST["submit"];
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            query_string: Some(
+                "filter[post_status]=publish&ids[]=10&ids[]=11&rows[][id]=a&rows[][id]=b&dup=old&dup=new"
+                    .to_string(),
+            ),
+            request_body: Some(
+                "meta[_wpnonce]=token%2Bplus&ids[2]=20&ids[]=21&dup=post&submit=Save+Draft"
+                    .to_string(),
+            ),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/x-www-form-urlencoded".to_string()),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "publish|10,11|a:b|new|token+plus|20,21|post|Save Draft"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -296,6 +350,35 @@ fn request_input_env_cli_snapshot_matches_current_sapi_seed() {
 
     let actual = render_cli_snapshot(&output);
     let expected = "exit: 0\nstdout:\nPOST|preview=true&name=WordPress+Core|true|WordPress Core|save|hello world|true|save|action=save&space=hello+world--- stdout end ---\nstderr:\n--- stderr end ---\n";
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn bracketed_request_input_env_cli_snapshot_matches_current_sapi_seed() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = "tests/fixtures/milestone1283/bracketed_request_input.php";
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env(
+            "PHPC_QUERY_STRING",
+            "filter[post_status]=publish&ids[]=10&ids[]=11&dup=old&dup=new",
+        )
+        .env("PHPC_REQUEST_METHOD", "POST")
+        .env("PHPC_CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env(
+            "PHPC_REQUEST_BODY",
+            "meta[_wpnonce]=token%2Bplus&ids[2]=20&ids[]=21&dup=post&submit=Save+Draft",
+        )
+        .args(["run", fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run phpc for {fixture}: {error}"));
+
+    let actual = render_cli_snapshot(&output);
+    let expected = "exit: 0\nstdout:\npublish|10,11|empty|new|token+plus|20,21|post|Save Draft--- stdout end ---\nstderr:\n--- stderr end ---\n";
 
     assert_eq!(actual, expected);
 }

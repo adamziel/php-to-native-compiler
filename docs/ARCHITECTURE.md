@@ -38,13 +38,17 @@ included-file scope model.
 same root symbol table and route direct function-scope reads and writes through
 that root storage. The default request bags are empty ordered arrays. For
 explicit CLI request exercises, `PHPC_QUERY_STRING` seeds flat URL-encoded
-query pairs into `$_GET`, and `PHPC_REQUEST_METHOD=POST` plus
+and bracketed URL-encoded query pairs into `$_GET`, and
+`PHPC_REQUEST_METHOD=POST` plus
 `PHPC_CONTENT_TYPE=application/x-www-form-urlencoded` and `PHPC_REQUEST_BODY`
-seeds flat URL-encoded body pairs into `$_POST`; `$_REQUEST` starts as GET
-merged with POST. This is deterministic request-state scaffolding only: it does
-not parse browser cookie headers, nested/bracketed request names, multipart
-uploads, or host SAPI state, import file-upload metadata, emit cookies, or
-model `variables_order`/`request_order`.
+seeds flat and bracketed URL-encoded body pairs into `$_POST`. Repeated scalar
+keys use last-write-wins, `[]` bracket segments append in order, and keyed
+bracket segments materialize nested arrays under the current ordered-array
+model. `$_REQUEST` starts as GET merged with POST at the top-level key. This
+is deterministic request-state scaffolding only: it does not parse browser
+cookie headers, malformed PHP request names with exact `parse_str()` behavior,
+multipart uploads, or host SAPI state, import file-upload metadata, emit
+cookies, or model `variables_order`/`request_order`.
 
 Array-offset references in the interpreter are currently represented as
 symbol-table alias metadata, not general runtime reference containers. A direct
@@ -175,6 +179,11 @@ declaration; composition registers the winner and skips the named loser method.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
+When a consuming class declares a public instance method with the same name as
+a composed public trait method or alias, the class method takes precedence and
+the trait method is skipped in the effective class method table. This lets a
+concrete class override trait fallback methods while still satisfying current
+interface method checks.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
@@ -182,7 +191,8 @@ composed into consuming classes and resolve through the existing
 properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, static/abstract/final or non-public trait methods,
-broad conflict resolution, protected/private visibility changes,
+broad conflict resolution beyond class-method precedence and the current
+single-loser `insteadof` slice, protected/private visibility changes,
 visibility-only adaptations, unqualified or multi-loser `insteadof`,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
@@ -507,15 +517,24 @@ PHP reference-container identity.
 `call_user_func_array()` reuses that same
 direct cell binding for narrow string user-callbacks, public object-method
 array callbacks, and public class-string static-method array callbacks where
-the argument array is an unkeyed literal containing `&$directVariable`
-elements for reached by-reference parameters. The same callback path can also
-copy in and write back direct public object-property array-offset elements
-such as `&$object->items[$group][$key]`, using the bounded output-parameter
-bridge rather than in-call reference-container identity. This deliberately
-does not model full PHP reference containers, stored reference arrays, keyed
-reference argument arrays, non-public or dynamic property callback arguments,
-dynamic static receiver callback object-property array arguments, broader
-reference returns, exact by-reference `foreach`, or copy-on-write.
+the argument array is an unkeyed or integer-keyed literal containing
+`&$directVariable` elements for reached by-reference parameters. The same
+callback path can also copy in and write back direct public object-property
+array-offset elements such as `&$object->items[$group][$key]`, using the
+bounded output-parameter bridge rather than in-call reference-container
+identity. Direct stored argument arrays can satisfy reached by-reference
+parameters when the selected slots were previously assigned by reference
+through the covered direct array-offset target path. That path finds the
+stored slot in the existing alias metadata, copies the current slot value into
+the callee parameter, and writes the final parameter value back through the
+same alias, which also syncs covered direct-variable, copied-array,
+request-bag/global, and public object-property alias groups. This deliberately
+does not model full PHP reference containers, reference array literals stored
+by value, stored arrays whose reached slots were not assigned by reference,
+string-keyed named reference argument arrays, non-public or dynamic property
+callback arguments, dynamic static receiver callback object-property array
+arguments, broader reference returns, exact by-reference `foreach`, or
+copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1414,9 +1433,13 @@ integer-keyed literal argument-array elements such as `array(&$value)` and
 `array(10 => &$value)`, using the same direct caller cell as ordinary
 by-reference user-function and method calls. Direct public object-property
 array-offset reference elements use the current copy-in/writeback bridge for
-that callback path. Stored reference arrays, string-keyed named reference
-argument arrays, closure invocation, `__invoke`, named arguments, exact warning
-behavior, and native lowering remain unsupported.
+that callback path. Direct stored argument arrays whose reached slots were
+assigned by reference through the covered direct array-offset target path use
+the existing alias metadata as a copy-in/writeback bridge. Reference array
+literals stored by value, stored arrays without covered reference-assigned
+slots, string-keyed named reference argument arrays, closure invocation,
+`__invoke`, named arguments, exact warning behavior, and native lowering remain
+unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1513,8 +1536,9 @@ the placeholder handle. These calls are compatibility probes, not host DB
 integration. The interpreter has one narrow `wp_options` state island for exact
 WordPress-shaped option writes and reads, including direct option-value,
 autoload, option-name/option-value, and bounded full-row option-name/value/
-autoload result shapes; it is not a general SQL engine, schema model, host
-database connection, PDO layer, or native database runtime.
+autoload result shapes with or without deterministic placeholder option IDs;
+it is not a general SQL engine, schema model, host database connection, PDO
+layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

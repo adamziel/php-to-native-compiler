@@ -208,6 +208,71 @@ echo $option, "|", $cache->cache["options"]["alloptions"];
 }
 
 #[test]
+fn call_user_func_array_binds_stored_reference_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+class OptionFilter {
+    public function update(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class Cache_Marker {
+    public static function tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class WP_Object_Cache {
+    public $cache = [];
+}
+
+function update_option_like(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$option = "autoload";
+$args = [];
+$args[10] =& $option;
+$args[20] = "stored";
+echo call_user_func_array("update_option_like", $args), "\n";
+
+$copy = $args;
+$copy[20] = "copy";
+$filter = new OptionFilter();
+echo call_user_func_array(array($filter, "update"), $copy), "\n";
+
+$_REQUEST["mode"] = "draft";
+$request_alias =& $_REQUEST["mode"];
+$request_args = [];
+$request_args[0] =& $request_alias;
+$request_args[1] = "request";
+call_user_func_array("update_option_like", $request_args);
+echo $_REQUEST["mode"], "|", $request_args[0], "\n";
+
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+$cache_slot =& $cache->cache["options"]["alloptions"];
+$static_args = [];
+$static_args[0] =& $cache_slot;
+$static_args[1] = "static";
+call_user_func_array(array("Cache_Marker", "tag"), $static_args);
+echo $option, "|", $cache->cache["options"]["alloptions"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:stored\nautoload:stored:copy\ndraft:request|draft:request\nautoload:stored:copy|cold:static"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php
@@ -350,6 +415,24 @@ call_user_func_array("mutate", array("value" => &$option));
     assert_eq!(
         named_reference_args.message,
         "unsupported call mutate(): call_user_func_array() string-keyed named reference arguments are not implemented in the current subset"
+    );
+
+    let stored_by_value_args = runtime_error(
+        r#"<?php
+function mutate(&$value) {
+    $value = "changed";
+}
+$option = "original";
+$args = [];
+$args[0] = $option;
+call_user_func_array("mutate", $args);
+"#,
+    );
+    assert_eq!(stored_by_value_args.line, 8);
+    assert_eq!(stored_by_value_args.column, 32);
+    assert_eq!(
+        stored_by_value_args.message,
+        "unsupported call mutate(): call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
     );
 
     let bad_array_callable = runtime_error(

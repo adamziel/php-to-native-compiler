@@ -1,0 +1,4 @@
+autoload:stored
+autoload:stored:copy
+draft:request|draft:request
+autoload:stored:copy|cold:static

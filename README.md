@@ -48,9 +48,10 @@ of silently pretending to work.
 
 For bounded request/SAPI exercises, `phpc run` accepts explicit environment
 seeds: `PHPC_QUERY_STRING`, `PHPC_REQUEST_METHOD`, `PHPC_CONTENT_TYPE`, and
-`PHPC_REQUEST_BODY`. These populate flat URL-encoded `$_GET`/`$_POST`/
-`$_REQUEST` data and `php://input` for the interpreter only; native lowering
-still rejects request state until a native runtime ABI exists.
+`PHPC_REQUEST_BODY`. These populate bounded URL-encoded `$_GET`/`$_POST`/
+`$_REQUEST` data, including bracketed names and repeated `[]` values, and
+`php://input` for the interpreter only; native lowering still rejects request
+state until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -254,7 +255,9 @@ incorrect native code.
   `use TraitA, TraitB { TraitA::method as public alias; }`, and bounded
   public instance conflict resolution such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including the
-  same-block winning-method public alias interaction,
+  same-block winning-method public alias interaction and class-declared
+  public instance methods taking precedence over same-named composed trait
+  methods or aliases,
   declared unit-enum metadata, bounded `is_countable()`/`count()` for
   `Countable` implementors that pass the current method-shape check, and
   bounded `is_iterable()` metadata for `Iterator`/`IteratorAggregate`
@@ -284,8 +287,8 @@ beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
 checks, trait properties, non-public/typed/abstract/final/static trait
 constants, multi-constant trait declarations, trait constant adaptations,
 conflicting trait/class constants, static/abstract/final or non-public trait
-methods, conflicting trait composition outside the bounded single-loser
-`insteadof` shape, aliases
+methods, conflicting trait composition outside class-method precedence and the
+bounded single-loser `insteadof` shape, aliases
 beyond the current simple public, qualified public-alias, and same-block
 winner public-alias slices,
 protected/private visibility changes, visibility-only adaptations, unqualified
@@ -356,11 +359,14 @@ object-method callback, and public class-string static-method callback slice
 for unkeyed or integer-keyed literal argument arrays containing direct-variable
 reference elements such as `array(&$value)` and `array(10 => &$value)`, plus
 direct public object-property array-offset elements such as
-`array(&$object->items[$key])` through copy-in/writeback. Stored reference
-arrays, string-keyed named reference argument arrays, non-public or dynamic
+`array(&$object->items[$key])` through copy-in/writeback. Direct stored
+argument arrays whose reached by-reference slots were assigned by reference,
+such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
+also covered for those same callback shapes. Reference array literals stored
+by value, string-keyed named reference argument arrays, non-public or dynamic
 callback object-property array arguments, dynamic static receiver callback
-object-property array arguments, broader aliasing, and full copy-on-write
-remain unsupported.
+object-property array arguments, reference-returning callbacks through stored
+array slots, broader aliasing, and full copy-on-write remain unsupported.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It is not exact PHP aliasing: lingering loop references, mutation

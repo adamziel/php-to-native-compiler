@@ -278,6 +278,18 @@ object-cache behavior, arbitrary projections, broad SQL, real database
 connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
 request/SAPI fidelity, references/copy-on-write, or native support.
 
+After Milestone 1284, that synthetic add-option smoke also reads all recorded
+option rows with the exact
+`SELECT option_id, option_name, option_value, autoload FROM wp_options` shape.
+The generated bootstrap shim and front-controller path prove deterministic
+placeholder option IDs survive the delete/re-add and duplicate rejection path,
+emitting the same option data plus `ids=3:blogdescription:no,2:siteurl:yes`
+(`stdout_bytes: 250` in normalized output). This is executable evidence for
+bounded full option-row-with-id reads only; it does not claim persistent
+object-cache behavior, arbitrary projections, broad SQL, real database
+connectivity, broad `wpdb`, full WordPress option APIs, plugins/themes,
+request/SAPI fidelity, references/copy-on-write, or native support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

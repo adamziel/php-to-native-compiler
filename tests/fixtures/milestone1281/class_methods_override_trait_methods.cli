@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1281/class_methods_override_trait_methods.php
+exit: 0
+stdout:
+wp:class|class-boot|label-method|boot-method
+--- stdout end ---
+stderr:
+--- stderr end ---

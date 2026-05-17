@@ -310,22 +310,118 @@ fn is_form_urlencoded_content_type(content_type: &str) -> bool {
     })
 }
 
-fn parse_flat_urlencoded_pairs(input: &str) -> PhpArray {
+fn parse_urlencoded_request_pairs(input: &str) -> PhpArray {
     let mut array = PhpArray::new();
     for pair in input.split('&') {
         if pair.is_empty() {
             continue;
         }
         let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
-        if raw_key.is_empty() {
+        let key = percent_decode_form_component(raw_key);
+        if key.is_empty() {
             continue;
         }
-        array.insert(
-            percent_decode_form_component(raw_key),
-            Value::String(percent_decode_form_component(raw_value)),
-        );
+        let value = Value::String(percent_decode_form_component(raw_value));
+        insert_request_value(&mut array, &key, value);
     }
     array
+}
+
+fn insert_request_value(array: &mut PhpArray, key: &str, value: Value) {
+    match parse_request_key_segments(key) {
+        Some((root, segments)) => {
+            if segments.is_empty() {
+                array.insert(root, value);
+            } else {
+                insert_request_segments(array, &root, &segments, value);
+            }
+        }
+        None => {
+            array.insert(key, value);
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RequestKeySegment {
+    Key(String),
+    Append,
+}
+
+fn parse_request_key_segments(key: &str) -> Option<(String, Vec<RequestKeySegment>)> {
+    let Some(bracket_start) = key.find('[') else {
+        return Some((key.to_string(), Vec::new()));
+    };
+    let root = &key[..bracket_start];
+    if root.is_empty() {
+        return None;
+    }
+
+    let mut segments = Vec::new();
+    let mut rest = &key[bracket_start..];
+    while !rest.is_empty() {
+        if !rest.starts_with('[') {
+            return None;
+        }
+        let Some(close_index) = rest.find(']') else {
+            return None;
+        };
+        let segment = &rest[1..close_index];
+        if segment.is_empty() {
+            segments.push(RequestKeySegment::Append);
+        } else {
+            segments.push(RequestKeySegment::Key(segment.to_string()));
+        }
+        rest = &rest[close_index + 1..];
+    }
+
+    Some((root.to_string(), segments))
+}
+
+fn insert_request_segments(
+    array: &mut PhpArray,
+    key: &str,
+    segments: &[RequestKeySegment],
+    value: Value,
+) {
+    let mut child = match array.get(key).cloned() {
+        Some(Value::Array(child)) => child,
+        _ => PhpArray::new(),
+    };
+    insert_request_segment_value(&mut child, segments, value);
+    array.insert(key, Value::Array(child));
+}
+
+fn insert_request_segment_value(
+    array: &mut PhpArray,
+    segments: &[RequestKeySegment],
+    value: Value,
+) {
+    let Some((segment, rest)) = segments.split_first() else {
+        return;
+    };
+
+    match (segment, rest.is_empty()) {
+        (RequestKeySegment::Append, true) => {
+            let _ = array.append(value);
+        }
+        (RequestKeySegment::Append, false) => {
+            let mut child = PhpArray::new();
+            insert_request_segment_value(&mut child, rest, value);
+            let _ = array.append(Value::Array(child));
+        }
+        (RequestKeySegment::Key(key), true) => {
+            array.insert(key.clone(), value);
+        }
+        (RequestKeySegment::Key(key), false) => {
+            let mut child = match array.get(key.clone()).cloned() {
+                Some(Value::Array(child)) => child,
+                _ => PhpArray::new(),
+            };
+            insert_request_segment_value(&mut child, rest, value);
+            array.insert(key.clone(), Value::Array(child));
+        }
+    }
 }
 
 fn percent_decode_form_component(input: &str) -> String {
@@ -902,6 +998,26 @@ impl SymbolTable {
 
     fn is_array_offset_alias_name(&self, name: &str) -> bool {
         self.array_offset_aliases.contains_key(name)
+    }
+
+    fn array_offset_alias_for_direct_array_slot(
+        &self,
+        array_name: &str,
+        key: &ArrayKey,
+    ) -> Option<ArrayOffsetAlias> {
+        self.array_offset_aliases
+            .values()
+            .flat_map(|aliases| aliases.iter())
+            .find(|alias| {
+                matches!(
+                    alias,
+                    ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::StaticArray { name },
+                        keys,
+                    } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+                )
+            })
+            .cloned()
     }
 
     fn remove_static_root_from_array_offset_aliases(&mut self, root_name: &str) {
@@ -1957,7 +2073,7 @@ struct ReferenceBinding {
 #[derive(Debug, Clone)]
 enum ReferenceBindingTarget {
     CallerCell(VariableCell),
-    PublicObjectPropertyArrayOffset(ArrayOffsetAlias),
+    ArrayOffset(ArrayOffsetAlias),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2240,9 +2356,9 @@ impl Interpreter {
         server.insert("CONTENT_TYPE", Value::String(content_type.to_string()));
         server.insert("CONTENT_LENGTH", Value::String(content_length));
 
-        let get = parse_flat_urlencoded_pairs(query_string);
+        let get = parse_urlencoded_request_pairs(query_string);
         let post = if method == "POST" && is_form_urlencoded_content_type(content_type) {
-            parse_flat_urlencoded_pairs(&self.request_body)
+            parse_urlencoded_request_pairs(&self.request_body)
         } else {
             PhpArray::new()
         };
@@ -8486,6 +8602,49 @@ impl Interpreter {
             }));
         }
 
+        if matches!(
+            query,
+            "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+        ) {
+            if let Some((option_id, option_name, option_value, autoload)) =
+                match (connection_handle_id, params) {
+                    (Some(handle_id), [Value::String(option_name)]) => self
+                        .mysqli_wp_options
+                        .get(&handle_id)
+                        .and_then(|options| options.get(option_name))
+                        .map(|option| {
+                            (
+                                option.option_id,
+                                option_name.clone(),
+                                option.value.clone(),
+                                option.autoload.clone(),
+                            )
+                        }),
+                    _ => None,
+                }
+            {
+                return Ok(Some(MysqliPendingResultState {
+                    fields: vec![
+                        "option_id".to_string(),
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    rows: vec![vec![
+                        ("option_id".to_string(), Value::Int(option_id)),
+                        ("option_name".to_string(), Value::String(option_name)),
+                        ("option_value".to_string(), Value::String(option_value)),
+                        ("autoload".to_string(), Value::String(autoload)),
+                    ]],
+                }));
+            }
+            return Ok(Some(MysqliPendingResultState {
+                fields: Vec::new(),
+                rows: Vec::new(),
+            }));
+        }
+
         mysqli_statement_result_for_query_with_params(function, query, params, span)
     }
 
@@ -9424,6 +9583,62 @@ impl Interpreter {
                         ("autoload".to_string(), Value::String(autoload)),
                     ]],
                 );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(option_name) = parse_wordpress_option_id_name_value_autoload_select_query(query)
+        {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some((option_id, option_value, autoload)) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .map(|option| {
+                    (
+                        option.option_id,
+                        option.value.clone(),
+                        option.autoload.clone(),
+                    )
+                })
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    vec![
+                        "option_id".to_string(),
+                        "option_name".to_string(),
+                        "option_value".to_string(),
+                        "autoload".to_string(),
+                    ],
+                    vec![vec![
+                        ("option_id".to_string(), Value::Int(option_id)),
+                        ("option_name".to_string(), Value::String(option_name)),
+                        ("option_value".to_string(), Value::String(option_value)),
+                        ("autoload".to_string(), Value::String(autoload)),
+                    ]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_id_name_value_autoload_row_select_query(query)
+        {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows =
+                    wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        vec![
+                            "option_id".to_string(),
+                            "option_name".to_string(),
+                            "option_value".to_string(),
+                            "autoload".to_string(),
+                        ],
+                        rows,
+                    );
+                }
             }
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
@@ -13344,25 +13559,124 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
         let Expr::Array { items, .. } = argument_expr else {
-            let positional_args =
-                self.evaluate_call_user_func_array_arguments(argument_expr, span, caller_scope)?;
-            ensure_user_function_arity(function, positional_args.len(), span)?;
+            let argument_array_value = self.evaluate(argument_expr, caller_scope)?;
+            let Value::Array(argument_array) = &argument_array_value else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        format!(
+                            "argument array must be array in the current subset, got {}",
+                            argument_array_value.type_name()
+                        ),
+                    ),
+                ));
+            };
+            ensure_user_function_arity(function, argument_array.len(), span)?;
             ensure_supported_function_metadata(function, span)?;
-            if function
+            let has_reached_reference_param = function
                 .params
                 .iter()
                 .enumerate()
-                .any(|(index, param)| param.by_reference && index < positional_args.len())
-            {
+                .any(|(index, param)| param.by_reference && index < argument_array.len());
+            if !has_reached_reference_param {
+                let positional_args =
+                    Self::call_user_func_array_positional_values(argument_array, span)?;
+                return Ok((positional_args, Vec::new()));
+            }
+
+            if function.params.iter().enumerate().any(|(index, param)| {
+                param.by_reference && param.is_variadic && index < argument_array.len()
+            }) {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "call_user_func_array() reference parameter invocation requires an array literal with by-reference direct variable elements in the current subset",
+                        "variadic reference parameter invocation is not implemented",
                     ),
                 ));
             }
-            return Ok((positional_args, Vec::new()));
+
+            let Expr::Variable(array_name, _) = argument_expr else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference parameter invocation requires an array literal or direct stored array with covered reference slots in the current subset",
+                    ),
+                ));
+            };
+            if caller_scope.is_array_offset_alias_name(array_name) {
+                return Err(runtime_error(
+                    argument_expr.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() stored reference argument arrays routed through array-offset alias metadata are not implemented",
+                    ),
+                ));
+            }
+
+            let mut values = Vec::with_capacity(argument_array.len());
+            let mut reference_bindings = Vec::new();
+            for (index, entry) in argument_array.entries().iter().enumerate() {
+                if matches!(entry.key, ArrayKey::String(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() string-keyed named reference arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
+
+                let Some(param) = function.params.get(index) else {
+                    values.push(entry.value_cloned());
+                    continue;
+                };
+
+                if param.by_reference {
+                    if function.returns_by_reference {
+                        return Err(runtime_error(
+                            argument_expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "stored array reference arguments are not implemented for reference-returning functions in the current subset",
+                            ),
+                        ));
+                    }
+                    let alias = caller_scope
+                        .array_offset_alias_for_direct_array_slot(array_name, &entry.key)
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::unsupported_call(
+                                    callable_name(&function.name),
+                                    "call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset",
+                                ),
+                            )
+                        })?;
+                    let value = caller_scope
+                        .read_array_offset_alias(&alias)
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::invalid_array_access(
+                                    "cannot bind missing stored array reference argument"
+                                        .to_string(),
+                                ),
+                            )
+                        })?;
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
+                } else {
+                    values.push(entry.value_cloned());
+                }
+            }
+
+            return Ok((values, reference_bindings));
         };
 
         ensure_user_function_arity(function, items.len(), span)?;
@@ -13464,7 +13778,7 @@ impl Interpreter {
                     values.push(value);
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
                 } else {
                     return Err(runtime_error(
@@ -15257,7 +15571,7 @@ impl Interpreter {
                     values.push(value);
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
-                        target: ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
                     });
                 } else {
                     return Err(runtime_error(
@@ -15357,8 +15671,7 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         for binding in reference_bindings {
-            let ReferenceBindingTarget::PublicObjectPropertyArrayOffset(alias) = &binding.target
-            else {
+            let ReferenceBindingTarget::ArrayOffset(alias) = &binding.target else {
                 continue;
             };
             let Some(value) = local_scope.read_named(&binding.param_name) else {
@@ -15368,12 +15681,24 @@ impl Interpreter {
                 return Err(runtime_error(
                     span,
                     RuntimeError::invalid_array_access(
-                        "cannot write object-property array reference argument".to_string(),
+                        "cannot write array reference argument".to_string(),
                     ),
                 ));
             }
-            if let ArrayOffsetAliasRoot::PublicObjectProperty { object, property } = &alias.root {
-                caller_scope.sync_array_offset_aliases_for_object_property_root(object, property);
+            match &alias.root {
+                ArrayOffsetAliasRoot::StaticArray { name } => {
+                    caller_scope.sync_array_offset_aliases_for_static_root(name);
+                }
+                ArrayOffsetAliasRoot::GlobalArray { name } => {
+                    caller_scope.sync_array_offset_aliases_for_global_root(name);
+                }
+                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                | ArrayOffsetAliasRoot::ContextObjectProperty {
+                    object, property, ..
+                } => {
+                    caller_scope
+                        .sync_array_offset_aliases_for_object_property_root(object, property);
+                }
             }
         }
         Ok(())
@@ -15419,7 +15744,7 @@ impl Interpreter {
                     ReferenceBindingTarget::CallerCell(caller_cell) => {
                         local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
                     }
-                    ReferenceBindingTarget::PublicObjectPropertyArrayOffset(_) => {
+                    ReferenceBindingTarget::ArrayOffset(_) => {
                         if let Some(arg) = args.get(index) {
                             local_scope.write_static(&param.name, arg.clone());
                         }
@@ -21262,6 +21587,7 @@ fn composed_trait_methods(
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassMethodDecl>> {
     let mut methods = Vec::new();
+    let class_method_names = declared_class_method_names(class);
     let precedence_exclusions = trait_precedence_exclusions(class, trait_lookup)?;
     for trait_use in &class.trait_uses {
         let key = trait_use.name.to_ascii_lowercase();
@@ -21274,6 +21600,9 @@ fn composed_trait_methods(
         for method in &trait_decl.methods {
             let method_key = method.function.name.to_ascii_lowercase();
             if precedence_exclusions.contains(&(key.clone(), method_key)) {
+                continue;
+            }
+            if class_method_names.contains(&method.function.name.to_ascii_lowercase()) {
                 continue;
             }
             methods.push(method.clone());
@@ -21296,10 +21625,26 @@ fn composed_trait_methods(
             let mut aliased = method.clone();
             aliased.function.name = alias.alias.clone();
             aliased.span = alias.span;
+            if class_method_names.contains(&aliased.function.name.to_ascii_lowercase()) {
+                continue;
+            }
             methods.push(aliased);
         }
     }
     Ok(methods)
+}
+
+fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| {
+            let ClassMember::Method(method) = member else {
+                return None;
+            };
+            Some(method.function.name.to_ascii_lowercase())
+        })
+        .collect()
 }
 
 fn trait_precedence_exclusions(
@@ -23306,6 +23651,25 @@ fn parse_wordpress_option_name_value_autoload_select_query(query: &str) -> Optio
     Some(values[0].clone())
 }
 
+fn parse_wordpress_option_id_name_value_autoload_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix(
+            "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ",
+        )
+        .or_else(|| {
+            query.strip_prefix(
+                "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ",
+            )
+        })?;
+    let rest = rest.strip_suffix(" LIMIT 1")?;
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
 fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> {
     let query = query.trim();
     let rest = query
@@ -23417,6 +23781,34 @@ fn parse_wordpress_options_name_value_autoload_row_select_query(
     Some(WordPressOptionsRowFilter::Names(names))
 }
 
+fn parse_wordpress_options_id_name_value_autoload_row_select_query(
+    query: &str,
+) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT option_id, option_name, option_value, autoload FROM wp_options")
+        .or_else(|| {
+            query.strip_prefix(
+                "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options`",
+            )
+        })?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
 fn wordpress_option_rows_for_filter(
     options: &HashMap<String, WordPressOptionState>,
     filter: &WordPressOptionsRowFilter,
@@ -23484,6 +23876,50 @@ fn wordpress_option_name_value_autoload_rows_for_filter(
         .filter_map(|name| {
             options.get(&name).map(|option| {
                 vec![
+                    ("option_name".to_string(), Value::String(name)),
+                    (
+                        "option_value".to_string(),
+                        Value::String(option.value.clone()),
+                    ),
+                    (
+                        "autoload".to_string(),
+                        Value::String(option.autoload.clone()),
+                    ),
+                ]
+            })
+        })
+        .collect()
+}
+
+fn wordpress_option_id_name_value_autoload_rows_for_filter(
+    options: &HashMap<String, WordPressOptionState>,
+    filter: &WordPressOptionsRowFilter,
+) -> Vec<Vec<(String, Value)>> {
+    let mut names = match filter {
+        WordPressOptionsRowFilter::All => {
+            let mut names: Vec<_> = options.keys().cloned().collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Autoload => {
+            let mut names: Vec<_> = options
+                .iter()
+                .filter_map(|(name, option)| {
+                    is_wordpress_autoload_option_value(&option.autoload).then(|| name.clone())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        WordPressOptionsRowFilter::Names(names) => names.clone(),
+    };
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            options.get(&name).map(|option| {
+                vec![
+                    ("option_id".to_string(), Value::Int(option.option_id)),
                     ("option_name".to_string(), Value::String(name)),
                     (
                         "option_value".to_string(),

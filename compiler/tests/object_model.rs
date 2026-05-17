@@ -3230,6 +3230,66 @@ print_r($methods);
 }
 
 #[test]
+fn class_methods_override_trait_methods_and_satisfy_interfaces() {
+    let source = r#"<?php
+interface HookContract {
+    public function label($prefix);
+    public function boot();
+}
+
+trait DefaultHooks {
+    public function label($prefix, $fallback = null) {
+        return $prefix . ":trait";
+    }
+
+    public function boot() {
+        return "trait-boot";
+    }
+}
+
+trait FallbackHooks {
+    public function boot() {
+        return "fallback-boot";
+    }
+}
+
+class Plugin implements HookContract {
+    use DefaultHooks, FallbackHooks;
+
+    public function label($prefix) {
+        return $prefix . ":class";
+    }
+
+    public function boot() {
+        return "class-boot";
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->label("wp"), "\n";
+echo $plugin->boot(), "\n";
+echo method_exists($plugin, "label") ? "label-method\n" : "missing\n";
+echo method_exists($plugin, "boot") ? "boot-method\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "wp:class\nclass-boot\nlabel-method\nboot-method\nArray\n(\n    [0] => label\n    [1] => boot\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert_eq!(class.methods().len(), 2);
+    assert!(class.method("label").is_some());
+    assert!(class.method("boot").is_some());
+}
+
+#[test]
 fn class_trait_use_insteadof_winner_can_be_public_aliased() {
     let source = r#"<?php
 interface NamedPlugin {

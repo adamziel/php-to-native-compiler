@@ -1,0 +1,1 @@
+System PHP CLI does not consume PHPC_QUERY_STRING/PHPC_REQUEST_BODY as SAPI request state; this fixture documents phpc's explicit CLI request seed scaffold.
