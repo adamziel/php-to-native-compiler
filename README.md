@@ -79,13 +79,19 @@ flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 params on those contexts. Context resources may be passed to the current
 `file_get_contents()`/`fopen()` local and `php://input` paths without applying
 wrapper-specific behavior. `opendir()`, `readdir()`, `rewinddir()`, and
-`closedir()` cover bounded local UTF-8 directory handles. Unsupported wrappers,
+`closedir()` cover bounded local UTF-8 directory handles. Bounded
+`register_shutdown_function()` callbacks run supported string and public
+array-callable callbacks with by-value extra arguments during normal shutdown
+and after the bounded `exit()` path, before object destructors and final
+output-buffer flushing; callbacks registered during shutdown are appended to
+the same queue. Unsupported wrappers,
 filters, context option effects, context param effects beyond option merging,
 broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
-permissions/locking, stat-cache behavior, warning recovery, temp-file
-spillover, and native stream resources remain unsupported. Native lowering
+permissions/locking, stat-cache behavior, closure shutdown callback execution,
+invokable-object shutdown callbacks, warning recovery, temp-file spillover,
+and native stream resources remain unsupported. Native lowering
 still rejects request/session/stream state
 until a native runtime ABI exists.
 
@@ -231,7 +237,8 @@ incorrect native code.
   plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
   mutations for option/transient-shaped state probes,
   plus bounded direct and prepared transient-shaped option-name prefix result
-  scans and deletes;
+  scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
+  scans;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -360,8 +367,9 @@ incorrect native code.
   presence checks and bounded `class_implements()` interface-name arrays for
   current object values or declared string class names, bounded
   `class_uses()` direct trait-name arrays for current object values or
-  declared string class names, declared trait metadata for empty traits, public trait
-  constants, and simple public instance trait methods, simple class-body
+  declared string class names, bounded `class_parents()` parent-chain arrays
+  for current object values or declared string class names, declared trait
+  metadata for empty traits, public trait constants, and simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
   traits, plus simple public trait method alias adaptations such as
   `use TraitName { method as alias; }` and
@@ -460,7 +468,8 @@ magic methods beyond direct missing-property
 `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
 direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
-beyond the current `class_implements()`/`class_uses()` metadata table slices, and
+beyond the current `class_implements()`/`class_uses()`/`class_parents()`
+metadata table slices, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -511,16 +520,21 @@ such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
 also covered for those same callback shapes, including normal callback
 invocation of user functions and public array callables declared as returning
 by reference when they mutate reached by-reference parameters. The stored
-argument-array variable itself may also be backed by covered array-offset
-alias metadata, such as `$args =& $_REQUEST["callback_args"]` or
-`$args =& $object->store["args"]`. Literal reference elements may also use a
+argument array may be a direct variable or a direct visible named object
+property, including private/protected properties reached from a valid method
+visibility context, and a direct stored argument-array variable may itself be
+backed by covered array-offset alias metadata such as
+`$args =& $_REQUEST["callback_args"]` or `$args =& $object->store["args"]`.
+Literal reference elements may also use a
 direct variable already backed by covered array-offset alias metadata, such as
 `array(&$payload)` after `$payload =& $_REQUEST["payload"];`, and
 reference-returning callbacks can bind the returned parameter or returned
 child slot back to that alias group.
 Reference array literals stored by value, string-keyed named reference
 argument arrays, stored arrays whose reached slots were not assigned by
-reference, non-direct stored array expressions, non-public or dynamic callback
+reference, non-direct stored array expressions beyond direct visible named
+object-property arrays, direct reference assignment between object-property
+array offsets without an intermediate alias variable, dynamic callback
 object-property array arguments, dynamic static receiver callback
 object-property array arguments, ArrayAccess reference roots, broader
 aliasing, and full copy-on-write remain unsupported.

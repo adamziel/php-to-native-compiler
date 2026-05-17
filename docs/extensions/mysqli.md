@@ -475,9 +475,13 @@ autoload-list/equality slice. Exact prepared
 and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
 deterministic row sets for one string trailing-percent prefix pattern,
 including backticked table/column spellings and escaped transient prefixes
-such as `\_transient\_%`. This is still a bounded prefix matcher, not general
-SQL `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
-ordering or collation fidelity, or host database execution. The exact
+such as `\_transient\_%`. These prepared prefix scans also accept an exact
+trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
+optional `ASC`, and keep the existing deterministic ascending option-name row
+order. This is still a bounded prefix matcher, not general SQL `LIKE`
+wildcard semantics, prepared pattern lists, `ESCAPE` clauses, `DESC`
+ordering, arbitrary `ORDER BY` expressions, collation fidelity, or host
+database execution. The exact
 `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
 returns a recorded option-name row for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

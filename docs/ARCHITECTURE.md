@@ -651,26 +651,31 @@ through the covered direct array-offset target path. That path finds the
 stored slot in the existing alias metadata, copies the current slot value into
 the callee parameter, and writes the final parameter value back through the
 same alias, which also syncs covered direct-variable, copied-array,
-request-bag/global, and public object-property alias groups. For
+request-bag/global, public object-property, and context-aware non-public
+object-property alias groups. For
 statement-form reference assignment, a callback that returns that reached
 parameter by reference now binds the assigned alias back to the same covered
 alias group rather than only to the stored argument array slot. Normal
 `call_user_func_array()` invocation can use the same copy-in/writeback bridge
 when the callback function or public array-callable method is declared as
 returning by reference, but the callback call itself still returns a value.
-The stored argument-array variable may itself be routed through covered
-array-offset alias metadata, including ordinary array roots,
-request/global roots, and public object-property array roots; slot writes and
-stored-slot lookups compose the argument-array root alias with the selected
-integer key before binding or writing back.
+The stored argument array may be a direct variable or a direct visible named
+object property, including private/protected properties reached from a valid
+method visibility context. A stored argument-array variable may itself be
+routed through covered array-offset alias metadata, including ordinary array
+roots, request/global roots, and visible object-property array roots; slot
+writes and stored-slot lookups compose the argument-array root alias with the
+selected integer key before binding or writing back.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
-assigned by reference, non-direct stored array expressions, string-keyed named
-reference argument arrays, dynamic, append, or ArrayAccess reference roots,
-non-public property roots outside the current valid method-context
-named-property slice, dynamic static receiver callback object-property array
-arguments, broader reference-return binding, exact by-reference `foreach`, or
-copy-on-write.
+assigned by reference, non-direct stored array expressions beyond direct
+visible named object-property arrays, direct reference assignment between
+object-property array offsets without an intermediate alias variable,
+string-keyed named reference argument arrays, dynamic, append, or ArrayAccess
+reference roots, non-public property roots outside the current valid
+method-context named-property slice, dynamic static receiver callback
+object-property array arguments, broader reference-return binding, exact
+by-reference `foreach`, or copy-on-write.
 By-reference `foreach` value syntax over a direct array variable has a bounded
 interpreter path. Each iteration reads the active entry from the current
 ordered array, writes the key variable by value, routes the value variable to
@@ -1609,6 +1614,17 @@ buffers flush outward to stdout when execution completes or the bounded
 names, while direct native calls reject until generated code has stdout capture
 buffers, shutdown flushing, output-started/header interaction, SAPI
 integration, and exact diagnostics.
+`register_shutdown_function()` is modeled as an interpreter-only request/SAPI
+shutdown queue. Registration evaluates and stores the callback plus extra
+arguments in request-local interpreter state. Normal completion and the
+bounded `exit()` path drain supported string user/builtin callbacks and public
+object/static array callables in registration order before object destructors
+and final output-buffer flushing; callbacks registered while the queue is
+draining are appended and reached later in the same shutdown pass. Closure
+callbacks remain a registration-only boundary because current closure values
+store capture metadata but not executable closure bodies. The model does not
+claim PHP's full fatal-error, finally, destructor, by-reference argument,
+invokable-object, or native shutdown semantics.
 `header()` is an interpreter-only web/SAPI boundary for the current WordPress
 bootstrap/request path. It validates the current string/bool/int argument
 shape, records the raw header line in deterministic in-process CLI request
@@ -1710,7 +1726,10 @@ star-projection option-name equality reads with and without `LIMIT 1` for
 object-row/result/column `wpdb` probes, plus
 bounded direct
 `option_name LIKE '<prefix>%'` and prepared `option_name LIKE ?` result scans
-and deletes for transient-shaped option rows;
+and deletes for transient-shaped option rows. The prefix scan result shapes
+also accept the exact trailing `ORDER BY option_name` / backticked
+`ORDER BY` suffix with optional `ASC`, while preserving the deterministic
+ascending option-name order already used by the state island;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -2347,6 +2366,11 @@ class/trait metadata builtin. It accepts object values or string class names,
 optionally invokes the existing class autoload path for string misses, and
 returns an associative array of the resolved class's direct trait names. It
 does not recurse into parent classes or synthesize broader Reflection metadata.
+`class_parents($object_or_class[, $autoload])` walks the same class metadata
+chain from immediate parent to root and returns a PHP-shaped associative array
+of parent class names. This keeps `class_uses()` non-recursive while enabling
+covered userland recursive trait helpers that explicitly combine parent names
+with direct trait metadata.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

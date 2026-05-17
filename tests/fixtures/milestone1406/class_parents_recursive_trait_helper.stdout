@@ -1,0 +1,17 @@
+Array
+(
+    [App\Mid] => App\Mid
+    [App\Root] => App\Root
+)
+Array
+(
+    [App\Mid] => App\Mid
+    [App\Root] => App\Root
+)
+Array
+(
+    [App\MidTrait] => App\MidTrait
+    [App\RootTrait] => App\RootTrait
+    [App\LeafTrait] => App\LeafTrait
+)
+helper-done

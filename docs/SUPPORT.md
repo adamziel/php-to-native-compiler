@@ -147,10 +147,14 @@
   the covered direct array-offset target path, for example
   `$args[0] =& $value; call_user_func_array($callback, $args);`. This stored
   array path preserves covered aliases to direct variables, copied reference
-  arrays, request bags such as `$_REQUEST`, and public object-property array
-  slots through the existing alias metadata. The stored argument-array
-  variable may itself be routed through the same covered alias metadata, such
-  as `$args =& $registry["args"]`, `$args =& $_REQUEST["callback_args"]`, or
+  arrays, request bags such as `$_REQUEST`, public object-property array
+  slots, and private/protected object-property array slots reached from a
+  valid method visibility context through the existing alias metadata. The
+  stored argument array may be a direct variable or a direct visible named
+  object property such as `$this->privateArgs` or
+  `$peer->protectedArgs`. A direct stored argument-array variable may itself be
+  routed through the same covered alias metadata, such as
+  `$args =& $registry["args"]`, `$args =& $_REQUEST["callback_args"]`, or
   `$args =& $object->store["args"]`, before its reached slots are assigned by
   reference. It also covers normal
   `call_user_func_array()` invocation of user functions and public array
@@ -180,18 +184,20 @@
   the callback returns the reached stored/object-property array-offset
   parameter, to the same bounded alias group, so later writes through the
   alias, stored argument slot, covered request/global bag slot, and covered
-  public object-property slot observe the same value. `unset($param)` detaches
-  only the callee's local parameter name; later local writes do not mutate the
-  caller variable or write back through the direct array-offset or
+  visible object-property slot observe the same value. `unset($param)`
+  detaches only the callee's local parameter name; later local writes do not
+  mutate the caller variable or write back through the direct array-offset or
   object-property argument path.
   Dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
-  assigned by reference, non-direct stored array expressions, dynamic static
-  receiver, string-keyed named callback argument arrays, dynamic,
-  append, `ArrayAccess`, or stored-array
-  object-property bridges for `call_user_func_array()` reference-return alias
-  binding, closure or builtin callbacks as reference-return sources, and
-  broader reference-return binding forms remain unsupported for direct
+  assigned by reference, non-direct stored array expressions beyond direct
+  visible named object-property arrays, direct reference assignment between
+  object-property array offsets without an intermediate alias variable,
+  dynamic static receiver, string-keyed named callback argument arrays,
+  dynamic, append, or `ArrayAccess` object-property bridges for
+  `call_user_func_array()` reference-return alias binding, closure or builtin
+  callbacks as reference-return sources, and broader reference-return binding
+  forms remain unsupported for direct
   array-offset, object-property, and stored-array reference arguments. This is
   still a bounded direct-variable alias plus direct array/property slot route,
   not full PHP reference containers or copy-on-write.
@@ -1191,7 +1197,7 @@
   `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `is_a`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `class_parents`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `spl_autoload`,
@@ -2012,9 +2018,12 @@
   `WHERE option_name LIKE '<prefix>%'` and backtick-quoted
   ``WHERE `option_name` LIKE '<prefix>%'`` filters for deterministic
   transient-shaped prefix scans such as `_transient_%` and escaped
-  `\_transient\_%`. All, autoload-filtered, and prefix-filtered row reads use
-  deterministic option-name ordering; explicit `IN (...)` reads preserve the
-  requested name order and skip missing names.
+  `\_transient\_%`. Those bounded prefix scans also accept an exact trailing
+  `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with optional
+  `ASC`, and still use deterministic ascending option-name ordering. All,
+  autoload-filtered, and prefix-filtered row reads use deterministic
+  option-name ordering; explicit `IN (...)` reads preserve the requested name
+  order and skip missing names.
   Missing option names still return an empty placeholder result. The exact
   single-quoted literal parser for those direct option shapes accepts the
   current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
@@ -2075,9 +2084,13 @@
   and `SELECT * FROM wp_options WHERE option_name LIKE ?` shapes also return
   deterministic row sets for one string trailing-percent prefix pattern,
   including backticked table/column spellings and escaped transient prefixes
-  such as `\_transient\_%`. This remains a bounded prefix matcher, not general
-  SQL `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
-  ordering or collation fidelity, or host database execution. The exact
+  such as `\_transient\_%`. These prepared prefix scans also accept an exact
+  trailing `ORDER BY option_name` or ``ORDER BY `option_name` `` suffix, with
+  optional `ASC`, and return rows in the existing deterministic ascending
+  option-name order. This remains a bounded prefix matcher, not general SQL
+  `LIKE` wildcard semantics, prepared pattern lists, `ESCAPE` clauses,
+  `DESC` ordering, arbitrary `ORDER BY` expressions, collation fidelity, or
+  host database execution. The exact
   `SELECT option_name FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns a recorded option-name row for string option-name parameters on the
   same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -2526,11 +2539,17 @@
   references/COW, and native lowering remain unsupported.
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
   string callable, object/static array callable, or closure plus optional
-  already-evaluated extra arguments and returns `null`. The current slice
-  validates registration only; it does not store or execute callbacks at a
-  shutdown phase. Callback ordering, argument delivery, by-reference callback
-  behavior, output buffering, destructor/finally interaction, fatal-error
-  context, exact diagnostics, and native lowering remain unsupported.
+  already-evaluated extra arguments and returns `null`. Registered string
+  user/builtin callbacks and public object/static array callables execute
+  during normal shutdown and after the bounded `exit()` path, before object
+  destructors and final output-buffer flushing. Extra arguments are delivered
+  by value, and callbacks registered by an executing shutdown callback are
+  appended to the same request-local shutdown queue. Closure callbacks remain
+  registration-only because closure values do not yet carry executable bodies
+  in the interpreter. By-reference callback arguments, invokable-object
+  callbacks, private/protected method callbacks, exact fatal-error/shutdown
+  context, finally/destructor edge ordering beyond the covered callback-before-
+  destructor slice, exact diagnostics, and native lowering remain unsupported.
   `set_error_handler($callback, $error_levels = E_ALL)` accepts a currently
   valid string callable, object/static array callable, or closure plus an
   optional integer error-level mask, records the current handler value, and
@@ -4701,7 +4720,7 @@
   `setcookie`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
-  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `get_class_methods`, `get_class_vars`,
+  `property_exists`, `method_exists`, `class_implements`, `class_uses`, `class_parents`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
@@ -4885,7 +4904,7 @@
   `spl_autoload_unregister`, `spl_autoload_call`, `get_class`, `is_object`,
   `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
-  `class_implements`, `class_uses`, `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
+  `class_implements`, `class_uses`, `class_parents`, `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`
@@ -5484,6 +5503,12 @@
   are the direct trait names recorded on the resolved class. The current slice
   matches PHP's non-recursive direct-class behavior for covered user traits;
   parent-class traits are not included in the returned array.
+  `class_parents($object_or_class[, $autoload])` accepts current object
+  values or string class names, uses the current bool-like scalar autoload
+  flag for string class misses, and returns an associative array whose keys
+  and values are the resolved class's declared parent class names from
+  immediate parent to root. This is enough for covered userland recursive
+  trait-helper patterns that combine `class_parents()` with `class_uses()`.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7078,11 +7103,17 @@
   behavior for missing string classes, namespace/import alias expansion,
   reflection-object integration, exact PHP ordering for all engine metadata,
   and native lowering
-- `class_uses` recursive parent-trait helper behavior, built-in/internal trait
-  catalogs, exact warning behavior for missing string classes,
+- `class_uses` remains PHP-shaped and non-recursive; recursive parent-trait
+  helper behavior is covered only when userland code combines it with the
+  current `class_parents` slice. Built-in/internal trait catalogs, exact
+  warning behavior for missing string classes,
   namespace/import alias expansion beyond parsed class-like names,
   reflection-object integration, exact PHP ordering for all engine metadata,
   and native lowering
+- `class_parents` built-in/internal parent metadata, exact warning behavior for
+  missing string classes, namespace/import alias expansion beyond parsed
+  class-like names, reflection-object integration, exact PHP ordering for all
+  engine metadata, and native lowering
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,

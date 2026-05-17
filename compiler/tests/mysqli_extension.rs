@@ -4124,6 +4124,51 @@ echo $site_row["option_id"], ":", $site_row["option_name"], ":", $site_row["opti
 }
 
 #[test]
+fn mysqli_reads_current_wordpress_ordered_transient_prefix_option_rows_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_themes', 'theme-payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_themes', '555', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+$direct = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options WHERE option_name LIKE '_transient_%' ORDER BY option_name");
+$direct_first = mysqli_fetch_assoc($direct);
+$direct_second = mysqli_fetch_assoc($direct);
+echo mysqli_num_rows($direct);
+echo ":";
+echo $direct_first["option_name"], "=", $direct_first["option_value"];
+echo ",";
+echo $direct_second["option_name"], "=", $direct_second["option_value"];
+echo "|";
+$prepared = mysqli_execute_query($handle, "SELECT `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` LIKE ? ORDER BY `option_name` ASC", array("\\_transient\\_%"));
+$prepared_first = mysqli_fetch_assoc($prepared);
+$prepared_second = mysqli_fetch_assoc($prepared);
+echo mysqli_num_fields($prepared);
+echo ":";
+echo $prepared_first["option_name"], ":", $prepared_first["autoload"];
+echo ",";
+echo $prepared_second["option_name"], ":", $prepared_second["autoload"];
+echo "|";
+$stmt = mysqli_prepare($handle, "SELECT * FROM `wp_options` WHERE `option_name` LIKE ? ORDER BY `option_name`");
+mysqli_stmt_execute($stmt, array("_transient_timeout_%"));
+$timeout = mysqli_stmt_get_result($stmt);
+$timeout_row = mysqli_fetch_assoc($timeout);
+echo mysqli_num_rows($timeout);
+echo ":";
+echo $timeout_row["option_id"], ":", $timeout_row["option_name"], ":", $timeout_row["option_value"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2:_transient_timeout_update_themes=555,_transient_update_themes=theme-payload|3:_transient_timeout_update_themes:no,_transient_update_themes:no|1:2:_transient_timeout_update_themes:555"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_reads_current_wordpress_option_row_sets_from_state() {
     let execution = run_source(
         r#"<?php

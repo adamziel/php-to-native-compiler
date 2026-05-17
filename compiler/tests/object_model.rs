@@ -4517,6 +4517,81 @@ fn class_uses_requires_object_or_string_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn class_parents_reports_parent_metadata_for_recursive_trait_helpers() {
+    let source = r#"<?php
+namespace App;
+
+trait RootTrait {}
+trait MidTrait {}
+trait LeafTrait {}
+
+class Root {
+    use RootTrait;
+}
+
+class Mid extends Root {
+    use MidTrait;
+}
+
+class Leaf extends Mid {
+    use LeafTrait;
+}
+
+function class_uses_recursive_probe($class) {
+    $traits = array();
+    foreach (class_parents($class, false) as $parent) {
+        foreach (class_uses($parent, false) as $trait) {
+            $traits[$trait] = $trait;
+        }
+    }
+    foreach (class_uses($class, false) as $trait) {
+        $traits[$trait] = $trait;
+    }
+    return $traits;
+}
+
+$leaf = new Leaf();
+print_r(class_parents($leaf));
+print_r(class_parents("App\\Leaf", false));
+
+$call = "class_parents";
+$dynamic = $call("App\\Leaf");
+echo count($dynamic), "\n";
+
+print_r(class_uses_recursive_probe($leaf));
+echo class_parents("App\\Missing", false) ? "missing-true" : "missing-false";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [App\\Mid] => App\\Mid\n    [App\\Root] => App\\Root\n)\nArray\n(\n    [App\\Mid] => App\\Mid\n    [App\\Root] => App\\Root\n)\n2\nArray\n(\n    [App\\MidTrait] => App\\MidTrait\n    [App\\RootTrait] => App\\RootTrait\n    [App\\LeafTrait] => App\\LeafTrait\n)\nmissing-false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(class_parents(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call class_parents(): object_or_class argument must be object or string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(class_parents(\"Box\", []));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call class_parents(): autoload argument must be bool-like scalar in the current subset, got array"
+    );
+}
+
+#[test]
 fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
 namespace App;
@@ -5727,6 +5802,18 @@ fn emit_ir_rejects_class_implements_until_native_object_lowering_exists() {
 #[test]
 fn emit_ir_rejects_class_uses_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho class_uses(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object-metadata lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_parents_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho class_parents(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

@@ -11,21 +11,23 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
 }
 
 #[test]
-fn register_shutdown_function_accepts_current_callable_shapes_without_invoking_them() {
+fn register_shutdown_function_runs_supported_callbacks_at_shutdown() {
     let execution = run_source(
         r#"<?php
-function quiet_shutdown() {
+function string_shutdown($value) {
+    echo "string:", $value, "\n";
 }
-register_shutdown_function("quiet_shutdown");
+register_shutdown_function("string_shutdown", "late");
 echo "string";
 
 class Handler {
-    public function handle() {
+    public function handle($value) {
+        echo "array:", $value, "\n";
     }
 }
 $handler = new Handler();
 echo "|";
-register_shutdown_function([$handler, "handle"]);
+register_shutdown_function([$handler, "handle"], "later");
 echo "array";
 
 $call = "register_shutdown_function";
@@ -39,23 +41,52 @@ echo "|body";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "string|array|closure|body");
+    assert_eq!(
+        execution.stdout,
+        "string|array|closure|bodystring:late\narray:later\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn register_shutdown_function_accepts_current_extra_argument_boundary() {
+fn register_shutdown_function_runs_callbacks_registered_during_shutdown() {
     let execution = run_source(
         r#"<?php
-function quiet_shutdown_with_arg($value) {
+function first_shutdown($value) {
+    echo "first:", $value, "\n";
+    register_shutdown_function("second_shutdown", "nested");
 }
-register_shutdown_function("quiet_shutdown_with_arg", "later");
-echo "registered";
+function second_shutdown($value) {
+    echo "second:", $value;
+}
+register_shutdown_function("first_shutdown", "outer");
+echo "body\n";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.stdout, "body\nfirst:outer\nsecond:nested");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn register_shutdown_function_runs_all_callbacks_after_exit() {
+    let execution = run_source(
+        r#"<?php
+function first_shutdown() {
+    echo "first\n";
+}
+function second_shutdown() {
+    echo "second";
+}
+register_shutdown_function("first_shutdown");
+register_shutdown_function("second_shutdown");
+exit("body\n");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "body\nfirst\nsecond");
     assert_eq!(execution.exit_code, 0);
 }
 
