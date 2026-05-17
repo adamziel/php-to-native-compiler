@@ -1,6 +1,6 @@
 <?php
-$fn = function () {
-    return 1;
+$value = "before";
+$fn = function () use (&$value) {
+    return $value;
 };
 echo $fn();
-echo $fn("Ada");

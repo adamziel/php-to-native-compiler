@@ -4133,8 +4133,8 @@ echo $fn ? "truthy" : "missing";
 }
 
 #[test]
-fn anonymous_closure_invocation_has_stable_runtime_boundary() {
-    let error = runtime_error(
+fn anonymous_closure_invocation_executes_current_body_subset() {
+    let execution = run_source(
         r#"<?php
 $fn = function () {
     return 1;
@@ -4143,17 +4143,14 @@ echo $fn();
 "#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call closure: closure invocation is not implemented"
-    );
+    let execution = execution.unwrap();
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn static_anonymous_closure_invocation_has_stable_runtime_boundary() {
-    let error = runtime_error(
+fn static_anonymous_closure_invocation_executes_current_body_subset() {
+    let execution = run_source(
         r#"<?php
 $fn = static function () {
     return 1;
@@ -4162,12 +4159,9 @@ echo $fn();
 "#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call closure: closure invocation is not implemented"
-    );
+    let execution = execution.unwrap();
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -4216,7 +4210,7 @@ echo $fn("Ada");
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call closure: closure invocation is not implemented"
+        "unsupported call closure: arrow closure invocation is not implemented"
     );
 }
 

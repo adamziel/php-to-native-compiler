@@ -859,10 +859,16 @@ prepared `SHOW TABLE STATUS WHERE Name = ?` probes, including
 ``WHERE `Name` = ?`` spelling, return deterministic table-status rows through
 `mysqli_execute_query()` and `mysqli_stmt_execute(..., array(...))` when the
 single parameter is an identifier-shaped string table name. Missing names
-return an empty placeholder result. This does not add arbitrary prepared
-`SHOW TABLE STATUS` predicates, identifier placeholders, joined metadata
-queries, exact table counters/timestamps, host database inspection, or native
-lowering.
+return an empty placeholder result. Prepared
+`SHOW TABLE STATUS WHERE Name LIKE ?` probes, including
+``WHERE `Name` LIKE ?`` spelling and an exact trailing single-character
+`ESCAPE '<char>'` clause, route one string pattern parameter through the same
+bounded metadata `LIKE` matcher used by direct schema probes, including the
+per-handle `NO_BACKSLASH_ESCAPES` branch and explicit custom escape
+characters. This does not add arbitrary prepared `SHOW TABLE STATUS`
+predicates beyond the documented `Name` equality/`LIKE` forms, identifier
+placeholders, joined metadata queries, exact table counters/timestamps, host
+database inspection, or native lowering.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

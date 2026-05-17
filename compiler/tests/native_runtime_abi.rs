@@ -255,6 +255,12 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
         "{ir}"
     );
     assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
         "{ir}"
     );
@@ -287,12 +293,16 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeDiagnosticHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
     assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
         ),
         "{ir}"
     );
@@ -307,7 +317,7 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
-        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string"),
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
         "{ir}"
     );
     assert!(
@@ -315,6 +325,10 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert!(
+        ir.contains("call void @phpc_native_diagnostic_free"),
+        "{ir}"
+    );
     assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
@@ -335,12 +349,16 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeDiagnosticHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
     assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
         ),
         "{ir}"
     );
@@ -355,7 +373,7 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
-        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string"),
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
         "{ir}"
     );
     assert!(
@@ -363,6 +381,10 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert!(
+        ir.contains("call void @phpc_native_diagnostic_free"),
+        "{ir}"
+    );
     assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
@@ -386,12 +408,16 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeDiagnosticHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
         "{ir}"
     );
     assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
         ),
         "{ir}"
     );
@@ -414,6 +440,10 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
         "{ir}"
     );
     assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert!(
+        ir.contains("call void @phpc_native_diagnostic_free"),
+        "{ir}"
+    );
     assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp2)"),
@@ -550,7 +580,11 @@ fn known_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout_he
         "{actual}"
     );
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp7, i64 4)"),
+        actual.contains("@phpc_native_string_from_bytes(ptr %tmp11, i64 4)"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("phpc_native_value_from_string_with_diagnostic"),
         "{actual}"
     );
     assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");
@@ -590,7 +624,11 @@ fn selected_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout
         "{actual}"
     );
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp8, i64 %tmp9)"),
+        actual.contains("@phpc_native_string_from_bytes(ptr %tmp12, i64 %tmp13)"),
+        "{actual}"
+    );
+    assert!(
+        actual.contains("phpc_native_value_from_string_with_diagnostic"),
         "{actual}"
     );
     assert!(actual.contains("phpc_native_value_echo_stdout"), "{actual}");

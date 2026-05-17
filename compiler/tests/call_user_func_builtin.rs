@@ -49,6 +49,30 @@ echo $call("strlen", array("four"));
 }
 
 #[test]
+fn closure_values_invoke_directly_and_through_callback_dispatch() {
+    let execution = run_source(
+        r#"<?php
+$prefix = "wp";
+$callback = function ($hook, $priority = 10) use ($prefix) {
+    return $prefix . ":" . $hook . ":" . $priority;
+};
+$prefix = "changed";
+
+echo $callback("init"), "\n";
+echo call_user_func($callback, "plugins_loaded", 5), "\n";
+echo call_user_func_array($callback, array("save_post", 20));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "wp:init:10\nwp:plugins_loaded:5\nwp:save_post:20"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_literal_reference_arguments_for_user_callbacks() {
     let execution = run_source(
         r#"<?php

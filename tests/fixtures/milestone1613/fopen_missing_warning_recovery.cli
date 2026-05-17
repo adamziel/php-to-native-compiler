@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone1613/fopen_missing_warning_recovery.php

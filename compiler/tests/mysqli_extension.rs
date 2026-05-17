@@ -6181,6 +6181,43 @@ echo "|stmt=", mysqli_num_rows($result), ":", $stmt_row["Name"];
 }
 
 #[test]
+fn mysqli_prepared_table_status_filters_wordpress_schema_name_like_predicate() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_status_like (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(191) NOT NULL default '', PRIMARY KEY  (ID), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+mysqli_query($handle, "CREATE TABLE wp_probe_status_lake (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(191) NOT NULL default '', PRIMARY KEY  (ID), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$like = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE Name LIKE ?", array("wp_probe_status_l%"));
+echo "like=", mysqli_num_rows($like), ":";
+while ($row = mysqli_fetch_assoc($like)) {
+    echo $row["Name"], ":", $row["Collation"], ";";
+}
+$ticked = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE `Name` LIKE ? ESCAPE '!'", array("wp!_probe!_status!_like"));
+$ticked_row = mysqli_fetch_assoc($ticked);
+echo "|ticked=", mysqli_num_rows($ticked), ":", $ticked_row["Name"];
+mysqli_query($handle, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
+$mode = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE Name LIKE ?", array("wp\\_probe\\_status\\_%"));
+echo "|mode=", mysqli_num_rows($mode);
+$stmt = mysqli_prepare($handle, "SHOW TABLE STATUS WHERE Name LIKE ? ESCAPE '!'");
+mysqli_stmt_execute($stmt, array("wp!_probe!_status!_l%"));
+$result = mysqli_stmt_get_result($stmt);
+echo "|stmt=", mysqli_num_rows($result), ":";
+while ($stmt_row = mysqli_fetch_assoc($result)) {
+    echo $stmt_row["Name"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "like=2:wp_probe_status_lake:utf8mb4_unicode_ci;wp_probe_status_like:utf8mb4_unicode_520_ci;|ticked=1:wp_probe_status_like|mode=0|stmt=2:wp_probe_status_lake;wp_probe_status_like;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

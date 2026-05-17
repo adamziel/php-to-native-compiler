@@ -84,8 +84,11 @@ echo $invert ? 1 : 0;
     );
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
-    assert!(ir.contains("%tmp6 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
-    assert!(ir.contains("%tmp9 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
+    assert_eq!(
+        ir.matches("select i1 %tmp1, i64 1, i64 0").count(),
+        2,
+        "{ir}"
+    );
     assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
 }
 

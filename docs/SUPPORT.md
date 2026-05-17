@@ -2087,15 +2087,19 @@
   `mysqli_execute_query()` and `mysqli_stmt_execute(..., array(...))` accept
   exact prepared `SHOW TABLE STATUS WHERE Name = ?` and
   ``SHOW TABLE STATUS WHERE `Name` = ?`` probes when the single parameter is
-  an identifier-shaped string table name, returning deterministic
+  an identifier-shaped string table name, plus bounded prepared
+  `SHOW TABLE STATUS WHERE Name LIKE ?` and
+  ``SHOW TABLE STATUS WHERE `Name` LIKE ? ESCAPE '<char>'`` predicates for
+  one string metadata pattern parameter, returning deterministic
   table-status rows or an empty placeholder result for missing names. It
   rejects params arrays whose length does not match the query `?` placeholder
   count.
   This is not
   broad prepared SQL execution, named params-array support, hidden statement
   status-copy fidelity, mutation SQL beyond those exact `wp_options` state
-  island shapes, arbitrary prepared `SHOW TABLE STATUS` predicates,
-  identifier placeholders, exact table counters/timestamps, host database
+  island shapes, arbitrary prepared `SHOW TABLE STATUS` predicates beyond the
+  documented `Name` equality/`LIKE` forms, identifier placeholders, exact
+  table counters/timestamps, host database
   state, PHP warning/error fidelity, mysqlnd behavior, or native statement
   lowering.
   The same bounded prepared-result path includes exact `wp_options`
@@ -2291,7 +2295,9 @@
   through bounded prepared placeholders in `mysqli_execute_query()` and
   `mysqli_prepare()`/`mysqli_stmt_execute(..., array(...))` for one string
   parameter on the covered `SHOW TABLES LIKE ?`,
-  `SHOW TABLE STATUS LIKE ?`, `SHOW [FULL] COLUMNS ... LIKE ?`,
+  `SHOW TABLE STATUS LIKE ?`, `SHOW TABLE STATUS WHERE Name LIKE ?`,
+  ``SHOW TABLE STATUS WHERE `Name` LIKE ?``,
+  `SHOW [FULL] COLUMNS ... LIKE ?`,
   `SHOW [FULL] COLUMNS ... WHERE Field = ?`, and
   `SHOW INDEX`/`SHOW KEYS ... WHERE Key_name = ?` or `LIKE ?` forms,
   including explicit `LIKE ? ESCAPE '<char>'` for the covered metadata
@@ -2518,7 +2524,8 @@
   accept one string placeholder parameter through `mysqli_execute_query()` and
   through `mysqli_prepare()`/`mysqli_stmt_execute()` for the documented
   `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW
-  KEYS` equality/`LIKE` filter shapes. This state island is not broad SQL
+  KEYS` equality/`LIKE` filter shapes, including prepared
+  `SHOW TABLE STATUS WHERE Name LIKE ?` predicates. This state island is not broad SQL
   parsing, SQL-mode-aware escaping beyond the bounded schema metadata and
   direct option-name literal slices,
   character-set/collation fidelity, arbitrary column alteration beyond the
@@ -2882,9 +2889,12 @@
   create interpreter-owned stream resources for simple `r`, `w`, `a`, or `c`
   modes with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the
   same bounded include-path lookup flag as `file_get_contents()` and accepts,
-  but does not apply, a bounded stream-context resource. `php://input`
-  handles are read-only streams over the explicit `PHPC_REQUEST_BODY` request
-  seed and report bounded PHP/Input/`rb` metadata.
+  but does not apply, a bounded stream-context resource. Local open failures,
+  including missing read targets, emit a bounded PHP-style `E_WARNING`, return
+  `false`, and continue; that warning can route through the same current
+  bounded `set_error_handler()` stack described for `file_get_contents()`.
+  `php://input` handles are read-only streams over the explicit
+  `PHPC_REQUEST_BODY` request seed and report bounded PHP/Input/`rb` metadata.
   `stream_context_create($options = null, $params = null)` creates an
   interpreter-owned stream-context resource when both arguments are arrays or
   `null`; it stores string-keyed wrapper options and the bounded params slice
@@ -2939,7 +2949,8 @@
   params, binary/non-UTF-8 byte fidelity, host SAPI body
   stream lifetime, writable `php://input` edge behavior, large `php://temp`
   spill-to-disk behavior, permissions policy, locking, broader wrapper/status
-  metadata APIs, stat-cache behavior, exact warning recovery, exact resource
+  metadata APIs, stat-cache behavior, exact warning text, exact warning
+  recovery beyond the documented local read/open slices, exact resource
   ids/types, directory-entry ordering fidelity, references/copy-on-write, and
   native stream resources remain unsupported.
   Direct native stream-resource calls stop at a dedicated
@@ -5542,15 +5553,19 @@
   stored, read, and tested for truthiness. Explicit `use (...)` capture names
   are looked up at closure creation and the current values are stored on the
   inert closure value; by-reference captures record the requested capture mode
-  but do not create alias cells. Closure bodies are not executed. Arrow
-  implicit capture binding and execution, closure invocation, `$this` binding,
-  true by-reference capture aliasing, copy-on-write, static closure binding
-  semantics, callback integration beyond registration validation, exact PHP
-  `Closure` object behavior, and native lowering are unsupported. Non-static
+  but do not create alias cells. Ordinary untyped closure values can be invoked
+  directly with `$closure(...)` and through `call_user_func()` or
+  positional-array `call_user_func_array()` over the current by-value argument
+  subset; invocation uses the captured by-value snapshot stored when the
+  closure was created. Arrow implicit capture binding and execution, `$this`
+  binding, true by-reference capture aliasing, reference parameters/returns,
+  typed parameter/return enforcement, copy-on-write, static closure binding
+  semantics, named closure callback arguments, exact PHP `Closure` object
+  behavior, and native lowering are unsupported. Non-static
   arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
   expression with a synthetic return body, while `static fn (...) => expr`
   stops at a dedicated parse boundary until no-`$this` binding, implicit
-  capture metadata, closure invocation, callback integration,
+  capture metadata, static arrow invocation, callback integration,
   references/copy-on-write, and native lowering exist.
   Variadic parameters
   outside the bounded final-parameter by-value slice and call-site argument
@@ -6371,21 +6386,24 @@
   `ReflectionFunction::invokeArgs($args)` execute declared user functions,
   ordinary closure values, and those internal builtins over the current
   by-value argument subset. Closure reflection invocation uses the captured
-  by-value snapshot stored when the closure was created and positional
-  by-value arguments. The constructor also accepts current closure values and
-  exposes bounded metadata for closure name `{closure}`, source file/start/end
-  lines, false doc comments, parameter metadata, return type metadata, and
-  false by-reference-return status. Other internal functions, exact internal
+  by-value snapshot stored when the closure was created for `use ($name)`, and
+  binds direct-variable capture cells for `use (&$name)` so writes inside
+  reflected closure invocation update the captured variable, including the
+  covered case where the closure outlives its creating user function.
+  Positional by-value invocation arguments remain the supported argument
+  shape. The constructor also accepts current closure values and exposes
+  bounded metadata for closure name `{closure}`, source file/start/end lines,
+  false doc comments, parameter metadata, return type metadata, and false
+  by-reference-return status. Other internal functions, exact internal
   default metadata beyond that named slice, builtin argument shapes not
   supported by direct calls such as `trim()` custom masks, `substr()` `null`
   lengths, recursive `count()` mode, and the third by-reference output
-  argument of `is_callable()`, direct `$closure()` invocation, closure
-  callback invocation through `call_user_func()`/`call_user_func_array()`,
-  by-reference closure captures during invocation, closure scope/class
-  rebinding, captured-variable reflection, typed parameter/return declarations
-  at invocation time, `invokeArgs()` named-argument semantics for string keys,
-  reference returns, and broader argument/reference/COW behavior remain
-  unsupported for reflection invocation. `new ReflectionParameter($function,
+  argument of `is_callable()`, by-reference capture of array-offset,
+  object-property, magic-property, or `ArrayAccess` alias roots, closure
+  scope/class rebinding, captured-variable reflection, typed parameter/return
+  declarations at invocation time, `invokeArgs()` named-argument semantics for
+  string keys, reference returns, and broader argument/reference/COW behavior
+  remain unsupported for reflection invocation. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string with an integer position
   or string parameter name; `getDeclaringFunction()` returns a bounded
   `ReflectionFunction` object and `getDeclaringClass()` returns `null` for

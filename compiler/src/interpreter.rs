@@ -3070,6 +3070,12 @@ enum ReferenceBindingTarget {
 }
 
 #[derive(Debug, Clone)]
+enum PreboundLocal {
+    Value { name: String, value: Value },
+    Cell { name: String, cell: VariableCell },
+}
+
+#[derive(Debug, Clone)]
 enum ReferenceReturnBinding {
     Cell(VariableCell),
     ArrayOffset(ArrayOffsetAlias),
@@ -18802,19 +18808,6 @@ impl Interpreter {
         values: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
-        let function = self
-            .closure_functions
-            .get(&closure_id)
-            .cloned()
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "ReflectionFunction::invoke",
-                        "closure body metadata is missing in the current subset",
-                    ),
-                )
-            })?;
         let closure = self
             .closure_values
             .get(&closure_id)
@@ -18828,20 +18821,38 @@ impl Interpreter {
                     ),
                 )
             })?;
-        if closure
-            .captures()
-            .iter()
-            .any(PhpClosureCapture::by_reference)
-        {
+        self.invoke_closure_value(closure, values, span, "ReflectionFunction::invoke")
+    }
+
+    fn invoke_closure_value(
+        &mut self,
+        closure: PhpClosure,
+        values: Vec<Value>,
+        span: Span,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "ReflectionFunction::invoke",
-                    "by-reference closure captures are not implemented for reflection invocation",
+                    context,
+                    "arrow closure invocation is not implemented",
                 ),
             ));
         }
-
         let function = function.as_ref();
         ensure_user_function_arity(function, values.len(), span)?;
         ensure_supported_function_signature(function, values.len(), span)?;
@@ -18849,7 +18860,19 @@ impl Interpreter {
         let prebound_locals = closure
             .captures()
             .iter()
-            .map(|capture| (capture.name().to_string(), capture.value().clone()))
+            .map(|capture| {
+                if capture.by_reference() {
+                    PreboundLocal::Cell {
+                        name: capture.name().to_string(),
+                        cell: capture.cell(),
+                    }
+                } else {
+                    PreboundLocal::Value {
+                        name: capture.name().to_string(),
+                        value: capture.value(),
+                    }
+                }
+            })
             .collect();
         self.call_user_function_with_checked_values_and_locals(
             function,
@@ -21797,12 +21820,22 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let mut captured_values = Vec::with_capacity(captures.len());
         for capture in captures {
-            let value = scope.read_static(&capture.name, capture.span)?;
-            captured_values.push(PhpClosureCapture::new(
-                capture.name.clone(),
-                capture.by_reference,
-                value,
-            ));
+            if capture.by_reference {
+                let cell = scope.read_cell(&capture.name).ok_or_else(|| {
+                    runtime_error(
+                        capture.span,
+                        RuntimeError::undefined_variable(&capture.name),
+                    )
+                })?;
+                captured_values.push(PhpClosureCapture::new_reference(
+                    capture.name.clone(),
+                    true,
+                    cell,
+                ));
+            } else {
+                let value = scope.read_static(&capture.name, capture.span)?;
+                captured_values.push(PhpClosureCapture::new(capture.name.clone(), false, value));
+            }
         }
 
         let id = self.next_closure_id;
@@ -21868,14 +21901,12 @@ impl Interpreter {
         let callee_value = self.evaluate(callee, caller_scope)?;
         let name = match callee_value {
             Value::String(name) => name,
-            Value::Closure(_) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "closure",
-                        "closure invocation is not implemented",
-                    ),
-                ));
+            Value::Closure(closure) => {
+                let mut values = Vec::with_capacity(args.len());
+                for arg in args {
+                    values.push(self.evaluate(arg, caller_scope)?);
+                }
+                return self.invoke_closure_value(closure, values, span, "closure");
             }
             other => {
                 return Err(runtime_error(
@@ -22101,14 +22132,17 @@ impl Interpreter {
                     ),
                 ));
             }
-            Value::Closure(_) => {
-                return Err(runtime_error(
+            Value::Closure(closure) => {
+                let mut values = Vec::with_capacity(args.len().saturating_sub(1));
+                for arg in &args[1..] {
+                    values.push(self.evaluate(arg, caller_scope)?);
+                }
+                return self.invoke_closure_value(
+                    closure.clone(),
+                    values,
                     span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func()",
-                        "closure invocation is not implemented",
-                    ),
-                ));
+                    "call_user_func()",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -22205,13 +22239,16 @@ impl Interpreter {
             Value::Array(callback) => {
                 self.call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
             }
-            Value::Closure(_) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
+            Value::Closure(closure) => {
+                let positional_args =
+                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
+                self.invoke_closure_value(
+                    closure.clone(),
+                    positional_args,
+                    span,
                     "call_user_func_array()",
-                    "closure invocation is not implemented",
-                ),
-            )),
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -27551,7 +27588,7 @@ impl Interpreter {
         called_class_context: Option<ClassId>,
         reference_bindings: Vec<ReferenceBinding>,
         reference_scope: Option<&mut SymbolTable>,
-        prebound_locals: Vec<(String, Value)>,
+        prebound_locals: Vec<PreboundLocal>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -27564,8 +27601,11 @@ impl Interpreter {
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
-        for (name, value) in prebound_locals {
-            local_scope.write_static(&name, value);
+        for local in prebound_locals {
+            match local {
+                PreboundLocal::Value { name, value } => local_scope.write_static(&name, value),
+                PreboundLocal::Cell { name, cell } => local_scope.bind_static_to_cell(&name, cell),
+            }
         }
         let mut array_offset_binding_cells = Vec::new();
         for (index, param) in function.params.iter().enumerate() {
@@ -27962,21 +28002,23 @@ impl Interpreter {
         } else {
             let filesystem_path = self.resolve_file_get_contents_path(path, use_include_path);
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
-            let file = fs::OpenOptions::new()
+            let file = match fs::OpenOptions::new()
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
                 .create(stream_mode.create)
                 .truncate(stream_mode.truncate)
                 .open(&filesystem_path)
-                .map_err(|error| {
-                    runtime_error(
+            {
+                Ok(file) => file,
+                Err(error) => {
+                    self.emit_warning(
+                        "fopen()",
+                        format!("{path}: Failed to open stream: {error}"),
                         span,
-                        RuntimeError::unsupported_call(
-                            "fopen()",
-                            format!("local file stream open failed: {error}"),
-                        ),
-                    )
-                })?;
+                    )?;
+                    return Ok(Value::Bool(false));
+                }
+            };
             if let Some((resolved, metadata)) = realpath_entry {
                 self.cache_realpath_entry(resolved, &metadata);
             }
@@ -33290,14 +33332,13 @@ impl Interpreter {
                     ),
                 ));
             }
-            Value::Closure(_) => {
-                return Err(runtime_error(
+            Value::Closure(closure) => {
+                return self.invoke_closure_value(
+                    closure.clone(),
+                    args[1..].to_vec(),
                     span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func()",
-                        "closure invocation is not implemented",
-                    ),
-                ));
+                    "call_user_func()",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -33370,13 +33411,12 @@ impl Interpreter {
             Value::Array(callback) => {
                 self.call_array_callable_with_values(callback, positional_args, span)
             }
-            Value::Closure(_) => Err(runtime_error(
+            Value::Closure(closure) => self.invoke_closure_value(
+                closure.clone(),
+                positional_args,
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func_array()",
-                    "closure invocation is not implemented",
-                ),
-            )),
+                "call_user_func_array()",
+            ),
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -39890,6 +39930,37 @@ fn wordpress_dynamic_prepared_schema_result_for_query(
                 .get(table_filter.pattern())
                 .map(dynamic_schema_table_status_row)
                 .into_iter()
+                .collect();
+            return Ok(Some(MysqliPendingResultState {
+                fields: dynamic_schema_table_status_fields(),
+                rows,
+            }));
+        }
+    }
+
+    if let Some(input) = query
+        .strip_prefix("SHOW TABLE STATUS WHERE Name LIKE ")
+        .or_else(|| query.strip_prefix("SHOW TABLE STATUS WHERE `Name` LIKE "))
+    {
+        if let Some(table_filter) = parse_prepared_schema_like_placeholder_filter(
+            input,
+            params,
+            no_backslash_escapes,
+            function,
+            span,
+        )? {
+            let mut table_names = tables
+                .keys()
+                .filter(|table_name| {
+                    wordpress_schema_name_matches_filter(table_name, &table_filter)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            table_names.sort();
+            let rows = table_names
+                .into_iter()
+                .filter_map(|table_name| tables.get(&table_name))
+                .map(dynamic_schema_table_status_row)
                 .collect();
             return Ok(Some(MysqliPendingResultState {
                 fields: dynamic_schema_table_status_fields(),

@@ -11109,14 +11109,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp0 = add i64 10, 5'*'%tmp1 = srem i64 %tmp0, 4'*'%tmp4 = srem i64 17, 5'*) : ;;\n\
+  *'%tmp0 = add i64 10, 5'*'%tmp1 = srem i64 %tmp0, 4'*'srem i64 17, 5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer modulo operations' >&2\n\
   exit 245\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'@printf(ptr @.fmt_int, i64 %tmp1)'*'@printf(ptr @.fmt_int, i64 %tmp4)'*) : ;;\n\
+  *'@printf(ptr @.fmt_int, i64 %tmp1)'*'@printf(ptr @.fmt_int, i64 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer modulo outputs' >&2\n\
   exit 246\n\
@@ -12598,14 +12598,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1, i64 3, i64 4'*'%tmp3 = select i1 %tmp1, i64 4, i64 3'*'%tmp4 = icmp eq i64 %tmp0, %tmp2'*'%tmp5 = icmp eq i64 %tmp0, %tmp3'*'%tmp6 = xor i1 %tmp4, true'*'%tmp7 = xor i1 %tmp5, true'*'%tmp16 = xor i1 %tmp6, true'*'%tmp22 = xor i1 %tmp7, true'*) : ;;\n\
+  *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp4, true'*'xor i1 %tmp5, true'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean logical-not operations' >&2\n\
   exit 187\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp6'*'select i1 %tmp7'*'select i1 %tmp16'*'select i1 %tmp22'*) : ;;\n\
+  *'select i1 %tmp6'*'select i1 %tmp7'*'select i1 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean logical-not echo selects' >&2\n\
   exit 188\n\
@@ -13080,14 +13080,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp6 = and i1 %tmp3, %tmp4'*'%tmp10 = or i1 %tmp3, %tmp4'*'%tmp14 = xor i1 %tmp3, %tmp4'*) : ;;\n\
+  *'and i1 %tmp3, %tmp4'*'or i1 %tmp3, %tmp4'*'xor i1 %tmp3, %tmp4'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing boolean logical operator IR operations' >&2\n\
   exit 192\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp6'*'select i1 %tmp10'*'select i1 %tmp14'*'select i1 %tmp18'*) : ;;\n\
+  *'select i1 %tmp6'*'select i1 %tmp'*'select i1 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing boolean logical operator echo selects' >&2\n\
   exit 193\n\
@@ -17534,14 +17534,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp0 = add i64 1, 2'*'%tmp1 = mul i64 3, 2'*'%tmp2 = icmp eq i64 %tmp0, 3'*'%tmp6 = icmp ne i64 %tmp1, 6'*'%tmp10 = icmp ne i64 %tmp0, %tmp1'*) : ;;\n\
+  *'%tmp0 = add i64 1, 2'*'%tmp1 = mul i64 3, 2'*'icmp eq i64 %tmp0, 3'*'icmp ne i64 %tmp1, 6'*'icmp ne i64 %tmp0, %tmp1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic integer strict-identity comparisons' >&2\n\
   exit 175\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp2'*'select i1 %tmp6'*'select i1 %tmp10'*) : ;;\n\
+  *'select i1 %tmp2'*'select i1 %tmp'*'select i1 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean echo selects' >&2\n\
   exit 176\n\
@@ -17654,14 +17654,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1, double 3.75, double 4.25'*'%tmp3 = fcmp oeq double %tmp2, 3.75'*'%tmp7 = fcmp une double %tmp2, 4.25'*) : ;;\n\
+  *'%tmp0 = add i64 1, 2'*'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, double 3.75, double 4.25'*'fcmp oeq double %tmp2, 3.75'*'fcmp une double %tmp2, 4.25'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic float strict-identity comparisons' >&2\n\
   exit 187\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp3'*'select i1 %tmp7'*) : ;;\n\
+  *'select i1 %tmp3'*'select i1 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic float boolean echo selects' >&2\n\
   exit 188\n\
@@ -17905,14 +17905,14 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
-  *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1, i64 3, i64 4'*'%tmp3 = select i1 %tmp1, i64 4, i64 3'*'%tmp4 = icmp eq i64 %tmp0, %tmp2'*'%tmp5 = icmp eq i64 %tmp0, %tmp3'*'%tmp9 = xor i1 %tmp5, true'*'%tmp13 = icmp ne i1 %tmp4, %tmp5'*) : ;;\n\
+  *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp5, true'*'icmp ne i1 %tmp4, %tmp5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean strict-identity comparisons' >&2\n\
   exit 179\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'select i1 %tmp4'*'select i1 %tmp9'*'select i1 %tmp13'*) : ;;\n\
+  *'select i1 %tmp4'*'select i1 %tmp'*'select i1 %tmp'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean echo selects' >&2\n\
   exit 180\n\

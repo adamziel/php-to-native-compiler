@@ -227,15 +227,26 @@ null string-handle and non-UTF-8 string-byte conversion failures through an
 opaque runtime-owned diagnostic handle, and the deterministic probe now includes
 a failing string-to-value conversion path plus diagnostic message length,
 message clone, and free calls. Normal generated LLVM output still uses the
-existing non-diagnostic `phpc_native_value_from_string` helper and does not
-branch on helper failures yet.
+existing non-diagnostic `phpc_native_value_from_string` helper at that
+milestone and does not branch on helper failures yet.
+
+Milestone 1615 moves normal generated string-output lowering from the
+non-diagnostic string-to-value helper to
+`phpc_native_value_from_string_with_diagnostic` for the existing statement-form
+compile-time string and selected string-pointer `echo`/`print` slices.
+Generated LLVM now allocates a diagnostic-handle slot, initializes it to the
+null handle, passes it to the conversion helper, and releases the loaded
+diagnostic handle after stdout emission and value-handle release. The current
+lowerable string payloads are still valid UTF-8, so this is a diagnostic
+ownership/cleanup path rather than a native error-reporting or recovery path.
 
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
 handles beyond valid UTF-8 byte payloads, diagnostics outside this
-string-to-value conversion helper, request state, arrays, objects, resources,
-references, WordPress host state, and C fallback assembly helper calls remain
-outside this ABI slice. The snapshot uses the selected target's
+string-to-value conversion helper, generated-code branching on failed helper
+returns, diagnostic message printing, request state, arrays, objects,
+resources, references, WordPress host state, and C fallback assembly helper
+calls remain outside this ABI slice. The snapshot uses the selected target's
 `usize`/pointer-width shape; a real linked native backend still needs full
 target data layout, calling-convention validation, runtime linking, and runtime
 helper emission before broader helper calls can execute truthfully for all
@@ -289,6 +300,10 @@ The tests pin:
 - the normal generated `--emit-ir` CLI path for mixed-byte-length selected
   string-pointer `echo` and `print` expressions through a selected `usize`
   byte length and the runtime string/value stdout helpers.
+- the normal generated `--emit-ir` CLI path for the current runtime
+  string/value stdout helper slices using
+  `phpc_native_value_from_string_with_diagnostic`, initialized diagnostic
+  slots, and diagnostic-handle release.
 
 ## Explicit Non-Support
 
@@ -305,7 +320,8 @@ This ABI does not yet provide:
 - arrays, objects, resources, references, or copy-on-write containers;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
-  selected string-pointer `echo`/`print` expressions;
+  selected string-pointer `echo`/`print` expressions, or generated-code
+  diagnostic branching/message emission for those helper calls;
 - symbol tables, stack frames, call lookup, or general diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

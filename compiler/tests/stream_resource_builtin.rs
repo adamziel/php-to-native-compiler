@@ -216,6 +216,34 @@ fclose($append);
 }
 
 #[test]
+fn local_fopen_missing_file_emits_warning_returns_false_and_continues() {
+    let path = temp_stream_path("phpc-stream-resource-missing-read.txt");
+    let source = format!(
+        r#"<?php
+function capture_fopen_warning($errno, $errstr) {{
+    echo "|warning:" . $errno;
+    echo ":" . (str_contains($errstr, "phpc-stream-resource-missing-read") ? "path" : "missing");
+    echo ":" . (str_contains($errstr, "Failed to open stream") ? "open" : "other");
+    return true;
+}}
+
+set_error_handler("capture_fopen_warning", E_WARNING);
+$stream = fopen("{}", "r");
+echo "|result=" . ($stream === false ? "false" : "resource");
+echo "|continued";
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "|warning:2:path:open|result=false|continued"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn stream_status_and_seek_builtins_track_memory_and_file_positions() {
     let path = temp_stream_path("phpc-stream-resource-status.txt");
     let source = format!(

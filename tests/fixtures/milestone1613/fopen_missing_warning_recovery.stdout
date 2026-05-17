@@ -1,0 +1,3 @@
+warning:2:path:open:fopen_missing_warning_recovery.php:13
+fopen=false
+continued=after-fopen

@@ -1,0 +1,1 @@
+phpc run reflection_closure_by_reference_capture.php

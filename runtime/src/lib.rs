@@ -4140,7 +4140,7 @@ pub struct PhpClosure {
 pub struct PhpClosureCapture {
     name: String,
     by_reference: bool,
-    value: Value,
+    value: Rc<RefCell<Value>>,
 }
 
 impl PhpClosure {
@@ -4170,6 +4170,18 @@ impl PhpClosureCapture {
         Self {
             name: name.into(),
             by_reference,
+            value: Rc::new(RefCell::new(value)),
+        }
+    }
+
+    pub fn new_reference(
+        name: impl Into<String>,
+        by_reference: bool,
+        value: Rc<RefCell<Value>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            by_reference,
             value,
         }
     }
@@ -4182,8 +4194,12 @@ impl PhpClosureCapture {
         self.by_reference
     }
 
-    pub fn value(&self) -> &Value {
-        &self.value
+    pub fn value(&self) -> Value {
+        self.value.borrow().clone()
+    }
+
+    pub fn cell(&self) -> Rc<RefCell<Value>> {
+        self.value.clone()
     }
 }
 

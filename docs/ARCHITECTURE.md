@@ -2085,8 +2085,9 @@ still work. The prepared statement path routes one string filter parameter
 from `mysqli_execute_query()` or `mysqli_stmt_execute(..., array(...))` into
 that same recorded schema metadata for the covered `SHOW TABLES`, `SHOW TABLE
 STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` filter
-forms, including exact `SHOW TABLE STATUS WHERE Name = ?` table-name probes;
-it does not substitute arbitrary SQL parameters. The same placeholder
+forms, including exact `SHOW TABLE STATUS WHERE Name = ?` table-name probes
+and bounded prepared `SHOW TABLE STATUS WHERE Name LIKE ?` metadata
+predicates; it does not substitute arbitrary SQL parameters. The same placeholder
 transaction and savepoint helpers that
 snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
@@ -2354,7 +2355,10 @@ machinery without modeling a host SAPI input stream. `fopen($localPath, $mode,
 $use_include_path = false, $context = null)` uses a host local file handle for
 the same simple mode grammar, optionally resolves through the existing bounded
 include-path candidate order, and accepts a bounded stream-context resource
-without applying wrapper-specific context behavior. `stream_context_create()`
+without applying wrapper-specific context behavior. Local open failures,
+including missing read targets, emit a bounded `E_WARNING`, return `false`,
+and continue through the current request-local warning-handler stack before
+the stderr fallback. `stream_context_create()`
 allocates a request-local context resource that stores array options and the
 bounded params slice for `notification` plus `options`.
 `stream_context_get_options()` returns those stored options, and
@@ -2388,11 +2392,11 @@ beyond persistence, broader wrapper/status metadata APIs, exact host
 directory iteration order,
 binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
 `php://input` edge behavior, `php://temp` spill-to-disk thresholds, permissions
-policy, locking, stat-cache behavior, warning plus `false` recovery,
-references/copy-on-write, and exact resource id/type behavior remain out of
-scope. Native stream-resource calls reject before lowering under a
-dedicated resource boundary, while function-table introspection recognizes the
-names.
+policy, locking, stat-cache behavior, warning plus `false` recovery beyond the
+documented local read/open slices, references/copy-on-write, and exact
+resource id/type behavior remain out of scope. Native stream-resource calls
+reject before lowering under a dedicated resource boundary, while
+function-table introspection recognizes the names.
 Direct `filesize(...)` calls reject through the native function-call boundary.
 Native function-table introspection still recognizes `filesize`, but native
 call execution still lacks filesystem metadata, warning plus `false` recovery,
@@ -2567,14 +2571,16 @@ metadata; legacy call-site `&` syntax, alias setup, default handling,
 variadic/unpacking interaction, references/copy-on-write, and native lowering
 remain unsupported.
 No-capture anonymous closure expressions, static anonymous closure expressions,
-and non-static arrow function expressions allocate inert runtime closure values
-in `phpc run`, which can be assigned, read, and truth-tested but not invoked.
+and non-static arrow function expressions allocate runtime closure values in
+`phpc run`, which can be assigned, read, truth-tested, reflected, and invoked
+through the bounded direct `$closure(...)`, `call_user_func()`,
+positional-array `call_user_func_array()`, and `ReflectionFunction::invoke()`
+paths. Invocation prebinds the closure's by-value captured snapshot into the
+callee local scope and then reuses the user-function call frame machinery.
 Static closure binding semantics are not represented yet. Arrow values do not
-bind implicit captures or execute their synthetic return bodies; invocation and
-callable integration remain explicit runtime boundaries. Static arrow
+bind implicit captures or execute their synthetic return bodies. Static arrow
 functions stop at a dedicated parse boundary until no-`$this` binding,
-implicit capture metadata, closure invocation, callback integration,
-references/copy-on-write, and native lowering exist.
+implicit capture metadata, references/copy-on-write, and native lowering exist.
 `phpc run` supports an opt-in execution-step budget via
 `PHPC_MAX_EXECUTION_STEPS`; it is enforced at statement execution and loop
 iteration boundaries to diagnose runtime loops, but it intentionally does not
@@ -2842,17 +2848,21 @@ the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
 `function_exists`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
-by-value snapshot keyed by closure id, so `new ReflectionFunction($closure)`
-can expose the bounded `{closure}` name, current source file/start/end line
-metadata, parameter metadata, return type, false doc-comment metadata, false
-by-reference-return status, and execute the body through `invoke()` or
-`invokeArgs()` for the current untyped positional by-value argument slice. The
-function path intentionally rejects other internal functions, direct closure
-callback dispatch, by-reference closure captures during invocation,
-by-reference invocation, typed parameter/return declarations during
-invocation, and reference returns until those callable execution and aliasing
-sources exist, and doc-comment association does not yet model attributes or
-every PHP trivia edge case.
+by-value snapshot keyed by closure id, so direct closure invocation,
+closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and
+`new ReflectionFunction($closure)` can execute the body for the current
+untyped positional by-value argument slice. Reflection also exposes the bounded
+`{closure}` name, current source file/start/end line metadata, parameter
+metadata, return type, false doc-comment metadata, and false
+by-reference-return status. Explicit `use (&$name)` closure captures store the
+source direct-variable cell, and closure invocation prebinds that cell into the
+closure local scope so closure writes update the captured variable even after
+the creating user-function scope has returned. The function path intentionally
+rejects other internal functions, by-reference capture of array-offset/property/
+ArrayAccess alias roots, by-reference invocation, typed parameter/return declarations during
+invocation, named closure callback arguments, and reference returns until those
+callable execution and aliasing sources exist, and doc-comment association does
+not yet model attributes or every PHP trivia edge case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected

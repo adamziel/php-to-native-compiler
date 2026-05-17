@@ -728,6 +728,7 @@ impl LlvmGenerator {
         if self.uses_native_value_echo_stdout {
             output.push_str("%phpc.NativeStringHandle = type { ptr }\n");
             output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+            output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
         }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
@@ -738,13 +739,14 @@ impl LlvmGenerator {
             output.push_str(&format!(
                 "declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, {usize_type})\n"
             ));
-            output.push_str(
-                "declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle)\n",
-            );
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)\n");
             output.push_str(&format!(
                 "declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)\n"
             ));
             output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+            output.push_str(
+                "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+            );
             output.push_str("declare void @phpc_native_string_free(%phpc.NativeStringHandle)\n");
         }
         output.push('\n');
@@ -3431,19 +3433,33 @@ impl LlvmGenerator {
         len: &str,
     ) {
         let string = self.next_temp();
+        let diagnostic_slot = self.next_temp();
         let runtime_value = self.next_temp();
+        let diagnostic = self.next_temp();
         self.uses_native_value_echo_stdout = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
         self.body.push(format!(
             "{string} = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr {value}, {usize_type} {len})"
         ));
         self.body.push(format!(
-            "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle {string})"
+            "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle {string}, ptr {diagnostic_slot})"
         ));
         self.body.push(format!(
             "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {runtime_value})"
         ));
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {runtime_value})"
+        ));
+        self.body.push(format!(
+            "{diagnostic} = load %phpc.NativeDiagnosticHandle, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle {diagnostic})"
         ));
         self.body.push(format!(
             "call void @phpc_native_string_free(%phpc.NativeStringHandle {string})"

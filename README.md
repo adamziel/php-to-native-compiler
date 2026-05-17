@@ -145,7 +145,9 @@ Missing local files and negative offsets before the start of those payloads
 emit bounded PHP-style `E_WARNING` events, return `false`, and continue; the
 current slice can route those warnings through the top registered string or
 public array-callable `set_error_handler()` handler before the stderr fallback,
-with `restore_error_handler()` restoring the previous bounded handler.
+with `restore_error_handler()` restoring the previous bounded handler. Local
+`fopen()` open failures, including missing read targets, use the same bounded
+warning-plus-`false` recovery path and continue execution.
 `opendir()`, `readdir()`, `rewinddir()`, and
 `closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
@@ -174,8 +176,9 @@ permissions/locking, realpath-cache ancestor entries and broader
 stat-cache/realpath-cache state beyond those local read paths, closure shutdown
 callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
-integration beyond that `file_get_contents()` recovery stack slice, temp-file spillover,
-and native stream resources remain unsupported. Native lowering
+integration beyond the documented `file_get_contents()` and local `fopen()`
+open-failure recovery stack slices, temp-file spillover, and native stream
+resources remain unsupported. Native lowering
 still rejects request/session/stream state
 until a native runtime ABI exists.
 
@@ -567,8 +570,9 @@ including leading-backslash fully-qualified function calls such as `\strlen()`,
 leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path,
 include-path, and missing-include recovery statement/expression slice, eval,
-generators, direct closure invocation, closure callback integration outside
-bounded `ReflectionFunction::invoke()`, explicit and implicit capture binding,
+generators, closure behavior beyond the current direct `$closure(...)`,
+`call_user_func()`/`call_user_func_array()` positional by-value, and bounded
+`ReflectionFunction::invoke()` slices, explicit and implicit capture binding,
 named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
 `(int)`, `(bool)`, and

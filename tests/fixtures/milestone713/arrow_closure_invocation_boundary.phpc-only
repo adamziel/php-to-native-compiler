@@ -1,1 +1,1 @@
-phpc intentionally rejects arrow closure invocation before closure body execution, implicit capture binding, and callback integration exist.
+phpc intentionally rejects arrow closure invocation before implicit capture binding and arrow body execution are implemented.

@@ -1,1 +1,0 @@
-phpc intentionally allocates inert anonymous closure values but keeps closure invocation unsupported.

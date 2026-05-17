@@ -1,6 +1,4 @@
-exit: 1
+phpc run anonymous_closure_invocation_boundary.php
 stdout:
+1
 --- stdout end ---
-stderr:
-runtime error at tests/fixtures/milestone712/anonymous_closure_invocation_boundary.php:5:6: unsupported call closure: closure invocation is not implemented
---- stderr end ---
