@@ -673,14 +673,23 @@ literal path maps direct variable, direct array-offset, and visible named
 object-property array-offset reference elements to the named parameter, while
 the stored-array path looks up the existing alias metadata by the same string
 key before copy-in/writeback or reference-return alias binding.
+The by-value callback path now uses the same parameter-name mapping for
+current user functions and public object/static array-callable methods when
+the argument array contains string keys and no reached by-reference parameter
+requires alias binding. That path is still an interpreter argument-mapping
+layer over materialized values: duplicate names, unknown names, positional
+entries after named entries, and variadic named arguments stop with stable
+runtime diagnostics instead of pretending a general PHP named-argument model
+exists.
 This deliberately does not model full PHP reference containers, reference
 array literals stored by value, stored arrays whose reached slots were not
 assigned by reference, non-direct stored array expressions beyond direct
 visible named object-property arrays, direct reference assignment between
 object-property array offsets without an intermediate alias variable,
-unknown or duplicate string-keyed callback argument names, positional
-arguments after a string-keyed named argument, variadic named callback
-arguments, dynamic key expressions in the literal named-argument path,
+execution past unknown or duplicate string-keyed callback argument names,
+positional arguments after a string-keyed named argument, variadic named
+callback arguments, dynamic key expressions in the literal reference
+named-argument path,
 dynamic, append, or ArrayAccess reference roots, non-public property roots outside the current valid
 method-context named-property slice, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
@@ -1595,10 +1604,11 @@ the existing alias metadata as a copy-in/writeback bridge, including for
 normal callback invocations of reference-returning user functions or public
 array-callable methods that mutate reached by-reference parameters.
 Reference array literals stored by value, stored arrays without covered
-reference-assigned slots, unknown or duplicate string-keyed argument names,
-variadic named callback arguments, positional arguments after string-keyed
-named arguments, closure invocation, `__invoke`, broader named-argument
-semantics, exact warning behavior, and native lowering remain unsupported.
+reference-assigned slots, execution past unknown or duplicate string-keyed
+argument names, variadic named callback arguments, positional arguments after
+string-keyed named arguments, closure invocation, `__invoke`, broader
+named-argument semantics, exact warning behavior, and native lowering remain
+unsupported.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.
@@ -1744,7 +1754,10 @@ ascending option-name order already used by the state island. A further
 bounded transient-timeout scan accepts exact direct/prepared option-name
 projections with `option_name LIKE '<prefix>%' AND option_value < timestamp`
 or the prepared equivalent for rows whose recorded option value parses below a
-decimal threshold;
+decimal threshold; the matching exact direct/prepared transient-timeout delete
+shape removes only those timeout rows and reports deterministic affected-row
+metadata. It does not delete paired transient payload rows or model the join
+cleanup WordPress can use against a real MySQL table;
 it is not a general SQL engine, schema model, host database connection, PDO
 layer, or native database runtime.
 `spl_autoload_register()` is currently an interpreter-only bounded
@@ -1846,11 +1859,14 @@ bool include-path flag; when true for relative local paths, lookup follows
 the same include-path candidate order used by current `include`/`require`
 resolution. The third argument accepts a bounded stream-context resource or
 `null`, and the fourth/fifth arguments apply integer offset plus optional
-non-negative max length over the current UTF-8 string payload. It does not
-model PHP binary strings, warning-plus-`false` recovery, stream context
+non-negative max length over the current UTF-8 string payload. Missing local
+file reads and negative offsets before the start of the current local or
+`php://input` payload append a bounded PHP-style warning to the execution
+stderr channel, return `false`, and continue. This is intentionally a local
+recovery path, not the general PHP warning/error-handler system. It does not
+model PHP binary strings, exact PHP warning text, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
-non-UTF-8 data, negative offsets before the start that require warning plus
-`false` recovery,
+non-UTF-8 data, warning recovery for other stream/resource paths,
 `open_basedir`, stat caching, host SAPI body streams, or native filesystem
 lowering. Direct native `file_get_contents(...)` calls stop at a
 dedicated filesystem-read codegen boundary before argument lowering or backend
@@ -2399,10 +2415,16 @@ object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
 `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
 `hasMethod($name)` methods directly through the interpreter. This is metadata
-only: it does not create `ReflectionMethod` or `ReflectionProperty` objects,
-does not expose attributes, modifiers, files, line numbers, constructor
-metadata, parameters, default values, doc comments, extension/internal
-metadata, exact exception objects, or native lowering.
+only.
+`ReflectionMethod` uses the same core placeholder class plus request-local
+state pattern for declared user class, interface, and trait methods. The
+constructor accepts an object or class-like string plus a string method name,
+resolves inherited class methods through the existing method metadata chain,
+and exposes the bounded modifier predicates plus `getDeclaringClass()` through
+interpreter dispatch. It does not expose `ReflectionProperty` or
+`ReflectionParameter` objects, attributes, files, line numbers, parameter
+metadata, default values, doc comments, extension/internal metadata, method
+invocation, exact exception objects, or native lowering.
 `get_declared_classes()` lists classes and unit enums declared in the current
 parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed

@@ -884,6 +884,43 @@ echo $_REQUEST["mode"], "|", $stored["value"], "|", $static_alias;
 }
 
 #[test]
+fn call_user_func_array_maps_string_keyed_value_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+function wp_refcow_named_value($value, $suffix = "default", $prefix = "pre") {
+    return $prefix . ":" . $value . ":" . $suffix;
+}
+
+class WP_RefCow_Named_Value_Callback {
+    public function wrap($value, $suffix = "method", $prefix = "box") {
+        return $prefix . ":" . $value . ":" . $suffix;
+    }
+
+    public static function join($value, $suffix = "static", $prefix = "class") {
+        return $prefix . ":" . $value . ":" . $suffix;
+    }
+}
+
+echo call_user_func_array("wp_refcow_named_value", array("suffix" => "literal", "value" => "cache")), "\n";
+
+$stored = array("prefix" => "stored", "value" => "option");
+echo call_user_func_array("wp_refcow_named_value", $stored), "\n";
+
+$callback = new WP_RefCow_Named_Value_Callback();
+echo call_user_func_array(array($callback, "wrap"), array("suffix" => "object", "value" => "payload")), "\n";
+echo call_user_func_array(array("WP_RefCow_Named_Value_Callback", "join"), array("prefix" => "static", "value" => "payload"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "pre:cache:literal\nstored:option:default\nbox:payload:object\nstatic:payload:static"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_is_available_through_function_metadata_builtins() {
     let execution = run_source(
         r#"<?php
@@ -999,6 +1036,36 @@ call_user_func_array("mutate", array("missing" => &$option));
     assert_eq!(
         unknown_named_reference_args.message,
         "unsupported call mutate(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
+    );
+
+    let duplicate_named_value_args = runtime_error(
+        r#"<?php
+function format_option($value, $suffix = "default") {
+    return $value . ":" . $suffix;
+}
+call_user_func_array("format_option", array("cache", "value" => "override"));
+"#,
+    );
+    assert_eq!(duplicate_named_value_args.line, 5);
+    assert_eq!(duplicate_named_value_args.column, 1);
+    assert_eq!(
+        duplicate_named_value_args.message,
+        "unsupported call format_option(): call_user_func_array() duplicate argument for parameter $value is not implemented in the current subset"
+    );
+
+    let unknown_named_value_args = runtime_error(
+        r#"<?php
+function format_option($value, $suffix = "default") {
+    return $value . ":" . $suffix;
+}
+call_user_func_array("format_option", array("missing" => "override"));
+"#,
+    );
+    assert_eq!(unknown_named_value_args.line, 5);
+    assert_eq!(unknown_named_value_args.column, 1);
+    assert_eq!(
+        unknown_named_value_args.message,
+        "unsupported call format_option(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
     );
 
     let stored_by_value_args = runtime_error(

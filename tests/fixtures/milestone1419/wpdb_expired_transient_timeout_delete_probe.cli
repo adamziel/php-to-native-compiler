@@ -1,0 +1,1 @@
+run wpdb_expired_transient_timeout_delete_probe.php

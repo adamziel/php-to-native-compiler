@@ -7,7 +7,7 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::{run_source, run_source_with_source_file};
 
-const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads";
+const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
 
 fn fixture_source_file() -> String {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -127,7 +127,47 @@ echo file_get_contents("php://input", false, null, -5);
     .unwrap();
 
     assert_eq!(execution.stdout, "save|n=abc");
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_get_contents_recovers_missing_files_and_bad_negative_offsets_with_warning_false() {
+    let missing = run_source_with_source_file(
+        r#"<?php
+$value = file_get_contents("tests/fixtures/missing-local-read.txt");
+echo $value === false ? "false" : "value";
+"#,
+        "tests/fixtures/milestone1418/file_get_contents_warning_false.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(missing.stdout, "false");
+    assert!(missing.stderr.contains("PHP Warning:  file_get_contents(): tests/fixtures/missing-local-read.txt: Failed to open stream:"), "{}", missing.stderr);
+    assert!(
+        missing
+            .stderr
+            .contains("file_get_contents_warning_false.php on line 2"),
+        "{}",
+        missing.stderr
+    );
+    assert_eq!(missing.exit_code, 0);
+
+    let bad_offset = run_source_with_source_file(
+        r#"<?php
+$value = file_get_contents("php://input", false, null, -1);
+echo $value === false ? "false" : "value";
+"#,
+        "tests/fixtures/milestone1418/file_get_contents_warning_false.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(bad_offset.stdout, "false");
+    assert_eq!(
+        bad_offset.stderr,
+        "PHP Warning:  file_get_contents(): Failed to seek to position -1 in the stream in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 2"
+    );
+    assert_eq!(bad_offset.exit_code, 0);
 }
 
 #[test]
@@ -148,20 +188,6 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
     assert_eq!(
         stream.message,
         "unsupported call file_get_contents(): only php://input is supported in the current stream-wrapper subset"
-    );
-
-    let missing_local_file =
-        run_source("<?php\nfile_get_contents('tests/fixtures/missing-local-read.txt');\n")
-            .unwrap_err();
-    assert_eq!(missing_local_file.phase, Phase::Runtime);
-    assert_eq!(missing_local_file.line, 2);
-    assert_eq!(missing_local_file.column, 1);
-    assert!(
-        missing_local_file
-            .message
-            .starts_with("unsupported call file_get_contents(): local UTF-8 file read failed:"),
-        "{}",
-        missing_local_file.message
     );
 
     let bad_use_include_path =
@@ -192,16 +218,6 @@ fn file_get_contents_rejects_forms_outside_current_subset() {
     assert_eq!(
         bad_length.message,
         "unsupported call file_get_contents(): max_length argument must be non-negative in the current subset"
-    );
-
-    let bad_negative_offset =
-        run_source("<?php\nfile_get_contents('php://input', false, null, -1);\n").unwrap_err();
-    assert_eq!(bad_negative_offset.phase, Phase::Runtime);
-    assert_eq!(bad_negative_offset.line, 2);
-    assert_eq!(bad_negative_offset.column, 1);
-    assert_eq!(
-        bad_negative_offset.message,
-        "unsupported call file_get_contents(): negative offset before the start of the stream requires warning plus false recovery outside the current subset"
     );
 
     let too_many =

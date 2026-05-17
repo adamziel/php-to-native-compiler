@@ -14624,44 +14624,111 @@ handled.
 
 ## Milestone 1416: Object/Interface WordPress Blocker
 
-- [ ] Parser/runtime lane: continue attacking object/interface compatibility
-  from `GOAL.MD`, such as `ReflectionMethod`, `ReflectionProperty`, method
-  modifiers, constructor/default-value inspection, magic hooks reached by
-  WordPress, autoload/class-alias lifecycle parity, static lookup
-  interactions, interface diagnostics, or broader class metadata behavior.
+- [x] Parser/runtime lane: added bounded `ReflectionMethod` metadata objects
+  for declared user classes, interfaces, and traits. The executable slice
+  covers object/string construction with existing class-like autoload probing,
+  inherited class method resolution, declaring-class reflection objects,
+  modifier masks, `ReflectionMethod::IS_*` constants, and public/protected/
+  private/static/final/abstract/constructor predicates, with Rust and CLI
+  fixture coverage against system PHP. `ReflectionProperty`,
+  `ReflectionParameter`, attributes, file/line/doc-comment metadata,
+  parameter and default-value inspection, extension/internal method metadata,
+  reflection invocation, exact `ReflectionException` behavior,
+  namespace/import alias expansion beyond parsed class-like names, and native
+  lowering remain unsupported.
 
 ## Milestone 1417: Reference/COW WordPress Blocker
 
-- [ ] Runtime lane: continue attacking reference/COW compatibility from
-  `GOAL.MD`, such as real reference containers, ArrayAccess reference roots,
-  append-offset callback roots, duplicate/unknown named callback argument
-  diagnostics, alias lifetime cleanup across function/include boundaries,
-  broader array/object copy-on-write, request/session alias behavior, or
-  native rejection/coverage.
+- [x] Runtime lane: add bounded `call_user_func_array()` string-keyed
+  by-value argument mapping for current user functions and public object/static
+  array callables, plus stable duplicate and unknown named callback argument
+  diagnostics. This keeps native lowering rejected and leaves full reference
+  containers, ArrayAccess/append-offset callback roots, alias lifetime cleanup,
+  broader copy-on-write, request/session alias behavior, variadic named
+  arguments, positional-after-named execution, closure/builtin named callback
+  dispatch, and full PHP named-argument semantics for later milestones.
 
 ## Milestone 1418: Request/SAPI/Filesystem/Stream Blocker
 
-- [ ] Runtime or IR/lowering lane: continue attacking request/SAPI,
-  filesystem, and stream behavior from `GOAL.MD`, such as binary-safe stream
-  reads, warning-plus-`false` filesystem recovery, output-started/header
-  fidelity, shutdown/fatal/destructor edge ordering, session/cookie
-  persistence, include-path/stat-cache behavior, stream filters/wrappers,
-  wrapper-specific stream context behavior, upload edge cases beyond
-  `PHPC_FILES`, or host filesystem semantics.
+- [x] Runtime lane: added bounded warning-plus-`false` recovery for
+  `file_get_contents()` missing local file reads and negative offsets before
+  the start of the current local/`php://input` UTF-8 payloads. The interpreter
+  now carries recoverable warning text through `Execution.stderr`, returns
+  `false`, and continues execution for those two reached filesystem/stream
+  cases. The `milestone1418` fixture proves the CLI path. This does not add
+  exact PHP warning text, general warning/error-handler integration,
+  binary-safe byte offsets, unsupported wrapper recovery, stream-resource
+  warning recovery, `open_basedir`, stat-cache behavior, or native lowering.
 
 ## Milestone 1419: WordPress DB/Bootstrap Evidence Blocker
 
-- [ ] Compatibility/runtime lane: continue attacking executable WordPress
-  database/bootstrap evidence from `GOAL.MD`, such as transient cleanup
-  delete shapes, broader `wpdb`/MySQLi result or mutation behavior, prepared
-  option/transient query shapes, option API state, object-cache/transient
-  persistence, hooks under realistic callback shapes, deterministic
-  plugin/theme loading probes, or a bootstrap/request probe that moves past
-  its next real blocker.
+- [x] Compatibility/runtime lane: added a bounded transient-timeout cleanup
+  delete shape over the deterministic MySQLi `wp_options` state island.
+  Direct `mysqli_query()`, one-shot `mysqli_execute_query()`, and prepared
+  statement execution now accept exact
+  `DELETE FROM wp_options WHERE option_name LIKE ... AND option_value < ...`
+  forms, including current backticked spellings, escaped transient prefixes,
+  and integer or decimal-integer-string thresholds. This removes only matching
+  recorded timeout rows and keeps real MySQL, general SQL comparison,
+  transient payload joins/pair deletion, persistent object cache, full
+  WordPress option APIs, and native DB lowering unsupported.
 
 ## Milestone 1420: WordPress-Focused Queue Refresh
 
-- [ ] Tests/docs lane: after Milestones 1416-1419 land, refresh the
+- [x] Tests/docs lane: after Milestones 1416-1419 landed, refreshed the
+  compatibility ledger, support docs, progress log, lane-worker queue, and
+  loop memory; recorded focused verification; and ran the serialized full
+  gate. Focused integrated checks passed for `ReflectionMethod`, string-keyed
+  by-value `call_user_func_array()` mapping, `file_get_contents()`
+  warning-plus-`false` recovery, expired transient-timeout MySQLi cleanup
+  deletes, and milestone fixtures 1416-1419. The serialized full gate passed
+  with `CARGO_TARGET_DIR=/tmp/phpc-target-full-1416-1420
+  CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`: `cargo test`
+  completed successfully after refreshing `ReflectionMethod` class-list
+  snapshots, `phpc test` reported `1511` fixture tests passed with `0`
+  failures, and `phpc test --compare-php` reported `1511` fixture tests
+  passed with `0` failures, `880` system PHP comparisons, and `631`
+  `phpc-only` skipped fixtures.
+
+## Milestone 1421: Object/Interface WordPress Blocker
+
+- [ ] Parser/runtime lane: target a larger object/interface blocker such as
+  `ReflectionProperty`, `ReflectionParameter`, attribute metadata,
+  file/line/doc-comment metadata, parameter/default-value inspection, magic
+  hooks reached by WordPress, autoload/class-alias lifecycle parity, static
+  lookup interactions, interface diagnostics, or broader class metadata
+  behavior. Keep unsupported reflection and native-lowering edge cases named.
+
+## Milestone 1422: Reference/COW WordPress Blocker
+
+- [ ] Runtime lane: target a larger reference/COW blocker such as real
+  reference containers, ArrayAccess reference roots, append-offset callback
+  roots, alias lifetime cleanup across function/include boundaries, broader
+  array/object copy-on-write, request/session alias behavior, or variadic and
+  named callback-argument semantics that block WordPress.
+
+## Milestone 1423: Request/SAPI/Filesystem/Stream Blocker
+
+- [ ] Runtime or IR/lowering lane: target request/SAPI, filesystem, and stream
+  behavior that blocks real WordPress requests, such as binary-safe reads,
+  exact warning/error-handler integration, output-started/header fidelity,
+  shutdown/fatal/destructor edge ordering, upload/session/cookie persistence,
+  include-path/stat-cache behavior, `open_basedir`, stream filters/wrappers,
+  wrapper-specific stream contexts, request-body lifetime, or host filesystem
+  edge cases.
+
+## Milestone 1424: WordPress DB/Bootstrap Evidence Blocker
+
+- [ ] Compatibility/runtime lane: target executable WordPress
+  database/bootstrap evidence such as transient payload pair deletion, broader
+  `wpdb`/MySQLi result or mutation behavior, prepared option/transient query
+  shapes, object-cache/transient persistence, option API state, hooks under
+  realistic callback shapes, deterministic plugin/theme loading probes, or a
+  bootstrap/request probe that moves past its next real blocker.
+
+## Milestone 1425: WordPress-Focused Queue Refresh
+
+- [ ] Tests/docs lane: after Milestones 1421-1424 land, refresh the
   compatibility ledger, support docs, progress log, lane-worker queue, and
   loop memory; record focused verification; run the serialized full gate; and
   checkpoint the batch.

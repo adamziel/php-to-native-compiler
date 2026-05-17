@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1417/call_user_func_array_string_keyed_value_arguments.php

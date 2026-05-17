@@ -1,0 +1,1 @@
+phpc warning text intentionally includes Rust host I/O error text for this bounded warning-plus-false recovery slice; system PHP warning wording is not yet exact.

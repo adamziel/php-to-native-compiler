@@ -1,0 +1,2 @@
+PHP Warning:  file_get_contents(): tests/fixtures/milestone1418/missing-local-read.txt: Failed to open stream: No such file or directory (os error 2) in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 2
+PHP Warning:  file_get_contents(): Failed to seek to position -1 in the stream in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 5

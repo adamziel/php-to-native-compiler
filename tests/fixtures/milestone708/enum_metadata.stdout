@@ -13,7 +13,8 @@ Array
     [5] => PDO
     [6] => PDOStatement
     [7] => ReflectionClass
-    [8] => App\State\Box
-    [9] => App\State\Mode
-    [10] => App\State\Status
+    [8] => ReflectionMethod
+    [9] => App\State\Box
+    [10] => App\State\Mode
+    [11] => App\State\Status
 )

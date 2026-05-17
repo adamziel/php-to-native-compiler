@@ -4829,6 +4829,58 @@ echo implode(",", $left);
 }
 
 #[test]
+fn mysqli_deletes_current_wordpress_expired_transient_timeout_options_from_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_feed_mod', '100', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_update_plugins', '500', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_update_plugins', 'payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_site_transient_timeout_update_core', '120', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('siteurl', 'https://example.test', 'yes')");
+echo mysqli_query($handle, "DELETE FROM wp_options WHERE option_name LIKE '_transient_timeout_%' AND option_value < 300") ? "direct" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$remaining = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '_transient_timeout_%' ORDER BY option_name");
+echo mysqli_num_rows($remaining);
+echo ":";
+$row = mysqli_fetch_assoc($remaining);
+echo $row["option_name"];
+echo "|";
+$stmt = mysqli_prepare($handle, "DELETE FROM `wp_options` WHERE `option_name` LIKE ? AND `option_value` < ?");
+$prefix = "\\_site_transient\\_timeout\\_%";
+$threshold = "300";
+mysqli_stmt_bind_param($stmt, "ss", $prefix, $threshold);
+echo mysqli_stmt_execute($stmt) ? "prepared" : "failed";
+echo ":";
+echo mysqli_stmt_affected_rows($stmt);
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_execute_query($handle, "DELETE FROM wp_options WHERE `option_name` LIKE ? AND `option_value` < ?", array("_transient_timeout_%", 600)) ? "execute" : "failed";
+echo ":";
+echo mysqli_affected_rows($handle);
+echo "|";
+$left = mysqli_query($handle, "SELECT option_name, option_value FROM wp_options");
+$parts = array();
+while ($row = mysqli_fetch_assoc($left)) {
+    $parts[] = $row["option_name"] . "=" . $row["option_value"];
+}
+echo implode(",", $parts);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "direct:1|1:_transient_timeout_update_plugins|prepared:1:1|execute:1|_transient_update_plugins=payload,siteurl=https://example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_reads_current_wordpress_option_rows_from_state() {
     let execution = run_source(
         r#"<?php

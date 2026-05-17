@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and bounded option_name LIKE prefix plus option_value < timestamp transient-timeout deletes rather than a real MySQL database, general SQL comparison, transient payload joins, persistent object cache, full WordPress option APIs, or native DB lowering.

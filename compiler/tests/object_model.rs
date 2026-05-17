@@ -37,7 +37,7 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 9);
+    assert_eq!(classes.classes().len(), 10);
     assert_eq!(classes.classes()[0].name(), "Exception");
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
@@ -46,6 +46,7 @@ echo "ready\n";
     assert_eq!(classes.classes()[5].name(), "PDO");
     assert_eq!(classes.classes()[6].name(), "PDOStatement");
     assert_eq!(classes.classes()[7].name(), "ReflectionClass");
+    assert_eq!(classes.classes()[8].name(), "ReflectionMethod");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -4334,7 +4335,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => Box\n    [9] => Profile\n)\n10|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => Box\n    [10] => Profile\n)\n11|Exception|stdClass|mysqli\nException|stdClass|mysqli"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4355,7 +4356,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => App\\Mode\n    [9] => App\\Status\n)\n10\n"
+        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionClass\n    [8] => ReflectionMethod\n    [9] => App\\Mode\n    [10] => App\\Status\n)\n11\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -4647,6 +4648,64 @@ echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
     assert_eq!(
         execution.stdout,
         "Plugin\nPlugin\ninstantiable\nboot-method\nhelper-method\nArray\n(\n    [0] => HookContract\n    [1] => RootContract\n)\nBasePlugin\ninterface\nroot-method\nArray\n(\n    [0] => RootContract\n)\ntrait\ntrait-helper"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_method_reports_bounded_method_modifier_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface HookContract {
+    public static function register();
+    public function boot($hook = null);
+}
+
+abstract class BasePlugin {
+    abstract protected function compute();
+    public final function seal() {}
+}
+
+trait HookTools {
+    public function helper() {}
+}
+
+class Plugin extends BasePlugin implements HookContract {
+    use HookTools;
+
+    public function __construct() {}
+    public function boot($hook = null) {}
+    public static function register() {}
+    protected function compute() {}
+    private function hidden() {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function line($label, $method) {
+    echo $label, "|", $method->getName(), "|", $method->getDeclaringClass()->getName(), "|", $method->getModifiers(), "|", yn($method->isPublic()), yn($method->isProtected()), yn($method->isPrivate()), yn($method->isStatic()), yn($method->isFinal()), yn($method->isAbstract()), yn($method->isConstructor()), "\n";
+}
+
+echo ReflectionMethod::IS_PUBLIC, "|", ReflectionMethod::IS_PROTECTED, "|", ReflectionMethod::IS_PRIVATE, "|", ReflectionMethod::IS_STATIC, "|", ReflectionMethod::IS_FINAL, "|", ReflectionMethod::IS_ABSTRACT, "\n";
+line("boot", new ReflectionMethod(Plugin::class, "boot"));
+line("ctor", new ReflectionMethod(new Plugin(), "__construct"));
+line("static", new ReflectionMethod(Plugin::class, "register"));
+line("protected", new ReflectionMethod(Plugin::class, "compute"));
+line("private", new ReflectionMethod(Plugin::class, "hidden"));
+line("final", new ReflectionMethod(Plugin::class, "seal"));
+line("abstract", new ReflectionMethod(BasePlugin::class, "compute"));
+line("interface", new ReflectionMethod(HookContract::class, "register"));
+$trait = new ReflectionMethod(HookTools::class, "helper");
+echo "trait|", $trait->getName(), "|", $trait->getDeclaringClass()->getName(), "|", $trait->getModifiers(), "|", yn($trait->isPublic()), yn($trait->isProtected()), yn($trait->isPrivate()), yn($trait->isStatic()), yn($trait->isFinal()), yn($trait->isAbstract()), yn($trait->isConstructor());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|2|4|16|32|64\nboot|boot|Plugin|1|1000000\nctor|__construct|Plugin|1|1000001\nstatic|register|Plugin|17|1001000\nprotected|compute|Plugin|2|0100000\nprivate|hidden|Plugin|4|0010000\nfinal|seal|BasePlugin|33|1000100\nabstract|compute|BasePlugin|66|0100010\ninterface|register|HookContract|81|1001010\ntrait|helper|HookTools|1|1000000"
     );
     assert_eq!(execution.exit_code, 0);
 }

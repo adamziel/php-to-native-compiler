@@ -2055,6 +2055,41 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionClass core metadata should not duplicate methods");
         }
+        let reflection_method_id = classes
+            .declare_class("ReflectionMethod")
+            .expect("core class table should contain ReflectionClass before ReflectionMethod");
+        let reflection_method = classes
+            .get_mut(reflection_method_id)
+            .expect("declared ReflectionMethod class id should resolve");
+        for constant in [
+            "IS_PUBLIC",
+            "IS_PROTECTED",
+            "IS_PRIVATE",
+            "IS_STATIC",
+            "IS_FINAL",
+            "IS_ABSTRACT",
+        ] {
+            reflection_method
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ReflectionMethod core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "getName",
+            "getDeclaringClass",
+            "getModifiers",
+            "isPublic",
+            "isProtected",
+            "isPrivate",
+            "isStatic",
+            "isFinal",
+            "isAbstract",
+            "isConstructor",
+        ] {
+            reflection_method
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionMethod core metadata should not duplicate methods");
+        }
         classes
     }
 
@@ -2449,6 +2484,8 @@ pub struct PhpMethodMetadata {
     name: String,
     visibility: Visibility,
     is_static: bool,
+    is_abstract: bool,
+    is_final: bool,
 }
 
 impl PhpMethodMetadata {
@@ -2457,6 +2494,8 @@ impl PhpMethodMetadata {
             name: name.into(),
             visibility,
             is_static: false,
+            is_abstract: false,
+            is_final: false,
         }
     }
 
@@ -2465,6 +2504,38 @@ impl PhpMethodMetadata {
             name: name.into(),
             visibility,
             is_static: true,
+            is_abstract: false,
+            is_final: false,
+        }
+    }
+
+    pub fn instance_with_flags(
+        name: impl Into<String>,
+        visibility: Visibility,
+        is_abstract: bool,
+        is_final: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: false,
+            is_abstract,
+            is_final,
+        }
+    }
+
+    pub fn static_method_with_flags(
+        name: impl Into<String>,
+        visibility: Visibility,
+        is_abstract: bool,
+        is_final: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: true,
+            is_abstract,
+            is_final,
         }
     }
 
@@ -2478,6 +2549,14 @@ impl PhpMethodMetadata {
 
     pub fn is_static(&self) -> bool {
         self.is_static
+    }
+
+    pub fn is_abstract(&self) -> bool {
+        self.is_abstract
+    }
+
+    pub fn is_final(&self) -> bool {
+        self.is_final
     }
 }
 
@@ -7663,6 +7742,14 @@ mod tests {
         assert!(reflection_class.properties().is_empty());
         assert!(reflection_class.method("getName").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
+
+        let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
+        assert_eq!(reflection_method.name(), "ReflectionMethod");
+        assert_eq!(reflection_method.id().index(), 8);
+        assert!(reflection_method.parent_id().is_none());
+        assert!(reflection_method.properties().is_empty());
+        assert!(reflection_method.constant("IS_PUBLIC").is_some());
+        assert!(reflection_method.method("getModifiers").is_some());
     }
 
     #[test]

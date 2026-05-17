@@ -122,7 +122,14 @@
   public
   `[object, method]` instance callbacks, and public
   `["ClassName", "method"]` static callbacks invoked through
-  `call_user_func_array($callback, array(&$value, ...))` also support
+  `call_user_func_array($callback, array(...))` also support by-value
+  string-keyed argument arrays for current user functions and public
+  `[object, method]`/`["ClassName", "method"]` array callables when every
+  string key names a declared non-variadic parameter; missing optional
+  parameters use their defaults, integer keys before any string key remain
+  positional, and duplicate or unknown names report stable runtime
+  diagnostics. The same callback forms invoked through
+  `call_user_func_array($callback, array(&$value, ...))` support
   by-reference direct variable elements through the same direct-variable cell
   binding. Those literal callback argument arrays may be unkeyed, explicitly
   integer-keyed, or string-keyed when every string key names a declared
@@ -199,10 +206,11 @@
   assigned by reference, non-direct stored array expressions beyond direct
   visible named object-property arrays, direct reference assignment between
   object-property array offsets without an intermediate alias variable,
-  dynamic static receiver, unknown or duplicate string-keyed callback
-  argument names, positional arguments after a string-keyed named argument,
-  variadic named callback arguments, dynamic key expressions in the literal
-  named-argument path, dynamic, append, or `ArrayAccess` object-property bridges for
+  dynamic static receiver, executing duplicate or unknown string-keyed
+  callback argument names beyond the stable diagnostic path, positional
+  arguments after a string-keyed named argument, variadic named callback
+  arguments, dynamic key expressions in the literal
+  reference named-argument path, dynamic, append, or `ArrayAccess` object-property bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
   forms remain unsupported for direct
@@ -1977,7 +1985,15 @@
   `DELETE FROM wp_options WHERE option_name LIKE ?` shapes also remove
   transient-shaped prefix matches with deterministic affected-row metadata,
   including backticked table/column spellings and escaped prefixes such as
-  `\_transient\_%`. They also let a later exact
+  `\_transient\_%`. Exact
+  `DELETE FROM wp_options WHERE option_name LIKE '<prefix>%' AND option_value < <decimal timestamp>`
+  and prepared
+  `DELETE FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
+  shapes also remove recorded expired transient-timeout rows whose option
+  names match one trailing-percent prefix and whose recorded option value
+  parses as a decimal integer below the threshold, including current
+  backticked table/column spellings and escaped transient prefixes. They also
+  let a later exact
   `SELECT option_value FROM wp_options WHERE option_name = ... LIMIT 1`
   return the recorded value through the existing placeholder result/fetch
   path, and a later exact
@@ -2056,8 +2072,9 @@
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
-  exact option-name equality, option-name-list, and trailing-percent
-  option-name-prefix shapes, real
+  exact option-name equality, option-name-list, trailing-percent
+  option-name-prefix, and expired transient-timeout prefix/threshold shapes,
+  transient payload joins or pair deletion, real
   transaction isolation/locking/savepoint behavior,
   host database execution, warning/error fidelity, PDO, broad
   prepared-statement mutation state, or native lowering. The current
@@ -2210,7 +2227,13 @@
   autoload-only update, and single-name delete shapes are also accepted through
   one-shot `mysqli_execute_query($handle, $query, array(...))` for string
   parameters; they update connection affected-row and insert-id metadata but
-  do not create statement metadata. Prepared mutation SQL
+  do not create statement metadata. The exact prepared
+  `DELETE FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
+  transient-timeout cleanup shape is accepted through both prepared statement
+  execution and one-shot `mysqli_execute_query()` for one string
+  trailing-percent prefix pattern and an integer or decimal-integer-string
+  threshold, removing only recorded timeout rows whose string values parse
+  below that threshold. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
   prepared SQL execution, arbitrary projections, real unique-index enforcement,
   no-op update affected-row fidelity, prepared mutation shapes beyond the exact
@@ -2347,13 +2370,16 @@
   for a relative local path, lookup also follows the current bounded
   `include_path` candidate order used by `include`/`require`. Non-negative
   offsets read from the start, negative offsets read from the end, and a
-  non-negative max length truncates the returned UTF-8 string. This is a
+  non-negative max length truncates the returned UTF-8 string. Missing local
+  file reads and negative offsets before the start of the current payload emit
+  a bounded PHP-style warning to stderr, return `false`, and let execution
+  continue. This is a
   bounded WordPress bootstrap compatibility slice, not full PHP filesystem
-  support: binary string byte fidelity, missing-file warning/`false` recovery,
+  support: binary string byte fidelity, exact PHP warning text,
   other stream wrappers, context option effects, wrapper-specific context
   behavior, exact byte offsets through non-UTF-8 data, negative offsets before
-  the start that require warning plus `false` recovery, real request-body state
-  outside the explicit CLI seed, `open_basedir`,
+  the start for stream/resource types outside the current local/`php://input`
+  payload paths, real request-body state outside the explicit CLI seed, `open_basedir`,
   stat-cache behavior, partial-output behavior, and native lowering remain
   unsupported. Direct native
   `file_get_contents(...)` calls stop at a dedicated filesystem-read codegen
@@ -5394,7 +5420,7 @@
   section above; direct native
   `file_get_contents(...)` calls reject under a dedicated filesystem-read
   boundary until native PHP stream-wrapper handling, local file I/O, binary
-  string byte fidelity, warning plus `false` recovery, stream context effects,
+  string byte fidelity, exact warning plus `false` recovery, stream context effects,
   include-path lookup, `open_basedir` and stat-cache
   behavior, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the name.
@@ -5548,6 +5574,15 @@
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, and `hasMethod($name)` over the current metadata
   tables.
+  `new ReflectionMethod($object_or_class, $method)` creates a bounded
+  metadata object for methods declared in the current user class, interface,
+  and trait tables, including inherited class methods and existing autoload
+  probing for string class-like misses. It supports `getName()`,
+  `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
+  `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
+  `isConstructor()` plus the current `ReflectionMethod::IS_PUBLIC`,
+  `IS_PROTECTED`, `IS_PRIVATE`, `IS_STATIC`, `IS_FINAL`, and `IS_ABSTRACT`
+  constants.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -7157,11 +7192,14 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
-  `hasMethod($name)`. `ReflectionMethod`, `ReflectionProperty`,
-  `ReflectionParameter`, attributes, modifiers, file/line/doc-comment
-  metadata, constructor/default-value inspection, extension/internal metadata,
-  exact `ReflectionException` behavior, namespace/import alias expansion
-  beyond parsed class-like names, and native lowering remain unsupported.
+  `hasMethod($name)`. `ReflectionMethod` currently supports only bounded
+  method metadata over declared user classes, interfaces, and traits with the
+  modifier and predicate methods documented above. `ReflectionProperty`,
+  `ReflectionParameter`, attributes, file/line/doc-comment metadata,
+  parameter and default-value inspection, extension/internal method metadata,
+  method invocation through reflection, exact `ReflectionException` behavior,
+  namespace/import alias expansion beyond parsed class-like names, and native
+  lowering remain unsupported.
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,
