@@ -1,0 +1,1 @@
+Uses deterministic mysqli wp_options placeholder state and transient-shaped option rows rather than a real MySQL database or persistent WordPress object cache.

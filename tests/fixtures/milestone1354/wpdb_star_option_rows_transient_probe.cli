@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1354/wpdb_star_option_rows_transient_probe.php

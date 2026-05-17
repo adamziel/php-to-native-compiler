@@ -373,9 +373,11 @@ recorded option-name and autoload columns, for the exact
 returning recorded option-name, value, and autoload columns, and for the exact
 `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
 projection, returning deterministic option-id, name, value, and autoload
-columns. All and autoload-filtered row reads use deterministic option-name
-ordering; explicit `IN (...)` reads preserve the requested name order and skip
-missing names.
+columns, and for exact `SELECT * FROM wp_options ...` star projections,
+returning the same deterministic option-id, name, value, and autoload columns.
+All and autoload-filtered row reads use deterministic option-name ordering;
+explicit `IN (...)` reads preserve the requested name order and skip missing
+names.
 Missing option names still return an empty placeholder result. The exact
 single-quoted literal parser for those direct option shapes accepts the
 current MySQL-style backslash escapes used by `mysqli_real_escape_string()`
@@ -384,7 +386,7 @@ doubled single quotes. This is not broad SQL parsing, SQL-mode-aware escaping,
 character-set/collation fidelity, schema/index behavior,
 ordering/collation fidelity, autoload mutation beyond the exact insert and
 update shapes listed above, arbitrary
-projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
+projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id/star-projection shapes,
 unique-index enforcement beyond exact plain option-insert duplicate-name
 rejection, no-op update affected-row fidelity, real
 `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond exact
@@ -460,6 +462,8 @@ names return an empty zero-field placeholder result. The exact
 query returns deterministic option-id/name/value/autoload rows for string
 option-name parameters on the same handle through the same prepared result
 paths; missing names return an empty zero-field placeholder result. The exact
+`SELECT * FROM wp_options WHERE option_name = ? LIMIT 1` query returns the
+same recorded full option row for string option-name parameters. The exact
 `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query returns
 recorded deterministic option-id rows for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -470,7 +474,8 @@ support the exact
 `SELECT option_value FROM wp_options ...`,
 `SELECT option_name FROM wp_options ...`,
 `SELECT option_name, option_value, autoload FROM wp_options ...`, and
-`SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+`SELECT option_id, option_name, option_value, autoload FROM wp_options ...`,
+and `SELECT * FROM wp_options ...`
 shapes already accepted by the direct query path, including all rows,
 autoload-filtered rows, and literal `option_name IN (...)` lists through
 `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and

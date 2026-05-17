@@ -1,0 +1,20 @@
+<?php
+$input = fopen("php://input", "rb");
+$meta = stream_get_meta_data($input);
+echo gettype($input);
+echo "|";
+echo $meta["wrapper_type"];
+echo ":";
+echo $meta["stream_type"];
+echo ":";
+echo $meta["mode"];
+echo ":";
+echo $meta["uri"];
+echo "|";
+echo stream_get_contents($input) === "" ? "empty" : "body";
+rewind($input);
+echo "|";
+echo ftell($input);
+echo ":";
+echo feof($input) ? "eof" : "more";
+fclose($input);

@@ -324,6 +324,14 @@ enum Callable {
 #[derive(Debug, Clone)]
 enum AutoloadCallback {
     Function(String),
+    StaticMethod {
+        class_name: String,
+        method_name: String,
+    },
+    ObjectMethod {
+        object: PhpObject,
+        method_name: String,
+    },
     Closure,
 }
 
@@ -9552,6 +9560,8 @@ impl Interpreter {
             query,
             "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE option_name = ? LIMIT 1"
                 | "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
+                | "SELECT * FROM wp_options WHERE option_name = ? LIMIT 1"
+                | "SELECT * FROM `wp_options` WHERE `option_name` = ? LIMIT 1"
         ) {
             if let Some((option_id, option_name, option_value, autoload)) =
                 match (connection_handle_id, params) {
@@ -9891,7 +9901,55 @@ impl Interpreter {
             }));
         }
 
+        if is_wordpress_option_prepared_star_select_names_query(query) {
+            let option_names = wordpress_option_names_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::Names(option_names),
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(Some(MysqliPendingResultState {
+                fields: wordpress_option_star_fields(),
+                rows,
+            }));
+        }
+
+        if is_wordpress_option_prepared_star_select_autoloads_query(query) {
+            let autoload_values =
+                wordpress_option_autoloads_from_prepared_params(function, params, span)?;
+            let rows = connection_handle_id
+                .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                .map(|options| {
+                    wordpress_option_id_name_value_autoload_rows_for_filter(
+                        options,
+                        &WordPressOptionsRowFilter::AutoloadValues(autoload_values),
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(Some(MysqliPendingResultState {
+                fields: wordpress_option_star_fields(),
+                rows,
+            }));
+        }
+
         if params.is_empty() {
+            if let Some(filter) = parse_wordpress_options_star_row_select_query(query) {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| {
+                        wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter)
+                    })
+                    .unwrap_or_default();
+                return Ok(Some(MysqliPendingResultState {
+                    fields: wordpress_option_star_fields(),
+                    rows,
+                }));
+            }
+
             if let Some(filter) = parse_wordpress_options_row_select_query(query) {
                 let rows = connection_handle_id
                     .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
@@ -11054,6 +11112,34 @@ impl Interpreter {
             return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
         }
 
+        if let Some(option_name) = parse_wordpress_option_star_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some((option_id, option_value, autoload)) = self
+                .mysqli_wp_options
+                .get(&handle_id)
+                .and_then(|options| options.get(&option_name))
+                .map(|option| {
+                    (
+                        option.option_id,
+                        option.value.clone(),
+                        option.autoload.clone(),
+                    )
+                })
+            {
+                return self.create_mysqli_result_placeholder(
+                    span,
+                    wordpress_option_star_fields(),
+                    vec![vec![
+                        ("option_id".to_string(), Value::Int(option_id)),
+                        ("option_name".to_string(), Value::String(option_name)),
+                        ("option_value".to_string(), Value::String(option_value)),
+                        ("autoload".to_string(), Value::String(autoload)),
+                    ]],
+                );
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
         if let Some(filter) = parse_wordpress_options_id_name_value_autoload_row_select_query(query)
         {
             self.mysqli_affected_rows.insert(handle_id, 0);
@@ -11069,6 +11155,22 @@ impl Interpreter {
                             "option_value".to_string(),
                             "autoload".to_string(),
                         ],
+                        rows,
+                    );
+                }
+            }
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if let Some(filter) = parse_wordpress_options_star_row_select_query(query) {
+            self.mysqli_affected_rows.insert(handle_id, 0);
+            if let Some(options) = self.mysqli_wp_options.get(&handle_id) {
+                let rows =
+                    wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter);
+                if !rows.is_empty() {
+                    return self.create_mysqli_result_placeholder(
+                        span,
+                        wordpress_option_star_fields(),
                         rows,
                     );
                 }
@@ -15288,6 +15390,16 @@ impl Interpreter {
                     ));
                 }
                 let Expr::Variable(caller_name, _) = &item.value else {
+                    if let Some((alias, value)) =
+                        self.evaluate_direct_array_reference_argument(&item.value, caller_scope)?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffset(alias),
+                        });
+                        continue;
+                    }
                     if let Some((alias, value)) = self
                         .evaluate_public_object_property_array_reference_argument(
                             &item.value,
@@ -15305,7 +15417,7 @@ impl Interpreter {
                         item.value.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "call_user_func_array() reference-return alias binding is only implemented for direct variable and direct public object-property array-offset reference arguments in the current subset",
+                            "call_user_func_array() reference-return alias binding is only implemented for direct variable, direct array-offset, and direct public object-property array-offset reference arguments in the current subset",
                         ),
                     ));
                 };
@@ -15711,6 +15823,14 @@ impl Interpreter {
                         param_name: param.name.clone(),
                         target: ReferenceBindingTarget::CallerCell(caller_cell),
                     });
+                } else if let Some((alias, value)) =
+                    self.evaluate_direct_array_reference_argument(&item.value, caller_scope)?
+                {
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    });
                 } else if let Some((alias, value)) = self
                     .evaluate_public_object_property_array_reference_argument(
                         &item.value,
@@ -15727,7 +15847,7 @@ impl Interpreter {
                         item.value.span(),
                         RuntimeError::unsupported_call(
                             callable_name(&function.name),
-                            "call_user_func_array() reference parameter invocation is only implemented for direct variable and direct public object-property array-offset array elements in the current subset",
+                            "call_user_func_array() reference parameter invocation is only implemented for direct variable, direct array-offset, and direct public object-property array-offset array elements in the current subset",
                         ),
                     ));
                 }
@@ -15760,13 +15880,35 @@ impl Interpreter {
             Expr::Closure { .. } => AutoloadCallback::Closure,
             callback => match self.evaluate(callback, caller_scope)? {
                 Value::String(name) => AutoloadCallback::Function(name),
+                Value::Array(array) => {
+                    let Some((target, method_name)) = array_callable_parts(&array) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "spl_autoload_register()",
+                                "array callback must be [object-or-class, method] in the current subset",
+                            ),
+                        ));
+                    };
+                    match target {
+                        Value::String(class_name) => AutoloadCallback::StaticMethod {
+                            class_name: class_name.clone(),
+                            method_name: method_name.to_string(),
+                        },
+                        Value::Object(object) => AutoloadCallback::ObjectMethod {
+                            object: object.clone(),
+                            method_name: method_name.to_string(),
+                        },
+                        _ => unreachable!("array_callable_parts restricts callback targets"),
+                    }
+                }
                 other => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "spl_autoload_register()",
                             format!(
-                                "callback argument must be closure or string in the current subset, got {}",
+                                "callback argument must be closure, string, or array callable in the current subset, got {}",
                                 other.type_name()
                             ),
                         ),
@@ -15887,6 +16029,34 @@ impl Interpreter {
                             break;
                         }
                     }
+                    AutoloadCallback::StaticMethod {
+                        class_name: callback_class_name,
+                        method_name,
+                    } => {
+                        self.call_autoload_static_method_callback(
+                            &callback_class_name,
+                            &method_name,
+                            class_name,
+                            span,
+                        )?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
+                    }
+                    AutoloadCallback::ObjectMethod {
+                        object,
+                        method_name,
+                    } => {
+                        self.call_autoload_object_method_callback(
+                            object,
+                            &method_name,
+                            class_name,
+                            span,
+                        )?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
+                    }
                     AutoloadCallback::Closure => {
                         return Err(runtime_error(
                             span,
@@ -15903,6 +16073,133 @@ impl Interpreter {
 
         self.active_autoloads.remove(&key);
         result
+    }
+
+    fn call_autoload_static_method_callback(
+        &mut self,
+        callback_class_name: &str,
+        method_name: &str,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(callback_class_name)
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class(callback_class_name))
+            })?;
+        let receiver_class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            visibility,
+            is_static,
+        )) = self.resolve_instance_method(class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+            ));
+        };
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "autoload class-string array callables require a static method in the current subset",
+                ),
+            ));
+        }
+        if visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "autoload array callable method dispatch is only implemented for public methods",
+                ),
+            ));
+        }
+
+        let function = self.method_function(
+            declaring_class_id,
+            &declaring_class_name,
+            &resolved_method_name,
+            span,
+        )?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(
+            function,
+            vec![Value::String(class_name.to_string())],
+            None,
+            Some(declaring_class_id),
+            Some(class_id),
+            Vec::new(),
+            None,
+        )
+    }
+
+    fn call_autoload_object_method_callback(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let receiver_class = self
+            .classes
+            .get(object.class_id())
+            .expect("object class id should resolve to class metadata");
+        let receiver_class_name = receiver_class.name().to_string();
+        let Some((class_id, declaring_class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{receiver_class_name}::{method_name}()")),
+            ));
+        };
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "autoload object array callables require a non-static method in the current subset",
+                ),
+            ));
+        }
+        if visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "autoload array callable method dispatch is only implemented for public methods",
+                ),
+            ));
+        }
+
+        let function =
+            self.method_function(class_id, &declaring_class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(
+            function,
+            vec![Value::String(class_name.to_string())],
+            Some(object),
+            Some(class_id),
+            Some(class_id),
+            Vec::new(),
+            None,
+        )
     }
 
     fn call_preg_match_with_optional_matches(
@@ -18345,13 +18642,13 @@ impl Interpreter {
         }
 
         let is_memory_stream = match path {
-            "php://memory" | "php://temp" => true,
+            "php://memory" | "php://temp" | "php://input" => true,
             other if other.contains("://") => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "fopen()",
-                        "only php://memory, php://temp, and local file paths are supported in the current stream subset",
+                        "only php://memory, php://temp, php://input, and local file paths are supported in the current stream subset",
                     ),
                 ));
             }
@@ -18372,19 +18669,38 @@ impl Interpreter {
         self.next_resource_id += 1;
         if is_memory_stream {
             let metadata_mode = stream_metadata_mode(path, mode);
+            let is_input_stream = path == "php://input";
             self.streams.insert(
                 id,
                 StreamResource::Memory(MemoryStream {
-                    buffer: String::new(),
+                    buffer: if is_input_stream {
+                        self.request_body.clone()
+                    } else {
+                        String::new()
+                    },
                     position: 0,
-                    readable: stream_mode.readable,
-                    writable: stream_mode.writable,
-                    append: stream_mode.append,
+                    readable: if is_input_stream {
+                        true
+                    } else {
+                        stream_mode.readable
+                    },
+                    writable: if is_input_stream {
+                        false
+                    } else {
+                        stream_mode.writable
+                    },
+                    append: if is_input_stream {
+                        false
+                    } else {
+                        stream_mode.append
+                    },
                     eof: false,
                     uri: path.to_string(),
                     metadata_mode,
                     metadata_stream_type: if path == "php://temp" {
                         "TEMP".to_string()
+                    } else if is_input_stream {
+                        "Input".to_string()
                     } else {
                         "MEMORY".to_string()
                     },
@@ -27561,6 +27877,19 @@ fn parse_wordpress_option_id_name_value_autoload_select_query(query: &str) -> Op
     Some(values[0].clone())
 }
 
+fn parse_wordpress_option_star_select_query(query: &str) -> Option<String> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT * FROM wp_options WHERE option_name = ")
+        .or_else(|| query.strip_prefix("SELECT * FROM `wp_options` WHERE `option_name` = "))?;
+    let rest = rest.strip_suffix(" LIMIT 1")?;
+    let values = parse_sql_single_quoted_list(rest)?;
+    if values.len() != 1 {
+        return None;
+    }
+    Some(values[0].clone())
+}
+
 fn parse_wordpress_option_update_query(query: &str) -> Option<(String, String)> {
     let query = query.trim();
     let rest = query
@@ -27778,6 +28107,24 @@ fn is_wordpress_option_prepared_id_name_value_autoload_select_autoloads_query(qu
         query.trim(),
         "SELECT option_id, option_name, option_value, autoload FROM wp_options WHERE autoload IN (",
         "SELECT `option_id`, `option_name`, `option_value`, `autoload` FROM `wp_options` WHERE `autoload` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_star_select_names_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT * FROM wp_options WHERE option_name IN (",
+        "SELECT * FROM `wp_options` WHERE `option_name` IN (",
+    )
+    .is_some()
+}
+
+fn is_wordpress_option_prepared_star_select_autoloads_query(query: &str) -> bool {
+    parse_wordpress_option_prepared_placeholder_names(
+        query.trim(),
+        "SELECT * FROM wp_options WHERE autoload IN (",
+        "SELECT * FROM `wp_options` WHERE `autoload` IN (",
     )
     .is_some()
 }
@@ -28011,6 +28358,37 @@ fn parse_wordpress_options_id_name_value_autoload_row_select_query(
         .strip_suffix(')')?;
     let names = parse_sql_single_quoted_list(names)?;
     Some(WordPressOptionsRowFilter::Names(names))
+}
+
+fn parse_wordpress_options_star_row_select_query(query: &str) -> Option<WordPressOptionsRowFilter> {
+    let query = query.trim();
+    let rest = query
+        .strip_prefix("SELECT * FROM wp_options")
+        .or_else(|| query.strip_prefix("SELECT * FROM `wp_options`"))?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return Some(WordPressOptionsRowFilter::All);
+    }
+    if rest == "WHERE autoload IN ( 'yes', 'on', 'auto-on', 'auto' )"
+        || rest == "WHERE `autoload` IN ( 'yes', 'on', 'auto-on', 'auto' )"
+    {
+        return Some(WordPressOptionsRowFilter::Autoload);
+    }
+    let names = rest
+        .strip_prefix("WHERE option_name IN (")
+        .or_else(|| rest.strip_prefix("WHERE `option_name` IN ("))?
+        .strip_suffix(')')?;
+    let names = parse_sql_single_quoted_list(names)?;
+    Some(WordPressOptionsRowFilter::Names(names))
+}
+
+fn wordpress_option_star_fields() -> Vec<String> {
+    vec![
+        "option_id".to_string(),
+        "option_name".to_string(),
+        "option_value".to_string(),
+        "autoload".to_string(),
+    ]
 }
 
 fn wordpress_option_rows_for_filter(
@@ -28438,6 +28816,16 @@ fn mysqli_statement_result_for_query_with_params(
     {
         return Ok(Some(MysqliPendingResultState {
             fields: vec!["option_name".to_string()],
+            rows: Vec::new(),
+        }));
+    }
+
+    if parse_wordpress_options_star_row_select_query(query).is_some()
+        || is_wordpress_option_prepared_star_select_names_query(query)
+        || is_wordpress_option_prepared_star_select_autoloads_query(query)
+    {
+        return Ok(Some(MysqliPendingResultState {
+            fields: wordpress_option_star_fields(),
             rows: Vec::new(),
         }));
     }
@@ -30894,6 +31282,9 @@ fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
 }
 
 fn stream_metadata_mode(path: &str, mode: &str) -> String {
+    if path == "php://input" {
+        return "rb".to_string();
+    }
     if !matches!(path, "php://memory" | "php://temp") {
         return mode.to_string();
     }

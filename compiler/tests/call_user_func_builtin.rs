@@ -133,6 +133,70 @@ echo $cache->cache["options"]["alloptions"];
 }
 
 #[test]
+fn call_user_func_array_writes_back_direct_array_offset_reference_arguments() {
+    let execution = run_source(
+        r#"<?php
+function mark_slot(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$GLOBALS["bag"] = ["slot" => "global"];
+$items = ["outer" => ["slot" => "array"]];
+
+echo call_user_func_array("mark_slot", array(&$_REQUEST["payload"]["slot"], "request-callback")), "\n";
+call_user_func_array("mark_slot", array(&$GLOBALS["bag"]["slot"], "global-callback"));
+call_user_func_array("mark_slot", array(&$items["outer"]["slot"], "array-callback"));
+echo $_REQUEST["payload"]["slot"], "|", $GLOBALS["bag"]["slot"], "|", $items["outer"]["slot"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:request-callback\nrequest:request-callback|global:global-callback|array:array-callback"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_array_reference_return_binds_direct_array_offset_arguments() {
+    let execution = run_source(
+        r#"<?php
+function &tag_slot(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$_REQUEST["payload"] = ["slot" => "request"];
+$GLOBALS["bag"] = ["slot" => "global"];
+$items = ["outer" => ["slot" => "array"]];
+
+$request_alias =& call_user_func_array("tag_slot", array(&$_REQUEST["payload"]["slot"], "request"));
+$request_alias = $request_alias . ":alias";
+
+$global_alias =& call_user_func_array("tag_slot", array(&$GLOBALS["bag"]["slot"], "global"));
+$global_alias = $global_alias . ":alias";
+
+$array_alias =& call_user_func_array("tag_slot", array(&$items["outer"]["slot"], "array"));
+$array_alias = $array_alias . ":alias";
+
+echo $_REQUEST["payload"]["slot"], "|", $request_alias, "\n";
+echo $GLOBALS["bag"]["slot"], "|", $global_alias, "\n";
+echo $items["outer"]["slot"], "|", $array_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "request:request:alias|request:request:alias\nglobal:global:alias|global:global:alias\narray:array:alias|array:array:alias"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_writes_back_static_array_callable_reference_arguments() {
     let execution = run_source(
         r#"<?php

@@ -97,7 +97,11 @@
   binding. Those literal callback argument arrays may be unkeyed or explicitly
   integer-keyed; integer keys are treated as positional in insertion order for
   this reference path. The callback path additionally accepts by-reference
-  direct public object-property array-offset elements such as
+  direct array-offset elements such as
+  `array(&$_REQUEST["payload"]["slot"], ...)`,
+  `array(&$GLOBALS["bag"]["slot"], ...)`, and
+  `array(&$items["outer"]["slot"], ...)`, plus direct public
+  object-property array-offset elements such as
   `array(&$object->items[$group][$key], ...)` and
   `array(10 => &$object->items[$group][$key], ...)` as a bounded
   copy-in/writeback path. Direct stored argument arrays are also accepted when
@@ -114,9 +118,11 @@
   callbacks, public `[object, method]` instance callbacks, and public
   `["ClassName", "method"]` static callbacks declared as returning by
   reference when the argument array is a literal and each reached
-  by-reference parameter is supplied by a direct-variable reference element or
-  a direct public object-property array-offset reference element, for example
+  by-reference parameter is supplied by a direct-variable reference element, a
+  direct array-offset reference element, or a direct public object-property
+  array-offset reference element, for example
   `$alias =& call_user_func_array("tag", array(&$value));` or
+  `$alias =& call_user_func_array("tag", array(&$_REQUEST["mode"]));` or
   `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`.
   Direct stored argument arrays are also accepted for this reference-return
   alias-binding path when each reached by-reference slot was previously
@@ -138,10 +144,10 @@
   append, `ArrayAccess`, or stored-array object-property bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
-  forms remain unsupported for object-property and stored-array reference
-  arguments. This is still a bounded direct-variable alias and public
-  object-property slot route, not full PHP reference containers or
-  copy-on-write.
+  forms remain unsupported for direct array-offset, object-property, and
+  stored-array reference arguments. This is still a bounded direct-variable
+  alias plus direct array/property slot route, not full PHP reference
+  containers or copy-on-write.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& identity($value);`,
   `$alias =& $object->method();`, and direct object-property array-offset
@@ -776,8 +782,10 @@
   Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
-  name. Missing class names invoke currently registered string user-function
-  autoload callbacks once before the class table is rechecked. Classes without
+  name. Missing class names invoke currently registered string user-function,
+  public `[object, "method"]` instance-method, and public
+  `["ClassName", "method"]` static-method autoload callbacks once before the
+  class table is rechecked. Classes without
   `__construct` are supported only with no constructor arguments. Declared or inherited
   public instance `__construct` methods execute with scoped `$this`,
   positional arguments, and the current default-parameter subset. Successfully
@@ -790,15 +798,15 @@
   parameterless shape; non-public, static, or parameterized destructors report
   stable runtime boundaries before object allocation. Dynamic class
   variables with non-string values report a stable runtime boundary, and
-  dynamic strings still missing after the current string-callback autoload path
+  dynamic strings still missing after the current bounded autoload callback path
   use the current undefined-class diagnostic. Instantiating an abstract class
   reports a stable runtime boundary;
 - class declarations loaded by executed `include`/`require` paths trigger the
-  current string user-function `spl_autoload_register()` callbacks for missing
-  `extends` parent classes, direct `implements` interface names, and direct
-  class-body trait `use TraitName;` names before final class registration
-  validation. Interface declarations loaded through that path also trigger the
-  same string-callback autoload path for missing parent interfaces before
+  current bounded `spl_autoload_register()` callbacks for missing `extends`
+  parent classes, direct `implements` interface names, and direct class-body
+  trait `use TraitName;` names before final class registration validation.
+  Interface declarations loaded through that path also trigger the same
+  bounded autoload callback path for missing parent interfaces before
   interface inheritance validation.
   extending a declared final parent reports a stable runtime boundary.
   Overriding an inherited final method reports a stable runtime boundary.
@@ -1900,6 +1908,8 @@
   exact
   `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
   projection, returning deterministic option-id, name, value, and autoload
+  columns, and for exact `SELECT * FROM wp_options ...` star projections,
+  returning the same deterministic option-id, name, value, and autoload
   columns. All and autoload-filtered row reads use deterministic option-name
   ordering; explicit `IN (...)` reads preserve the requested name order and
   skip missing names.
@@ -1912,7 +1922,7 @@
   character-set/collation fidelity, schema or index behavior,
   ordering/collation fidelity, autoload mutation beyond the exact insert and
   update shapes listed above,
-  arbitrary projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id shapes,
+  arbitrary projection beyond exact option id/name/value/autoload/value-only/name-only/name-value/name-autoload/full-row/full-row-with-id/star-projection shapes,
   unique-index enforcement beyond exact plain option-insert duplicate-name
   rejection, no-op update affected-row fidelity, real
   `REPLACE`/delete-trigger/auto-increment fidelity, DELETE breadth beyond
@@ -1968,6 +1978,8 @@
   query returns recorded deterministic option-id/name/value/autoload rows for
   string option-name parameters on the same handle through the same prepared
   result paths; missing names return an empty zero-field placeholder result.
+  The exact `SELECT * FROM wp_options WHERE option_name = ? LIMIT 1` query
+  returns the same recorded full option row for string option-name parameters.
   The exact
   `SELECT option_id FROM wp_options WHERE option_name = ? LIMIT 1` query
   returns recorded deterministic option-id rows for string option-name
@@ -1980,7 +1992,8 @@
   `SELECT option_value FROM wp_options ...`,
   `SELECT option_name FROM wp_options ...`,
   `SELECT option_name, option_value, autoload FROM wp_options ...`, and
-  `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+  `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`,
+  and `SELECT * FROM wp_options ...`
   shapes already accepted by the direct query path, including all rows,
   autoload-filtered rows, and literal `option_name IN (...)` lists through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
@@ -2166,10 +2179,13 @@
   boundary before argument lowering or backend selection, while native
   function-table introspection can still see the known builtin name.
   Bounded stream resources are supported for `phpc run` only:
-  `fopen("php://memory", $mode)`, `fopen("php://temp", $mode)`, and
-  `fopen($localPath, $mode)` for local filesystem paths create
-  interpreter-owned stream resources for simple `r`, `w`, `a`, or `c` modes
-  with optional `+`, `b`, or `t` flags. `fwrite($stream, $data, $length = null)`
+  `fopen("php://memory", $mode)`, `fopen("php://temp", $mode)`,
+  `fopen("php://input", $mode)`, and `fopen($localPath, $mode)` for local
+  filesystem paths create interpreter-owned stream resources for simple `r`,
+  `w`, `a`, or `c` modes with optional `+`, `b`, or `t` flags. `php://input`
+  handles are read-only streams over the explicit `PHPC_REQUEST_BODY` request
+  seed and report bounded PHP/Input/`rb` metadata.
+  `fwrite($stream, $data, $length = null)`
   writes string data at the current cursor, or at EOF for append mode, and
   returns the written byte count; `fread($stream, $length)` reads up to a
   non-negative integer length; `rewind($stream)` resets the cursor;
@@ -2178,8 +2194,8 @@
   $whence = SEEK_SET)` supports integer offsets with `SEEK_SET`, `SEEK_CUR`,
   and `SEEK_END`; `feof($stream)` reports the bounded EOF flag set by reads
   that exhaust the stream; `fstat($stream)` returns the current PHP-shaped
-  numeric and associative stat array for memory/temp buffer size and local
-  host-file metadata; `stream_get_meta_data($stream)` returns bounded
+  numeric and associative stat array for memory/temp/input buffer size and
+  local host-file metadata; `stream_get_meta_data($stream)` returns bounded
   metadata fields for `timed_out`, `blocked`, `eof`, `wrapper_type`,
   `stream_type`, `mode`, `unread_bytes`, `seekable`, and `uri`; and
   `fclose($stream)` closes the resource. Local file streams use host files and
@@ -2194,11 +2210,12 @@
   names for deterministic fixtures; exact host iteration order remains
   unsupported. This is a deterministic WordPress request/runtime
   compatibility slice, not full PHP stream support: sockets, HTTP/FTP/phar
-  wrappers, filters, contexts, binary/non-UTF-8 byte fidelity, large
-  `php://temp` spill-to-disk behavior, permissions policy, locking, broader
-  wrapper/status metadata APIs, stat-cache behavior, exact warning recovery,
-  exact resource ids/types, directory-entry ordering fidelity,
-  references/copy-on-write, and native stream resources remain unsupported.
+  wrappers, filters, contexts, binary/non-UTF-8 byte fidelity, host SAPI body
+  stream lifetime, writable `php://input` edge behavior, large `php://temp`
+  spill-to-disk behavior, permissions policy, locking, broader wrapper/status
+  metadata APIs, stat-cache behavior, exact warning recovery, exact resource
+  ids/types, directory-entry ordering fidelity, references/copy-on-write, and
+  native stream resources remain unsupported.
   Direct native stream-resource calls stop at a dedicated
   resource/stream codegen boundary, while function-table introspection
   recognizes the known builtin names.
@@ -2287,20 +2304,23 @@
   fidelity, non-UTF-8 paths, broader scalar coercions, partial-output
   behavior, and native lowering remain unsupported.
   `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
-  closure expressions or string callback names plus optional boolean flags and
-  returns `true`. String user-function callbacks are recorded, honor the
-  current boolean `prepend` flag, and are invoked by truthy-autoload
+  closure expressions, string callback names, public `[object, "method"]`
+  instance-method array callables, and public `["ClassName", "method"]`
+  static-method array callables plus optional boolean flags and returns `true`.
+  String user-function and supported array-callable callbacks are recorded,
+  honor the current boolean `prepend` flag, and are invoked by truthy-autoload
   `class_exists()`/`interface_exists()`/`trait_exists()` misses and missing
   `new ClassName(...)` / direct-variable `new $class(...)` instantiation so
   they can include local files that declare class/interface/trait metadata.
-  The same string-callback path is used for missing traits reached while
+  The same bounded callback path is used for missing traits reached while
   registering included class declarations. Closure callbacks remain a
   registration-only shape and report a stable unsupported autoload boundary if
   a lookup needs to invoke them. Autoload unregistering, autoload functions,
-  array callables, throwing/exact warning behavior, enum autoload lookup,
-  namespace/import canonicalization beyond current string lookup,
-  recursive loader edge cases beyond a same-name guard, references/COW, and
-  native lowering remain unsupported.
+  invokable objects, non-public methods, class-string non-static methods,
+  object static methods, arbitrary callable arrays, throwing/exact warning
+  behavior, enum autoload lookup, namespace/import canonicalization beyond
+  current string lookup, recursive loader edge cases beyond a same-name guard,
+  references/COW, and native lowering remain unsupported.
   `register_shutdown_function($callback, ...$args)` accepts a currently valid
   string callable, object/static array callable, or closure plus optional
   already-evaluated extra arguments and returns `null`. The current slice
@@ -2886,20 +2906,20 @@
   case-insensitive lookup against classes declared in the current parsed
   program, accept current bool-like scalar autoload flags, and are available
   through string-valued dynamic function calls. A truthy autoload flag invokes
-  currently registered string user-function autoload callbacks on misses.
+  currently registered bounded autoload callbacks on misses.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names, perform case-insensitive lookup against the bounded
   `Stringable` core interface plus interfaces declared in the current parsed
   program, and are available through string-valued dynamic function calls. The
   autoload flag accepts current bool-like scalar values and invokes currently
-  registered string user-function autoload callbacks on misses.
+  registered bounded autoload callbacks on misses.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
   supported public constants and public instance methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
-  bool-like scalar values and invokes currently registered string
-  user-function autoload callbacks on misses.
+  bool-like scalar values and invokes currently registered bounded autoload
+  callbacks on misses.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names, perform case-insensitive lookup against top-level unit enums declared
   in the current parsed program, and are available through string-valued
@@ -5070,8 +5090,8 @@
   `fopen`, `fwrite`, `fread`, `rewind`, `stream_get_contents`, `feof`,
   `ftell`, `fseek`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`,
   `readdir`, `rewinddir`, and `closedir` accept the same current bounded
-  `php://memory`, `php://temp`, local UTF-8 file stream, and local UTF-8
-  directory handle subset as the builtin section above; direct
+  `php://memory`, `php://temp`, `php://input`, local UTF-8 file stream, and
+  local UTF-8 directory handle subset as the builtin section above; direct
   native calls reject under a dedicated stream-resource boundary until native
   PHP resource handles, stream wrapper state, directory handle state, binary
   byte strings, warning plus `false` recovery, references/copy-on-write, and

@@ -1,0 +1,7 @@
+static:StaticLoadedBox
+class
+object:ObjectLoadedContract
+interface
+object:ObjectLoadedTrait
+hook:ObjectPlugin
+trait

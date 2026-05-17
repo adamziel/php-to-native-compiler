@@ -61,16 +61,17 @@ seeds `php://input` for the interpreter only. `session_start()` now
 materializes a bounded in-memory `$_SESSION` array for the current CLI request;
 session persistence, locking, save handlers, and cookie emission remain
 unsupported. `fopen()` can create bounded interpreter-owned `php://memory`,
-`php://temp`, and local UTF-8 file stream resources for simple read/write flows
-through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
+`php://temp`, `php://input`, and local UTF-8 file stream resources for simple
+flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
 `feof()`, `ftell()`, `fseek()`, `fstat()`, `stream_get_meta_data()`, and
-`fclose()`. `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` cover
-bounded local UTF-8 directory handles. Unsupported wrappers, contexts/filters,
-broader wrapper metadata, binary byte fidelity, directory entry ordering
-fidelity, permissions/locking, stat-cache behavior, warning recovery,
-temp-file spillover, and native stream
-resources remain unsupported. Native lowering still rejects request/session/
-stream state until a native runtime ABI exists.
+`fclose()`. `php://input` handles read the deterministic
+`PHPC_REQUEST_BODY` seed and stay non-writable. `opendir()`, `readdir()`,
+`rewinddir()`, and `closedir()` cover bounded local UTF-8 directory handles.
+Unsupported wrappers, contexts/filters, broader wrapper metadata, binary byte
+fidelity, directory entry ordering fidelity, permissions/locking, stat-cache
+behavior, warning recovery, temp-file spillover, and native stream resources
+remain unsupported. Native lowering still rejects request/session/stream state
+until a native runtime ABI exists.
 
 ### `phpc compile --emit-ir`
 
@@ -161,6 +162,9 @@ incorrect native code.
   direct variable is backed by a caller variable cell, plus bounded
   direct array-offset by-reference parameter writeback with `unset($param)`
   detachment for ordinary arrays and request bags, plus bounded
+  direct array-offset reference elements in literal `call_user_func_array()`
+  argument arrays for request bags, `$GLOBALS`, and nested arrays,
+  plus bounded
   preservation of covered reference elements when copying literal-key nested
   direct array paths such as `$_REQUEST["payload"]`,
   and
@@ -191,8 +195,9 @@ incorrect native code.
   resolved local file
 - bounded deterministic `mysqli`/`wp_options` state-island behavior for
   WordPress bootstrap probes, including exact option insert/update/delete/read
-  shapes and selected prepared option-value-only, option-name-only, option-name-list,
-  name/autoload-list, and autoload-list result sets;
+  shapes and selected prepared option-value-only, option-name-only,
+  option-name-list, full-row, star-projection, name/autoload-list, and
+  autoload-list result sets;
   this is not real MySQL connectivity, arbitrary SQL, persistent object cache,
   full `wpdb`, or native database support
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
@@ -264,13 +269,14 @@ incorrect native code.
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation for `new $class(...)`; missing named or direct-variable
-  string class names invoke currently registered string user-function
+  string class names invoke currently registered string user-function,
+  public object-method array-callable, and public class-string static-method
   autoload callbacks before the class table is rechecked; class declarations
   loaded by executed include/require paths also invoke those callbacks for
-  missing `extends` parent classes, direct `implements` interfaces, and
-  direct class-body trait `use` names, while interface declarations loaded
-  through that path invoke them for parent interfaces reached from autoloaded
-  interface declarations before final registration validation,
+  missing `extends` parent classes, direct `implements` interfaces, and direct
+  class-body trait `use` names, while interface declarations loaded through
+  that path invoke them for parent interfaces reached from autoloaded interface
+  declarations before final registration validation,
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
@@ -360,10 +366,11 @@ unqualified `insteadof`, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
-autoload-triggered class discovery beyond string user-function callbacks
-registered through `spl_autoload_register()` for `class_exists()`,
-`interface_exists()`, `trait_exists()`, missing `new` class instantiation, and
-included class/interface/trait declaration dependencies,
+autoload-triggered class discovery beyond string user-function callbacks,
+public object-method array callables, and public class-string static-method
+array callables registered through `spl_autoload_register()` for
+`class_exists()`, `interface_exists()`, `trait_exists()`, missing `new` class
+instantiation, and included class/interface/trait declaration dependencies,
 array destructuring beyond positional statement-form `list(...)`/`[...]` with
 skipped slots,
 constructor behavior beyond public/inherited public instance `__construct`
@@ -428,8 +435,10 @@ to the detached local parameter are not.
 object-method callback, and public class-string static-method callback slice
 for unkeyed or integer-keyed literal argument arrays containing direct-variable
 reference elements such as `array(&$value)` and `array(10 => &$value)`, plus
-direct public object-property array-offset elements such as
-`array(&$object->items[$key])` through copy-in/writeback. Direct stored
+direct array-offset reference elements such as
+`array(&$_REQUEST["payload"]["slot"])` and direct public object-property
+array-offset elements such as `array(&$object->items[$key])` through
+copy-in/writeback. Direct stored
 argument arrays whose reached by-reference slots were assigned by reference,
 such as `$args[0] =& $value; call_user_func_array($callback, $args);`, are
 also covered for those same callback shapes, including normal callback

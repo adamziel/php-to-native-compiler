@@ -1,0 +1,1 @@
+single=1:siteurl:https://example.test:yes|transient=3:_transient_update_plugins:plugin-payload,4:_transient_timeout_update_plugins:12345|all=4:_transient_timeout_update_plugins,3:_transient_update_plugins,1:siteurl,2:theme_mods|autoload=1:https://example.test,2:theme-db

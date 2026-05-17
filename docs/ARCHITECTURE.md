@@ -107,9 +107,10 @@ slots shared across a fresh object handle for the covered `clone $object`
 assignment shape.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
-current literal argument-array/direct-variable-reference-element slice. They do
-not promote callback argument arrays, object-property array bridges, or stored
-array-offset metadata into general runtime reference containers. By-reference
+current literal argument-array direct-variable and direct array-slot reference
+element slice. They do not promote callback argument arrays, object-property
+array bridges, or stored array-offset metadata into general runtime reference
+containers. By-reference
 `foreach` currently consumes direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -368,10 +369,11 @@ Implemented now:
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   for `new $class(...)`; missing named or direct-variable string class names
-  invoke the current string user-function autoload callbacks before the class
-  table is rechecked; included class/interface declarations also use that
-  string-callback path to load missing `extends` parents, direct `implements`
-  interfaces, and parent interfaces before final registration validation,
+  invoke the current bounded autoload callbacks before the class table is
+  rechecked; included class/interface declarations also use that callback path
+  to load missing `extends` parents, direct `implements` interfaces, direct
+  class-body trait uses, and parent interfaces before final registration
+  validation,
   bounded dynamic property-name reads/writes for existing public slots,
   `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
   class's dynamic table-name slots, and bounded `clone` expressions that
@@ -590,14 +592,17 @@ direct cell binding for narrow string user-callbacks, public object-method
 array callbacks, and public class-string static-method array callbacks where
 the argument array is an unkeyed or integer-keyed literal containing
 `&$directVariable` elements for reached by-reference parameters. The same
-callback path can also copy in and write back direct public object-property
+callback path can also copy in and write back direct array-offset elements,
+including request/global bag paths such as `&$_REQUEST["payload"]["slot"]`
+and `&$GLOBALS["bag"]["slot"]`, plus direct public object-property
 array-offset elements such as `&$object->items[$group][$key]`, using the
 bounded output-parameter bridge rather than in-call reference-container
 identity. Statement-form reference assignment from a reference-returning
-`call_user_func_array()` source can now return the same bounded public
-object-property array-offset route when the callback returns that reached
-parameter, so the assigned alias is represented in symbol-table alias metadata
-instead of as a general runtime reference container. Direct stored argument
+`call_user_func_array()` source can now return the same bounded direct
+array-offset or public object-property array-offset route when the callback
+returns that reached parameter, so the assigned alias is represented in
+symbol-table alias metadata instead of as a general runtime reference
+container. Direct stored argument
 arrays can also satisfy reached by-reference
 parameters when the selected slots were previously assigned by reference
 through the covered direct array-offset target path. That path finds the
@@ -1789,29 +1794,33 @@ references/copy-on-write, and exact native diagnostics.
 The first stream-resource slices are interpreter-only. `fopen("php://memory",
 $mode)` and `fopen("php://temp", $mode)` allocate request-local resource ids
 backed by a Rust string buffer for simple `r`, `w`, `a`, or `c` modes with
-optional `+`, `b`, or `t` flags. `fopen($localPath, $mode)` uses a host local
-file handle for the same simple mode grammar. `fwrite()`, `fread()`,
-`rewind()`, `stream_get_contents()`, `feof()`, `ftell()`, `fseek()`,
-`fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume, or
-inspect the resource cursor or bounded metadata; append-mode writes are routed
-to EOF. A separate request-local directory resource table backs
+optional `+`, `b`, or `t` flags. `fopen("php://input", $mode)` allocates a
+read-only request-local stream over the deterministic `PHPC_REQUEST_BODY`
+seed, reports PHP/Input/`rb` metadata, and reuses the current seek/read cursor
+machinery without modeling a host SAPI input stream. `fopen($localPath, $mode)`
+uses a host local file handle for the same simple mode grammar. `fwrite()`,
+`fread()`, `rewind()`, `stream_get_contents()`, `feof()`, `ftell()`,
+`fseek()`, `fstat()`, `stream_get_meta_data()`, and `fclose()` mutate, consume,
+or inspect the resource cursor or bounded metadata; append-mode writes are
+routed to EOF. A separate request-local directory resource table backs
 `opendir()`, `readdir()`, `rewinddir()`, and `closedir()` for local UTF-8
 directories, returning `.`, `..`, and sorted host entry names through the same
 generic resource value shape. `fseek()` supports the built-in `SEEK_SET`,
 `SEEK_CUR`, and `SEEK_END` constants for the current memory/temp/local-file
 resource set, and `feof()` tracks the bounded EOF flag produced by exhaustive
-reads. `fstat()` exposes buffer size for memory/temp handles and host metadata
-for local files;
+reads. `fstat()` exposes buffer size for memory/temp/input handles and host
+metadata for local files;
 `stream_get_meta_data()` exposes deterministic wrapper/type/mode/URI,
 seekable, unread-byte, and EOF metadata. Local file reads remain UTF-8 text
 reads. This gives WordPress-style temporary request, cache-file stream, and
 directory-scanning paths an executable path without claiming full PHP
 resources: sockets, HTTP/FTP/phar wrappers, contexts, filters, broader
 wrapper/status metadata APIs, exact host directory iteration order,
-binary/non-UTF-8 byte strings, `php://temp` spill-to-disk thresholds,
-permissions policy, locking, stat-cache behavior, warning plus `false`
-recovery, references/copy-on-write, and exact resource id/type behavior remain
-out of scope. Native stream-resource calls reject before lowering under a
+binary/non-UTF-8 byte strings, real SAPI body stream lifetime, writable
+`php://input` edge behavior, `php://temp` spill-to-disk thresholds, permissions
+policy, locking, stat-cache behavior, warning plus `false` recovery,
+references/copy-on-write, and exact resource id/type behavior remain out of
+scope. Native stream-resource calls reject before lowering under a
 dedicated resource boundary, while function-table introspection recognizes the
 names.
 Direct `filesize(...)` calls reject through the native function-call boundary.
@@ -2108,18 +2117,23 @@ names and the declared class name for current object values.
 class metadata table by string class name, using the same case-insensitive
 class lookup as instantiation. The autoload flag accepts current bool-like
 scalar values; when truthy and the initial lookup misses, currently registered
-string user-function autoload callbacks run before the metadata check returns.
+string user-function callbacks, public `[object, "method"]` instance-method
+array callables, and public `["ClassName", "method"]` static-method array
+callables run before the metadata check returns.
 Missing named or direct-variable string class names in `new` expressions use
-the same bounded string-callback autoload path before reporting the current
+the same bounded autoload callback path before reporting the current
 undefined-class diagnostic.
 `null`, arrays, objects, references, and exact PHP
 deprecation/`TypeError` behavior remain unsupported for that flag.
 `interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
 and `enum_exists($name[, $autoload])` accept the same string-name and
 bool-like scalar autoload boundary. `interface_exists()` shares the bounded
-string-callback autoload path with `class_exists()`, and `trait_exists()`
-uses that same path for declared top-level trait metadata. Enum lookups still
-check only already-declared metadata. `class_exists()` also reports true for
+autoload callback path with `class_exists()`, and `trait_exists()` uses that
+same path for declared top-level trait metadata. Enum lookups still check only
+already-declared metadata. Invokable objects, closures at invocation time,
+non-public methods, class-string non-static methods, object static methods,
+arbitrary callable arrays, exact PHP warning/throw behavior, and native
+autoload lowering remain unsupported. `class_exists()` also reports true for
 declared enums in the current class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,

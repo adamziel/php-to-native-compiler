@@ -2,9 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::interpreter::{run_program_with_options, RunOptions};
+use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, local file stream resources, and local directory handles";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), and closedir() until native PHP resource handles, stream wrapper state, directory handle state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, and local directory handles";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -33,6 +34,59 @@ echo fclose($memory) ? "closed" : "open";
     .unwrap();
 
     assert_eq!(execution.stdout, "resource|5:6:alpha:-omega|payload|closed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn php_input_stream_resource_reads_seeded_request_body() {
+    let program = parse(
+        r#"<?php
+$input = fopen("php://input", "rb");
+$meta = stream_get_meta_data($input);
+echo gettype($input);
+echo "|";
+echo $meta["wrapper_type"];
+echo ":";
+echo $meta["stream_type"];
+echo ":";
+echo $meta["mode"];
+echo ":";
+echo $meta["uri"];
+echo "|";
+echo fread($input, 7);
+echo ":";
+echo ftell($input);
+echo ":";
+echo stream_get_contents($input);
+echo ":";
+echo feof($input) ? "eof" : "more";
+rewind($input);
+echo "|";
+echo fread($input, 6);
+echo ":";
+echo fseek($input, -5, SEEK_END);
+echo ":";
+echo stream_get_contents($input);
+fclose($input);
+"#,
+    )
+    .unwrap();
+
+    let execution = run_program_with_options(
+        &program,
+        RunOptions {
+            request_body: Some("action=save&token=abc".to_string()),
+            request_method: Some("POST".to_string()),
+            content_type: Some("application/json".to_string()),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "resource|PHP:Input:rb:php://input|action=:7:save&token=abc:eof|action:0:n=abc"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -283,7 +337,7 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
     assert_eq!(wrapper.column, 1);
     assert_eq!(
         wrapper.message,
-        "unsupported call fopen(): only php://memory, php://temp, and local file paths are supported in the current stream subset"
+        "unsupported call fopen(): only php://memory, php://temp, php://input, and local file paths are supported in the current stream subset"
     );
 
     let bad_mode = run_source("<?php\nfopen('php://memory', 'x');\n").unwrap_err();

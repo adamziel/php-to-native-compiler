@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1351/array_callable_autoload_callbacks.php
+static:StaticLoadedBox
+class
+object:ObjectLoadedContract
+interface
+object:ObjectLoadedTrait
+hook:ObjectPlugin
+trait
