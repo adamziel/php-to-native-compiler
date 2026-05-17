@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1595/realpath_cache_stream_reads.php
+exit: 0
+stdout:
+known|empty|read|fgc-cached|fgc-sized|fopen-cached|fopen-sized|cleared
+--- stdout end ---
+stderr:
+--- stderr end ---

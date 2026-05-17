@@ -5537,6 +5537,24 @@ impl Interpreter {
         );
     }
 
+    fn bounded_realpath_entry_for_local_path(
+        &self,
+        filesystem_path: &Path,
+    ) -> Option<(String, fs::Metadata)> {
+        let metadata = fs::metadata(filesystem_path).ok()?;
+        let resolved = fs::canonicalize(filesystem_path).ok()?;
+        let resolved = resolved.into_os_string().into_string().ok()?;
+        Some((resolved, metadata))
+    }
+
+    fn cache_bounded_realpath_entry_for_local_path(&mut self, filesystem_path: &Path) {
+        if let Some((resolved, metadata)) =
+            self.bounded_realpath_entry_for_local_path(filesystem_path)
+        {
+            self.cache_realpath_entry(resolved, &metadata);
+        }
+    }
+
     fn realpath_cache_array(&self) -> PhpArray {
         let mut cache = PhpArray::new();
         let mut keys = self.realpath_cache.keys().cloned().collect::<Vec<_>>();
@@ -17081,12 +17099,73 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<Option<Value>> {
+        if method_name == "__get" {
+            return self.call_magic_get_property_value(object, property, span);
+        }
+
         self.call_magic_instance_method_with_values(
             object,
             method_name,
             vec![Value::String(property.to_string())],
             span,
         )
+    }
+
+    fn call_magic_get_property_value(
+        &mut self,
+        object: PhpObject,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__get")
+        else {
+            return Ok(None);
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__get()"),
+                    "static magic instance methods are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, "__get", visibility, span)?;
+
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 1, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let called_class_id = object.class_id();
+        let args = vec![Value::String(property.to_string())];
+        if function.returns_by_reference {
+            ensure_supported_reference_return_function_metadata(function, span)?;
+            let cell = self.call_reference_return_function_with_checked_values(
+                function,
+                args,
+                Some(object),
+                Some(class_id),
+                Some(called_class_id),
+                Vec::new(),
+                None,
+            )?;
+            let value = cell.borrow().clone();
+            return Ok(Some(value));
+        }
+
+        ensure_supported_function_signature(function, 1, span)?;
+        self.call_user_function_with_this(
+            function,
+            object,
+            args,
+            Some(class_id),
+            Some(called_class_id),
+        )
+        .map(Some)
     }
 
     fn call_magic_get_reference_return_cell(
@@ -27555,6 +27634,7 @@ impl Interpreter {
             );
         } else {
             let filesystem_path = self.resolve_file_get_contents_path(path, use_include_path);
+            let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
             let file = fs::OpenOptions::new()
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
@@ -27570,6 +27650,9 @@ impl Interpreter {
                         ),
                     )
                 })?;
+            if let Some((resolved, metadata)) = realpath_entry {
+                self.cache_realpath_entry(resolved, &metadata);
+            }
             let mut stream = FileStream {
                 file,
                 readable: stream_mode.readable,
@@ -31535,6 +31618,7 @@ impl Interpreter {
                                 return Ok(Value::Bool(false));
                             }
                         };
+                        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                         match bounded_file_get_contents_slice(&contents, offset, max_length) {
                             FileGetContentsRead::Contents(contents) => Ok(Value::String(contents)),
                             FileGetContentsRead::WarningFalse(message) => {
@@ -37349,6 +37433,31 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("function", "string")],
         ),
+        "is_array" | "is_object" | "is_string" | "is_scalar" => {
+            ("bool", vec![reflection_internal_param("value", "mixed")])
+        }
+        "count" => (
+            "int",
+            vec![
+                reflection_internal_param("value", "Countable|array"),
+                reflection_internal_optional_int_param("mode", 0),
+            ],
+        ),
+        "array_key_exists" => (
+            "bool",
+            vec![
+                reflection_internal_untyped_param("key"),
+                reflection_internal_param("array", "array"),
+            ],
+        ),
+        "is_callable" => (
+            "bool",
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_optional_bool_param("syntax_only", false),
+                reflection_internal_optional_reference_null_param("callable_name"),
+            ],
+        ),
         "php_sapi_name" => ("string", vec![]),
         _ => return None,
     };
@@ -37367,6 +37476,16 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
     })
 }
 
+fn reflection_internal_untyped_param(name: &str) -> ReflectionParameterMetadata {
+    ReflectionParameterMetadata {
+        name: name.to_string(),
+        type_decl: None,
+        by_reference: false,
+        is_variadic: false,
+        default: None,
+    }
+}
+
 fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
     ReflectionParameterMetadata {
         name: name.to_string(),
@@ -37380,6 +37499,15 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
 fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, "int");
     param.default = Some(Expr::Int(default, Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_bool_param(
+    name: &str,
+    default: bool,
+) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, "bool");
+    param.default = Some(Expr::Bool(default, Span::new(0, 0)));
     param
 }
 
@@ -37397,6 +37525,13 @@ fn reflection_internal_optional_null_param(
     type_decl: &str,
 ) -> ReflectionParameterMetadata {
     let mut param = reflection_internal_param(name, type_decl);
+    param.default = Some(Expr::Null(Span::new(0, 0)));
+    param
+}
+
+fn reflection_internal_optional_reference_null_param(name: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_untyped_param(name);
+    param.by_reference = true;
     param.default = Some(Expr::Null(Span::new(0, 0)));
     param
 }
@@ -39778,10 +39913,11 @@ fn parse_sql_single_quoted_schema_like_filter(
         if escape_chars.next().is_some() {
             return None;
         }
+        let like_no_backslash_escapes = no_backslash_escapes && escape_char != '\\';
         let (escaped_filter, escaped_next) = parse_sql_single_quoted_schema_like_value(
             input.trim(),
             escape_char,
-            no_backslash_escapes,
+            like_no_backslash_escapes,
         )?;
         if !escaped_next.trim_start().starts_with("ESCAPE ") {
             return None;

@@ -154,10 +154,12 @@ bounded request-local successful metadata cache used by `filesize()` and
 calls populate bounded request-local `realpath_cache_get()` entries;
 one-argument `clearstatcache(true)` clears those entries, while
 `clearstatcache(true, $filename)` removes only a non-empty exact matching
-cached resolved-path key. `realpath_cache_size()` reports `0` for an empty
-bounded realpath cache and a deterministic positive request-local size for
-cached resolved UTF-8 paths; exact PHP memory-byte accounting remains
-unsupported. Bounded
+cached resolved-path key. Successful local `file_get_contents()` reads and
+local `fopen()` calls for paths that existed before opening also populate
+bounded request-local realpath-cache entries for the resolved target path.
+`realpath_cache_size()` reports `0` for an empty bounded realpath cache and a
+deterministic positive request-local size for cached resolved UTF-8 paths;
+exact PHP memory-byte accounting remains unsupported. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -167,7 +169,8 @@ filters, context option effects, context param effects beyond option merging,
 broader wrapper metadata,
 binary byte fidelity, directory entry ordering fidelity, multipart upload
 parsing, runtime temporary upload creation, host upload validation,
-permissions/locking, broader stat-cache/realpath-cache state, closure shutdown callback execution,
+permissions/locking, realpath-cache ancestor entries and broader
+stat-cache/realpath-cache state, closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
 integration beyond that `file_get_contents()` recovery stack slice, temp-file spillover,
 and native stream resources remain unsupported. Native lowering

@@ -182,6 +182,32 @@ echo realpath_cache_size() === 0 ? "cleared" : "still-sized";
 }
 
 #[test]
+fn local_stream_reads_populate_bounded_realpath_cache_entries() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$target = __DIR__ . "/realpath_target.txt";
+clearstatcache(true);
+$contents = file_get_contents($target);
+$cache = realpath_cache_get();
+echo str_contains($contents, "resolved") ? "read" : "missing-read";
+echo "|";
+echo array_key_exists($target, $cache) ? "fgc-cached" : "fgc-missing";
+echo "|";
+clearstatcache(true);
+$handle = fopen($target, "r");
+fclose($handle);
+$cache = realpath_cache_get();
+echo array_key_exists($target, $cache) ? "fopen-cached" : "fopen-missing";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "read|fgc-cached|fopen-cached");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn realpath_reports_current_argument_and_local_path_boundaries() {
     let non_string = run_source("<?php\necho realpath(42);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

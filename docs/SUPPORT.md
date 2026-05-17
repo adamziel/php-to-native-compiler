@@ -164,11 +164,14 @@
   bridge through the array cell returned by `__get()`. Direct free-function,
   direct visible object-method, direct named static method, and dynamic static
   receiver calls that return by reference use that same bridge for normal
-  invocation when the returned reference is discarded. This does not add
-  mixed nested `ArrayAccess` chains, general magic-property reference
-  containers, arbitrary reference expressions, reference-returning `__get()`
-  as a by-value normal property read, or a general in-call PHP reference
-  container. String
+  invocation when the returned reference is discarded. Normal named and
+  dynamic property reads through a visible public `__get($name)` method that
+  returns by reference are also executable for the same bounded direct-variable
+  reference-return body shape; the read snapshots the returned cell by value
+  and does not bind the read result as an alias. This does not add mixed
+  nested `ArrayAccess` chains, general magic-property reference containers,
+  arbitrary reference expressions, broader `__get()` return body shapes, or a
+  general in-call PHP reference container. String
   user-function callbacks,
   public
   `[object, method]` instance callbacks, and public
@@ -1196,12 +1199,15 @@
   property slots owned by the active class or an ancestor are also supported,
   including inherited parent-declared protected slots on child objects.
   Missing or inaccessible declared direct-property reads call a visible
-  non-static, non-reference-returning `__get($name)` method when one is
-  declared or inherited. Dynamic property-name reads use the same `__get()`
-  fallback after the property expression evaluates to a supported string or
-  integer property name. Normal by-value property reads through
-  reference-returning `__get()` remain outside this slice; those methods are
-  only executable through the documented reference-source bridges. Missing
+  non-static `__get($name)` method when one is declared or inherited. Dynamic
+  property-name reads use the same `__get()` fallback after the property
+  expression evaluates to a supported string or integer property name.
+  Reference-returning `__get()` methods are accepted for the bounded
+  direct-variable reference-return body shape and produce a by-value snapshot
+  of the returned cell for the ordinary read. General magic-property reference
+  containers, `__get()` returns of properties/offsets/expressions,
+  nested-control-flow reference returns, and aliasing the ordinary read result
+  remain outside this slice. Missing
   direct-property writes call a
   visible non-static `__set($name, $value)` method when one is declared or
   inherited, ignore its return value, and preserve the assignment expression
@@ -2570,11 +2576,12 @@
   `NO_BACKSLASH_ESCAPES` branch, while explicit custom single-character
   `ESCAPE '<char>'` clauses such as `ESCAPE '!'`, plus explicit
   `ESCAPE '\\'`, keep using the declared escape character. This prepared path
-  remains bounded to the documented
-  option-row projections and does not support the same explicit
-  `ESCAPE '\\'` parity for direct SQL literal patterns, prepared pattern
-  lists, `DESC` ordering, arbitrary `ORDER BY` expressions, collation
-  fidelity, or host database execution. The
+  remains bounded to the documented option-row projections. Direct SQL
+  literal option-name `LIKE` scans and deletes use the same bounded matcher
+  for explicit `ESCAPE '\\'` parity under `NO_BACKSLASH_ESCAPES` in the
+  documented projection/delete shapes. Prepared pattern lists, `DESC`
+  ordering, arbitrary `ORDER BY` expressions, collation fidelity, and host
+  database execution remain unsupported. The
   exact prepared
   `SELECT option_name FROM wp_options WHERE option_name LIKE ? AND option_value < ?`
   shape, including backticked table/column spellings and the same optional
@@ -2951,7 +2958,8 @@
   full PHP stat-cache support: cached metadata for
   `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
   `is_link()`, `fstat()`, and directory/stream wrappers, realpath-cache
-  entries from filesystem operations other than successful `realpath()`,
+  entries from filesystem operations beyond successful `realpath()`, local
+  `file_get_contents()`, and pre-existing local `fopen()` target paths,
   broader scalar coercions, exact
   `ValueError`/`TypeError`/deprecation text, include_path/open_basedir policy,
   stream-wrapper cache interaction, cross-request cache state, partial-output
@@ -2961,8 +2969,11 @@
   and returns the resolved path as a UTF-8 string. Missing or otherwise
   unresolved local paths return `false`. Successful resolutions populate a
   bounded request-local `realpath_cache_get()` entry keyed by the resolved path
-  with `key`, `is_dir`, `realpath`, and `expires` fields. `clearstatcache(false)`
-  leaves those entries intact, `clearstatcache(true, $filename)` removes only
+  with `key`, `is_dir`, `realpath`, and `expires` fields. Successful local
+  `file_get_contents()` reads and local `fopen()` calls for paths that existed
+  before opening also populate one bounded cache entry for the resolved target
+  path. `clearstatcache(false)` leaves those entries intact,
+  `clearstatcache(true, $filename)` removes only
   the non-empty exact matching cached resolved-path key, and
   `clearstatcache(true)` clears all bounded realpath entries.
   `realpath_cache_size()` accepts no arguments and returns `0` for an empty
@@ -2974,9 +2985,11 @@
   policy as `file_exists`. This is a bounded local path slice, not full PHP
   filesystem support: symlink policy can differ from PHP/host combinations,
   exact warning plus `false` fidelity, include-path lookup, `open_basedir`,
-  stream wrappers, non-UTF-8 paths, realpath cache entries from other
-  filesystem operations, exact realpath-cache `key` hash values and expiration
-  policy, exact `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
+  stream wrappers, non-UTF-8 paths, realpath-cache ancestor entries, cache
+  entries from filesystem operations beyond successful `realpath()`, local
+  `file_get_contents()`, and pre-existing local `fopen()` target paths, exact
+  realpath-cache `key` hash values and expiration policy, exact
+  `realpath_cache_size()` byte accounting, TOCTOU semantics, host filesystem coupling,
   partial-output behavior, and native lowering remain unsupported. Native
   function-table introspection can
   see the known builtin names, while direct native `realpath(...)` calls stop
@@ -4566,9 +4579,15 @@
   now use the first normal generated runtime-helper output path: LLVM IR copies
   the static string bytes into a native string handle, clones them into a
   runtime value handle, writes them with `phpc_native_value_echo_stdout`, and
-  frees the handles. This does not yet cover dynamic string-pointer expression
-  output, binary PHP string values, diagnostics handles for failed stdout
-  writes, linked native execution, or the C fallback assembly helper-call path.
+  frees the handles. Statement-form `echo` and `print` of a selected
+  string-pointer expression whose possible string values all have the same byte
+  length use that same runtime-helper path with the selected pointer and known
+  length. Mixed-length selected string-pointer output still uses the older
+  null-terminated direct `printf` path until native lowering carries dynamic
+  byte lengths. This does not yet cover arbitrary dynamic string-pointer
+  expression output, binary PHP string values beyond valid UTF-8 byte payloads,
+  diagnostics handles for failed stdout writes, linked native execution, or the
+  C fallback assembly helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
@@ -6310,10 +6329,12 @@
   `new ReflectionFunction(...)` for `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
   `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-  `function_exists`, and `php_sapi_name`, exposes their name, false
-  file/start/end/doc-comment metadata, current parameter/default metadata,
-  return type, and by-reference-return predicate, and executes them through
-  `invoke()`/`invokeArgs()`. `ReflectionFunction::invoke(...$args)` and
+  `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
+  `count`, `array_key_exists`, `is_callable`, and `php_sapi_name`, exposes
+  their name, false file/start/end/doc-comment metadata, current
+  parameter/default metadata, return type, and by-reference-return predicate,
+  and executes them through `invoke()`/`invokeArgs()`.
+  `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions and
   those internal builtins over the current by-value argument subset. The
   constructor also accepts current closure values and exposes bounded metadata
@@ -6323,11 +6344,12 @@
   explicit unsupported boundary because closure invocation itself is not
   implemented. Other internal functions, exact internal default metadata
   beyond that named slice, builtin argument shapes not supported by direct
-  calls such as `trim()` custom masks and `substr()` `null` lengths,
-  by-reference parameters, typed parameter/return declarations at invocation
-  time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
-  argument/reference/COW behavior remain unsupported for reflection
-  invocation. `new ReflectionParameter($function,
+  calls such as `trim()` custom masks, `substr()` `null` lengths, recursive
+  `count()` mode, and the third by-reference output argument of
+  `is_callable()`, typed parameter/return declarations at invocation time,
+  `invokeArgs()` named-argument semantics for string keys, reference returns,
+  and broader argument/reference/COW behavior remain unsupported for
+  reflection invocation. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string with an integer position
   or string parameter name; `getDeclaringFunction()` returns a bounded
   `ReflectionFunction` object and `getDeclaringClass()` returns `null` for

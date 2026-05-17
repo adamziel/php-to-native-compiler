@@ -1075,6 +1075,59 @@ echo $box->missing;
 }
 
 #[test]
+fn reference_returning_magic_get_reads_by_value_for_normal_property_reads() {
+    let source = r#"<?php
+$slot = "initial";
+$dynamicSlot = "dynamic-initial";
+
+class RefMagicReadBox {
+    private $secret = "declared";
+
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $slot;
+        return $slot;
+    }
+}
+
+class RefMagicDynamicReadBox {
+    protected $dynamicSecret = "declared";
+
+    public function &__get($property) {
+        echo "get:$property\n";
+        global $dynamicSlot;
+        return $dynamicSlot;
+    }
+}
+
+$box = new RefMagicReadBox();
+$copy = $box->secret;
+$slot = "changed";
+echo $copy, "|", $box->secret, "\n";
+
+$property = "dynamicSecret";
+$dynamicBox = new RefMagicDynamicReadBox();
+$dynamicCopy = $dynamicBox->{$property};
+$dynamicSlot = "dynamic-changed";
+echo $dynamicCopy, "|", $dynamicBox->{$property};
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:secret\n",
+            "initial|get:secret\n",
+            "changed\n",
+            "get:dynamicSecret\n",
+            "dynamic-initial|get:dynamicSecret\n",
+            "dynamic-changed",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_set_runs_for_missing_direct_property_writes() {
     let source = r#"<?php
 class Bag {
@@ -5600,6 +5653,73 @@ echo "sapi|", $sapi->getNumberOfParameters(), "/", $sapi->getNumberOfRequiredPar
     assert_eq!(
         execution.stdout,
         "strpos|strpos|3/2|ReflectionUnionType:int|false|3\noffset|offset|1|1|0|int\nsubstr|save|3/2\ntrim|init|2/1\nltrim|admin\nrtrim|hook\ncontains|1|bool\nstarts|1\nends|1\ncase|0\npath|wp-config|/var/www\nformat|hook:init:10\nvariadic|values|1|1|0\nimplode|mu-plugin\ndefined|1\nfunction|1\nsapi|0/0|cli"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_function_invokes_type_count_and_callable_wordpress_builtins() {
+    let execution = run_source(
+        r#"<?php
+function type_name($parameter) {
+    $type = $parameter->getType();
+    if ($type === null) {
+        return "";
+    }
+    if ($type instanceof ReflectionUnionType) {
+        $names = array();
+        foreach ($type->getTypes() as $part) {
+            $names[] = $part->getName();
+        }
+        return implode("|", $names);
+    }
+    return $type->getName();
+}
+
+function param_line($label, $parameter) {
+    echo $label, "|", $parameter->getName(), "|", type_name($parameter), "|", ($parameter->isOptional() ? "1" : "0"), "|", ($parameter->isDefaultValueAvailable() ? "1" : "0"), "|", ($parameter->isPassedByReference() ? "1" : "0");
+    if ($parameter->isDefaultValueAvailable()) {
+        $default = $parameter->getDefaultValue();
+        echo "|", $default === null ? "null" : ($default ? "true" : "false");
+    }
+    echo "\n";
+}
+
+$isArray = new ReflectionFunction("is_array");
+echo "is_array|", $isArray->getNumberOfParameters(), "/", $isArray->getNumberOfRequiredParameters(), "|", $isArray->getReturnType()->getName(), "|", ($isArray->invoke(array("hook")) ? "1" : "0"), "|", ($isArray->invoke("hook") ? "1" : "0"), "\n";
+param_line("is_array:param0", $isArray->getParameters()[0]);
+
+$isObject = new ReflectionFunction("is_object");
+echo "is_object|", ($isObject->invoke(new stdClass()) ? "1" : "0"), "|", ($isObject->invoke(array()) ? "1" : "0"), "\n";
+
+$isString = new ReflectionFunction("is_string");
+echo "is_string|", ($isString->invoke("save_post") ? "1" : "0"), "|", ($isString->invoke(42) ? "1" : "0"), "\n";
+
+$isScalar = new ReflectionFunction("is_scalar");
+echo "is_scalar|", ($isScalar->invoke("save_post") ? "1" : "0"), "|", ($isScalar->invoke(array()) ? "1" : "0"), "\n";
+
+$count = new ReflectionFunction("count");
+echo "count|", $count->getNumberOfParameters(), "/", $count->getNumberOfRequiredParameters(), "|", $count->getReturnType()->getName(), "|", $count->invoke(array("a", "b")), "\n";
+param_line("count:param0", $count->getParameters()[0]);
+param_line("count:param1", $count->getParameters()[1]);
+
+$exists = new ReflectionFunction("array_key_exists");
+echo "exists|", $exists->getNumberOfParameters(), "/", $exists->getNumberOfRequiredParameters(), "|", ($exists->invoke("hook", array("hook" => "init")) ? "1" : "0"), "|", ($exists->invoke("missing", array("hook" => "init")) ? "1" : "0"), "\n";
+param_line("exists:param0", $exists->getParameters()[0]);
+param_line("exists:param1", $exists->getParameters()[1]);
+
+$callable = new ReflectionFunction("is_callable");
+echo "callable|", $callable->getNumberOfParameters(), "/", $callable->getNumberOfRequiredParameters(), "|", ($callable->invoke("strlen") ? "1" : "0"), "|", ($callable->invoke("missing_function") ? "1" : "0"), "|", ($callable->invoke("Class::method", true) ? "1" : "0"), "\n";
+param_line("callable:param1", $callable->getParameters()[1]);
+$callableName = $callable->getParameters()[2];
+echo "callable:param2|", $callableName->getName(), "|", type_name($callableName), "|", ($callableName->isOptional() ? "1" : "0"), "|", ($callableName->isDefaultValueAvailable() ? "1" : "0"), "|", ($callableName->isPassedByReference() ? "1" : "0"), "|", ($callableName->getDefaultValue() === null ? "null" : "value");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "is_array|1/1|bool|1|0\nis_array:param0|value|mixed|0|0|0\nis_object|1|0\nis_string|1|0\nis_scalar|1|0\ncount|2/1|int|2\ncount:param0|value|Countable|array|0|0|0\ncount:param1|mode|int|1|1|0|false\nexists|2/2|1|0\nexists:param0|key||0|0|0\nexists:param1|array|array|0|0|0\ncallable|3/1|1|0|1\ncallable:param1|syntax_only|bool|1|1|0|false\ncallable:param2|callable_name||1|1|1|null"
     );
     assert_eq!(execution.exit_code, 0);
 }

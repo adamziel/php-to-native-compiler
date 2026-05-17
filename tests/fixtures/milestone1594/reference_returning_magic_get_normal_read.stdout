@@ -1,0 +1,6 @@
+get:secret
+initial|get:secret
+changed
+get:dynamicSecret
+dynamic-initial|get:dynamicSecret
+dynamic-changed

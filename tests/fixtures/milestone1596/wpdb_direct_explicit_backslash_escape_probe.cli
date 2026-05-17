@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1596/wpdb_direct_explicit_backslash_escape_probe.php

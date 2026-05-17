@@ -1,0 +1,20 @@
+run tests/fixtures/milestone1593/internal_reflection_type_count_callable_builtins.php
+exit: 0
+stdout:
+is_array|1/1|bool|1|0
+is_array:param0|value|mixed|0|0|0
+is_object|1|0
+is_string|1|0
+is_scalar|1|0
+count|2/1|int|2
+count:param0|value|Countable|array|0|0|0
+count:param1|mode|int|1|1|0|false
+exists|2/2|1|0
+exists:param0|key||0|0|0
+exists:param1|array|array|0|0|0
+callable|3/1|1|0|1
+callable:param1|syntax_only|bool|1|1|0|false
+callable:param2|callable_name||1|1|1|null
+--- stdout end ---
+stderr:
+--- stderr end ---

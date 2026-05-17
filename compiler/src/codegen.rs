@@ -3344,9 +3344,13 @@ impl LlvmGenerator {
             }
             IrValue::String(value) => self.emit_native_value_string_stdout(&value),
             IrValue::StringPtr(value) => {
-                self.body.push(format!(
-                    "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {value})"
-                ));
+                if let Some(len) = self.known_string_pointer_byte_len(&value) {
+                    self.emit_native_value_string_ptr_stdout(&value, len);
+                } else {
+                    self.body.push(format!(
+                        "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {value})"
+                    ));
+                }
             }
         }
     }
@@ -3361,12 +3365,29 @@ impl LlvmGenerator {
     fn emit_native_value_string_stdout(&mut self, value: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         let global = self.add_string(value);
+        self.emit_native_value_string_pointer_stdout(
+            &format!("@{global}"),
+            usize_type,
+            value.len(),
+        );
+    }
+
+    fn emit_native_value_string_ptr_stdout(&mut self, value: &str, len: usize) {
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.emit_native_value_string_pointer_stdout(value, usize_type, len);
+    }
+
+    fn emit_native_value_string_pointer_stdout(
+        &mut self,
+        value: &str,
+        usize_type: &str,
+        len: usize,
+    ) {
         let string = self.next_temp();
         let runtime_value = self.next_temp();
         self.uses_native_value_echo_stdout = true;
         self.body.push(format!(
-            "{string} = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @{global}, {usize_type} {})",
-            value.len()
+            "{string} = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr {value}, {usize_type} {len})"
         ));
         self.body.push(format!(
             "{runtime_value} = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle {string})"
@@ -3380,6 +3401,16 @@ impl LlvmGenerator {
         self.body.push(format!(
             "call void @phpc_native_string_free(%phpc.NativeStringHandle {string})"
         ));
+    }
+
+    fn known_string_pointer_byte_len(&self, value: &str) -> Option<usize> {
+        let values = self.known_string_values(value)?;
+        let first = values.values().first()?.len();
+        values
+            .values()
+            .iter()
+            .all(|value| value.len() == first)
+            .then_some(first)
     }
 
     fn string_pointer_operand(&mut self, value: IrValue) -> String {

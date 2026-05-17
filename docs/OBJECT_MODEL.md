@@ -195,8 +195,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   private parent properties remain separate from same-name child properties;
 - public instance property reads return the current slot value;
 - missing direct instance property reads call a visible non-static
-  `__get($name)` method when one is declared or inherited, and otherwise keep
-  the existing undefined-property diagnostic;
+  `__get($name)` method when one is declared or inherited, including the
+  bounded direct-variable body shape for methods that return by reference;
+  reference-returning `__get()` reads produce a by-value snapshot of the
+  returned cell and otherwise keep the existing undefined-property diagnostic;
 - public instance property writes mutate the current object value stored in that
   variable;
 - missing direct instance property writes call a visible non-static
@@ -307,11 +309,13 @@ The model follows the PHP lookup rules needed by the first object slice:
   internal builtins `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`,
   `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`,
   `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
-  `function_exists`, and `php_sapi_name`; those internal targets expose
-  PHP-comparable name, false file/start/end/doc-comment metadata, current
-  parameter/default metadata, return type, by-reference-return predicate, and
-  by-value `invoke()`/`invokeArgs()` execution through the existing builtin
-  dispatcher; current closure values are also accepted for bounded
+  `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
+  `count`, `array_key_exists`, `is_callable`, and `php_sapi_name`; those
+  internal targets expose PHP-comparable name, false file/start/end/doc-comment
+  metadata, current parameter/default metadata, return type,
+  by-reference-return predicate, and by-value `invoke()`/`invokeArgs()`
+  execution through the existing builtin dispatcher; current closure values
+  are also accepted for bounded
   `{closure}` source/parameter/return metadata, while closure reflection
   invocation remains unsupported;
 - duplicate class names, duplicate methods, and duplicate exact property names
@@ -367,6 +371,9 @@ same public/private/protected context slice. For missing direct property
 slots, ordinary reads can dispatch visible non-static `__get($name)`,
 `isset` can dispatch visible non-static `__isset($name)`, and `empty` can
 dispatch `__isset($name)` followed by `__get($name)` when `__isset` is truthy.
+Ordinary reads through reference-returning `__get()` are limited to the
+current direct-variable return body shape and snapshot the returned cell by
+value instead of creating a property-read alias.
 Missing direct property writes can dispatch visible non-static
 `__set($name, $value)`. Missing direct property unsets can dispatch visible
 non-static `__unset($name)`.

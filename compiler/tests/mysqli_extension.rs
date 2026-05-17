@@ -5940,6 +5940,44 @@ echo "|left=", mysqli_num_rows($remaining), ":", $remaining_row["option_value"];
 }
 
 #[test]
+fn mysqli_query_direct_option_like_filters_honor_explicit_backslash_escape_under_no_backslash_escapes(
+) {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_mode_target', 'payload', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-mode-target', 'wildcard', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('_transient_timeout_mode_target', '200', 'no')");
+mysqli_query($handle, "INSERT INTO wp_options (option_name, option_value, autoload) VALUES ('xtransient-timeout-mode-target', '200', 'no')");
+mysqli_query($handle, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
+$implicit = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '\\_transient\\_%' ORDER BY option_name");
+echo "implicit=", mysqli_num_rows($implicit);
+$explicit = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '\\_transient\\_%' ESCAPE '\\\\' ORDER BY option_name");
+$explicit_row = mysqli_fetch_assoc($explicit);
+echo "|explicit=", mysqli_num_rows($explicit), ":", $explicit_row["option_name"];
+$expired = mysqli_query($handle, "SELECT option_name FROM wp_options WHERE option_name LIKE '\\_transient\\_timeout\\_%' ESCAPE '\\\\' AND option_value < 300 ORDER BY option_name");
+$expired_row = mysqli_fetch_assoc($expired);
+echo "|expired=", mysqli_num_rows($expired), ":", $expired_row["option_name"];
+echo "|delete=", mysqli_query($handle, "DELETE FROM wp_options WHERE option_name LIKE '\\_transient\\_%' ESCAPE '\\\\'") ? "ok" : "failed";
+echo ":", mysqli_affected_rows($handle);
+$left = mysqli_query($handle, "SELECT option_name FROM wp_options");
+echo "|left=";
+while ($row = mysqli_fetch_assoc($left)) {
+    echo $row["option_name"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "implicit=0|explicit=2:_transient_mode_target|expired=1:_transient_timeout_mode_target|delete=ok:2|left=xtransient-mode-target;xtransient-timeout-mode-target;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_prepared_option_like_filters_apply_bounded_no_backslash_escapes() {
     let execution = run_source(
         r#"<?php

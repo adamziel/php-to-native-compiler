@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone1594/reference_returning_magic_get_normal_read.php
+get:secret
+initial|get:secret
+changed
+get:dynamicSecret
+dynamic-initial|get:dynamicSecret
+dynamic-changed
+0
