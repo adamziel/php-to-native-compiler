@@ -2091,15 +2091,20 @@
   `SHOW TABLE STATUS WHERE Name LIKE ?` and
   ``SHOW TABLE STATUS WHERE `Name` LIKE ? ESCAPE '<char>'`` predicates for
   one string metadata pattern parameter, returning deterministic
-  table-status rows or an empty placeholder result for missing names. It
+  table-status rows or an empty placeholder result for missing names.
+  Prepared `SHOW TABLE STATUS WHERE Name IN (?, ...)` and
+  ``SHOW TABLE STATUS WHERE `Name` IN (?, ...)`` predicates accept non-empty
+  placeholder lists whose params are identifier-shaped string table names,
+  return deterministic table-status rows in table-name order, and skip
+  missing names. It
   rejects params arrays whose length does not match the query `?` placeholder
   count.
   This is not
   broad prepared SQL execution, named params-array support, hidden statement
   status-copy fidelity, mutation SQL beyond those exact `wp_options` state
   island shapes, arbitrary prepared `SHOW TABLE STATUS` predicates beyond the
-  documented `Name` equality/`LIKE` forms, identifier placeholders, exact
-  table counters/timestamps, host database
+  documented `Name` equality/`LIKE`/`IN` forms, identifier placeholders,
+  literal `IN (...)` status predicates, exact table counters/timestamps, host database
   state, PHP warning/error fidelity, mysqlnd behavior, or native statement
   lowering.
   The same bounded prepared-result path includes exact `wp_options`
@@ -2525,7 +2530,8 @@
   through `mysqli_prepare()`/`mysqli_stmt_execute()` for the documented
   `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW
   KEYS` equality/`LIKE` filter shapes, including prepared
-  `SHOW TABLE STATUS WHERE Name LIKE ?` predicates. This state island is not broad SQL
+  `SHOW TABLE STATUS WHERE Name LIKE ?` predicates, plus bounded prepared
+  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists. This state island is not broad SQL
   parsing, SQL-mode-aware escaping beyond the bounded schema metadata and
   direct option-name literal slices,
   character-set/collation fidelity, arbitrary column alteration beyond the
@@ -2858,7 +2864,8 @@
   from the host filesystem as UTF-8 text and share the same current
   relative path policy as `file_exists`; when the second argument is `true`
   for a relative local path, lookup also follows the current bounded
-  `include_path` candidate order used by `include`/`require`. Non-negative
+  `include_path`-then-source-relative candidate order used by
+  `include`/`require`. Non-negative
   offsets read from the start, negative offsets read from the end, and a
   non-negative max length truncates the returned UTF-8 string. Missing local
   file reads and negative offsets before the start of the current payload emit
@@ -2888,8 +2895,9 @@
   $use_include_path = false, $context = null)` for local filesystem paths
   create interpreter-owned stream resources for simple `r`, `w`, `a`, or `c`
   modes with optional `+`, `b`, or `t` flags. Local file `fopen()` accepts the
-  same bounded include-path lookup flag as `file_get_contents()` and accepts,
-  but does not apply, a bounded stream-context resource. Local open failures,
+  same bounded include-path-then-source-relative lookup flag as
+  `file_get_contents()` and accepts, but does not apply, a bounded
+  stream-context resource. Local open failures,
   including missing read targets, emit a bounded PHP-style `E_WARNING`, return
   `false`, and continue; that warning can route through the same current
   bounded `set_error_handler()` stack described for `file_get_contents()`.
@@ -3539,8 +3547,8 @@
   `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`
 - narrow `require`, `require_once`, `include`, and `include_once` execution
   for local string paths in statement and expression position, including
-  constant/string concatenation, source-file-relative path resolution, bounded
-  fallback through the current `set_include_path()` path list, included file
+  constant/string concatenation, bounded `set_include_path()` path-list
+  resolution before source-file-relative fallback, included file
   declaration registration, caller-scope execution, include return values, and
   `_once` de-duplication by resolved local file. Missing local `include` and
   `include_once` reads emit two bounded `E_WARNING` events, return `false` in
@@ -3642,7 +3650,7 @@
   declarations, non-public interface methods,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
-  static/abstract/final or non-public trait methods, adaptation blocks beyond
+  abstract/final or non-public trait methods, adaptation blocks beyond
   the current simple method alias, visibility-adaptation, and bounded
   `insteadof` shapes, broad conflict resolution,
   `__TRAIT__` context,
@@ -3738,11 +3746,12 @@
   and `include_once path;` execute in statement position and expression
   position for paths that evaluate to strings in the current subset, including
   constant and string-concatenated paths such as `ABSPATH . WPINC .
-  '/load.php'`. Absolute paths resolve directly; relative paths first resolve
-  against the source file containing the construct and then through the
-  current `include_path` string from `get_include_path()`/`set_include_path()`;
-  the default include path is `"."`, and `PATH_SEPARATOR` is exposed for the
-  host path-list separator. Included files are parsed with `<?php`, register
+  '/load.php'`. Absolute paths resolve directly; relative paths search the
+  current `include_path` string from `get_include_path()`/`set_include_path()`
+  before falling back to the source file directory containing the construct;
+  the default include path is `"."`, empty entries are treated as `.`, and
+  `PATH_SEPARATOR` is exposed for the host path-list separator. Included files
+  are parsed with `<?php`, register
   top-level functions/classes, and run in the caller symbol table. Statement
   forms ignore top-level include return values.
   Expression forms return the included file's top-level `return` value, return
@@ -3753,8 +3762,9 @@
   `false` in expression position, and do not mark the missing file as loaded
   for `_once` de-duplication. `require_once` and `include_once` de-duplicate
   by resolved local file, including files loaded first through non-once
-  `require`/`include`. Missing-file `require` fatal/error recovery, exact PHP
-  include-path search ordering, failed-include realpath-cache side effects,
+  `require`/`include`. Missing-file `require` fatal/error recovery,
+  failed-include realpath-cache side effects, process-current-working-directory
+  edge cases beyond the default `"."` entry and no-source-file fallback,
   stream wrappers, URL includes, `phar://`, opcache behavior, autoload
   interaction, declaration-order edge cases, source mapping for
   functions/classes after include, PHP's exact warning-vs-fatal text and
@@ -3934,7 +3944,7 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants, supported properties, and public instance methods, and are available through
+  supported public constants, supported properties, and public instance/static methods, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and invokes currently registered bounded autoload
   callbacks on misses.
@@ -4063,7 +4073,7 @@
   not represented yet.
   `get_declared_traits()` returns a zero-indexed array of top-level traits
   declared in the current parsed program in declaration order, including
-  traits with currently supported public instance methods, and is available
+  traits with currently supported public instance/static methods, and is available
   through string-valued dynamic calls. Built-in/internal trait entries are not
   represented yet.
   Named static method expressions such as `ClassName::method(...)` execute for
@@ -4631,7 +4641,9 @@
   selected pointer to the same runtime-helper path. This does not yet cover
   arbitrary dynamic string-pointer expression output, binary PHP string values
   beyond valid UTF-8 byte payloads, diagnostics handles for failed stdout
-  writes, linked native execution, or the C fallback assembly helper-call path.
+  writes, linked native execution, array/object/resource/reference storage
+  beyond null-only opaque ABI handle shapes, or the C fallback assembly
+  helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
@@ -4639,9 +4651,11 @@
   helper surface, and a bounded valid-UTF-8 string-handle-to-runtime-value
   bridge plus the value stdout helper. Null string handles and non-UTF-8
   payloads return null value handles until diagnostics handles and binary PHP
-  string values exist. This is still a bounded ABI slice: linked native
-  execution, broad production string helper lowering, string interning, arrays,
-  objects, resources, references/copy-on-write, stack frames, diagnostics, and
+  string values exist. The probe also declares null-only opaque array, object,
+  resource, and reference handle shapes with exported null constructors and
+  predicates. This is still a bounded ABI slice: linked native execution, broad
+  production string helper lowering, string interning, array/object/resource/
+  reference storage or copy-on-write semantics, stack frames, diagnostics, and
   WordPress host state remain unsupported in native lowering.
   Statement-form reference assignment is an explicit native codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject direct variable,
@@ -5552,16 +5566,21 @@
   arrow function expression creates an inert runtime closure value that can be
   stored, read, and tested for truthiness. Explicit `use (...)` capture names
   are looked up at closure creation and the current values are stored on the
-  inert closure value; by-reference captures record the requested capture mode
-  but do not create alias cells. Ordinary untyped closure values can be invoked
-  directly with `$closure(...)` and through `call_user_func()` or
-  positional-array `call_user_func_array()` over the current by-value argument
-  subset; invocation uses the captured by-value snapshot stored when the
-  closure was created. Arrow implicit capture binding and execution, `$this`
-  binding, true by-reference capture aliasing, reference parameters/returns,
-  typed parameter/return enforcement, copy-on-write, static closure binding
-  semantics, named closure callback arguments, exact PHP `Closure` object
-  behavior, and native lowering are unsupported. Non-static
+  closure value; by-reference direct-variable captures store the source
+  variable cell and closure invocation prebinds that cell into the closure
+  local scope. Ordinary untyped closure values can be invoked directly with
+  `$closure(...)` and through `call_user_func()` or positional-array
+  `call_user_func_array()` over the current by-value argument subset.
+  `call_user_func_array()` also accepts closure callbacks whose declared
+  by-reference parameters are supplied by covered by-reference argument-array
+  elements in the same direct-variable and direct array/property slot subset
+  used by user-function callbacks. Invocation uses the captured by-value
+  snapshot stored when the closure was created. Arrow implicit capture binding
+  and execution, `$this` binding, by-reference capture of array-offset,
+  object-property, magic-property, or `ArrayAccess` alias roots, closure
+  reference returns, typed parameter/return enforcement, copy-on-write, static
+  closure binding semantics, named closure callback arguments, exact PHP
+  `Closure` object behavior, and native lowering are unsupported. Non-static
   arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
   expression with a synthetic return body, while `static fn (...) => expr`
   stops at a dedicated parse boundary until no-`$this` binding, implicit
@@ -6243,7 +6262,7 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and perform case-insensitive lookup against top-level traits
   declared in the current parsed program, including traits with currently
-  supported public constants, supported properties, and public instance methods; the autoload flag
+  supported public constants, supported properties, and public instance/static methods; the autoload flag
   accepts current bool-like scalar values and invokes currently registered
   bounded autoload callbacks on misses. Included class declarations use the
   same callback path for missing direct trait `use` names before trait
@@ -6356,8 +6375,11 @@
   declaring class context while preserving the target object's called class
   for `static::` lookup. Static method invocation accepts `null` or an object
   target, ignores the target object like PHP, and preserves the reflected
-  class for inherited `static::` lookup. Interface and trait method targets,
-  internal methods,
+  class for inherited `static::` lookup. Static trait methods reflected from
+  the trait itself also execute through the same by-value argument subset when
+  the target is `null` or an object. Interface methods, non-static trait
+  methods, abstract trait methods, trait-method `self::`/`static::` class
+  context fidelity, internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection
@@ -6477,10 +6499,10 @@
   `get_declared_traits()` returns a zero-indexed array containing only the
   current parsed program's top-level trait names in declaration order,
   including traits with supported public constants, supported properties, and
-  public instance methods.
+  public instance/static methods.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
-  supported trait properties plus public instance trait methods onto the
+  supported trait properties plus public instance/static trait methods onto the
   consuming class metadata. Simple
   trait-body declarations such as `trait A { use B; }` and `use B, C;`
   compose supported properties, public methods, and constants from the used
@@ -6505,24 +6527,24 @@
   trait-use diagnostic before class registration. Simple method alias adaptation shapes such
   as `use TraitName { method as alias; }` and
   `use TraitA, TraitB { TraitA::method as public alias; }` are also supported
-  for public instance trait methods; the original method remains available,
+  for public instance/static trait methods; the original method remains available,
   and the alias is registered as an ordinary public instance method that can
   satisfy the current interface method-presence checks. Alias adaptations may
   also use `protected` or `private`, such as
   `use TraitName { method as protected helper; }`; those aliases are composed
-  as non-public instance methods, dispatch through the existing method
+  as non-public methods, dispatch through the existing method
   visibility checks, are visible to `method_exists()`, and are omitted from
   global-context `get_class_methods()`. Visibility-only adaptations such as
   `use TraitName { method as protected; }` and
   `use TraitName { method as private; }` change the original composed public
-  instance trait method visibility without creating an alias; the methods
+  instance/static trait method visibility without creating an alias; the methods
   remain visible to `method_exists()`, callable from valid class context, and
   omitted from global-context `get_class_methods()` when non-public. A bounded conflict
   resolution shape such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is supported for
-  public instance methods from traits in the same class-body `use`
+  public instance/static methods from traits in the same class-body `use`
   declaration; the winning method is registered as the ordinary public method
-  and the named loser trait's method is skipped. The same public instance
+  and the named loser trait's method is skipped. The same public instance/static
   method shape accepts comma-separated loser lists such as
   `TraitA::method insteadof TraitB, TraitC` when every loser trait is listed
   in the same class-body `use` declaration. The selected winning method
@@ -7065,7 +7087,7 @@
   built-in/internal interface catalogs,
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
-  trait/class constants, static/abstract/final and non-public trait methods,
+  trait/class constants, abstract/final and non-public trait methods,
   executing unresolved same-name trait method conflicts, exact PHP fatal-error
   text for trait conflicts,
   trait aliases beyond the current simple public, qualified public-alias,

@@ -672,13 +672,14 @@ fn include_path_candidates(
     requested_path: &Path,
     include_path: &str,
 ) -> Vec<PathBuf> {
-    let mut candidates = vec![source_relative_path.to_path_buf()];
+    let mut candidates = Vec::new();
 
     for entry in include_path.split(INCLUDE_PATH_SEPARATOR) {
         let entry = if entry.is_empty() { "." } else { entry };
         candidates.push(PathBuf::from(entry).join(requested_path));
     }
 
+    candidates.push(source_relative_path.to_path_buf());
     candidates
 }
 
@@ -18893,6 +18894,42 @@ impl Interpreter {
         values: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
+        if matches!(state.declaring_kind, ReflectionClassKind::Trait) && state.is_static {
+            match target {
+                Value::Null | Value::Object(_) => {}
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionMethod::invoke",
+                            format!(
+                                "target must be null or object for static trait method invocation in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+
+            let function = self.trait_reflection_method_function(
+                &state.declaring_class_name,
+                &state.name,
+                span,
+            )?;
+            let function = function.as_ref();
+            ensure_user_function_arity(function, values.len(), span)?;
+            ensure_supported_function_signature(function, values.len(), span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+            return self.call_user_function_with_checked_values(
+                function,
+                values,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+            );
+        }
         let ReflectionClassKind::Class = state.declaring_kind else {
             return Err(runtime_error(
                 span,
@@ -21422,6 +21459,43 @@ impl Interpreter {
         })
     }
 
+    fn trait_reflection_method_function(
+        &self,
+        trait_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Rc<FunctionDecl>> {
+        let trait_decl = self
+            .trait_lookup
+            .get(&trait_name.to_ascii_lowercase())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class(format!("{trait_name} trait")),
+                )
+            })?;
+        let methods = self.reflection_trait_methods(trait_decl)?;
+        let method = methods
+            .into_iter()
+            .find(|method| method.function.name.eq_ignore_ascii_case(method_name))
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!("{trait_name}::{method_name}()")),
+                )
+            })?;
+        if method.is_abstract {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{trait_name}::{method_name}()"),
+                    "abstract trait methods are not executable in the current subset",
+                ),
+            ));
+        }
+        Ok(Rc::new(method.function))
+    }
+
     fn class_has_property_in_hierarchy(&self, class_id: ClassId, property_name: &str) -> bool {
         let mut current = Some(class_id);
         while let Some(current_id) = current {
@@ -22240,13 +22314,11 @@ impl Interpreter {
                 self.call_user_func_array_array_callable(callback, &args[1], span, caller_scope)
             }
             Value::Closure(closure) => {
-                let positional_args =
-                    self.evaluate_call_user_func_array_arguments(&args[1], span, caller_scope)?;
-                self.invoke_closure_value(
+                self.invoke_closure_value_from_call_user_func_array(
                     closure.clone(),
-                    positional_args,
+                    &args[1],
                     span,
-                    "call_user_func_array()",
+                    caller_scope,
                 )
             }
             other => Err(runtime_error(
@@ -22260,6 +22332,73 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn invoke_closure_value_from_call_user_func_array(
+        &mut self,
+        closure: PhpClosure,
+        argument_expr: &Expr,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+        )?;
+        let prebound_locals = closure
+            .captures()
+            .iter()
+            .map(|capture| {
+                if capture.by_reference() {
+                    PreboundLocal::Cell {
+                        name: capture.name().to_string(),
+                        cell: capture.cell(),
+                    }
+                } else {
+                    PreboundLocal::Value {
+                        name: capture.name().to_string(),
+                        value: capture.value(),
+                    }
+                }
+            })
+            .collect();
+        self.call_user_function_with_checked_values_and_locals(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+            prebound_locals,
+        )
     }
 
     fn evaluate_call_user_func_array_arguments(
@@ -39939,6 +40078,31 @@ fn wordpress_dynamic_prepared_schema_result_for_query(
     }
 
     if let Some(input) = query
+        .strip_prefix("SHOW TABLE STATUS WHERE Name IN ")
+        .or_else(|| query.strip_prefix("SHOW TABLE STATUS WHERE `Name` IN "))
+    {
+        if let Some(table_names) =
+            parse_prepared_schema_exact_placeholder_list(input, params, function, span)?
+        {
+            let mut matched_names = tables
+                .keys()
+                .filter(|table_name| table_names.iter().any(|name| name == *table_name))
+                .cloned()
+                .collect::<Vec<_>>();
+            matched_names.sort();
+            let rows = matched_names
+                .into_iter()
+                .filter_map(|table_name| tables.get(&table_name))
+                .map(dynamic_schema_table_status_row)
+                .collect();
+            return Ok(Some(MysqliPendingResultState {
+                fields: dynamic_schema_table_status_fields(),
+                rows,
+            }));
+        }
+    }
+
+    if let Some(input) = query
         .strip_prefix("SHOW TABLE STATUS WHERE Name LIKE ")
         .or_else(|| query.strip_prefix("SHOW TABLE STATUS WHERE `Name` LIKE "))
     {
@@ -40422,6 +40586,54 @@ fn parse_prepared_schema_exact_placeholder_filter(
         ));
     };
     Ok(Some(WordPressSchemaNameFilter::Exact(identifier)))
+}
+
+fn parse_prepared_schema_exact_placeholder_list(
+    input: &str,
+    params: &[Value],
+    function: &str,
+    span: Span,
+) -> CompileResult<Option<Vec<String>>> {
+    let input = input.trim();
+    let Some(inner) = input
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return Ok(None);
+    };
+
+    let placeholders = inner.split(',').map(str::trim).collect::<Vec<_>>();
+    if placeholders.is_empty()
+        || placeholders.iter().any(|placeholder| *placeholder != "?")
+        || placeholders.len() != params.len()
+    {
+        return Ok(None);
+    }
+
+    let mut names = Vec::with_capacity(params.len());
+    for value in params {
+        let Value::String(name) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata IN filters require string table-name parameters in the current subset",
+                ),
+            ));
+        };
+        let Some(identifier) = parse_schema_table_identifier(name) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "prepared schema metadata IN filters require identifier-shaped string parameters in the current subset",
+                ),
+            ));
+        };
+        names.push(identifier);
+    }
+
+    Ok(Some(names))
 }
 
 fn prepared_schema_string_filter_param<'a>(

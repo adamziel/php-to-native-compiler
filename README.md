@@ -856,13 +856,15 @@ The current native path is focused on straight-line scalar lowering:
 The native runtime ABI has an early helper surface for scalar echo conversion,
 owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
 string-handle-to-runtime-value bridge with diagnostic handles for that
-conversion's null-handle and non-UTF-8 failure cases. Normal generated LLVM now
-uses that ABI for a narrow output path: statement-form `echo` and `print` of a
-direct compile-time string value call runtime string/value helpers and
-`phpc_native_value_echo_stdout`. Dynamic string-pointer expression output beyond
-the documented selected-string slices, linked native execution, binary PHP
-string value handles, general diagnostics, and broad production runtime
-string-helper lowering are not implemented.
+conversion's null-handle and non-UTF-8 failure cases. It also pins null-only
+opaque array, object, resource, and reference handle shapes for future native
+storage work. Normal generated LLVM now uses the string/value ABI for a narrow
+output path: statement-form `echo` and `print` of a direct compile-time string
+value call runtime string/value helpers and `phpc_native_value_echo_stdout`.
+Dynamic string-pointer expression output beyond the documented selected-string
+slices, linked native execution, binary PHP string value handles,
+array/object/resource/reference storage semantics, general diagnostics, and
+broad production runtime string-helper lowering are not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

@@ -5,6 +5,10 @@
 %phpc.NativeStringHandle = type { ptr }
 %phpc.NativeValueHandle = type { ptr }
 %phpc.NativeDiagnosticHandle = type { ptr }
+%phpc.NativeArrayHandle = type { ptr }
+%phpc.NativeObjectHandle = type { ptr }
+%phpc.NativeResourceHandle = type { ptr }
+%phpc.NativeReferenceHandle = type { ptr }
 @phpc.probe.bytes = private unnamed_addr constant [4 x i8] c"heap"
 @phpc.probe.string = private unnamed_addr constant [7 x i8] c"php\00abi"
 @phpc.probe.invalid = private unnamed_addr constant [1 x i8] c"\FF"
@@ -27,6 +31,14 @@ declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 declare i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle)
 declare %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle)
 declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)
+declare %phpc.NativeArrayHandle @phpc_native_array_null()
+declare i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle)
+declare %phpc.NativeObjectHandle @phpc_native_object_null()
+declare i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle)
+declare %phpc.NativeResourceHandle @phpc_native_resource_null()
+declare i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle)
+declare %phpc.NativeReferenceHandle @phpc_native_reference_null()
+declare i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle)
 
 define i64 @phpc_probe_scalar_echo_len() {
 entry:
@@ -95,4 +107,20 @@ entry:
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
   ret i64 %len
+}
+
+define i1 @phpc_probe_container_handle_null_shapes() {
+entry:
+  %array = call %phpc.NativeArrayHandle @phpc_native_array_null()
+  %array_is_null = call i1 @phpc_native_array_is_null(%phpc.NativeArrayHandle %array)
+  %object = call %phpc.NativeObjectHandle @phpc_native_object_null()
+  %object_is_null = call i1 @phpc_native_object_is_null(%phpc.NativeObjectHandle %object)
+  %resource = call %phpc.NativeResourceHandle @phpc_native_resource_null()
+  %resource_is_null = call i1 @phpc_native_resource_is_null(%phpc.NativeResourceHandle %resource)
+  %reference = call %phpc.NativeReferenceHandle @phpc_native_reference_null()
+  %reference_is_null = call i1 @phpc_native_reference_is_null(%phpc.NativeReferenceHandle %reference)
+  %left = and i1 %array_is_null, %object_is_null
+  %right = and i1 %resource_is_null, %reference_is_null
+  %all = and i1 %left, %right
+  ret i1 %all
 }

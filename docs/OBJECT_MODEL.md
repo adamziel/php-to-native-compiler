@@ -109,10 +109,10 @@ relationship checks also recognize the parent interfaces. Public interface
 constants declared as `const NAME = ...` or `public const NAME = ...` resolve
 through `InterfaceName::CONST`, inherited parent interfaces, implementing
 classes, `self::CONST`/`static::CONST` in implementing class methods, and
-`defined()`/`constant()` string lookups. Simple public instance methods from
+`defined()`/`constant()` string lookups. Simple public instance/static methods from
 already-declared traits may be composed into a class with
 `use TraitName;`, repeated simple trait-use declarations, or
-`use TraitA, TraitB;` and called through ordinary object method dispatch.
+`use TraitA, TraitB;` and called through ordinary object or static method dispatch.
 Simple public aliases, including same-use qualified forms such as
 `TraitA::method as public alias`, are registered as ordinary public methods
 and may satisfy the current interface method-presence checks. Protected/private
@@ -476,6 +476,12 @@ object handle hash behavior has native support.
 and the named bounded internal function slice, are rejected through the
 object/class, closure, and function-call native boundaries until reflection
 objects, closure metadata, and builtin dispatch have native runtime support.
+`ReflectionMethod::invoke()`/`invokeArgs()` execute declared user-class methods
+and the current bounded static trait-method slice for trait methods reflected
+from the trait itself. Interface methods, non-static and abstract trait
+methods, trait `self::`/`static::` context fidelity, by-reference invocation,
+typed parameter/return enforcement, and native reflection invocation remain
+unsupported.
 
 ## Unsupported Edge Cases
 
@@ -486,7 +492,7 @@ beyond stable rejection,
 full interface signature enforcement,
 trait properties, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, static/abstract/final or non-public trait methods,
+trait/class constants, abstract/final or non-public trait methods,
 conflicting trait use beyond the bounded `insteadof` shape,
 trait alias/adaptation edge cases beyond the current simple public, qualified
 public-alias, same-block winner public-alias, protected/private alias, and

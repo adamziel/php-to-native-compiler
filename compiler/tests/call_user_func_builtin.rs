@@ -73,6 +73,31 @@ echo call_user_func_array($callback, array("save_post", 20));
 }
 
 #[test]
+fn call_user_func_array_binds_closure_reference_parameters() {
+    let execution = run_source(
+        r#"<?php
+$counter = 0;
+$option = "autoload";
+$callback = function (&$value, $suffix) use (&$counter) {
+    $counter = $counter + 1;
+    $value = $value . ":" . $suffix . ":" . $counter;
+    return $value;
+};
+
+echo call_user_func_array($callback, array(&$option, "closure")), "|", $option, "|", $counter, "\n";
+echo call_user_func_array($callback, array(&$option, "again")), "|", $option, "|", $counter;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:closure:1|autoload:closure:1|1\nautoload:closure:1:again:2|autoload:closure:1:again:2|2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_literal_reference_arguments_for_user_callbacks() {
     let execution = run_source(
         r#"<?php

@@ -1,1 +1,1 @@
-phpc intentionally rejects non-public/static trait methods before broad trait method metadata and composition semantics exist.
+phpc intentionally rejects non-public trait methods before broad trait visibility and composition semantics exist.

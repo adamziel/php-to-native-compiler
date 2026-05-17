@@ -53,6 +53,30 @@ pub struct NativeDiagnosticHandle {
     ptr: *mut NativeDiagnostic,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeArrayHandle {
+    ptr: *mut NativeArray,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeObjectHandle {
+    ptr: *mut NativeObject,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeResourceHandle {
+    ptr: *mut NativeResource,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeReferenceHandle {
+    ptr: *mut NativeReference,
+}
+
 #[derive(Debug)]
 struct NativeString {
     bytes: Vec<u8>,
@@ -62,6 +86,11 @@ struct NativeString {
 struct NativeDiagnostic {
     message: String,
 }
+
+enum NativeArray {}
+enum NativeObject {}
+enum NativeResource {}
+enum NativeReference {}
 
 impl NativeByteBuffer {
     pub const fn empty() -> Self {
@@ -167,6 +196,54 @@ impl NativeDiagnosticHandle {
     }
 }
 
+impl NativeArrayHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+impl NativeObjectHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+impl NativeResourceHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+impl NativeReferenceHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
 impl NativeScalarValue {
     pub const fn null() -> Self {
         Self {
@@ -240,6 +317,46 @@ pub extern "C" fn phpc_native_int(value: i64) -> NativeScalarValue {
 #[no_mangle]
 pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
     NativeScalarValue::float(value)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_array_null() -> NativeArrayHandle {
+    NativeArrayHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_array_is_null(handle: NativeArrayHandle) -> bool {
+    handle.is_null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_null() -> NativeObjectHandle {
+    NativeObjectHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_object_is_null(handle: NativeObjectHandle) -> bool {
+    handle.is_null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_null() -> NativeResourceHandle {
+    NativeResourceHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_resource_is_null(handle: NativeResourceHandle) -> bool {
+    handle.is_null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_reference_null() -> NativeReferenceHandle {
+    NativeReferenceHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_reference_is_null(handle: NativeReferenceHandle) -> bool {
+    handle.is_null()
 }
 
 #[no_mangle]
@@ -4889,6 +5006,40 @@ mod tests {
 
         assert_eq!(value.tag(), NativeScalarTag::Bool);
         assert_eq!(value.to_value(), Value::Bool(true));
+    }
+
+    #[test]
+    fn native_container_handle_shapes_are_pointer_sized_and_null_only() {
+        assert_eq!(
+            std::mem::size_of::<NativeArrayHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+        assert_eq!(
+            std::mem::size_of::<NativeObjectHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+        assert_eq!(
+            std::mem::size_of::<NativeResourceHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+        assert_eq!(
+            std::mem::size_of::<NativeReferenceHandle>(),
+            std::mem::size_of::<*mut ()>()
+        );
+
+        let array = phpc_native_array_null();
+        let object = phpc_native_object_null();
+        let resource = phpc_native_resource_null();
+        let reference = phpc_native_reference_null();
+
+        assert!(array.is_null());
+        assert!(object.is_null());
+        assert!(resource.is_null());
+        assert!(reference.is_null());
+        assert!(phpc_native_array_is_null(array));
+        assert!(phpc_native_object_is_null(object));
+        assert!(phpc_native_resource_is_null(resource));
+        assert!(phpc_native_reference_is_null(reference));
     }
 
     #[test]

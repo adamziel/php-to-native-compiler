@@ -865,10 +865,15 @@ return an empty placeholder result. Prepared
 `ESCAPE '<char>'` clause, route one string pattern parameter through the same
 bounded metadata `LIKE` matcher used by direct schema probes, including the
 per-handle `NO_BACKSLASH_ESCAPES` branch and explicit custom escape
-characters. This does not add arbitrary prepared `SHOW TABLE STATUS`
-predicates beyond the documented `Name` equality/`LIKE` forms, identifier
-placeholders, joined metadata queries, exact table counters/timestamps, host
-database inspection, or native lowering.
+characters. Prepared `SHOW TABLE STATUS WHERE Name IN (?, ...)` probes,
+including ``WHERE `Name` IN (?, ...)`` spelling, accept a non-empty
+placeholder list whose params are all identifier-shaped string table names,
+returning deterministic table-status rows in table-name order and skipping
+missing names. This does not add arbitrary prepared `SHOW TABLE STATUS`
+predicates beyond the documented `Name` equality/`LIKE`/`IN` forms,
+identifier placeholders, literal `IN (...)` status predicates, joined metadata
+queries, exact table counters/timestamps, host database inspection, or native
+lowering.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

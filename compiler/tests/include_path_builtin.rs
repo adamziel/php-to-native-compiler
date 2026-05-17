@@ -32,7 +32,7 @@ echo get_include_path();
 }
 
 #[test]
-fn include_uses_configured_include_path_after_source_relative_lookup() {
+fn include_uses_configured_include_path_with_source_relative_fallback() {
     let execution = run_source_with_source_file(
         r#"<?php
 $old = set_include_path(__DIR__ . "/include_path_lib");
@@ -48,6 +48,28 @@ echo "|loaded=" . $loaded;
     assert_eq!(
         execution.stdout,
         "inc:tests/fixtures/milestone1303/include_path_lib|dir:tests/fixtures/milestone1303/include_path_lib|result=loader-return|old=.|loaded=from-include-path"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn include_path_lookup_precedes_source_relative_fallback_for_matching_names() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$old = set_include_path(__DIR__ . "/include_path_lib");
+$first = include "same_name.inc";
+echo "|first=" . $first;
+set_include_path(__DIR__ . "/missing_path");
+$second = include "source_fallback.inc";
+echo "|second=" . $second;
+"#,
+        "tests/fixtures/milestone1619/include_path_ordering.php".to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "loaded=include-path|first=lib-returnloaded=source-relative|second=source-return"
     );
     assert_eq!(execution.exit_code, 0);
 }

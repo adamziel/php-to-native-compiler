@@ -1,0 +1,1 @@
+Uses phpc's deterministic in-memory MySQLi schema-state island for bounded prepared SHOW TABLE STATUS WHERE Name IN metadata predicates; system PHP needs a real database connection and is not comparable.

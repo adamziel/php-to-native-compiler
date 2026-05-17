@@ -46,6 +46,26 @@ pub struct NativeValueHandle {
 pub struct NativeDiagnosticHandle {
     ptr: *mut NativeDiagnostic,
 }
+
+#[repr(C)]
+pub struct NativeArrayHandle {
+    ptr: *mut NativeArray,
+}
+
+#[repr(C)]
+pub struct NativeObjectHandle {
+    ptr: *mut NativeObject,
+}
+
+#[repr(C)]
+pub struct NativeResourceHandle {
+    ptr: *mut NativeResource,
+}
+
+#[repr(C)]
+pub struct NativeReferenceHandle {
+    ptr: *mut NativeReference,
+}
 ```
 
 The exported constructor symbols are:
@@ -75,6 +95,14 @@ The first scalar output helper symbols are:
 - `phpc_native_diagnostic_message_len(NativeDiagnosticHandle) -> usize`
 - `phpc_native_diagnostic_message_clone_bytes(NativeDiagnosticHandle) -> NativeByteBuffer`
 - `phpc_native_diagnostic_free(NativeDiagnosticHandle)`
+- `phpc_native_array_null() -> NativeArrayHandle`
+- `phpc_native_array_is_null(NativeArrayHandle) -> bool`
+- `phpc_native_object_null() -> NativeObjectHandle`
+- `phpc_native_object_is_null(NativeObjectHandle) -> bool`
+- `phpc_native_resource_null() -> NativeResourceHandle`
+- `phpc_native_resource_is_null(NativeResourceHandle) -> bool`
+- `phpc_native_reference_null() -> NativeReferenceHandle`
+- `phpc_native_reference_is_null(NativeReferenceHandle) -> bool`
 
 `phpc_native_scalar_echo_write` returns the total byte length required even when
 the provided buffer is null or smaller than the output. When a non-null buffer
@@ -124,6 +152,12 @@ returns runtime-owned echo bytes for the current value handle, and
 to stdout and returns the number of bytes written. Null handles and host write
 failures return zero until stdout diagnostics have ABI coverage.
 `phpc_native_value_free` releases the value handle.
+
+`NativeArrayHandle`, `NativeObjectHandle`, `NativeResourceHandle`, and
+`NativeReferenceHandle` are null-only opaque handle shapes in this slice. The
+exported null constructors and predicates pin the pointer-sized C ABI forms for
+future generated code and probes, but they do not allocate storage, expose PHP
+array/object/resource/reference values, or change native lowering support.
 
 The Rust runtime can convert this ABI value back into the current interpreter
 `Value` model with `NativeScalarValue::to_value()`.
@@ -240,6 +274,13 @@ diagnostic handle after stdout emission and value-handle release. The current
 lowerable string payloads are still valid UTF-8, so this is a diagnostic
 ownership/cleanup path rather than a native error-reporting or recovery path.
 
+Milestone 1621 adds null-only opaque ABI handle shapes for future native arrays,
+objects, resources, and references. The deterministic probe declares the four
+handle types, calls their null constructors, and checks their null predicates.
+This is an ABI shape seed only; it does not add native storage, ownership,
+copy-on-write, object layout, resource tables, reference containers, or
+production lowering for those PHP value kinds.
+
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
 handles beyond valid UTF-8 byte payloads, diagnostics outside this
@@ -262,6 +303,7 @@ cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1
 cargo test -p php_runtime native_string_handle -- --test-threads=1
 cargo test -p php_runtime native_string -- --test-threads=1
 cargo test -p php_runtime native_diagnostic -- --test-threads=1
+cargo test -p php_runtime native_container_handle -- --test-threads=1
 cargo test -p phpc --test native_runtime_abi -- --test-threads=1
 ```
 
@@ -286,6 +328,9 @@ The tests pin:
   failures, including stable message bytes for null string handles and
   non-UTF-8 byte payloads, success-path diagnostic clearing, null diagnostic
   helper behavior, message-buffer cloning, and diagnostic release.
+- null-only opaque array/object/resource/reference handle shapes, including
+  pointer-sized layout, exported null constructors, exported null predicates,
+  and deterministic compiler-side probe declarations/calls.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
@@ -317,7 +362,8 @@ This ABI does not yet provide:
   helper, valid UTF-8 string-handle-to-value helpers, the narrow
   statement-form direct string `echo`/`print` stdout helper path, and the
   narrow selected string-pointer `echo`/`print` stdout helper paths;
-- arrays, objects, resources, references, or copy-on-write containers;
+- array, object, resource, reference, or copy-on-write storage/semantics beyond
+  the null-only opaque handle shapes and predicates;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
   selected string-pointer `echo`/`print` expressions, or generated-code

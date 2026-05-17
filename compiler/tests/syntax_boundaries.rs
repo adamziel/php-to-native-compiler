@@ -1508,13 +1508,13 @@ fn unsupported_trait_declaration_has_stable_parse_errors() {
             "<?php\ntrait Reusable {\n    private function render() {}\n}\n",
             3,
             13,
-            "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             "<?php\ntrait Reusable {\n    protected static function render() {}\n}\n",
             3,
             22,
-            "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             "<?php\nif (true) {\n    trait Nested {}\n}\n",

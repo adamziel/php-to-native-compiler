@@ -352,10 +352,11 @@ a parse boundary for parameters, return types, and typed properties until the
 type metadata model can represent those shapes without implying runtime
 enforcement.
 Top-level trait declarations are parsed as metadata for empty traits,
-supported properties, and simple public instance methods. A class body may use already-declared traits
+supported properties, simple public instance methods, and simple public static
+methods. A class body may use already-declared traits
 with `use TraitName;`, repeated simple trait-use declarations, or one simple
 comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
-composes those trait properties and public instance methods onto the consuming class metadata
+composes those trait properties plus public instance/static methods onto the consuming class metadata
 and stores the executable method bodies under the consuming class id, so
 ordinary instance method dispatch works through `phpc run`. A narrow trait
 body slice also accepts simple `use TraitName;` and `use TraitA, TraitB;`
@@ -363,7 +364,7 @@ declarations inside traits; classes consuming the outer trait receive the
 nested traits' supported properties, public methods, and constants, while direct
 class-trait metadata remains non-recursive. A narrow trait
 method alias adaptation such as `use TraitName { method as alias; }` clones
-the composed public instance method under the alias name while leaving the
+the composed public instance or static method under the alias name while leaving the
 original method available. The same alias path accepts an explicit `public`
 marker with a same-use qualified trait target, such as
 `use TraitA, TraitB { TraitA::method as public alias; }`, while still treating
@@ -373,10 +374,10 @@ available, and the non-public alias uses the existing method visibility checks
 for dispatch, `method_exists()`, and `get_class_methods()`. Visibility-only
 adaptations such as `use TraitName { method as protected; }` and
 `use TraitName { method as private; }` change the original composed public
-instance trait method visibility without creating an alias. A bounded trait
+instance/static trait method visibility without creating an alias. A bounded trait
 conflict adaptation such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; }` is accepted for
-public instance methods from traits in the same class-body `use`
+public instance/static methods from traits in the same class-body `use`
 declaration; composition registers the winner and skips the named loser method.
 The same current slice accepts comma-separated loser lists such as
 `TraitA::method insteadof TraitB, TraitC` when every loser trait appears in
@@ -384,7 +385,7 @@ the same class-body `use` declaration.
 The current executable interaction slice also allows that selected winning
 method to be exposed through a same-block explicit-public alias, such as
 `use TraitA, TraitB { TraitA::method insteadof TraitB; TraitA::method as public alias; }`.
-When a consuming class declares a public instance method with the same name as
+When a consuming class declares a public instance/static method with the same name as
 a composed public trait method or alias, the class method takes precedence and
 the trait method is skipped in the effective class method table. This lets a
 concrete class override trait fallback methods while still satisfying current
@@ -393,7 +394,7 @@ same public instance method after class-method precedence and bounded
 `insteadof` exclusions are applied, class registration stops with a stable
 trait-conflict diagnostic instead of falling through to generic duplicate
 method metadata. Trait-body `use` declarations inside traits reuse that same
-bounded method-adaptation machinery for supported public instance methods, so
+bounded method-adaptation machinery for supported public instance/static methods, so
 an outer trait can adapt nested trait aliases, visibility, and qualified
 `insteadof` conflict winners before a class consumes the outer trait.
 Public trait constants declared as `const NAME = ...` or
@@ -405,7 +406,7 @@ composed as consuming-class properties for object storage and reflection;
 identical duplicate definitions are deduped, while incompatible duplicate
 definitions stop with a stable trait-use diagnostic. Non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, static/abstract/final or non-public trait methods,
+trait/class constants, abstract/final or non-public trait methods,
 broad executable conflict resolution beyond class-method precedence and the
 current bounded `insteadof` slice, exact PHP fatal-error text for unresolved
 trait conflicts, unqualified visibility-only adaptations across
@@ -910,15 +911,17 @@ The first native-runtime ABI prerequisite lives in
 copied PHP string-handle helper surface, and a bounded valid-UTF-8
 string-handle-to-runtime-value bridge. It also exposes a bounded diagnostic
 handle path for native string-to-value conversion failures when a null string
-handle or non-UTF-8 byte payload is supplied. This is intentionally only an ABI
-seed for future generated-code runtime helper calls. The compiler-side helper
-probe renders `usize`-shaped helper signatures from an explicit pointer-width
-target so the ABI sketch can distinguish 32-bit and 64-bit targets. Linked
-native execution, broad runtime helper calls from normal generated IR,
-production string helper lowering, string interning, binary PHP string value
-handles, arrays, objects, references, copy-on-write, stack frames, general
-diagnostics, and request or
-WordPress host state are still not implemented.
+handle or non-UTF-8 byte payload is supplied. Null-only opaque array, object,
+resource, and reference handle shapes pin pointer-sized future ABI slots without
+claiming storage or semantics for those PHP value kinds. This is intentionally
+only an ABI seed for future generated-code runtime helper calls. The
+compiler-side helper probe renders `usize`-shaped helper signatures from an
+explicit pointer-width target so the ABI sketch can distinguish 32-bit and
+64-bit targets. Linked native execution, broad runtime helper calls from normal
+generated IR, production string helper lowering, string interning, binary PHP
+string value handles, array/object/resource/reference storage,
+copy-on-write, stack frames, general diagnostics, and request or WordPress host
+state are still not implemented.
 
 ## Native Codegen
 
@@ -2087,7 +2090,10 @@ that same recorded schema metadata for the covered `SHOW TABLES`, `SHOW TABLE
 STATUS`, `SHOW COLUMNS`, and `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` filter
 forms, including exact `SHOW TABLE STATUS WHERE Name = ?` table-name probes
 and bounded prepared `SHOW TABLE STATUS WHERE Name LIKE ?` metadata
-predicates; it does not substitute arbitrary SQL parameters. The same placeholder
+predicates, plus bounded `SHOW TABLE STATUS WHERE Name IN (?, ...)`
+table-name lists that validate each parameter as an identifier-shaped string
+and return rows in deterministic table-name order; it does not substitute
+arbitrary SQL parameters. The same placeholder
 transaction and savepoint helpers that
 snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
@@ -2210,8 +2216,9 @@ the request-bag scaffolding and otherwise keeps a bounded local UTF-8 text file
 read using the same process-path-then-repo-root relative path policy as the
 filesystem metadata builtins. The current bounded second argument accepts a
 bool include-path flag; when true for relative local paths, lookup follows
-the same include-path candidate order used by current `include`/`require`
-resolution. The third argument accepts a bounded stream-context resource or
+the same include-path-then-source-relative candidate order used by current
+`include`/`require` resolution. The third argument accepts a bounded
+stream-context resource or
 `null`, and the fourth/fifth arguments apply integer offset plus optional
 non-negative max length over the current UTF-8 string payload. Missing local
 file reads and negative offsets before the start of the current local or
@@ -2354,8 +2361,9 @@ seed, reports PHP/Input/`rb` metadata, and reuses the current seek/read cursor
 machinery without modeling a host SAPI input stream. `fopen($localPath, $mode,
 $use_include_path = false, $context = null)` uses a host local file handle for
 the same simple mode grammar, optionally resolves through the existing bounded
-include-path candidate order, and accepts a bounded stream-context resource
-without applying wrapper-specific context behavior. Local open failures,
+include-path-then-source-relative candidate order, and accepts a bounded
+stream-context resource without applying wrapper-specific context behavior.
+Local open failures,
 including missing read targets, emit a bounded `E_WARNING`, return `false`,
 and continue through the current request-local warning-handler stack before
 the stderr fallback. `stream_context_create()`
@@ -2577,6 +2585,10 @@ through the bounded direct `$closure(...)`, `call_user_func()`,
 positional-array `call_user_func_array()`, and `ReflectionFunction::invoke()`
 paths. Invocation prebinds the closure's by-value captured snapshot into the
 callee local scope and then reuses the user-function call frame machinery.
+For `call_user_func_array()` closure callbacks, the same checked callback
+argument evaluator used by user functions builds covered reference parameter
+bindings, then the closure frame combines those bindings with the captured
+locals before executing.
 Static closure binding semantics are not represented yet. Arrow values do not
 bind implicit captures or execute their synthetic return bodies. Static arrow
 functions stop at a dedicated parse boundary until no-`$this` binding,
@@ -2851,18 +2863,21 @@ request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and
 `new ReflectionFunction($closure)` can execute the body for the current
-untyped positional by-value argument slice. Reflection also exposes the bounded
-`{closure}` name, current source file/start/end line metadata, parameter
-metadata, return type, false doc-comment metadata, and false
+untyped positional by-value argument slice, plus the covered
+`call_user_func_array()` closure-callback reference parameter slice when the
+argument array carries explicit covered reference elements. Reflection also
+exposes the bounded `{closure}` name, current source file/start/end line
+metadata, parameter metadata, return type, false doc-comment metadata, and false
 by-reference-return status. Explicit `use (&$name)` closure captures store the
 source direct-variable cell, and closure invocation prebinds that cell into the
 closure local scope so closure writes update the captured variable even after
 the creating user-function scope has returned. The function path intentionally
 rejects other internal functions, by-reference capture of array-offset/property/
-ArrayAccess alias roots, by-reference invocation, typed parameter/return declarations during
-invocation, named closure callback arguments, and reference returns until those
-callable execution and aliasing sources exist, and doc-comment association does
-not yet model attributes or every PHP trivia edge case.
+ArrayAccess alias roots, direct closure and `call_user_func()` reference
+parameter invocation, typed parameter/return declarations during invocation,
+named closure callback arguments, and reference returns until those callable
+execution and aliasing sources exist, and doc-comment association does not yet
+model attributes or every PHP trivia edge case.
 `ReflectionMethod::invoke()` and `invokeArgs()` use the same request-local
 method metadata and re-enter the existing method call path for declared
 user-class methods, including public, protected, and private reflected
@@ -2870,11 +2885,14 @@ methods. Non-static invocation preserves `$this` object identity for mutations,
 uses the reflected declaring class as the method context, and keeps the target
 object's class as the called class for `static::` lookup; static invocation
 uses the reflected class for inherited `static::` lookup and accepts `null` or
-object targets. Interface and trait method reflection targets, internal
-methods, by-reference invocation, reference returns, typed parameter/return
-declarations during invocation, and native lowering remain outside this
-bounded reflection invocation path. Method `invokeArgs()` has the same
-positional-only array treatment as function `invokeArgs()`.
+object targets. Static trait methods reflected from the trait itself also
+execute through the by-value argument path when the target is `null` or an
+object. Interface methods, non-static trait methods, abstract trait methods,
+trait-method `self::`/`static::` class context fidelity, internal methods,
+by-reference invocation, reference returns, typed parameter/return declarations
+during invocation, and native lowering remain outside this bounded reflection
+invocation path. Method `invokeArgs()` has the same positional-only array
+treatment as function `invokeArgs()`.
 `ReflectionParameter` follows the same request-local state pattern for
 parameters reached from `ReflectionMethod::getParameters()`,
 `ReflectionFunction::getParameters()`,
@@ -3013,12 +3031,11 @@ local files in statement and expression position. It uses these rules:
 - the interpreter carries the current file path in runtime execution context
 - only paths that evaluate to PHP strings are accepted
 - absolute paths resolve directly
-- relative paths resolve against the directory of the file containing the
-  `require` statement
-- if that source-relative path is not present, relative paths fall back through
-  the current `include_path` string managed by `get_include_path()` and
-  `set_include_path()`; the default is `"."`, path-list entries use
-  `PATH_SEPARATOR`, and empty entries are treated as `.`
+- relative paths search the current `include_path` string managed by
+  `get_include_path()` and `set_include_path()` before falling back to the
+  directory of the file containing the construct; the default include path is
+  `"."`, path-list entries use `PATH_SEPARATOR`, and empty entries are treated
+  as `.`
 - included files are parsed as PHP files with `<?php`, register top-level
   function/class declarations into the active interpreter, and execute in the
   caller scope
@@ -3041,10 +3058,10 @@ local files in statement and expression position. It uses these rules:
   and return-value behavior have explicit lowering support
 
 Unsupported include/require behavior remains: missing-file `require`
-fatal/error recovery, exact PHP include-path search ordering,
-process-current-working-directory behavior beyond the default `"."` include
-path entry and fallback used when no source file is available, failed-include
-realpath-cache side effects, stream wrappers, `phar://`, URL includes,
+fatal/error recovery, process-current-working-directory behavior beyond the
+default `"."` include path entry and fallback used when no source file is
+available, failed-include realpath-cache side effects, stream wrappers,
+`phar://`, URL includes,
 autoload interaction, opcache behavior, declaration-order dependencies such as
 a required file declaring `class Child extends Base` only after requiring the
 base class, exact source mapping for declarations after include, and exact

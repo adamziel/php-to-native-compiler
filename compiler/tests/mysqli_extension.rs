@@ -6218,6 +6218,41 @@ while ($stmt_row = mysqli_fetch_assoc($result)) {
 }
 
 #[test]
+fn mysqli_prepared_table_status_filters_wordpress_schema_name_in_predicate() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_status_in_alpha (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(191) NOT NULL default '', PRIMARY KEY  (ID), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci");
+mysqli_query($handle, "CREATE TABLE wp_probe_status_in_beta (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(191) NOT NULL default '', PRIMARY KEY  (ID), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "CREATE TABLE wp_probe_status_in_other (ID bigint(20) unsigned NOT NULL auto_increment, meta_key varchar(191) NOT NULL default '', PRIMARY KEY  (ID), KEY meta_key (meta_key)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin");
+$in = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE Name IN (?, ?)", array("wp_probe_status_in_beta", "wp_probe_status_in_alpha"));
+echo "in=", mysqli_num_rows($in), ":";
+while ($row = mysqli_fetch_assoc($in)) {
+    echo $row["Name"], ":", $row["Collation"], ";";
+}
+$ticked = mysqli_execute_query($handle, "SHOW TABLE STATUS WHERE `Name` IN (?, ?)", array("wp_probe_status_in_missing", "wp_probe_status_in_beta"));
+$ticked_row = mysqli_fetch_assoc($ticked);
+echo "|ticked=", mysqli_num_rows($ticked), ":", $ticked_row["Name"];
+$stmt = mysqli_prepare($handle, "SHOW TABLE STATUS WHERE Name IN (?, ?)");
+mysqli_stmt_execute($stmt, array("wp_probe_status_in_other", "wp_probe_status_in_alpha"));
+$result = mysqli_stmt_get_result($stmt);
+echo "|stmt=", mysqli_num_rows($result), ":";
+while ($stmt_row = mysqli_fetch_assoc($result)) {
+    echo $stmt_row["Name"], ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "in=2:wp_probe_status_in_alpha:utf8mb4_unicode_520_ci;wp_probe_status_in_beta:utf8mb4_unicode_ci;|ticked=1:wp_probe_status_in_beta|stmt=2:wp_probe_status_in_alpha;wp_probe_status_in_other;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

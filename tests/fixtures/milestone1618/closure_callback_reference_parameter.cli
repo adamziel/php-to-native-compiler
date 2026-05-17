@@ -1,0 +1,3 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1618/closure_callback_reference_parameter.php
+autoload:closure:1|autoload:closure:1|1
+autoload:closure:1:again:2|autoload:closure:1:again:2|2

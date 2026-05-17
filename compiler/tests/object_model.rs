@@ -5976,6 +5976,31 @@ echo $child->invokeArgs(new ChildHook(), array("shutdown", 50));
 }
 
 #[test]
+fn reflection_method_invokes_static_trait_methods() {
+    let execution = run_source(
+        r#"<?php
+trait HookTools {
+    public static function tag($hook, $priority = 10) {
+        return "trait:" . $hook . ":" . $priority;
+    }
+}
+
+class Plugin {
+    use HookTools;
+}
+
+$method = new ReflectionMethod(HookTools::class, "tag");
+echo $method->invoke(null, "init"), "\n";
+echo $method->invokeArgs(new Plugin(), array("save_post", 20));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "trait:init:10\ntrait:save_post:20");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_invokes_non_public_user_class_methods() {
     let execution = run_source(
         r#"<?php
@@ -10893,7 +10918,7 @@ trait Logs {
 "#,
             3,
             22,
-            "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             r#"<?php
