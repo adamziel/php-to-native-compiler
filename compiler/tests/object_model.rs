@@ -6001,6 +6001,34 @@ echo $method->invokeArgs(new Plugin(), array("save_post", 20));
 }
 
 #[test]
+fn reflection_static_trait_methods_bind_trait_context() {
+    let execution = run_source(
+        r#"<?php
+trait HookTools {
+    public static function context($hook) {
+        return __CLASS__ . "|" . __METHOD__ . "|" . self::class . "|" . static::class . "|" . get_called_class() . "|" . $hook;
+    }
+}
+
+class Plugin {
+    use HookTools;
+}
+
+$method = new ReflectionMethod(HookTools::class, "context");
+echo $method->invoke(null, "init"), "\n";
+echo $method->invokeArgs(new Plugin(), array("save_post"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "HookTools|HookTools::context|HookTools|HookTools|HookTools|init\nHookTools|HookTools::context|HookTools|HookTools|HookTools|save_post"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_invokes_non_public_user_class_methods() {
     let execution = run_source(
         r#"<?php

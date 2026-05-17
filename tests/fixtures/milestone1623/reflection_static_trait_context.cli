@@ -1,0 +1,6 @@
+phpc run reflection_static_trait_context.php
+stdout:
+HookTools|HookTools::context|HookTools|HookTools|HookTools|init
+HookTools|HookTools::context|HookTools|HookTools|HookTools|save_post
+stderr:
+exit: 0

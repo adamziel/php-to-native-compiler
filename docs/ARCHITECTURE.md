@@ -917,11 +917,13 @@ claiming storage or semantics for those PHP value kinds. This is intentionally
 only an ABI seed for future generated-code runtime helper calls. The
 compiler-side helper probe renders `usize`-shaped helper signatures from an
 explicit pointer-width target so the ABI sketch can distinguish 32-bit and
-64-bit targets. Linked native execution, broad runtime helper calls from normal
-generated IR, production string helper lowering, string interning, binary PHP
-string value handles, array/object/resource/reference storage,
-copy-on-write, stack frames, general diagnostics, and request or WordPress host
-state are still not implemented.
+64-bit targets and now includes a deterministic branch on a nullable
+string-to-value result that clones and frees the diagnostic message only on the
+failure path. Linked native execution, broad runtime helper calls from normal
+generated IR, production diagnostic reporting, string interning, binary PHP
+string value handles, array/object/resource/reference storage, copy-on-write,
+stack frames, general diagnostics, and request or WordPress host state are
+still not implemented.
 
 ## Native Codegen
 
@@ -1289,9 +1291,9 @@ model PHP zvals, symbol-table storage, PHP numeric coercion,
 references/copy-on-write, broad dynamic string-pointer output,
 locale/version-specific float formatting, integer overflow promotion, assembly
 linking/execution, or native PHP error objects. The native runtime ABI probe has
-diagnostic-handle calls for string-to-value conversion failures, but normal
-generated LLVM does not branch on helper failure or surface those diagnostics
-yet.
+diagnostic-handle calls and one deterministic failure branch for string-to-value
+conversion failures, but normal generated LLVM does not branch on helper
+failure or surface those diagnostics yet.
 Finite same-type float arithmetic and finite float unary-minus results are
 bounded and tracked only for later scalar folds such as strict identity when
 all possible results are proven. Float overflow, `INF`, and `NAN`
@@ -2080,7 +2082,11 @@ predicates before result materialization. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
 wildcards, backslash-escaped `%`, `_`, and `\` literals, and a bounded
 single-character `ESCAPE '<char>'` clause for table names, table status rows,
-column names, and index names. A per-handle accepted
+column names, and index names. Direct literal
+`SHOW TABLE STATUS WHERE Name IN ('table', ...)` probes over the same recorded
+schema state validate non-empty identifier-shaped table-name lists, skip
+missing names, and return rows in deterministic table-name order. A per-handle
+accepted
 `SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'` toggles the bounded schema
 metadata `LIKE` parser so implicit backslash escaping is disabled for later
 metadata filters on that handle while explicit `ESCAPE '<char>'` clauses
@@ -2109,7 +2115,7 @@ reads/deletes, option-name `LIKE` wildcard semantics beyond direct read
 filters, prepared option-name prefix scans, prepared option-row `ESCAPE`
 clauses, and schema metadata filters, exact MySQL
 affected-row or insert-ID edge cases, prepared schema placeholders beyond the
-single string filter parameter on documented metadata probes, real
+single string filter parameter and documented table-status `IN` lists, real
 transactional
 DDL/isolation/locking, or WordPress cleanup against tables outside the
 deterministic `wp_options` state island; it is not a general SQL engine,
@@ -2585,6 +2591,10 @@ through the bounded direct `$closure(...)`, `call_user_func()`,
 positional-array `call_user_func_array()`, and `ReflectionFunction::invoke()`
 paths. Invocation prebinds the closure's by-value captured snapshot into the
 callee local scope and then reuses the user-function call frame machinery.
+Direct `$closure(...)` invocation also routes through the checked direct-call
+argument evaluator, so current direct-variable and direct array-offset
+by-reference parameter bindings are installed before the closure body executes
+and written back through the existing alias metadata.
 For `call_user_func_array()` closure callbacks, the same checked callback
 argument evaluator used by user functions builds covered reference parameter
 bindings, then the closure frame combines those bindings with the captured
@@ -2863,9 +2873,11 @@ request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and
 `new ReflectionFunction($closure)` can execute the body for the current
-untyped positional by-value argument slice, plus the covered
-`call_user_func_array()` closure-callback reference parameter slice when the
-argument array carries explicit covered reference elements. Reflection also
+untyped positional by-value argument slice, plus covered direct
+`$closure(...)` by-reference parameters over direct-variable and direct
+nested array-offset arguments, and the covered `call_user_func_array()`
+closure-callback reference parameter slice when the argument array carries
+explicit covered reference elements. Reflection also
 exposes the bounded `{closure}` name, current source file/start/end line
 metadata, parameter metadata, return type, false doc-comment metadata, and false
 by-reference-return status. Explicit `use (&$name)` closure captures store the
@@ -2873,8 +2885,8 @@ source direct-variable cell, and closure invocation prebinds that cell into the
 closure local scope so closure writes update the captured variable even after
 the creating user-function scope has returned. The function path intentionally
 rejects other internal functions, by-reference capture of array-offset/property/
-ArrayAccess alias roots, direct closure and `call_user_func()` reference
-parameter invocation, typed parameter/return declarations during invocation,
+ArrayAccess alias roots, `call_user_func()` closure reference-parameter
+parity, typed parameter/return declarations during invocation,
 named closure callback arguments, and reference returns until those callable
 execution and aliasing sources exist, and doc-comment association does not yet
 model attributes or every PHP trivia edge case.
@@ -2887,8 +2899,11 @@ object's class as the called class for `static::` lookup; static invocation
 uses the reflected class for inherited `static::` lookup and accepts `null` or
 object targets. Static trait methods reflected from the trait itself also
 execute through the by-value argument path when the target is `null` or an
-object. Interface methods, non-static trait methods, abstract trait methods,
-trait-method `self::`/`static::` class context fidelity, internal methods,
+object, with a narrow trait reflection context for `__CLASS__`, `__METHOD__`,
+`self::class`, `static::class`, and `get_called_class()`. Interface methods,
+non-static trait methods, abstract trait methods, trait
+`self::method()`/`static::method()` calls, trait class constants, `parent`
+context behavior, `new self`/`new static` from reflected traits, internal methods,
 by-reference invocation, reference returns, typed parameter/return declarations
 during invocation, and native lowering remain outside this bounded reflection
 invocation path. Method `invokeArgs()` has the same positional-only array
@@ -3054,18 +3069,22 @@ local files in statement and expression position. It uses these rules:
   `E_WARNING` diagnostics through the current error-handler stack or stderr
   fallback, return `false` in expression position, continue execution, and do
   not mark the missing file as loaded for `_once` de-duplication
+- missing local `require` and `require_once` reads emit the same bounded
+  `E_WARNING` pair, then append a bounded PHP-shaped fatal stderr line, set
+  the interpreter exit signal to `255`, and stop subsequent statement
+  execution for both statement and expression forms
 - native lowering rejects include/require until file loading, scope effects,
   and return-value behavior have explicit lowering support
 
-Unsupported include/require behavior remains: missing-file `require`
-fatal/error recovery, process-current-working-directory behavior beyond the
-default `"."` include path entry and fallback used when no source file is
-available, failed-include realpath-cache side effects, stream wrappers,
-`phar://`, URL includes,
+Unsupported include/require behavior remains: process-current-working-directory
+behavior beyond the default `"."` include path entry and fallback used when no
+source file is available, failed-include realpath-cache side effects, stream
+wrappers, `phar://`, URL includes,
 autoload interaction, opcache behavior, declaration-order dependencies such as
 a required file declaring `class Child extends Base` only after requiring the
 base class, exact source mapping for declarations after include, and exact
-PHP warning-vs-fatal text and recovery details.
+PHP warning-vs-fatal text, fatal `Error` object/stack trace shape,
+shutdown/destructor ordering after fatal, and broader recovery details.
 
 ## Eval Fallback Design
 

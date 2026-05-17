@@ -478,10 +478,12 @@ object/class, closure, and function-call native boundaries until reflection
 objects, closure metadata, and builtin dispatch have native runtime support.
 `ReflectionMethod::invoke()`/`invokeArgs()` execute declared user-class methods
 and the current bounded static trait-method slice for trait methods reflected
-from the trait itself. Interface methods, non-static and abstract trait
-methods, trait `self::`/`static::` context fidelity, by-reference invocation,
-typed parameter/return enforcement, and native reflection invocation remain
-unsupported.
+from the trait itself, including trait-bound `__CLASS__`, `__METHOD__`,
+`self::class`, `static::class`, and `get_called_class()`. Interface methods,
+non-static and abstract trait methods, trait `self::method()`/
+`static::method()` calls, trait class constants, `parent` context behavior,
+`new self`/`new static` from reflected traits, by-reference invocation, typed
+parameter/return enforcement, and native reflection invocation remain unsupported.
 
 ## Unsupported Edge Cases
 

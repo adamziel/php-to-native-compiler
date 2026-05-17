@@ -1,0 +1,1 @@
+System PHP emits host-version-specific fatal Error text and stack traces for missing require files; this fixture pins phpc's bounded warning plus fatal-exit shape.

@@ -109,6 +109,36 @@ entry:
   ret i64 %len
 }
 
+define i64 @phpc_probe_string_to_value_diagnostic_branch() {
+entry:
+  %diagnostic_slot = alloca %phpc.NativeDiagnosticHandle
+  store %phpc.NativeDiagnosticHandle zeroinitializer, ptr %diagnostic_slot
+  %bytes = getelementptr inbounds [1 x i8], ptr @phpc.probe.invalid, i64 0, i64 0
+  %string = call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %bytes, i64 1)
+  %value = call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle %string, ptr %diagnostic_slot)
+  %value_ptr = extractvalue %phpc.NativeValueHandle %value, 0
+  %value_failed = icmp eq ptr %value_ptr, null
+  br i1 %value_failed, label %report_diagnostic, label %echo_value
+
+report_diagnostic:
+  %diagnostic = load %phpc.NativeDiagnosticHandle, ptr %diagnostic_slot
+  %diagnostic_len = call i64 @phpc_native_diagnostic_message_len(%phpc.NativeDiagnosticHandle %diagnostic)
+  %message = call %phpc.NativeByteBuffer @phpc_native_diagnostic_message_clone_bytes(%phpc.NativeDiagnosticHandle %diagnostic)
+  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %message)
+  call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)
+  br label %cleanup
+
+echo_value:
+  %written = call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
+  br label %cleanup
+
+cleanup:
+  %result = phi i64 [ %diagnostic_len, %report_diagnostic ], [ %written, %echo_value ]
+  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
+  call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
+  ret i64 %result
+}
+
 define i1 @phpc_probe_container_handle_null_shapes() {
 entry:
   %array = call %phpc.NativeArrayHandle @phpc_native_array_null()

@@ -281,17 +281,26 @@ This is an ABI shape seed only; it does not add native storage, ownership,
 copy-on-write, object layout, resource tables, reference containers, or
 production lowering for those PHP value kinds.
 
+Milestone 1627 adds the first deterministic generated diagnostic branch probe.
+The probe calls `phpc_native_value_from_string_with_diagnostic` with invalid
+UTF-8 bytes, branches on the returned nullable `NativeValueHandle`, clones and
+frees the diagnostic message only on the failure branch, and keeps the existing
+success branch routed through `phpc_native_value_echo_stdout`. This pins the
+LLVM control-flow shape needed before normal generated helper calls can report
+runtime ABI failures. Production `phpc compile` string output still uses the
+existing helper cleanup path and does not branch on or print diagnostics.
+
 This is still not linked native execution. Dynamic string-pointer expression
 output beyond the known selected string-pointer slices, binary PHP string value
 handles beyond valid UTF-8 byte payloads, diagnostics outside this
-string-to-value conversion helper, generated-code branching on failed helper
-returns, diagnostic message printing, request state, arrays, objects,
-resources, references, WordPress host state, and C fallback assembly helper
-calls remain outside this ABI slice. The snapshot uses the selected target's
-`usize`/pointer-width shape; a real linked native backend still needs full
-target data layout, calling-convention validation, runtime linking, and runtime
-helper emission before broader helper calls can execute truthfully for all
-supported targets.
+string-to-value conversion helper, production generated-code branching on
+failed helper returns, production diagnostic message printing, request state,
+arrays, objects, resources, references, WordPress host state, and C fallback
+assembly helper calls remain outside this ABI slice. The snapshot uses the
+selected target's `usize`/pointer-width shape; a real linked native backend
+still needs full target data layout, calling-convention validation, runtime
+linking, and runtime helper emission before broader helper calls can execute
+truthfully for all supported targets.
 
 ## Verification
 
@@ -331,6 +340,9 @@ The tests pin:
 - null-only opaque array/object/resource/reference handle shapes, including
   pointer-sized layout, exported null constructors, exported null predicates,
   and deterministic compiler-side probe declarations/calls.
+- a deterministic compiler-side diagnostic branch probe that tests a nullable
+  value-handle return, clones and frees the diagnostic message on the failure
+  branch, and preserves the success branch shape through stdout echo.
 - the deterministic compiler-side IR probe that names the exported scalar echo
   helper declarations without claiming linked native execution.
 - explicit 32-bit and 64-bit `usize` IR rendering for scalar echo, owned
@@ -366,8 +378,8 @@ This ABI does not yet provide:
   the null-only opaque handle shapes and predicates;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
-  selected string-pointer `echo`/`print` expressions, or generated-code
-  diagnostic branching/message emission for those helper calls;
+  selected string-pointer `echo`/`print` expressions, or production
+  generated-code diagnostic branching/message emission for those helper calls;
 - symbol tables, stack frames, call lookup, or general diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

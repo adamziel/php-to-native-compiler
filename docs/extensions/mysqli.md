@@ -855,7 +855,11 @@ not read a host database, execute CREATE/ALTER TABLE, model dbDelta diffs,
 mutate schema, inspect real indexes/collations beyond those fixed markers, or
 model warning/error fidelity.
 For dynamic schema metadata recorded through the bounded `CREATE TABLE` path,
-prepared `SHOW TABLE STATUS WHERE Name = ?` probes, including
+direct literal `SHOW TABLE STATUS WHERE Name IN ('table', ...)` probes,
+including ``WHERE `Name` IN (...)`` spelling, accept non-empty
+single-quoted identifier-shaped table-name lists through `mysqli_query()`,
+returning deterministic table-status rows in table-name order and skipping
+missing names. Prepared `SHOW TABLE STATUS WHERE Name = ?` probes, including
 ``WHERE `Name` = ?`` spelling, return deterministic table-status rows through
 `mysqli_execute_query()` and `mysqli_stmt_execute(..., array(...))` when the
 single parameter is an identifier-shaped string table name. Missing names
@@ -871,9 +875,8 @@ placeholder list whose params are all identifier-shaped string table names,
 returning deterministic table-status rows in table-name order and skipping
 missing names. This does not add arbitrary prepared `SHOW TABLE STATUS`
 predicates beyond the documented `Name` equality/`LIKE`/`IN` forms,
-identifier placeholders, literal `IN (...)` status predicates, joined metadata
-queries, exact table counters/timestamps, host database inspection, or native
-lowering.
+identifier placeholders, joined metadata queries, exact table
+counters/timestamps, host database inspection, or native lowering.
 
 For the placeholder connection, `mysqli_store_result($handle)` and
 `mysqli_use_result($handle)` return deterministic `false` for clean

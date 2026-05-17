@@ -1,0 +1,3 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1624/direct_closure_reference_parameter.php
+autoload:direct:1|autoload:direct:1|1
+start:slot:2|start:slot:2|2

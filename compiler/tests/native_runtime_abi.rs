@@ -196,6 +196,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("define i64 @phpc_probe_string_to_value_diagnostic_branch()"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
         "{ir}"
     );
@@ -211,6 +215,14 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         ir.contains(
             "call void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle %diagnostic)"
         ),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("br i1 %value_failed, label %report_diagnostic, label %echo_value"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phi i64 [ %diagnostic_len, %report_diagnostic ], [ %written, %echo_value ]"),
         "{ir}"
     );
     assert!(
@@ -254,6 +266,14 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i32 @phpc_probe_string_to_value_diagnostic()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_string_to_value_diagnostic_branch()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phi i32 [ %diagnostic_len, %report_diagnostic ], [ %written, %echo_value ]"),
         "{ir}"
     );
     assert!(
@@ -332,6 +352,10 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_string_to_value_diagnostic()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_string_to_value_diagnostic_branch()"),
         "{ir}"
     );
     assert!(

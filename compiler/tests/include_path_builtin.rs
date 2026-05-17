@@ -104,6 +104,64 @@ echo "|continued";
 }
 
 #[test]
+fn missing_require_emits_warnings_then_fatal_exit() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function capture_require_warning($errno, $errstr) {
+    echo "|warning:" . $errno;
+    echo ":" . (str_contains($errstr, "missing-wordpress-required") ? "path" : "missing");
+    echo ":" . (str_contains($errstr, "Failed to open stream") ? "open" : (str_contains($errstr, "Failed opening") ? "opening" : "other"));
+    return true;
+}
+
+set_error_handler("capture_require_warning", E_WARNING);
+require "missing-wordpress-required.php";
+echo "|not-reached";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "|warning:2:path:open|warning:2:path:opening"
+    );
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stderr.contains(
+        "PHP Fatal error:  require(): Failed opening required 'tests/fixtures/milestone1303/missing-wordpress-required.php' (include_path='.') in tests/fixtures/milestone1303/include_path_resolution.php on line 10"
+    ), "{}", execution.stderr);
+}
+
+#[test]
+fn missing_require_once_expression_emits_warnings_then_fatal_exit() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function capture_require_once_warning($errno, $errstr) {
+    echo "|warning:" . $errno;
+    echo ":" . (str_contains($errstr, "missing-wordpress-required-once") ? "path" : "missing");
+    echo ":" . (str_contains($errstr, "Failed to open stream") ? "open" : (str_contains($errstr, "Failed opening") ? "opening" : "other"));
+    return true;
+}
+
+set_error_handler("capture_require_once_warning", E_WARNING);
+$result = require_once "missing-wordpress-required-once.php";
+echo "|not-reached";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "|warning:2:path:open|warning:2:path:opening"
+    );
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stderr.contains(
+        "PHP Fatal error:  require_once(): Failed opening required 'tests/fixtures/milestone1303/missing-wordpress-required-once.php' (include_path='.') in tests/fixtures/milestone1303/include_path_resolution.php on line 10"
+    ), "{}", execution.stderr);
+}
+
+#[test]
 fn include_path_builtins_reject_forms_outside_current_subset() {
     let get_too_many = runtime_error("<?php\necho get_include_path('extra');\n");
     assert_eq!(get_too_many.line, 2);

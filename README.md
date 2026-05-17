@@ -248,8 +248,8 @@ incorrect native code.
   bounded direct string-keyed `$GLOBALS['name']` root-symbol reads/writes,
   bounded namespace-scoped function declarations and unqualified same-namespace
   calls with global fallback lookup,
-  inert no-capture anonymous, static anonymous, and non-static arrow closure
-  values,
+  no-capture anonymous, static anonymous, and non-static arrow closure
+  values with bounded direct/callback execution for ordinary closures,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement, while parenthesized DNF-shaped type declarations and
@@ -361,11 +361,13 @@ incorrect native code.
   metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
   `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection, including
   bounded schema metadata `LIKE` wildcards and single-character `ESCAPE`
-  clauses, plus a bounded `NO_BACKSLASH_ESCAPES` branch for those schema
+  clauses, literal `SHOW TABLE STATUS WHERE Name IN (...)` table-name lists,
+  plus a bounded `NO_BACKSLASH_ESCAPES` branch for those schema
   metadata `LIKE` filters, and one-string-parameter prepared metadata filters
   for the documented `SHOW TABLES`, `SHOW TABLE STATUS`, `SHOW COLUMNS`, and
   `SHOW INDEX`/`SHOW KEYS` equality/`LIKE` forms, including exact
-  `SHOW TABLE STATUS WHERE Name = ?` table-name probes;
+  `SHOW TABLE STATUS WHERE Name = ?` table-name probes and bounded prepared
+  `SHOW TABLE STATUS WHERE Name IN (?, ...)` table-name lists;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
   index inspection, expression indexes, fulltext parser clauses, index
   opclass/parser metadata, exact
@@ -516,7 +518,9 @@ incorrect native code.
   metadata objects with declaring-class, visibility, static, final, abstract,
   constructor, modifier-mask, class-method file/start/end/doc-comment source
   metadata, parameter-list, return-type inspection, and public non-static
-  user-class by-value `invoke()`/`invokeArgs()`,
+  user-class by-value `invoke()`/`invokeArgs()`, plus static trait-method
+  by-value invocation with bounded trait `__CLASS__`, `__METHOD__`,
+  `self::class`, `static::class`, and `get_called_class()` context,
   bounded
   `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
@@ -569,9 +573,12 @@ same-namespace function, and namespace-scoped top-level constant slices,
 including leading-backslash fully-qualified function calls such as `\strlen()`,
 leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path,
-include-path, and missing-include recovery statement/expression slice, eval,
-generators, closure behavior beyond the current direct `$closure(...)`,
-`call_user_func()`/`call_user_func_array()` positional by-value, and bounded
+include-path, missing-include recovery, and bounded missing-require fatal
+statement/expression slice, eval, generators, closure behavior beyond the
+current direct `$closure(...)` by-value and direct-variable/direct-array-offset
+reference-parameter slice, `call_user_func()`/`call_user_func_array()`
+positional by-value, bounded `call_user_func_array()` closure
+reference-parameter support, and bounded
 `ReflectionFunction::invoke()` slices, explicit and implicit capture binding,
 named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
@@ -652,7 +659,7 @@ bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionPar
 and trait method source-file persistence, exact `ReflectionClass::getMethod()`
 and `getMethods()` exception objects/text and broad trait-order parity,
 reflection invocation beyond the current by-value user function/user-class
-method and named bounded internal function slice, non-public or dynamic
+method, static trait-method, and named bounded internal function slices, non-public or dynamic
 `ReflectionProperty` value mutation, adapted recursive trait metadata edge
 cases, and
 direct/property-held `ArrayAccess` offsets and
@@ -858,13 +865,15 @@ owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
 string-handle-to-runtime-value bridge with diagnostic handles for that
 conversion's null-handle and non-UTF-8 failure cases. It also pins null-only
 opaque array, object, resource, and reference handle shapes for future native
-storage work. Normal generated LLVM now uses the string/value ABI for a narrow
-output path: statement-form `echo` and `print` of a direct compile-time string
-value call runtime string/value helpers and `phpc_native_value_echo_stdout`.
+storage work, plus a deterministic probe branch for string-to-value diagnostic
+message ownership. Normal generated LLVM now uses the string/value ABI for a
+narrow output path: statement-form `echo` and `print` of a direct compile-time
+string value call runtime string/value helpers and `phpc_native_value_echo_stdout`.
 Dynamic string-pointer expression output beyond the documented selected-string
-slices, linked native execution, binary PHP string value handles,
-array/object/resource/reference storage semantics, general diagnostics, and
-broad production runtime string-helper lowering are not implemented.
+slices, production helper diagnostic reporting, linked native execution, binary
+PHP string value handles, array/object/resource/reference storage semantics,
+general diagnostics, and broad production runtime string-helper lowering are
+not implemented.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,

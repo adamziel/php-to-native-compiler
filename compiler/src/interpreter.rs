@@ -179,6 +179,8 @@ struct Interpreter {
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
+    trait_class_context: Vec<String>,
+    trait_called_class_context: Vec<String>,
     response_headers: Vec<String>,
     response_status_code: Option<i64>,
     output_buffers: Vec<String>,
@@ -3379,6 +3381,8 @@ impl Interpreter {
             function_context: Vec::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
+            trait_class_context: Vec::new(),
+            trait_called_class_context: Vec::new(),
             response_headers: Vec::new(),
             response_status_code: None,
             output_buffers: Vec::new(),
@@ -5462,7 +5466,7 @@ impl Interpreter {
 
         let source = match fs::read_to_string(&path.read_path) {
             Ok(source) => source,
-            Err(error) if !required => {
+            Err(error) => {
                 self.emit_warning(
                     &format!("{construct}()"),
                     format!(
@@ -5480,18 +5484,12 @@ impl Interpreter {
                     ),
                     span,
                 )?;
+                if required {
+                    self.emit_required_file_fatal(construct, &path.source_file, span);
+                    self.exit_signal = Some(255);
+                    return Ok((Flow::Exit(255), Value::Null));
+                }
                 return Ok((Flow::Normal, Value::Bool(false)));
-            }
-            Err(error) => {
-                return Err(Diagnostic::new(
-                    Phase::Io,
-                    span.line,
-                    span.column,
-                    format!(
-                        "failed to read required file {}: {error}",
-                        path.source_file.display()
-                    ),
-                ));
             }
         };
         self.cache_bounded_realpath_entry_for_local_path(&path.read_path);
@@ -5514,6 +5512,22 @@ impl Interpreter {
             Flow::Continue { depth, span } => Ok((Flow::Continue { depth, span }, Value::Null)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
+    }
+
+    fn emit_required_file_fatal(&mut self, construct: &str, path: &Path, span: Span) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if !self.stderr.is_empty() {
+            self.stderr.push('\n');
+        }
+        self.stderr.push_str(&format!(
+            "PHP Fatal error:  {construct}(): Failed opening required '{}' (include_path='{}') in {file} on line {}",
+            path.display(),
+            self.include_path,
+            span.line
+        ));
     }
 
     fn resolve_file_get_contents_path(&self, path: &str, use_include_path: bool) -> PathBuf {
@@ -11123,6 +11137,9 @@ impl Interpreter {
             return Ok(String::new());
         };
         let Some(class_id) = self.class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_class_context.last() {
+                return Ok(format!("{trait_name}::{function_name}"));
+            }
             return Ok(function_name.clone());
         };
         let class = self.classes.get(class_id).ok_or_else(|| {
@@ -11136,6 +11153,9 @@ impl Interpreter {
 
     fn magic_class_value(&self, span: Span) -> CompileResult<String> {
         let Some(class_id) = self.class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_class_context.last() {
+                return Ok(trait_name.clone());
+            }
             return Ok(String::new());
         };
         let class = self.classes.get(class_id).ok_or_else(|| {
@@ -18887,6 +18907,104 @@ impl Interpreter {
         )
     }
 
+    fn invoke_static_trait_reflection_method(
+        &mut self,
+        trait_name: &str,
+        method_name: &str,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = self.trait_reflection_method_function(trait_name, method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_supported_function_signature(function, values.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        self.trait_class_context.push(trait_name.to_string());
+        self.trait_called_class_context.push(trait_name.to_string());
+        let result = self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        self.trait_called_class_context.pop();
+        self.trait_class_context.pop();
+        result
+    }
+
+    fn invoke_closure_value_direct(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<Value> {
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        context,
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        if closure.is_arrow() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    context,
+                    "arrow closure invocation is not implemented",
+                ),
+            ));
+        }
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
+        let prebound_locals = Self::closure_prebound_locals(&closure);
+        self.call_user_function_with_checked_values_and_locals(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+            prebound_locals,
+        )
+    }
+
+    fn closure_prebound_locals(closure: &PhpClosure) -> Vec<PreboundLocal> {
+        closure
+            .captures()
+            .iter()
+            .map(|capture| {
+                if capture.by_reference() {
+                    PreboundLocal::Cell {
+                        name: capture.name().to_string(),
+                        cell: capture.cell(),
+                    }
+                } else {
+                    PreboundLocal::Value {
+                        name: capture.name().to_string(),
+                        value: capture.value(),
+                    }
+                }
+            })
+            .collect()
+    }
+
     fn invoke_reflection_method(
         &mut self,
         state: ReflectionMethodState,
@@ -18911,23 +19029,11 @@ impl Interpreter {
                 }
             }
 
-            let function = self.trait_reflection_method_function(
+            return self.invoke_static_trait_reflection_method(
                 &state.declaring_class_name,
                 &state.name,
-                span,
-            )?;
-            let function = function.as_ref();
-            ensure_user_function_arity(function, values.len(), span)?;
-            ensure_supported_function_signature(function, values.len(), span)?;
-            self.ensure_user_function_call_depth(function, span)?;
-            return self.call_user_function_with_checked_values(
-                function,
                 values,
-                None,
-                None,
-                None,
-                Vec::new(),
-                None,
+                span,
             );
         }
         let ReflectionClassKind::Class = state.declaring_kind else {
@@ -20176,6 +20282,9 @@ impl Interpreter {
 
     fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {
         let Some(current_class_id) = self.class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_class_context.last() {
+                return Ok(Value::String(trait_name.clone()));
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -20226,6 +20335,9 @@ impl Interpreter {
 
     fn evaluate_static_class_name_constant(&self, span: Span) -> CompileResult<Value> {
         let Some(called_class_id) = self.called_class_context.last().copied() else {
+            if let Some(trait_name) = self.trait_called_class_context.last() {
+                return Ok(Value::String(trait_name.clone()));
+            }
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -21976,11 +22088,13 @@ impl Interpreter {
         let name = match callee_value {
             Value::String(name) => name,
             Value::Closure(closure) => {
-                let mut values = Vec::with_capacity(args.len());
-                for arg in args {
-                    values.push(self.evaluate(arg, caller_scope)?);
-                }
-                return self.invoke_closure_value(closure, values, span, "closure");
+                return self.invoke_closure_value_direct(
+                    closure,
+                    args,
+                    span,
+                    caller_scope,
+                    "closure",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -32987,6 +33101,9 @@ impl Interpreter {
             "get_called_class" => {
                 expect_arity(name, &args, 0, span)?;
                 let Some(called_class_id) = self.called_class_context.last().copied() else {
+                    if let Some(trait_name) = self.trait_called_class_context.last() {
+                        return Ok(Value::String(trait_name.clone()));
+                    }
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -39873,6 +39990,26 @@ fn wordpress_dynamic_schema_result_for_query(
         return None;
     }
 
+    if let Some(table_names) =
+        parse_dynamic_schema_show_table_status_in_query(query, no_backslash_escapes)
+    {
+        let mut matched_names = tables
+            .keys()
+            .filter(|table_name| table_names.iter().any(|name| name == *table_name))
+            .cloned()
+            .collect::<Vec<_>>();
+        matched_names.sort();
+        let rows = matched_names
+            .into_iter()
+            .filter_map(|table_name| tables.get(&table_name))
+            .map(dynamic_schema_table_status_row)
+            .collect();
+        return Some(MysqliPendingResultState {
+            fields: dynamic_schema_table_status_fields(),
+            rows,
+        });
+    }
+
     if let Some(table_filter) =
         parse_dynamic_schema_show_table_status_query(query, no_backslash_escapes)
     {
@@ -40813,6 +40950,29 @@ fn parse_dynamic_schema_show_table_status_query(
         .and_then(parse_sql_single_quoted_list)
         .and_then(|values| (values.len() == 1).then(|| values[0].clone()))?;
     parse_schema_table_identifier(&table_name).map(WordPressSchemaNameFilter::Exact)
+}
+
+fn parse_dynamic_schema_show_table_status_in_query(
+    query: &str,
+    no_backslash_escapes: bool,
+) -> Option<Vec<String>> {
+    let where_clause = query.strip_prefix("SHOW TABLE STATUS WHERE ")?;
+    let input = where_clause
+        .strip_prefix("Name IN ")
+        .or_else(|| where_clause.strip_prefix("`Name` IN "))?
+        .trim();
+    let inner = input
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))?;
+    let values = parse_sql_single_quoted_list_with_mode(inner, no_backslash_escapes)?;
+    if values.is_empty() {
+        return None;
+    }
+
+    values
+        .into_iter()
+        .map(|value| parse_schema_table_identifier(&value))
+        .collect()
 }
 
 fn parse_wordpress_schema_create_table_query(query: &str) -> Option<WordPressSchemaTableState> {

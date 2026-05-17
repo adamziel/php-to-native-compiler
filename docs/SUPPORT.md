@@ -2104,7 +2104,7 @@
   status-copy fidelity, mutation SQL beyond those exact `wp_options` state
   island shapes, arbitrary prepared `SHOW TABLE STATUS` predicates beyond the
   documented `Name` equality/`LIKE`/`IN` forms, identifier placeholders,
-  literal `IN (...)` status predicates, exact table counters/timestamps, host database
+  exact table counters/timestamps, host database
   state, PHP warning/error fidelity, mysqlnd behavior, or native statement
   lowering.
   The same bounded prepared-result path includes exact `wp_options`
@@ -2279,6 +2279,7 @@
   Later `SHOW TABLES LIKE
   '<pattern>'`, `SHOW TABLE STATUS LIKE '<pattern>'`,
   `SHOW TABLE STATUS WHERE Name = '<table>'`, `DESCRIBE`/`DESC <table>`,
+  literal `SHOW TABLE STATUS WHERE Name IN ('table', ...)`,
   `DESCRIBE`/`DESC <table> <column>`, `SHOW [FULL] COLUMNS FROM <table>`,
   `SHOW [FULL] COLUMNS FROM <table> LIKE '<pattern>'`,
   `SHOW [FULL] COLUMNS FROM <table> WHERE Field = '<column>'`,
@@ -2306,8 +2307,12 @@
   `SHOW [FULL] COLUMNS ... WHERE Field = ?`, and
   `SHOW INDEX`/`SHOW KEYS ... WHERE Key_name = ?` or `LIKE ?` forms,
   including explicit `LIKE ? ESCAPE '<char>'` for the covered metadata
-  filters. Table/status rows remain deterministically sorted, and patterns
-  without unescaped wildcard characters keep exact matching behavior.
+  filters and bounded prepared `SHOW TABLE STATUS WHERE Name IN (?, ...)`
+  lists. Literal and prepared table-status `IN` lists validate
+  identifier-shaped table names, skip missing names, and return rows in
+  deterministic table-name order. Table/status rows remain deterministically
+  sorted, and patterns without unescaped wildcard characters keep exact
+  matching behavior.
   `SHOW CREATE TABLE <table>` returns a deterministic
   MySQL-shaped create
   statement for the same recorded shape, including
@@ -2328,6 +2333,8 @@
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
   SQL modes beyond the bounded `NO_BACKSLASH_ESCAPES` schema `LIKE` parser
   branch, arbitrary
+  `SHOW TABLE STATUS WHERE Name IN` predicates beyond non-empty
+  identifier-shaped table-name lists,
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
   `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
   documented `Key_name` equality and `Key_name LIKE` forms,
@@ -2520,8 +2527,10 @@
   bounded `WHERE Key_name = ...` and `WHERE Key_name LIKE ...` filters, and
   deterministic `SHOW CREATE TABLE` probes, plus exact
   `SHOW TABLE STATUS LIKE '<table>'` and
-  `SHOW TABLE STATUS WHERE Name = '<table>'` probes that expose the recorded
-  table collation with deterministic placeholder engine/storage metadata.
+  `SHOW TABLE STATUS WHERE Name = '<table>'` probes and bounded literal
+  `SHOW TABLE STATUS WHERE Name IN ('table', ...)` table-name lists that
+  expose the recorded table collation with deterministic placeholder
+  engine/storage metadata.
   The documented schema metadata `LIKE` filters also honor the bounded
   `NO_BACKSLASH_ESCAPES` SQL-mode branch recorded on that placeholder handle,
   disabling implicit backslash escaping while keeping explicit
@@ -3552,8 +3561,11 @@
   declaration registration, caller-scope execution, include return values, and
   `_once` de-duplication by resolved local file. Missing local `include` and
   `include_once` reads emit two bounded `E_WARNING` events, return `false` in
-  expression position, and continue execution. Declaration-order dependencies
-  across included files remain outside this slice.
+  expression position, and continue execution. Missing local `require` and
+  `require_once` reads emit the same bounded warning pair and then stop
+  execution with a PHP-shaped fatal stderr line and exit code `255`.
+  Declaration-order dependencies across included files remain outside this
+  slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - one unbracketed named `namespace` declaration per file, plus simple
   top-level class `use` imports with optional `as` aliases. Class declarations
@@ -3760,15 +3772,19 @@
   `include` and `include_once` reads emit two bounded `E_WARNING` events
   through the current `set_error_handler()` stack or stderr fallback, return
   `false` in expression position, and do not mark the missing file as loaded
-  for `_once` de-duplication. `require_once` and `include_once` de-duplicate
-  by resolved local file, including files loaded first through non-once
-  `require`/`include`. Missing-file `require` fatal/error recovery,
-  failed-include realpath-cache side effects, process-current-working-directory
+  for `_once` de-duplication. Missing local `require` and `require_once` reads
+  emit the same bounded warning pair and then stop execution with a bounded
+  PHP-shaped fatal stderr line and exit code `255`; expression-form
+  `require_once` also stops the following statement instead of yielding a
+  usable value. `require_once` and `include_once` de-duplicate by resolved
+  local file, including files loaded first through non-once `require`/`include`.
+  Failed-include realpath-cache side effects, process-current-working-directory
   edge cases beyond the default `"."` entry and no-source-file fallback,
   stream wrappers, URL includes, `phar://`, opcache behavior, autoload
   interaction, declaration-order edge cases, source mapping for
-  functions/classes after include, PHP's exact warning-vs-fatal text and
-  recovery behavior, and native lowering are not implemented.
+  functions/classes after include, PHP's exact warning-vs-fatal text, fatal
+  `Error` object/stack trace shape, shutdown/destructor ordering after fatal,
+  broader fatal recovery behavior, and native lowering are not implemented.
   Native lowering rejects expression forms such as
   `$result = include 'file.php';` through a dedicated codegen diagnostic that
   names include return values, `_once` de-duplication results, caller-scope
@@ -5556,21 +5572,27 @@
   with parameter/return type annotations fails with a stable runtime error
   because type enforcement, coercion, exact `TypeError` behavior,
   `strict_types`, variance, and reflection metadata are not implemented.
-  Reference parameter declarations are also accepted as
-  metadata, but invoking those functions fails with a stable runtime error until
-  reference binding exists. Anonymous closure syntax with parameter lists,
+  Reference parameter declarations are accepted as metadata, and the current
+  direct user-function/method paths plus direct ordinary closure invocation can
+  bind the documented direct-variable and direct array-offset argument shapes.
+  Anonymous closure syntax with parameter lists,
   optional return-type metadata, block bodies, and `use (...)` capture lists is
   parsed so containing functions can be registered, including by-reference
   capture syntax such as `use (&$name)`. Evaluating an anonymous closure
   expression, a `static function (...) { ... }` expression, or a non-static
-  arrow function expression creates an inert runtime closure value that can be
-  stored, read, and tested for truthiness. Explicit `use (...)` capture names
-  are looked up at closure creation and the current values are stored on the
+  arrow function expression creates a runtime closure value that can be
+  stored, read, tested for truthiness, and invoked where documented. Explicit
+  `use (...)` capture names are looked up at closure creation and the current
+  values are stored on the
   closure value; by-reference direct-variable captures store the source
   variable cell and closure invocation prebinds that cell into the closure
   local scope. Ordinary untyped closure values can be invoked directly with
   `$closure(...)` and through `call_user_func()` or positional-array
-  `call_user_func_array()` over the current by-value argument subset.
+  `call_user_func_array()` over the current by-value argument subset. Direct
+  `$closure(...)` invocation also accepts covered by-reference parameters for
+  direct-variable arguments and direct nested array-offset arguments such as
+  `$closure($value)` and `$closure($items["payload"]["slot"])`, using the
+  same bounded direct-call copy-in/writeback machinery as user functions.
   `call_user_func_array()` also accepts closure callbacks whose declared
   by-reference parameters are supplied by covered by-reference argument-array
   elements in the same direct-variable and direct array/property slot subset
@@ -5578,9 +5600,10 @@
   snapshot stored when the closure was created. Arrow implicit capture binding
   and execution, `$this` binding, by-reference capture of array-offset,
   object-property, magic-property, or `ArrayAccess` alias roots, closure
-  reference returns, typed parameter/return enforcement, copy-on-write, static
-  closure binding semantics, named closure callback arguments, exact PHP
-  `Closure` object behavior, and native lowering are unsupported. Non-static
+  reference returns, direct `call_user_func()` reference-parameter parity,
+  typed parameter/return enforcement, copy-on-write, static closure binding
+  semantics, named closure callback arguments, exact PHP `Closure` object
+  behavior, and native lowering are unsupported. Non-static
   arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
   expression with a synthetic return body, while `static fn (...) => expr`
   stops at a dedicated parse boundary until no-`$this` binding, implicit
@@ -6377,9 +6400,12 @@
   target, ignores the target object like PHP, and preserves the reflected
   class for inherited `static::` lookup. Static trait methods reflected from
   the trait itself also execute through the same by-value argument subset when
-  the target is `null` or an object. Interface methods, non-static trait
-  methods, abstract trait methods, trait-method `self::`/`static::` class
-  context fidelity, internal methods,
+  the target is `null` or an object, with the reflected trait bound for
+  `__CLASS__`, `__METHOD__`, `self::class`, `static::class`, and
+  `get_called_class()`. Interface methods, non-static trait methods, abstract
+  trait methods, trait `self::method()`/`static::method()` calls, trait class
+  constants, `parent` context behavior, `new self`/`new static` from reflected
+  traits, internal methods,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection
@@ -7217,13 +7243,16 @@
   byte buffers, opaque copied string handles, valid-UTF-8 string-to-value
   handles, stdout echo helpers for those value handles, and a bounded
   diagnostic-handle path for null string-handle and non-UTF-8 string-byte
-  failures from `phpc_native_value_from_string_with_diagnostic`. Generated
-  `--emit-ir` currently uses the non-diagnostic string/value stdout helper path
-  only for the documented direct and selected string output slices. Linked
-  native execution, binary PHP string value handles, diagnostics for stdout
-  writes or arbitrary runtime failures, request-state handles,
-  array/object/resource/reference ABI shapes, WordPress host-state ABI, and C
-  fallback assembly helper calls remain unsupported.
+  failures from `phpc_native_value_from_string_with_diagnostic`. The
+  deterministic native runtime probe now includes one branch on a nullable
+  value-handle return and clones/frees the diagnostic message only on the
+  failure path. Production `--emit-ir` currently uses the string/value stdout
+  helper path only for the documented direct and selected string output slices
+  and still does not report helper diagnostics. Linked native execution,
+  binary PHP string value handles, diagnostics for stdout writes or arbitrary
+  runtime failures, request-state handles, array/object/resource/reference
+  storage beyond null-only ABI shapes, WordPress host-state ABI, and C fallback
+  assembly helper calls remain unsupported.
 - Array gaps: array spread elements, reference array keys,
   expression-position `list(...)`, and keyed, nested, reference, or
   non-variable destructuring targets are rejected with stable parse diagnostics.
@@ -7435,7 +7464,8 @@
   `__NAMESPACE__` specifically fails because namespace-aware name resolution is
   not implemented. `__FUNCTION__`, `__CLASS__`, and `__METHOD__` are limited to
   current user-function and declared-method contexts plus top-level
-  empty-string behavior; closure context, trait-method context,
+  empty-string behavior, plus the bounded static trait-method reflection
+  invocation context documented above; closure context, broader trait-method context,
   anonymous-class exact names, original-name/case fidelity beyond the current
   declaration metadata, and exact namespace/source mapping are not implemented.
   `__FILE__` currently

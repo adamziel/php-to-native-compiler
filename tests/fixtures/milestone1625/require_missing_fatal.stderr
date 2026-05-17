@@ -1,0 +1,1 @@
+PHP Fatal error:  require(): Failed opening required 'tests/fixtures/milestone1625/missing-wordpress-required.php' (include_path='.') in tests/fixtures/milestone1625/require_missing_fatal.php on line 11

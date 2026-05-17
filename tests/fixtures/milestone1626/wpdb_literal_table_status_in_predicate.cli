@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone1626/wpdb_literal_table_status_in_predicate.php

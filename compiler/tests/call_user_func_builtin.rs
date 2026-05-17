@@ -73,6 +73,32 @@ echo call_user_func_array($callback, array("save_post", 20));
 }
 
 #[test]
+fn direct_closure_invocation_binds_reference_parameters() {
+    let execution = run_source(
+        r#"<?php
+$counter = 0;
+$option = "autoload";
+$items = array("payload" => array("slot" => "start"));
+$callback = function (&$value, $suffix) use (&$counter) {
+    $counter = $counter + 1;
+    $value = $value . ":" . $suffix . ":" . $counter;
+    return $value;
+};
+
+echo $callback($option, "direct"), "|", $option, "|", $counter, "\n";
+echo $callback($items["payload"]["slot"], "slot"), "|", $items["payload"]["slot"], "|", $counter;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:direct:1|autoload:direct:1|1\nstart:slot:2|start:slot:2|2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_binds_closure_reference_parameters() {
     let execution = run_source(
         r#"<?php
