@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1498/headers_sent_array_object_outputs.php

@@ -1,0 +1,11 @@
+6:PRIMARY:1:ID:0:BTREE;title_content:1:post_title:1:FULLTEXT;title_content:2:post_content:1:FULLTEXT;geo_lookup:1:geo:1:SPATIAL;content_only:1:post_content:1:FULLTEXT;geo_recent:1:geo:1:SPATIAL;|CREATE TABLE `wp_special_index_probe` (
+  `ID` bigint(20) unsigned NOT NULL auto_increment,
+  `post_title` text NOT NULL,
+  `post_content` longtext NOT NULL,
+  `geo` point NOT NULL,
+  PRIMARY KEY (`ID`),
+  FULLTEXT KEY `title_content` (`post_title`,`post_content`),
+  SPATIAL KEY `geo_lookup` (`geo`),
+  FULLTEXT KEY `content_only` (`post_content`),
+  SPATIAL KEY `geo_recent` (`geo`)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

@@ -4718,6 +4718,60 @@ echo "trait|", $trait->getName(), "|", $trait->getDeclaringClass()->getName(), "
 }
 
 #[test]
+fn reflection_method_reports_bounded_source_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class HookBase {
+    /**
+     * Parent hook metadata.
+     */
+    public function inherited($value) {
+        return $value;
+    }
+}
+
+class HookPlugin extends HookBase {
+    /**
+     * Registers WordPress hooks.
+     */
+    public function register($hook) {
+        return $hook;
+    }
+
+    public function noDoc() {}
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function doc_line($label, $method) {
+    $doc = $method->getDocComment();
+    echo $label, "|", yn($doc !== false), "|", str_replace("\n", "\\n", $doc), "\n";
+}
+
+$method = new ReflectionMethod(HookPlugin::class, "register");
+$suffix = "tests/fixtures/milestone1496/method_reflection_source_metadata.php";
+echo "source|", substr($method->getFileName(), -strlen($suffix)), "|", $method->getStartLine(), "|", $method->getEndLine(), "\n";
+doc_line("doc", $method);
+$inherited = new ReflectionMethod(HookPlugin::class, "inherited");
+doc_line("inherited", $inherited);
+echo "inherited-lines|", $inherited->getStartLine(), "|", $inherited->getEndLine(), "\n";
+$plain = new ReflectionMethod(HookPlugin::class, "noDoc");
+echo "plain|", $plain->getStartLine(), "|", $plain->getEndLine(), "|", yn($plain->getDocComment() === false);
+"#,
+        "tests/fixtures/milestone1496/method_reflection_source_metadata.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "source|tests/fixtures/milestone1496/method_reflection_source_metadata.php|15|17\ndoc|1|/**\\n     * Registers WordPress hooks.\\n     */\ninherited|1|/**\\n     * Parent hook metadata.\\n     */\ninherited-lines|6|8\nplain|19|19|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_parameter_reports_bounded_method_parameter_metadata() {
     let execution = run_source(
         r#"<?php

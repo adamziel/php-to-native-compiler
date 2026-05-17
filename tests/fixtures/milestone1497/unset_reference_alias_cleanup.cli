@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1497/unset_reference_alias_cleanup.php

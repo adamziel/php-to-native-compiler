@@ -172,13 +172,20 @@ object-property roots for that object name. Direct dynamic-property assignment
 from a reference array literal uses the evaluated property name as the public
 or context-aware non-public object-property alias root, so later stored-array
 callback use can reuse covered reference elements when the current method
-context can see the property. Arbitrary nested copied reference slots beyond
-the literal copied path slice, non-public property-offset or magic clone alias
-mirroring, dynamic ArrayAccess references, arbitrary ArrayAccess append
-bodies, reference array literals outside direct variable, direct array-offset,
-direct visible object-property, and direct dynamic-property assignment targets,
-exact alias destruction ordering, and native lowering still require the future
-runtime reference/COW value model.
+context can see the property. Direct array-offset `unset(...)` paths and
+direct visible object-property array-offset `unset(...)` paths remove covered
+alias metadata for the removed slot, and for child aliases below a removed
+parent slot, while storing the last observed alias value back into the
+detached direct alias variable. This models the bounded PHP behavior where
+unsetting a referenced container slot deletes the container entry without
+deleting the remaining reference variable. Arbitrary nested copied reference
+slots beyond the literal copied path slice, non-public property-offset or
+magic clone alias mirroring, dynamic ArrayAccess references, arbitrary
+ArrayAccess append bodies, reference array literals outside direct variable,
+direct array-offset, direct visible object-property, and direct
+dynamic-property assignment targets, alias cleanup outside covered unset slot
+paths, exact alias destruction ordering, and native lowering still require the
+future runtime reference/COW value model.
 
 ## Compiler Crate
 
@@ -1792,11 +1799,12 @@ slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
 `ob_get_flush()`/`ob_flush()`/`ob_end_flush()` stamp that state with the current source filename
 and source line; output held only inside active output buffers does not. Direct
-variable filename/line output arguments are written with `""`/`0` before output
-starts and the stamped file/line after it starts. Non-variable output
-arguments, array/object-property output targets, exact warning text, SAPI
-differences, shutdown-time buffer flushing visibility, and native lowering are
-not modeled.
+variable, direct array-offset, direct object-property, and direct
+object-property array-offset filename/line output arguments are written with
+`""`/`0` before output starts and the stamped file/line after it starts.
+Dynamic object-property output targets, callback-mediated output targets, exact
+warning text, SAPI differences, shutdown-time buffer flushing visibility, and
+native lowering are not modeled.
 `php_sapi_name()` is an interpreter-only request/SAPI identity boundary that
 returns the same deterministic `cli` string as `PHP_SAPI`. It intentionally
 does not query the host PHP binary, web-server SAPI, CGI/FPM state, or native
@@ -2582,9 +2590,15 @@ a child class. This is metadata only.
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string method name,
 resolves inherited class methods through the existing method metadata chain,
-and exposes the bounded modifier predicates, `getDeclaringClass()`, parameter
-counts, `getParameters()`, `hasReturnType()`, and `getReturnType()` through
-interpreter dispatch. Return type objects reuse the same request-local
+and exposes the bounded source metadata methods, modifier predicates,
+`getDeclaringClass()`, parameter counts, `getParameters()`,
+`hasReturnType()`, and `getReturnType()` through interpreter dispatch.
+Class-method source paths are tracked in the same method-signature table as
+parameter and return metadata when declarations are loaded from a known
+CLI/fixture or include path; start/end lines and directly preceding
+`/** ... */` doc-comments come from the parsed method declaration. Interface
+and trait methods currently retain parsed line/doc-comment metadata but do not
+persist declaration source-file paths. Return type objects reuse the same request-local
 `ReflectionNamedType`, `ReflectionUnionType`, and `ReflectionIntersectionType`
 state as the property type metadata slice.
 `ReflectionFunction` follows that same core placeholder plus request-local

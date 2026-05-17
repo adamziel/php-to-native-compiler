@@ -195,6 +195,10 @@ struct MethodSignature {
     required_params: usize,
     params: Vec<ParameterSignature>,
     return_type: Option<String>,
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -264,6 +268,7 @@ struct WordPressSchemaIndexState {
     key_name: String,
     parts: Vec<WordPressSchemaIndexPart>,
     non_unique: bool,
+    index_type: WordPressSchemaIndexType,
 }
 
 #[derive(Clone)]
@@ -277,6 +282,13 @@ struct WordPressSchemaIndexPart {
 enum WordPressSchemaIndexOrder {
     Asc,
     Desc,
+}
+
+#[derive(Clone, Copy)]
+enum WordPressSchemaIndexType {
+    Btree,
+    Fulltext,
+    Spatial,
 }
 
 #[derive(Clone)]
@@ -328,6 +340,10 @@ struct ReflectionMethodState {
     declaring_kind: ReflectionClassKind,
     declaring_class_id: Option<ClassId>,
     name: String,
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    doc_comment: Option<String>,
     visibility: Visibility,
     is_static: bool,
     is_abstract: bool,
@@ -1705,6 +1721,56 @@ impl SymbolTable {
                 self.array_offset_aliases.insert(alias_name, aliases);
             }
         }
+    }
+
+    fn detach_array_offset_aliases_for_unset_paths(&mut self, unset_paths: &[ArrayOffsetAlias]) {
+        if unset_paths.is_empty() {
+            return;
+        }
+
+        let alias_names: Vec<String> = self.array_offset_aliases.keys().cloned().collect();
+        for alias_name in alias_names {
+            let Some(existing_aliases) = self.array_offset_aliases.get(&alias_name).cloned() else {
+                continue;
+            };
+            let mut fallback_value = None;
+            let mut aliases = Vec::new();
+
+            for alias in existing_aliases {
+                let should_detach = unset_paths.iter().any(|unset_path| {
+                    alias.root == unset_path.root && alias.keys.starts_with(&unset_path.keys)
+                });
+                if should_detach {
+                    if fallback_value.is_none() {
+                        fallback_value = self.read_array_offset_alias(&alias);
+                    }
+                } else {
+                    aliases.push(alias);
+                }
+            }
+
+            if aliases.is_empty() {
+                self.array_offset_aliases.remove(&alias_name);
+                if let Some(value) = fallback_value {
+                    self.write_storage_named(&alias_name, value);
+                }
+            } else {
+                self.array_offset_aliases.insert(alias_name, aliases);
+            }
+        }
+    }
+
+    fn unset_paths_for_array_root(&self, name: &str, keys: &[ArrayKey]) -> Vec<ArrayOffsetAlias> {
+        if let Some(aliases) = self.array_offset_aliases_for_name_with_suffix(name, keys) {
+            return aliases;
+        }
+
+        vec![ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: name.to_string(),
+            },
+            keys: keys.to_vec(),
+        }]
     }
 
     fn mirror_static_array_offset_aliases_from_copy(
@@ -3090,6 +3156,7 @@ impl Interpreter {
                     &mut method_signatures,
                     &mut abstract_methods,
                     &trait_lookup,
+                    source_file.clone(),
                     class_id,
                     class,
                 )?;
@@ -3676,6 +3743,7 @@ impl Interpreter {
                 &mut self.method_signatures,
                 &mut self.abstract_methods,
                 &self.trait_lookup,
+                self.source_file.clone(),
                 class_id,
                 class,
             )?;
@@ -3775,6 +3843,7 @@ impl Interpreter {
             &mut self.method_signatures,
             &mut self.abstract_methods,
             &self.trait_lookup,
+            self.source_file.clone(),
             class_id,
             class,
         )?;
@@ -5309,6 +5378,9 @@ impl Interpreter {
 
         match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
+                let unset_paths =
+                    scope.unset_paths_for_array_root(name, std::slice::from_ref(&key));
+                scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 array.remove(key.clone());
                 scope.write_static(name, Value::Array(array));
                 if let Some((value_name, value)) = foreach_detach {
@@ -5350,6 +5422,8 @@ impl Interpreter {
 
         match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
+                let unset_paths = scope.unset_paths_for_array_root(name, &keys);
+                scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 Self::unset_nested_array_value(&mut array, &keys, span)?;
                 scope.write_static(name, Value::Array(array));
                 Ok(())
@@ -5433,6 +5507,25 @@ impl Interpreter {
 
         match &mut slot {
             Value::Array(array) => {
+                let unset_paths = vec![
+                    ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::PublicObjectProperty {
+                            object: object_name.to_string(),
+                            property: property.to_string(),
+                        },
+                        keys: keys.clone(),
+                    },
+                    ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::ContextObjectProperty {
+                            object: object_name.to_string(),
+                            property: property.to_string(),
+                            current_class_id,
+                            protected_class_ids: protected_class_ids.clone(),
+                        },
+                        keys: keys.clone(),
+                    },
+                ];
+                scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 Self::unset_nested_array_value(array, &keys, span)?;
                 object
                     .write_property_from_context(
@@ -10763,11 +10856,17 @@ impl Interpreter {
                     .get(declaring_class_id)
                     .and_then(|declaring| declaring.method(&resolved_method_name))
                     .expect("resolved method metadata should exist");
+                let signature_key = (declaring_class_id, metadata.name().to_ascii_lowercase());
+                let signature = self.method_signatures.get(&signature_key);
                 Ok(ReflectionMethodState {
                     declaring_class_name,
                     declaring_kind: ReflectionClassKind::Class,
                     declaring_class_id: Some(declaring_class_id),
                     name: resolved_method_name,
+                    file_name: signature.and_then(|signature| signature.file_name.clone()),
+                    start_line: signature.map(|signature| signature.start_line).unwrap_or(0),
+                    end_line: signature.map(|signature| signature.end_line).unwrap_or(0),
+                    doc_comment: signature.and_then(|signature| signature.doc_comment.clone()),
                     visibility,
                     is_static,
                     is_abstract: metadata.is_abstract(),
@@ -10803,6 +10902,10 @@ impl Interpreter {
                             declaring_kind: ReflectionClassKind::Interface,
                             declaring_class_id: None,
                             name: method.function.name.clone(),
+                            file_name: None,
+                            start_line: method.function.span.line,
+                            end_line: method.function.end_line,
+                            doc_comment: method.function.doc_comment.clone(),
                             visibility: Visibility::Public,
                             is_static: method.is_static,
                             is_abstract: true,
@@ -10844,6 +10947,10 @@ impl Interpreter {
                             declaring_kind: ReflectionClassKind::Trait,
                             declaring_class_id: None,
                             name: method.function.name.clone(),
+                            file_name: None,
+                            start_line: method.function.span.line,
+                            end_line: method.function.end_line,
+                            doc_comment: method.function.doc_comment.clone(),
                             visibility: runtime_visibility(method.visibility),
                             is_static: method.is_static,
                             is_abstract: method.is_abstract,
@@ -17001,6 +17108,28 @@ impl Interpreter {
             "getname" => {
                 expect_expr_arity("ReflectionMethod::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
+            }
+            "getfilename" => {
+                expect_expr_arity("ReflectionMethod::getFileName", args.len(), 0, span)?;
+                Ok(state
+                    .file_name
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getstartline" => {
+                expect_expr_arity("ReflectionMethod::getStartLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.start_line as i64))
+            }
+            "getendline" => {
+                expect_expr_arity("ReflectionMethod::getEndLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.end_line as i64))
+            }
+            "getdoccomment" => {
+                expect_expr_arity("ReflectionMethod::getDocComment", args.len(), 0, span)?;
+                Ok(state
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
             }
             "getdeclaringclass" => {
                 expect_expr_arity("ReflectionMethod::getDeclaringClass", args.len(), 0, span)?;
@@ -27065,32 +27194,198 @@ impl Interpreter {
         }
 
         if let Some(arg) = args.first() {
-            let Expr::Variable(name, _) = arg else {
-                return Err(runtime_error(
-                    arg.span(),
-                    RuntimeError::unsupported_call(
-                        "headers_sent()",
-                        "filename output argument must be a direct variable in the current subset",
-                    ),
-                ));
-            };
-            caller_scope.write_static(name, Value::String(self.headers_sent_file()));
+            self.write_headers_sent_output_arg(
+                arg,
+                Value::String(self.headers_sent_file()),
+                "filename",
+                caller_scope,
+            )?;
         }
 
         if let Some(arg) = args.get(1) {
-            let Expr::Variable(name, _) = arg else {
-                return Err(runtime_error(
-                    arg.span(),
-                    RuntimeError::unsupported_call(
-                        "headers_sent()",
-                        "line output argument must be a direct variable in the current subset",
-                    ),
-                ));
-            };
-            caller_scope.write_static(name, Value::Int(self.headers_sent_line()));
+            self.write_headers_sent_output_arg(
+                arg,
+                Value::Int(self.headers_sent_line()),
+                "line",
+                caller_scope,
+            )?;
         }
 
         Ok(Value::Bool(self.output_start.is_some()))
+    }
+
+    fn write_headers_sent_output_arg(
+        &mut self,
+        arg: &Expr,
+        value: Value,
+        output_name: &str,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if let Expr::Variable(name, _) = arg {
+            caller_scope.write_static(name, value);
+            return Ok(());
+        }
+
+        if let Some((name, indices)) = Self::direct_array_output_path(arg) {
+            let keys = indices
+                .iter()
+                .map(|index| self.evaluate_array_key(index, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            if name == "GLOBALS" {
+                Self::write_global_nested_array_assignment(&keys, value, arg.span(), caller_scope)?;
+            } else {
+                let wrote_alias = caller_scope.write_alias_backed_array_offset(
+                    name,
+                    &keys,
+                    value.clone(),
+                    arg.span(),
+                )?;
+                if !wrote_alias {
+                    Self::write_nested_array_assignment(
+                        name,
+                        &keys,
+                        value,
+                        arg.span(),
+                        caller_scope,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+
+        if let Some((object, property, indices)) = Self::direct_object_property_output_path(arg) {
+            if indices.is_empty() {
+                self.write_headers_sent_object_property_output(
+                    object,
+                    property,
+                    value,
+                    arg.span(),
+                    caller_scope,
+                )?;
+            } else {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.write_object_property_nested_array_assignment(
+                    object,
+                    property,
+                    &keys,
+                    value,
+                    arg.span(),
+                    caller_scope,
+                )?;
+                caller_scope.sync_array_offset_aliases_for_object_property_root(object, property);
+            }
+            return Ok(());
+        }
+
+        Err(runtime_error(
+            arg.span(),
+            RuntimeError::unsupported_call(
+                "headers_sent()",
+                format!(
+                    "{output_name} output argument must be a direct variable, direct array offset, or direct object property in the current subset"
+                ),
+            ),
+        ))
+    }
+
+    fn write_headers_sent_object_property_output(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        value: Value,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match caller_scope.read_static(object_name, span)? {
+            Value::Object(object_value) => {
+                let alias_fallbacks =
+                    caller_scope.public_object_property_root_alias_fallbacks(object_name, property);
+                match object_value.write_property_from_context_with_object_type_resolver(
+                    property,
+                    value.clone(),
+                    current_class_id,
+                    &protected_class_ids,
+                    |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+                ) {
+                    Ok(()) => {
+                        caller_scope.remove_public_object_property_root_from_array_offset_aliases(
+                            object_name,
+                            property,
+                            &alias_fallbacks,
+                        );
+                        caller_scope.sync_array_offset_aliases_for_object_property_root(
+                            object_name,
+                            property,
+                        );
+                        Ok(())
+                    }
+                    Err(error) if Self::is_undefined_property_error(&error) => {
+                        match self.call_magic_instance_method_with_values(
+                            object_value,
+                            "__set",
+                            vec![Value::String(property.to_string()), value],
+                            span,
+                        )? {
+                            Some(_) => Ok(()),
+                            None => Err(runtime_error(span, error)),
+                        }
+                    }
+                    Err(error) => Err(runtime_error(span, error)),
+                }
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot write property ${property} on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn direct_array_output_path(expr: &Expr) -> Option<(&str, Vec<&Expr>)> {
+        let (name, indices) = Self::direct_array_output_path_inner(expr)?;
+        if indices.is_empty() {
+            None
+        } else {
+            Some((name, indices))
+        }
+    }
+
+    fn direct_array_output_path_inner(expr: &Expr) -> Option<(&str, Vec<&Expr>)> {
+        match expr {
+            Expr::Index { target, index, .. } => {
+                let (name, mut indices) = Self::direct_array_output_path_inner(target)?;
+                indices.push(index);
+                Some((name, indices))
+            }
+            Expr::Variable(name, _) => Some((name, Vec::new())),
+            _ => None,
+        }
+    }
+
+    fn direct_object_property_output_path(expr: &Expr) -> Option<(&str, &str, Vec<&Expr>)> {
+        match expr {
+            Expr::Index { target, index, .. } => {
+                let (object, property, mut indices) =
+                    Self::direct_object_property_output_path(target)?;
+                indices.push(index);
+                Some((object, property, indices))
+            }
+            Expr::Property {
+                target, property, ..
+            } => {
+                let Expr::Variable(object, _) = target.as_ref() else {
+                    return None;
+                };
+                Some((object, property, Vec::new()))
+            }
+            _ => None,
+        }
     }
 
     fn headers_sent_file(&self) -> String {
@@ -32741,6 +33036,7 @@ fn register_class_member_runtime_tables(
     method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
     abstract_methods: &mut HashSet<(ClassId, String)>,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    source_file: Option<String>,
     class_id: ClassId,
     class: &ClassDecl,
 ) -> CompileResult<()> {
@@ -32750,7 +33046,10 @@ fn register_class_member_runtime_tables(
 
     for method in composed_trait_methods(class, trait_lookup)? {
         let key = (class_id, method.function.name.to_ascii_lowercase());
-        method_signatures.insert(key.clone(), method_signature(&method.function));
+        method_signatures.insert(
+            key.clone(),
+            method_signature(&method.function, source_file.clone()),
+        );
         methods.insert(key, Rc::new(method.function));
     }
 
@@ -32766,7 +33065,10 @@ fn register_class_member_runtime_tables(
             }
             ClassMember::Method(method) => {
                 let key = (class_id, method.function.name.to_ascii_lowercase());
-                method_signatures.insert(key.clone(), method_signature(&method.function));
+                method_signatures.insert(
+                    key.clone(),
+                    method_signature(&method.function, source_file.clone()),
+                );
                 if method.is_abstract {
                     abstract_methods.insert(key);
                 } else {
@@ -33050,14 +33352,14 @@ fn register_class_members(
     for method in composed_trait_methods(class, trait_lookup)? {
         effective_method_signatures.insert(
             (id, method.function.name.to_ascii_lowercase()),
-            method_signature(&method.function),
+            method_signature(&method.function, None),
         );
     }
     for member in &class.members {
         if let ClassMember::Method(method) = member {
             effective_method_signatures.insert(
                 (id, method.function.name.to_ascii_lowercase()),
-                method_signature(&method.function),
+                method_signature(&method.function, None),
             );
         }
     }
@@ -33851,7 +34153,7 @@ fn public_method_signature(
                 .function
                 .name
                 .eq_ignore_ascii_case(method_lookup_name)
-                .then(|| method_signature(&method.function))
+                .then(|| method_signature(&method.function, None))
         });
     }
 
@@ -33860,10 +34162,14 @@ fn public_method_signature(
         .cloned()
 }
 
-fn method_signature(function: &FunctionDecl) -> MethodSignature {
+fn method_signature(function: &FunctionDecl, file_name: Option<String>) -> MethodSignature {
     MethodSignature {
         required_params: required_param_count(function),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+        file_name,
+        start_line: function.span.line,
+        end_line: function.end_line,
+        doc_comment: function.doc_comment.clone(),
         params: function
             .params
             .iter()
@@ -36245,6 +36551,35 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
             key_name: "PRIMARY".to_string(),
             parts,
             non_unique: false,
+            index_type: WordPressSchemaIndexType::Btree,
+        });
+        return Some(());
+    }
+
+    if upper.starts_with("FULLTEXT KEY ") || upper.starts_with("FULLTEXT INDEX ") {
+        let rest = part
+            .strip_prefix("FULLTEXT KEY ")
+            .or_else(|| part.strip_prefix("FULLTEXT INDEX "))?;
+        let (key_name, parts) = parse_schema_named_index(rest)?;
+        table.indexes.push(WordPressSchemaIndexState {
+            key_name,
+            parts,
+            non_unique: true,
+            index_type: WordPressSchemaIndexType::Fulltext,
+        });
+        return Some(());
+    }
+
+    if upper.starts_with("SPATIAL KEY ") || upper.starts_with("SPATIAL INDEX ") {
+        let rest = part
+            .strip_prefix("SPATIAL KEY ")
+            .or_else(|| part.strip_prefix("SPATIAL INDEX "))?;
+        let (key_name, parts) = parse_schema_named_index(rest)?;
+        table.indexes.push(WordPressSchemaIndexState {
+            key_name,
+            parts,
+            non_unique: true,
+            index_type: WordPressSchemaIndexType::Spatial,
         });
         return Some(());
     }
@@ -36258,6 +36593,7 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
             key_name,
             parts,
             non_unique: false,
+            index_type: WordPressSchemaIndexType::Btree,
         });
         return Some(());
     }
@@ -36271,6 +36607,7 @@ fn parse_schema_definition_part(part: &str, table: &mut WordPressSchemaTableStat
             key_name,
             parts,
             non_unique: true,
+            index_type: WordPressSchemaIndexType::Btree,
         });
         return Some(());
     }
@@ -36338,6 +36675,7 @@ fn parse_schema_inline_column_indexes(
             key_name: "PRIMARY".to_string(),
             parts: vec![part],
             non_unique: false,
+            index_type: WordPressSchemaIndexType::Btree,
         }];
     }
 
@@ -36350,6 +36688,7 @@ fn parse_schema_inline_column_indexes(
             key_name: column_name.to_string(),
             parts: vec![part],
             non_unique: false,
+            index_type: WordPressSchemaIndexType::Btree,
         }];
     }
 
@@ -36362,6 +36701,7 @@ fn parse_schema_inline_column_indexes(
             key_name: column_name.to_string(),
             parts: vec![part],
             non_unique: true,
+            index_type: WordPressSchemaIndexType::Btree,
         }];
     }
 
@@ -36775,7 +37115,10 @@ fn dynamic_schema_index_row(
         ),
         ("Packed".to_string(), Value::Null),
         ("Null".to_string(), Value::String(String::new())),
-        ("Index_type".to_string(), Value::String("BTREE".to_string())),
+        (
+            "Index_type".to_string(),
+            Value::String(dynamic_schema_index_type_sql(index).to_string()),
+        ),
         ("Comment".to_string(), Value::String(String::new())),
         ("Index_comment".to_string(), Value::String(String::new())),
         ("Visible".to_string(), Value::String("YES".to_string())),
@@ -36900,6 +37243,16 @@ fn dynamic_schema_index_sql(index: &WordPressSchemaIndexState) -> String {
 
     if index.key_name == "PRIMARY" {
         format!("PRIMARY KEY ({parts})")
+    } else if matches!(index.index_type, WordPressSchemaIndexType::Fulltext) {
+        format!(
+            "FULLTEXT KEY {} ({parts})",
+            quote_schema_identifier(&index.key_name)
+        )
+    } else if matches!(index.index_type, WordPressSchemaIndexType::Spatial) {
+        format!(
+            "SPATIAL KEY {} ({parts})",
+            quote_schema_identifier(&index.key_name)
+        )
     } else if index.non_unique {
         format!("KEY {} ({parts})", quote_schema_identifier(&index.key_name))
     } else {
@@ -36907,6 +37260,14 @@ fn dynamic_schema_index_sql(index: &WordPressSchemaIndexState) -> String {
             "UNIQUE KEY {} ({parts})",
             quote_schema_identifier(&index.key_name)
         )
+    }
+}
+
+fn dynamic_schema_index_type_sql(index: &WordPressSchemaIndexState) -> &'static str {
+    match index.index_type {
+        WordPressSchemaIndexType::Btree => "BTREE",
+        WordPressSchemaIndexType::Fulltext => "FULLTEXT",
+        WordPressSchemaIndexType::Spatial => "SPATIAL",
     }
 }
 

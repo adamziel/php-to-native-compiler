@@ -439,10 +439,13 @@ impl Parser {
         let mut trait_uses = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("class member");
-            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+            if let TokenKind::DocComment(comment) = &self.peek().kind {
+                self.pending_doc_comment = Some(comment.clone());
+                self.advance();
                 continue;
             }
             if self.check(|kind| matches!(kind, TokenKind::Use)) {
+                self.pending_doc_comment = None;
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
                 members.push(self.parse_class_member()?);
@@ -496,7 +499,9 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("trait member");
-            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+            if let TokenKind::DocComment(comment) = &self.peek().kind {
+                self.pending_doc_comment = Some(comment.clone());
+                self.advance();
                 continue;
             }
             if self.check_trait_constant_declaration() {
@@ -515,6 +520,7 @@ impl Parser {
     }
 
     fn parse_trait_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        self.pending_doc_comment = None;
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -803,7 +809,9 @@ impl Parser {
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("interface member");
-            if self.match_token(|kind| matches!(kind, TokenKind::DocComment(_))) {
+            if let TokenKind::DocComment(comment) = &self.peek().kind {
+                self.pending_doc_comment = Some(comment.clone());
+                self.advance();
                 continue;
             }
             if self.check_interface_constant_declaration() {
@@ -824,6 +832,7 @@ impl Parser {
     }
 
     fn parse_interface_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        self.pending_doc_comment = None;
         let modifiers = self.parse_class_member_modifiers()?;
         self.match_identifier("const");
         let const_span = self.previous().span;
@@ -920,6 +929,7 @@ impl Parser {
     ) -> CompileResult<FunctionDecl> {
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
+        let doc_comment = self.pending_doc_comment.take();
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
         let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
@@ -936,7 +946,7 @@ impl Parser {
             body: Vec::new(),
             is_nested: false,
             end_line: start.line,
-            doc_comment: None,
+            doc_comment,
             span: start,
         })
     }
@@ -989,6 +999,7 @@ impl Parser {
         let modifiers = self.parse_class_member_modifiers()?;
 
         if self.match_identifier("const") {
+            self.pending_doc_comment = None;
             let const_span = self.previous().span;
             if modifiers.is_static {
                 return Err(self.error_at(
@@ -1060,6 +1071,8 @@ impl Parser {
                 span,
             }));
         }
+
+        self.pending_doc_comment = None;
 
         if self.check_unsupported_property_type_declaration() {
             if modifiers.is_abstract || modifiers.is_final {

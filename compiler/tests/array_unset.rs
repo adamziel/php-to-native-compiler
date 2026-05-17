@@ -107,6 +107,70 @@ if (isset($undefined)) {
 }
 
 #[test]
+fn unset_array_offsets_detaches_covered_reference_aliases() {
+    let source = r#"<?php
+$items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+$alias =& $items["slot"];
+$leaf =& $items["outer"]["leaf"];
+
+unset($items["slot"]);
+echo array_key_exists("slot", $items) ? "slot:set" : "slot:unset";
+echo "|alias=", $alias, "\n";
+$alias = "after";
+echo array_key_exists("slot", $items) ? "slot:set:" . $items["slot"] : "slot:unset";
+echo "|alias=", $alias, "\n";
+
+unset($items["outer"]);
+echo array_key_exists("outer", $items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf, "\n";
+$leaf = "changed";
+echo array_key_exists("outer", $items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "slot:unset|alias=seed\nslot:unset|alias=after\nouter:unset|leaf=nested\nouter:unset|leaf=changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_object_property_array_offsets_detaches_covered_reference_aliases() {
+    let source = r#"<?php
+class RefcowUnsetAliasBag {
+    public $items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+}
+
+$bag = new RefcowUnsetAliasBag();
+$alias =& $bag->items["slot"];
+$leaf =& $bag->items["outer"]["leaf"];
+
+unset($bag->items["slot"]);
+echo array_key_exists("slot", $bag->items) ? "slot:set" : "slot:unset";
+echo "|alias=", $alias, "\n";
+$alias = "after";
+echo array_key_exists("slot", $bag->items) ? "slot:set:" . $bag->items["slot"] : "slot:unset";
+echo "|alias=", $alias, "\n";
+
+unset($bag->items["outer"]);
+echo array_key_exists("outer", $bag->items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf, "\n";
+$leaf = "changed";
+echo array_key_exists("outer", $bag->items) ? "outer:set" : "outer:unset";
+echo "|leaf=", $leaf;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "slot:unset|alias=seed\nslot:unset|alias=after\nouter:unset|leaf=nested\nouter:unset|leaf=changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_array_offset_rejects_non_array_targets() {
     let error = runtime_error("<?php\n$value = 1;\nunset($value[0]);\n");
 

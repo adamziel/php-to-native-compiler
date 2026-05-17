@@ -288,11 +288,13 @@ incorrect native code.
   for the current option table, plus a bounded per-handle dynamic schema island
   for exact `CREATE TABLE`, `ALTER TABLE` add/change/modify/drop column and
   add/drop index probes with bounded column default/nullability/
-  auto-increment metadata, inline column key metadata, and `ASC`/`DESC`
-  index-part ordering metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
+  auto-increment metadata, inline column key metadata, `ASC`/`DESC`
+  index-part ordering metadata, and bounded `FULLTEXT`/`SPATIAL` index type
+  metadata, and later `DESCRIBE`/`SHOW COLUMNS`/
   `SHOW INDEX`/`SHOW CREATE TABLE`/`SHOW TABLE STATUS` inspection;
   this is not real MySQL connectivity, arbitrary SQL, broad mutable schema, real
-  index inspection, expression indexes, index opclass/parser metadata, exact
+  index inspection, expression indexes, fulltext parser clauses, index
+  opclass/parser metadata, exact
   table-status counters or timestamps, dbDelta diffing, real transactional DDL
   beyond bounded in-memory schema snapshots, persistent object cache, full
   `wpdb`, or native database support
@@ -433,7 +435,8 @@ incorrect native code.
   by-reference-return inspection,
   `ReflectionMethod`
   metadata objects with declaring-class, visibility, static, final, abstract,
-  constructor, modifier-mask, parameter-list, and return-type inspection,
+  constructor, modifier-mask, class-method file/start/end/doc-comment source
+  metadata, parameter-list, and return-type inspection,
   bounded
   `ReflectionParameter` function/method-parameter metadata with name, position,
   declaring class/function, optional/default, by-reference, variadic, and
@@ -555,7 +558,8 @@ direct object-to-string `__toString` including current interpolation, bounded
 core interface metadata, broad reflection metadata and exact engine ordering
 beyond the current `class_implements()`/`class_uses()`/`class_parents()` and
 bounded `ReflectionClass`/`ReflectionFunction`/`ReflectionMethod`/`ReflectionParameter`/
-`ReflectionNamedType`/`ReflectionProperty` metadata table slices, and
+`ReflectionNamedType`/`ReflectionProperty` metadata table slices, interface
+and trait method source-file persistence, and
 direct/property-held `ArrayAccess` offsets and
 compound assignment/increment/decrement, plus bounded `Countable`
 `is_countable()`/`count()` object protocol dispatch with concrete implementor
@@ -681,9 +685,10 @@ property-held append reference sources such as `$alias =& $bag[]` and
 where PHP's `offsetGet(null)` maps to the backing array's empty-string key.
 Real reference containers, magic-property references, arbitrary expressions,
 non-direct holder expressions outside the slice, mixed nested `ArrayAccess`
-chains, alias cleanup, broad copy-on-write, exact alias destruction ordering,
-by-reference `foreach` expansion, native lowering, and alias lifetime after
-replacing the containing property remain outside that bounded slice.
+chains, alias cleanup outside covered unset slot paths, broad copy-on-write,
+exact alias destruction ordering, by-reference `foreach` expansion, native
+lowering, and alias lifetime after replacing the containing property remain
+outside that bounded slice.
 By-reference `foreach` over a direct array variable has a bounded copy-back
 interpreter path for common array-walk code that unsets the loop variable after
 the loop. It also supports direct array-offset paths, request-bag paths such as
@@ -738,10 +743,11 @@ direct `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
 `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` output-buffer calls,
 direct `header()`/`header_remove()`/`headers_list()`/`headers_sent()`/
 `http_response_code()`/`setcookie()`/`setrawcookie()` response header-state calls, including
-interpreter-only `headers_sent()` output-started tracking, direct-variable
-filename/line outputs including direct variables backed by the current bounded
-array-offset reference-alias metadata, bounded ordinary header-name replacement
-in the request-local CLI header log, bounded request-local status-code state, and
+interpreter-only `headers_sent()` output-started tracking, direct variable,
+array-offset, object-property, and object-property array-offset filename/line
+outputs including direct variables backed by the current bounded array-offset
+reference-alias metadata, bounded ordinary header-name replacement in the
+request-local CLI header log, bounded request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,

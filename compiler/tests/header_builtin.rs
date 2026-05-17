@@ -368,6 +368,38 @@ echo "|" . implode("|", $out);
 }
 
 #[test]
+fn headers_sent_writes_array_and_object_property_output_parameters() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class HeaderSlots {
+    public $file = "initial";
+    public $line = -1;
+    public $bag = array();
+}
+$out = array();
+$bag = array("file" => "initial", "line" => -1);
+$slots = new HeaderSlots();
+$before = headers_sent($bag["file"], $slots->line);
+$out[] = ($before ? "sent" : "open") . ":" . $bag["file"] . ":" . $slots->line;
+echo "body";
+$after = headers_sent($slots->file, $bag["line"]);
+$out[] = ($after ? "sent" : "open") . ":" . basename($slots->file) . ":" . $bag["line"];
+$nested = headers_sent($slots->bag["file"], $slots->bag["line"]);
+$out[] = ($nested ? "sent" : "open") . ":" . basename($slots->bag["file"]) . ":" . $slots->bag["line"];
+echo "|" . implode("|", $out);
+"#,
+        "virtual/array-object-output.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "body|open::0|sent:array-object-output.php:12|sent:array-object-output.php:12"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn headers_sent_stays_open_until_output_buffer_flushes_to_stdout() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -522,7 +554,7 @@ echo headers_sent("file");
     assert_eq!(output_arg.column, 19);
     assert_eq!(
         output_arg.message,
-        "unsupported call headers_sent(): filename output argument must be a direct variable in the current subset"
+        "unsupported call headers_sent(): filename output argument must be a direct variable, direct array offset, or direct object property in the current subset"
     );
 
     let line_arg = runtime_error(
@@ -535,20 +567,24 @@ echo headers_sent($file, 0);
     assert_eq!(line_arg.column, 26);
     assert_eq!(
         line_arg.message,
-        "unsupported call headers_sent(): line output argument must be a direct variable in the current subset"
+        "unsupported call headers_sent(): line output argument must be a direct variable, direct array offset, or direct object property in the current subset"
     );
 
-    let array_arg = runtime_error(
+    let dynamic_property_arg = runtime_error(
         r#"<?php
-$bag = array();
-echo headers_sent($bag["file"]);
+class HeaderSlots {
+    public $file = "";
+}
+$property = "file";
+$slots = new HeaderSlots();
+echo headers_sent($slots->{$property});
 "#,
     );
-    assert_eq!(array_arg.line, 3);
-    assert_eq!(array_arg.column, 19);
+    assert_eq!(dynamic_property_arg.line, 7);
+    assert_eq!(dynamic_property_arg.column, 19);
     assert_eq!(
-        array_arg.message,
-        "unsupported call headers_sent(): filename output argument must be a direct variable in the current subset"
+        dynamic_property_arg.message,
+        "unsupported call headers_sent(): filename output argument must be a direct variable, direct array offset, or direct object property in the current subset"
     );
 
     let too_many = runtime_error(

@@ -1,0 +1,8 @@
+array-slot:unset|alias=seed
+array-slot:unset|alias=after
+array-outer:unset|leaf=nested
+array-outer:unset|leaf=changed
+property-slot:unset|alias=seed
+property-slot:unset|alias=property-after
+property-outer:unset|leaf=nested
+property-outer:unset|leaf=property-changed

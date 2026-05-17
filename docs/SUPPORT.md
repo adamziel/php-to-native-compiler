@@ -280,9 +280,10 @@
   reference named-argument path, dynamic `ArrayAccess` roots beyond direct
   dynamic property-held sources, non-direct holder expressions outside the
   documented slice, invisible selected properties, magic-property references,
-  mixed nested `ArrayAccess` chains, alias cleanup, broad copy-on-write, exact
-  alias destruction ordering, by-reference `foreach` expansion, append-offset
-  `ArrayAccess` source roots outside the exact direct/property-held
+  mixed nested `ArrayAccess` chains, alias cleanup beyond covered unset
+  container-slot detachment, broad copy-on-write, exact alias destruction
+  ordering, by-reference `foreach` expansion, append-offset `ArrayAccess`
+  source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
   `call_user_func_array()` reference-return alias binding, closure or builtin
@@ -322,8 +323,11 @@
   existing array root before binding. Undefined or `null` direct source roots
   are materialized as arrays containing the selected `null` slot before
   binding. Writes through the alias and direct array offset observe the same
-  selected slot, and `unset($alias)` detaches only the alias name. Nested
-  direct array-offset reference sources such as
+  selected slot, and `unset($alias)` detaches only the alias name. Unsetting
+  the selected direct array slot, or an explicit parent direct array slot that
+  contains a covered child alias, detaches the direct alias variable with its
+  last value so later alias writes do not recreate the removed array slot.
+  Nested direct array-offset reference sources such as
   `$alias =& $array[$outer][$inner];` also execute for explicit key paths,
   materializing missing intermediate containers and selected slots. Append
   reference sources such as `$alias =& $array[];` and
@@ -345,6 +349,10 @@
   peer-object roots. The selected property array slot is materialized as
   `null` when missing, a `null` property materializes as an array, and writes
   through the alias or the object-property array offset observe the same value.
+  Unsetting the selected visible object-property array slot, or an explicit
+  parent slot containing a covered child alias, detaches the direct alias
+  variable with its last value so later alias writes do not recreate the
+  removed property array slot.
   Nested object-property source paths such as
   `$alias =& $object->items[$outer][$inner];` execute for explicit key paths
   with the same visible-property root materialization. Append source paths such
@@ -2097,17 +2105,20 @@
   probes: exact `CREATE TABLE [IF NOT EXISTS] <table> (...)` statements with
   direct column definitions, bounded inline column `PRIMARY KEY`,
   `UNIQUE KEY`/`UNIQUE INDEX`/`UNIQUE`, and `KEY`/`INDEX` metadata,
-  plus table-level `PRIMARY KEY`, `KEY`/`INDEX`, and
-  `UNIQUE KEY`/`UNIQUE INDEX` entries record a deterministic table shape,
+  plus table-level `PRIMARY KEY`, `KEY`/`INDEX`,
+  `UNIQUE KEY`/`UNIQUE INDEX`, `FULLTEXT KEY`/`FULLTEXT INDEX`, and
+  `SPATIAL KEY`/`SPATIAL INDEX` entries record a deterministic table shape,
   including `NOT NULL`, `DEFAULT NULL`, bounded quoted/unquoted defaults,
   `auto_increment`, ordered multi-column index parts, and numeric prefix
   sub-parts such as `post_name(191)`, and
   exact `ALTER TABLE <table> ADD COLUMN ...`, `ADD KEY ...`, `ADD INDEX ...`,
-  `ADD UNIQUE KEY ...`, `ADD PRIMARY KEY ...`, `CHANGE COLUMN old new ...`,
-  `MODIFY COLUMN ...`, `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`,
-  or `DROP PRIMARY KEY` entries mutate that recorded table. Column drops also
-  remove recorded indexes that referenced the dropped column, and column
-  changes rename matching recorded index parts. Later `SHOW TABLES LIKE
+  `ADD UNIQUE KEY ...`, `ADD FULLTEXT KEY ...`, `ADD FULLTEXT INDEX ...`,
+  `ADD SPATIAL KEY ...`, `ADD SPATIAL INDEX ...`, `ADD PRIMARY KEY ...`,
+  `CHANGE COLUMN old new ...`, `MODIFY COLUMN ...`, `DROP COLUMN ...`,
+  `DROP KEY ...`, `DROP INDEX ...`, or `DROP PRIMARY KEY` entries mutate that
+  recorded table. Column drops also remove recorded indexes that referenced the
+  dropped column, and column changes rename matching recorded index parts.
+  Later `SHOW TABLES LIKE
   '<pattern>'`, `SHOW TABLE STATUS LIKE '<pattern>'`,
   `SHOW TABLE STATUS WHERE Name = '<table>'`, `DESCRIBE`/`DESC <table>`,
   `DESCRIBE`/`DESC <table> <column>`, `SHOW [FULL] COLUMNS FROM <table>`,
@@ -2124,14 +2135,17 @@
   statement for the same recorded shape, including
   primary/unique/non-unique key markers, per-index sequence numbers, bounded
   default/nullability metadata, auto-increment extras, prefix sub-part lengths,
-  and placeholder collation metadata for character/text columns.
+  `BTREE`/`FULLTEXT`/`SPATIAL` `SHOW INDEX` `Index_type` values, deterministic
+  `FULLTEXT KEY`/`SPATIAL KEY` `SHOW CREATE TABLE` lines, and placeholder
+  collation metadata for character/text columns.
   `SHOW TABLE STATUS` returns
   one deterministic MySQL-shaped row for the recorded table with placeholder
   `InnoDB`, zero row/storage counters, the recorded table collation, empty
   create options/comment, and an empty result for a missing exact table name.
   This does not add real SQL
   parsing, arbitrary DDL beyond those exact `ALTER TABLE` shapes, expression
-  indexes, opclass/parser metadata beyond recorded index parts, exact MySQL
+  indexes, fulltext parser clauses such as `WITH PARSER`, opclass/parser
+  metadata beyond recorded index parts, exact MySQL
   `SHOW CREATE TABLE` formatting for all column attributes,
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
   custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
@@ -3045,16 +3059,18 @@
   aliases that survive `_SESSION` root replacement on restart, and native
   lowering remain unsupported.
   `headers_sent($filename = null, $line = null)` accepts zero arguments or
-  direct variable output arguments for the filename and line, including direct
-  variables currently backed by the bounded array-offset reference-alias
-  metadata. It returns `false` before bytes reach unbuffered stdout and writes
-  `""`/`0` to supplied output variables in that state. It returns `true` after
-  the first unbuffered output byte, including `ob_flush()`/`ob_end_flush()`
-  from the outermost buffer, and writes the current source filename plus the
-  first-output line. Non-variable output arguments, array/object-property
-  output arguments, `call_user_func()`/`call_user_func_array()` output
-  parameters, exact warning text, SAPI differences, shutdown-time buffer
-  flushing visibility, and native lowering remain unsupported.
+  direct variable, direct array-offset, direct object-property, and direct
+  object-property array-offset output arguments for the filename and line.
+  Direct variables currently backed by the bounded array-offset
+  reference-alias metadata still write through to the aliased slot. It returns
+  `false` before bytes reach unbuffered stdout and writes `""`/`0` to supplied
+  output variables in that state. It returns `true` after the first unbuffered
+  output byte, including `ob_flush()`/`ob_end_flush()` from the outermost
+  buffer, and writes the current source filename plus the first-output line.
+  Non-writable expressions, dynamic object-property output arguments,
+  `call_user_func()`/`call_user_func_array()` output parameters, exact warning
+  text, SAPI differences, shutdown-time buffer flushing visibility, and native
+  lowering remain unsupported.
   `abs($value)` accepts current integer and finite-float runtime values,
   returning an integer for integer input and a float for finite-float input.
   Integer-minimum overflow, numeric string coercion, bool/null coercion,
@@ -5619,9 +5635,11 @@
   as the builtin section above; direct native `headers_list(...)` calls reject
   under the header-state boundary, while native function-table introspection
   recognizes the name.
-  `headers_sent` accepts the same current output-started and direct-variable
+  `headers_sent` accepts the same current output-started and direct writable
   filename/line output-argument subset as the builtin section above, including
-  direct alias-backed variables; direct native `headers_sent(...)` calls
+  direct variables, direct array offsets, direct object properties, direct
+  object-property array offsets, and direct alias-backed variables; direct
+  native `headers_sent(...)` calls
   reject under the header-state boundary, while native function-table
   introspection recognizes the name.
   `http_response_code` accepts the same current bounded request-local status
@@ -5929,6 +5947,7 @@
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
   probing for string class-like misses. It supports `getName()`,
+  `getFileName()`, `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getDeclaringClass()`, `getModifiers()`, `isPublic()`, `isProtected()`,
   `isPrivate()`, `isStatic()`, `isFinal()`, `isAbstract()`, and
   `isConstructor()`, plus bounded parameter inspection through
@@ -5938,7 +5957,12 @@
   materialize `ReflectionNamedType`; bounded union and pure intersection return
   types materialize `ReflectionUnionType` or `ReflectionIntersectionType` with
   `allowsNull()` and `getTypes()` over request-local `ReflectionNamedType`
-  objects. `new ReflectionFunction($function)` creates a bounded metadata
+  objects. For class methods loaded from a known CLI/fixture or include path,
+  `getFileName()` returns that path, line numbers come from the parsed method
+  declaration and closing brace, and `getDocComment()` returns the directly
+  preceding `/** ... */` docblock or `false`. Interface and trait method
+  reflection keeps parsed line/doc-comment metadata in the current request but
+  does not yet persist declaration source-file paths. `new ReflectionFunction($function)` creates a bounded metadata
   object for declared user functions named by string. It supports
   `getName()`, `getFileName()`, `getStartLine()`, `getEndLine()`,
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
@@ -7612,8 +7636,9 @@
   `hasMethod($name)`, `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
-  modifier, predicate, parameter-list, and return-type methods documented
-  above. `ReflectionFunction` currently supports only declared user-function
+  source metadata, modifier, predicate, parameter-list, and return-type
+  methods documented above. Interface and trait method source-file paths
+  remain unsupported. `ReflectionFunction` currently supports only declared user-function
   metadata named by string, with the name, file/start/end/doc-comment,
   parameter-list, return-type, and by-reference-return methods documented
   above.
@@ -7635,7 +7660,7 @@
   metadata only and does not enforce call arguments or return values.
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
-  method/class/property/parameter file-line or doc-comment metadata,
+  class/property/parameter file-line or doc-comment metadata,
   exact docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
@@ -7962,11 +7987,13 @@
   web-server emission, exact warning text, and native lowering beyond
   function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
-  direct-variable filename/line output-argument slice, including direct
-  alias-backed variables: non-variable output arguments, array/object-property
-  output targets, callback-mediated output parameters, exact warning text,
-  SAPI differences, shutdown-time buffer flushing visibility, and native
-  lowering beyond function-table introspection
+  direct writable filename/line output-argument slice, including direct
+  variables, direct array offsets, direct object properties, direct
+  object-property array offsets, and direct alias-backed variables:
+  non-writable expressions, dynamic object-property output targets,
+  callback-mediated output parameters, exact warning text, SAPI differences,
+  shutdown-time buffer flushing visibility, and native lowering beyond
+  function-table introspection
 - `ob_start()`/`ob_get_level()`/`ob_get_contents()`/`ob_get_length()`/
   `ob_list_handlers()`/`ob_get_status()`/`ob_get_clean()`/`ob_get_flush()`/
   `ob_clean()`/`ob_flush()`/`ob_end_clean()`/`ob_end_flush()` behavior beyond the current no-argument

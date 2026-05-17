@@ -1,0 +1,11 @@
+run method_reflection_source_metadata.php
+exit: 0
+stdout:
+source|tests/fixtures/milestone1496/method_reflection_source_metadata.php|15|17
+doc|1|/**\n     * Registers WordPress hooks.\n     */
+inherited|1|/**\n     * Parent hook metadata.\n     */
+inherited-lines|6|8
+plain|19|19|1
+--- stdout end ---
+stderr:
+--- stderr end ---

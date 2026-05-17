@@ -5238,6 +5238,33 @@ echo $create_row["Create Table"];
 }
 
 #[test]
+fn mysqli_query_tracks_bounded_wordpress_schema_fulltext_spatial_index_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_search (ID bigint(20) unsigned NOT NULL auto_increment, post_title text NOT NULL, post_content longtext NOT NULL, geo point NOT NULL, PRIMARY KEY  (ID), FULLTEXT KEY title_content (post_title, post_content), SPATIAL KEY geo_lookup (geo)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+mysqli_query($handle, "ALTER TABLE wp_probe_search ADD FULLTEXT INDEX content_only (post_content), ADD SPATIAL INDEX geo_recent (geo)");
+$indexes = mysqli_query($handle, "SHOW INDEX FROM wp_probe_search");
+echo mysqli_num_rows($indexes), ":";
+while ($index = mysqli_fetch_assoc($indexes)) {
+    echo $index["Key_name"], ":", $index["Seq_in_index"], ":", $index["Column_name"], ":", $index["Non_unique"], ":", $index["Index_type"], ";";
+}
+$create = mysqli_query($handle, "SHOW CREATE TABLE wp_probe_search");
+$row = mysqli_fetch_assoc($create);
+echo "|", $row["Create Table"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "6:PRIMARY:1:ID:0:BTREE;title_content:1:post_title:1:FULLTEXT;title_content:2:post_content:1:FULLTEXT;geo_lookup:1:geo:1:SPATIAL;content_only:1:post_content:1:FULLTEXT;geo_recent:1:geo:1:SPATIAL;|CREATE TABLE `wp_probe_search` (\n  `ID` bigint(20) unsigned NOT NULL auto_increment,\n  `post_title` text NOT NULL,\n  `post_content` longtext NOT NULL,\n  `geo` point NOT NULL,\n  PRIMARY KEY (`ID`),\n  FULLTEXT KEY `title_content` (`post_title`,`post_content`),\n  SPATIAL KEY `geo_lookup` (`geo`),\n  FULLTEXT KEY `content_only` (`post_content`),\n  SPATIAL KEY `geo_recent` (`geo`)\n) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_tracks_bounded_wordpress_schema_column_and_index_changes() {
     let execution = run_source(
         r#"<?php
