@@ -538,6 +538,8 @@ pub struct ClassDecl {
     pub is_final: bool,
     pub is_readonly: bool,
     pub is_nested: bool,
+    pub end_line: usize,
+    pub doc_comment: Option<String>,
     pub span: Span,
 }
 
@@ -547,6 +549,8 @@ pub struct InterfaceDecl {
     pub parents: Vec<String>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<InterfaceMethodDecl>,
+    pub end_line: usize,
+    pub doc_comment: Option<String>,
     pub span: Span,
 }
 
@@ -562,6 +566,8 @@ pub struct TraitDecl {
     pub name: String,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<ClassMethodDecl>,
+    pub end_line: usize,
+    pub doc_comment: Option<String>,
     pub span: Span,
 }
 

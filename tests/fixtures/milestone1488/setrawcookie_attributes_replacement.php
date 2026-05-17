@@ -8,4 +8,5 @@ $headers = headers_list();
 $out[] = count($headers);
 $out[] = $headers[0];
 $out[] = $headers[1];
+$out[] = $headers[2];
 echo implode("\n", $out);

@@ -5467,6 +5467,39 @@ while ($column = mysqli_fetch_assoc($where)) {
 }
 
 #[test]
+fn mysqli_query_filters_bounded_wordpress_schema_index_metadata() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "CREATE TABLE wp_probe_index_filter (ID bigint(20) unsigned NOT NULL auto_increment, option_name varchar(191) NOT NULL default '', meta_key varchar(255) NOT NULL default '', meta_value longtext NOT NULL, post_content longtext NOT NULL, PRIMARY KEY  (ID), UNIQUE KEY option_name (option_name), KEY meta_lookup (meta_key(191), meta_value(10)), FULLTEXT KEY content_search (post_content)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$exact = mysqli_query($handle, "SHOW INDEXES FROM `wp_probe_index_filter` WHERE Key_name = 'meta_lookup'");
+echo "exact=", mysqli_num_rows($exact), ":";
+while ($index = mysqli_fetch_assoc($exact)) {
+    echo $index["Key_name"], ":", $index["Seq_in_index"], ":", $index["Column_name"], ":", $index["Sub_part"], ";";
+}
+$like = mysqli_query($handle, "SHOW INDEX FROM wp_probe_index_filter WHERE `Key_name` LIKE 'content_%'");
+echo "|like=", mysqli_num_rows($like), ":";
+while ($index = mysqli_fetch_assoc($like)) {
+    echo $index["Key_name"], ":", $index["Column_name"], ":", $index["Index_type"], ";";
+}
+$primary = mysqli_query($handle, "SHOW KEYS FROM wp_probe_index_filter WHERE `Key_name` = 'PRIMARY'");
+$primary_row = mysqli_fetch_assoc($primary);
+echo "|primary=", mysqli_num_rows($primary), ":", $primary_row["Key_name"], ":", $primary_row["Non_unique"];
+$missing = mysqli_query($handle, "SHOW INDEX FROM wp_probe_index_filter WHERE Key_name LIKE 'missing_%'");
+echo "|missing=", mysqli_num_rows($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exact=2:meta_lookup:1:meta_key:191;meta_lookup:2:meta_value:10;|like=1:content_search:post_content:FULLTEXT;|primary=1:PRIMARY:0|missing=0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_select_db_accepts_current_placeholder_handle() {
     let execution = run_source(
         r#"<?php

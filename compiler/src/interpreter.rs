@@ -88,6 +88,9 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     function_source_files: HashMap<String, Option<String>>,
+    class_source_metadata: HashMap<ClassId, ClassLikeSourceMetadata>,
+    interface_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
+    trait_source_metadata: HashMap<String, ClassLikeSourceMetadata>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     method_signatures: HashMap<(ClassId, String), MethodSignature>,
     abstract_classes: HashSet<ClassId>,
@@ -313,6 +316,10 @@ struct ReflectionClassState {
     name: String,
     kind: ReflectionClassKind,
     class_id: Option<ClassId>,
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -320,6 +327,14 @@ enum ReflectionClassKind {
     Class,
     Interface,
     Trait,
+}
+
+#[derive(Debug, Clone)]
+struct ClassLikeSourceMetadata {
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1086,7 +1101,15 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
-        self.array_offset_aliases.remove(name);
+        let target_is_alias = self.array_offset_aliases.remove(name).is_some();
+        if !target_is_alias {
+            let object_alias_fallbacks = self.public_object_roots_alias_fallbacks(name);
+            self.remove_static_root_from_array_offset_aliases(name);
+            self.remove_public_object_roots_from_array_offset_aliases(
+                name,
+                &object_alias_fallbacks,
+            );
+        }
         if is_auto_global_name(name) {
             if let Some(global_symbols) = &self.global_symbols {
                 global_symbols.borrow_mut().remove(name);
@@ -3052,6 +3075,9 @@ impl Interpreter {
     ) -> CompileResult<Self> {
         let mut functions = HashMap::new();
         let mut function_source_files = HashMap::new();
+        let mut class_source_metadata = HashMap::new();
+        let mut interface_source_metadata = HashMap::new();
+        let mut trait_source_metadata = HashMap::new();
         let mut interfaces = Vec::new();
         let mut interface_lookup = HashMap::new();
         let mut traits = Vec::new();
@@ -3094,12 +3120,20 @@ impl Interpreter {
                         ));
                     }
                     let class_id = register_class_name(&mut classes, class)?;
+                    class_source_metadata.insert(
+                        class_id,
+                        class_like_source_metadata_from_class(class, source_file.clone()),
+                    );
                     if class.is_final {
                         final_classes.insert(class_id);
                     }
                     register_final_method_markers(&mut final_methods, class_id, class);
                 }
                 Stmt::Interface(interface) => {
+                    interface_source_metadata.insert(
+                        interface.name.to_ascii_lowercase(),
+                        class_like_source_metadata_from_interface(interface, source_file.clone()),
+                    );
                     register_interface_name(
                         &classes,
                         &trait_lookup,
@@ -3110,6 +3144,10 @@ impl Interpreter {
                     )?;
                 }
                 Stmt::Trait(trait_decl) => {
+                    trait_source_metadata.insert(
+                        trait_decl.name.to_ascii_lowercase(),
+                        class_like_source_metadata_from_trait(trait_decl, source_file.clone()),
+                    );
                     register_trait_name(
                         &classes,
                         &interface_lookup,
@@ -3169,6 +3207,9 @@ impl Interpreter {
         let mut interpreter = Self {
             functions,
             function_source_files,
+            class_source_metadata,
+            interface_source_metadata,
+            trait_source_metadata,
             methods,
             method_signatures,
             abstract_classes,
@@ -3670,6 +3711,10 @@ impl Interpreter {
                         ));
                     }
                     let class_id = register_class_name(&mut self.classes, class)?;
+                    self.class_source_metadata.insert(
+                        class_id,
+                        class_like_source_metadata_from_class(class, self.source_file.clone()),
+                    );
                     if class.is_abstract {
                         self.abstract_classes.insert(class_id);
                     }
@@ -3679,6 +3724,13 @@ impl Interpreter {
                     register_final_method_markers(&mut self.final_methods, class_id, class);
                 }
                 Stmt::Interface(interface) => {
+                    self.interface_source_metadata.insert(
+                        interface.name.to_ascii_lowercase(),
+                        class_like_source_metadata_from_interface(
+                            interface,
+                            self.source_file.clone(),
+                        ),
+                    );
                     register_interface_name(
                         &self.classes,
                         &self.trait_lookup,
@@ -3689,6 +3741,10 @@ impl Interpreter {
                     )?;
                 }
                 Stmt::Trait(trait_decl) => {
+                    self.trait_source_metadata.insert(
+                        trait_decl.name.to_ascii_lowercase(),
+                        class_like_source_metadata_from_trait(trait_decl, self.source_file.clone()),
+                    );
                     register_trait_name(
                         &self.classes,
                         &self.interface_lookup,
@@ -3808,6 +3864,10 @@ impl Interpreter {
             ));
         }
         let class_id = register_class_name(&mut self.classes, class)?;
+        self.class_source_metadata.insert(
+            class_id,
+            class_like_source_metadata_from_class(class, self.source_file.clone()),
+        );
         if class.is_abstract {
             self.abstract_classes.insert(class_id);
         }
@@ -3817,6 +3877,7 @@ impl Interpreter {
         if let Err(error) = self.autoload_missing_class_dependencies(class) {
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -3832,6 +3893,7 @@ impl Interpreter {
         ) {
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -3860,6 +3922,7 @@ impl Interpreter {
             self.final_classes.remove(&class_id);
             self.final_methods
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -3878,6 +3941,7 @@ impl Interpreter {
             self.final_classes.remove(&class_id);
             self.final_methods
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -10603,6 +10667,34 @@ impl Interpreter {
         )))
     }
 
+    fn reflection_class_state_for(
+        &self,
+        name: String,
+        kind: ReflectionClassKind,
+        class_id: Option<ClassId>,
+    ) -> ReflectionClassState {
+        let metadata = match kind {
+            ReflectionClassKind::Class => {
+                class_id.and_then(|class_id| self.class_source_metadata.get(&class_id))
+            }
+            ReflectionClassKind::Interface => self
+                .interface_source_metadata
+                .get(&name.to_ascii_lowercase()),
+            ReflectionClassKind::Trait => {
+                self.trait_source_metadata.get(&name.to_ascii_lowercase())
+            }
+        };
+        ReflectionClassState {
+            name,
+            kind,
+            class_id,
+            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+            start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+            end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+            doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
+        }
+    }
+
     fn resolve_reflection_class_target(
         &mut self,
         target: &Value,
@@ -10618,6 +10710,24 @@ impl Interpreter {
                     name: class.name().to_string(),
                     kind: ReflectionClassKind::Class,
                     class_id: Some(object.class_id()),
+                    file_name: self
+                        .class_source_metadata
+                        .get(&object.class_id())
+                        .and_then(|metadata| metadata.file_name.clone()),
+                    start_line: self
+                        .class_source_metadata
+                        .get(&object.class_id())
+                        .map(|metadata| metadata.start_line)
+                        .unwrap_or(0),
+                    end_line: self
+                        .class_source_metadata
+                        .get(&object.class_id())
+                        .map(|metadata| metadata.end_line)
+                        .unwrap_or(0),
+                    doc_comment: self
+                        .class_source_metadata
+                        .get(&object.class_id())
+                        .and_then(|metadata| metadata.doc_comment.clone()),
                 })
             }
             Value::String(name) => {
@@ -10629,20 +10739,52 @@ impl Interpreter {
                         name: class.name().to_string(),
                         kind: ReflectionClassKind::Class,
                         class_id: Some(class.id()),
+                        file_name: self
+                            .class_source_metadata
+                            .get(&class.id())
+                            .and_then(|metadata| metadata.file_name.clone()),
+                        start_line: self
+                            .class_source_metadata
+                            .get(&class.id())
+                            .map(|metadata| metadata.start_line)
+                            .unwrap_or(0),
+                        end_line: self
+                            .class_source_metadata
+                            .get(&class.id())
+                            .map(|metadata| metadata.end_line)
+                            .unwrap_or(0),
+                        doc_comment: self
+                            .class_source_metadata
+                            .get(&class.id())
+                            .and_then(|metadata| metadata.doc_comment.clone()),
                     });
                 }
                 if let Some(interface) = self.interface_lookup.get(&name.to_ascii_lowercase()) {
+                    let metadata = self
+                        .interface_source_metadata
+                        .get(&interface.name.to_ascii_lowercase());
                     return Ok(ReflectionClassState {
                         name: interface.name.clone(),
                         kind: ReflectionClassKind::Interface,
                         class_id: None,
+                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
                     });
                 }
                 if let Some(trait_decl) = self.trait_lookup.get(&name.to_ascii_lowercase()) {
+                    let metadata = self
+                        .trait_source_metadata
+                        .get(&trait_decl.name.to_ascii_lowercase());
                     return Ok(ReflectionClassState {
                         name: trait_decl.name.clone(),
                         kind: ReflectionClassKind::Trait,
                         class_id: None,
+                        file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                        start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                        end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+                        doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
                     });
                 }
                 Err(runtime_error(
@@ -16694,6 +16836,28 @@ impl Interpreter {
                         .to_string(),
                 ))
             }
+            "getfilename" => {
+                expect_expr_arity("ReflectionClass::getFileName", args.len(), 0, span)?;
+                Ok(state
+                    .file_name
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getstartline" => {
+                expect_expr_arity("ReflectionClass::getStartLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.start_line as i64))
+            }
+            "getendline" => {
+                expect_expr_arity("ReflectionClass::getEndLine", args.len(), 0, span)?;
+                Ok(Value::Int(state.end_line as i64))
+            }
+            "getdoccomment" => {
+                expect_expr_arity("ReflectionClass::getDocComment", args.len(), 0, span)?;
+                Ok(state
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
             "isinterface" => {
                 expect_expr_arity("ReflectionClass::isInterface", args.len(), 0, span)?;
                 Ok(Value::Bool(state.kind == ReflectionClassKind::Interface))
@@ -16733,6 +16897,24 @@ impl Interpreter {
                         name: parent_name,
                         kind: ReflectionClassKind::Class,
                         class_id: Some(parent_id),
+                        file_name: self
+                            .class_source_metadata
+                            .get(&parent_id)
+                            .and_then(|metadata| metadata.file_name.clone()),
+                        start_line: self
+                            .class_source_metadata
+                            .get(&parent_id)
+                            .map(|metadata| metadata.start_line)
+                            .unwrap_or(0),
+                        end_line: self
+                            .class_source_metadata
+                            .get(&parent_id)
+                            .map(|metadata| metadata.end_line)
+                            .unwrap_or(0),
+                        doc_comment: self
+                            .class_source_metadata
+                            .get(&parent_id)
+                            .and_then(|metadata| metadata.doc_comment.clone()),
                     },
                     span,
                 )
@@ -17134,11 +17316,11 @@ impl Interpreter {
             "getdeclaringclass" => {
                 expect_expr_arity("ReflectionMethod::getDeclaringClass", args.len(), 0, span)?;
                 self.create_reflection_class_object(
-                    ReflectionClassState {
-                        name: state.declaring_class_name,
-                        kind: state.declaring_kind,
-                        class_id: state.declaring_class_id,
-                    },
+                    self.reflection_class_state_for(
+                        state.declaring_class_name,
+                        state.declaring_kind,
+                        state.declaring_class_id,
+                    ),
                     span,
                 )
             }
@@ -17290,11 +17472,11 @@ impl Interpreter {
                 match state.declaring {
                     ReflectionParameterDeclaring::Method(method) => self
                         .create_reflection_class_object(
-                            ReflectionClassState {
-                                name: method.declaring_class_name,
-                                kind: method.declaring_kind,
-                                class_id: method.declaring_class_id,
-                            },
+                            self.reflection_class_state_for(
+                                method.declaring_class_name,
+                                method.declaring_kind,
+                                method.declaring_class_id,
+                            ),
                             span,
                         ),
                     ReflectionParameterDeclaring::Function(_) => Ok(Value::Null),
@@ -17433,11 +17615,11 @@ impl Interpreter {
             "getdeclaringclass" => {
                 expect_expr_arity("ReflectionProperty::getDeclaringClass", args.len(), 0, span)?;
                 self.create_reflection_class_object(
-                    ReflectionClassState {
-                        name: state.declaring_class_name,
-                        kind: ReflectionClassKind::Class,
-                        class_id: Some(state.declaring_class_id),
-                    },
+                    self.reflection_class_state_for(
+                        state.declaring_class_name,
+                        ReflectionClassKind::Class,
+                        Some(state.declaring_class_id),
+                    ),
                     span,
                 )
             }
@@ -26887,7 +27069,7 @@ impl Interpreter {
         }
 
         self.response_headers
-            .retain(|header| !set_cookie_header_matches_name(header, name));
+            .retain(|header| !set_cookie_header_matches_identity(header, name, &cookie_options));
         self.response_headers.push(format_setcookie_header(
             name,
             value,
@@ -34184,6 +34366,42 @@ fn method_signature(function: &FunctionDecl, file_name: Option<String>) -> Metho
     }
 }
 
+fn class_like_source_metadata_from_class(
+    class: &ClassDecl,
+    file_name: Option<String>,
+) -> ClassLikeSourceMetadata {
+    ClassLikeSourceMetadata {
+        file_name,
+        start_line: class.span.line,
+        end_line: class.end_line,
+        doc_comment: class.doc_comment.clone(),
+    }
+}
+
+fn class_like_source_metadata_from_interface(
+    interface: &InterfaceDecl,
+    file_name: Option<String>,
+) -> ClassLikeSourceMetadata {
+    ClassLikeSourceMetadata {
+        file_name,
+        start_line: interface.span.line,
+        end_line: interface.end_line,
+        doc_comment: interface.doc_comment.clone(),
+    }
+}
+
+fn class_like_source_metadata_from_trait(
+    trait_decl: &TraitDecl,
+    file_name: Option<String>,
+) -> ClassLikeSourceMetadata {
+    ClassLikeSourceMetadata {
+        file_name,
+        start_line: trait_decl.span.line,
+        end_line: trait_decl.end_line,
+        doc_comment: trait_decl.doc_comment.clone(),
+    }
+}
+
 fn reflection_parameter_metadata_from_signature(
     signature: &MethodSignature,
 ) -> Vec<ReflectionParameterMetadata> {
@@ -35939,6 +36157,11 @@ struct WordPressSchemaColumnQuery {
     column_filter: Option<WordPressSchemaNameFilter>,
 }
 
+struct WordPressSchemaIndexQuery {
+    table_name: String,
+    key_filter: Option<WordPressSchemaNameFilter>,
+}
+
 #[derive(Clone)]
 enum WordPressSchemaNameFilter {
     Exact(String),
@@ -36080,13 +36303,8 @@ fn wordpress_dynamic_schema_result_for_query(
         });
     }
 
-    let show_index_table = query
-        .strip_prefix("SHOW INDEX FROM ")
-        .or_else(|| query.strip_prefix("SHOW INDEXES FROM "))
-        .or_else(|| query.strip_prefix("SHOW KEYS FROM "))
-        .and_then(parse_schema_table_identifier);
-    if let Some(table_name) = show_index_table {
-        let table = tables.get(&table_name)?;
+    if let Some(index_query) = parse_dynamic_schema_show_index_query(query) {
+        let table = tables.get(&index_query.table_name)?;
         return Some(MysqliPendingResultState {
             fields: vec![
                 "Table".to_string(),
@@ -36108,6 +36326,7 @@ fn wordpress_dynamic_schema_result_for_query(
             rows: table
                 .indexes
                 .iter()
+                .filter(|index| schema_index_matches_filter(index, &index_query.key_filter))
                 .flat_map(|index| {
                     index.parts.iter().enumerate().map(|(idx, part)| {
                         dynamic_schema_index_row(&table.name, index, part, (idx + 1) as i64)
@@ -36118,6 +36337,40 @@ fn wordpress_dynamic_schema_result_for_query(
     }
 
     None
+}
+
+fn parse_dynamic_schema_show_index_query(query: &str) -> Option<WordPressSchemaIndexQuery> {
+    let rest = query
+        .strip_prefix("SHOW INDEX FROM ")
+        .or_else(|| query.strip_prefix("SHOW INDEXES FROM "))
+        .or_else(|| query.strip_prefix("SHOW KEYS FROM "))?
+        .trim();
+    let (table_name, rest) = parse_schema_identifier_with_optional_suffix(rest)?;
+    let rest = rest.trim();
+    let key_filter = if rest.is_empty() {
+        None
+    } else if let Some(key_name) = rest
+        .strip_prefix("WHERE Key_name = ")
+        .or_else(|| rest.strip_prefix("WHERE `Key_name` = "))
+    {
+        Some(parse_sql_single_quoted_list(key_name).and_then(|values| {
+            (values.len() == 1)
+                .then(|| values[0].clone())
+                .and_then(|value| parse_schema_table_identifier(&value))
+                .map(WordPressSchemaNameFilter::Exact)
+        })?)
+    } else if let Some(key_name) = rest
+        .strip_prefix("WHERE Key_name LIKE ")
+        .or_else(|| rest.strip_prefix("WHERE `Key_name` LIKE "))
+    {
+        Some(parse_sql_single_quoted_schema_like_filter(key_name)?)
+    } else {
+        return None;
+    };
+    Some(WordPressSchemaIndexQuery {
+        table_name,
+        key_filter,
+    })
 }
 
 fn parse_dynamic_schema_describe_query(query: &str) -> Option<WordPressSchemaColumnQuery> {
@@ -36182,6 +36435,16 @@ fn schema_column_matches_filter(
     filter
         .as_ref()
         .map(|filter| wordpress_schema_name_matches_filter(&column.name, filter))
+        .unwrap_or(true)
+}
+
+fn schema_index_matches_filter(
+    index: &WordPressSchemaIndexState,
+    filter: &Option<WordPressSchemaNameFilter>,
+) -> bool {
+    filter
+        .as_ref()
+        .map(|filter| wordpress_schema_name_matches_filter(&index.key_name, filter))
         .unwrap_or(true)
 }
 
@@ -41944,13 +42207,54 @@ fn format_setcookie_header(
     header
 }
 
-fn set_cookie_header_matches_name(header: &str, name: &str) -> bool {
-    let Some(rest) = header.strip_prefix("Set-Cookie: ") else {
+fn set_cookie_header_matches_identity(
+    header: &str,
+    name: &str,
+    options: &SetCookieOptions,
+) -> bool {
+    let Some(identity) = parse_set_cookie_identity(header) else {
         return false;
     };
-    rest.split_once('=')
-        .map(|(existing, _)| existing == name)
-        .unwrap_or(false)
+    identity.name == name
+        && identity.path.as_deref() == normalized_cookie_identity_attr(options.path.as_deref())
+        && identity.domain.as_deref() == normalized_cookie_identity_attr(options.domain.as_deref())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SetCookieIdentity {
+    name: String,
+    path: Option<String>,
+    domain: Option<String>,
+}
+
+fn parse_set_cookie_identity(header: &str) -> Option<SetCookieIdentity> {
+    let Some(rest) = header.strip_prefix("Set-Cookie: ") else {
+        return None;
+    };
+    let mut segments = rest.split(';');
+    let (name, _) = segments.next()?.split_once('=')?;
+    let mut identity = SetCookieIdentity {
+        name: name.to_string(),
+        path: None,
+        domain: None,
+    };
+
+    for segment in segments {
+        let Some((key, value)) = segment.trim().split_once('=') else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case("path") {
+            identity.path = normalized_cookie_identity_attr(Some(value)).map(str::to_string);
+        } else if key.eq_ignore_ascii_case("domain") {
+            identity.domain = normalized_cookie_identity_attr(Some(value)).map(str::to_string);
+        }
+    }
+
+    Some(identity)
+}
+
+fn normalized_cookie_identity_attr(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !value.is_empty())
 }
 
 fn percent_encode_cookie_value(value: &str) -> String {

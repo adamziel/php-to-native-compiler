@@ -85,7 +85,16 @@ impl Parser {
             self.pending_doc_comment = Some(comment.clone());
             self.advance();
         }
-        if !matches!(self.peek().kind, TokenKind::Function) {
+        if !matches!(
+            self.peek().kind,
+            TokenKind::Function
+                | TokenKind::Class
+                | TokenKind::Interface
+                | TokenKind::Trait
+                | TokenKind::Abstract
+                | TokenKind::Final
+                | TokenKind::Readonly
+        ) {
             self.pending_doc_comment = None;
         }
         match &self.peek().kind {
@@ -419,6 +428,7 @@ impl Parser {
             .consume_keyword(TokenKind::Class, "expected 'class'")?
             .span;
         let span = modifier_span.unwrap_or(class_span);
+        let doc_comment = self.pending_doc_comment.take();
         let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
         let name = self.resolve_declared_class_name(&name);
@@ -452,6 +462,7 @@ impl Parser {
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
+        let end_line = self.previous().span.line;
 
         Ok(Stmt::Class(ClassDecl {
             name,
@@ -463,6 +474,8 @@ impl Parser {
             is_final,
             is_readonly,
             is_nested,
+            end_line,
+            doc_comment,
             span,
         }))
     }
@@ -489,6 +502,7 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Trait, "expected 'trait'")?
             .span;
+        let doc_comment = self.pending_doc_comment.take();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_trait_declaration_message()));
         }
@@ -511,10 +525,13 @@ impl Parser {
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after trait body")?;
+        let end_line = self.previous().span.line;
         Ok(Stmt::Trait(TraitDecl {
             name,
             constants,
             methods,
+            end_line,
+            doc_comment,
             span,
         }))
     }
@@ -791,6 +808,7 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Interface, "expected 'interface'")?
             .span;
+        let doc_comment = self.pending_doc_comment.take();
         if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
             return Err(self.error_at(span, unsupported_nested_interface_declaration_message()));
         }
@@ -821,12 +839,15 @@ impl Parser {
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after interface body")?;
+        let end_line = self.previous().span.line;
 
         Ok(Stmt::Interface(InterfaceDecl {
             name,
             parents,
             constants,
             methods,
+            end_line,
+            doc_comment,
             span,
         }))
     }

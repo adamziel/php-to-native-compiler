@@ -4660,6 +4660,74 @@ echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
 }
 
 #[test]
+fn reflection_class_reports_bounded_class_source_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+/**
+ * Base class metadata.
+ */
+class PluginBase {
+}
+
+/**
+ * WordPress hook plugin metadata.
+ */
+class HookPlugin extends PluginBase {
+    public function boot() {}
+}
+
+/**
+ * Hook contract metadata.
+ */
+interface HookContract {
+    public function boot();
+}
+
+/**
+ * Hook trait metadata.
+ */
+trait HookTools {
+    public function helper() {}
+}
+
+class PlainClass {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function class_doc_line($label, $class) {
+    $doc = $class->getDocComment();
+    echo $label, "|", yn($doc !== false), "|", str_replace("\n", "\\n", $doc), "\n";
+}
+
+$suffix = "tests/fixtures/milestone1501/class_reflection_source_metadata.php";
+$class = new ReflectionClass(HookPlugin::class);
+echo "class-source|", substr($class->getFileName(), -strlen($suffix)), "|", $class->getStartLine(), "|", $class->getEndLine(), "\n";
+class_doc_line("class-doc", $class);
+$parent = $class->getParentClass();
+echo "parent-lines|", $parent->getStartLine(), "|", $parent->getEndLine(), "\n";
+$interface = new ReflectionClass(HookContract::class);
+echo "interface-lines|", $interface->getStartLine(), "|", $interface->getEndLine(), "\n";
+class_doc_line("interface-doc", $interface);
+$trait = new ReflectionClass(HookTools::class);
+echo "trait-lines|", $trait->getStartLine(), "|", $trait->getEndLine(), "\n";
+class_doc_line("trait-doc", $trait);
+$plain = new ReflectionClass(PlainClass::class);
+echo "plain|", $plain->getStartLine(), "|", $plain->getEndLine(), "|", yn($plain->getDocComment() === false);
+"#,
+        "tests/fixtures/milestone1501/class_reflection_source_metadata.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class-source|tests/fixtures/milestone1501/class_reflection_source_metadata.php|11|13\nclass-doc|1|/**\\n * WordPress hook plugin metadata.\\n */\nparent-lines|5|6\ninterface-lines|18|20\ninterface-doc|1|/**\\n * Hook contract metadata.\\n */\ntrait-lines|25|27\ntrait-doc|1|/**\\n * Hook trait metadata.\\n */\nplain|29|29|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_reports_bounded_method_modifier_metadata() {
     let execution = run_source(
         r#"<?php

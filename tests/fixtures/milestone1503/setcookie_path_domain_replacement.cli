@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1503/setcookie_path_domain_replacement.php

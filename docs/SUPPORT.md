@@ -25,8 +25,11 @@
   function name in function context, and to an empty string outside a function.
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
-  current scope and treats undefined names as no-ops; `unset(...)` may include
-  multiple supported operands and executes them left to right
+  current scope and treats undefined names as no-ops; when a removed direct
+  array or object variable has covered child array/property-slot aliases, those
+  aliases detach with their last observed value instead of routing through the
+  removed root; `unset(...)` may include multiple supported operands and
+  executes them left to right
 - by-reference function and method return declarations such as
   `function &identity(...)` and `public function &make(...)` parse. Guarded or
   declaration-contained declarations can be loaded. The executing subset
@@ -2126,7 +2129,11 @@
   `SHOW [FULL] COLUMNS FROM <table> WHERE Field = '<column>'`,
   `SHOW [FULL] COLUMNS FROM <table> WHERE Field LIKE '<pattern>'`, and
   `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS FROM <table>` probes read that
-  recorded shape, and bounded `LIKE` filters support `%` wildcards, `_`
+  recorded shape. The same bounded index probes also accept
+  `WHERE Key_name = '<key>'` and `WHERE Key_name LIKE '<pattern>'`, including
+  backticked `` `Key_name` `` spellings, so dbDelta-shaped index inspection can
+  narrow deterministic rows before PHP code consumes them. Bounded `LIKE`
+  filters support `%` wildcards, `_`
   single-character wildcards, and backslash-escaped `%`, `_`, and `\` literal
   characters with deterministic sorted table/status rows while preserving
   exact matching for patterns without unescaped wildcard characters.
@@ -2150,7 +2157,8 @@
   exact MySQL `SHOW TABLE STATUS` counters/timestamps/options,
   custom `ESCAPE` clauses, SQL modes such as `NO_BACKSLASH_ESCAPES`, arbitrary
   `SHOW COLUMNS WHERE` predicates beyond the documented `Field` equality and
-  `Field LIKE` forms,
+  `Field LIKE` forms, arbitrary `SHOW INDEX WHERE` predicates beyond the
+  documented `Key_name` equality and `Key_name LIKE` forms,
   dbDelta diff generation, real DDL execution, real transactional DDL
   semantics beyond the bounded in-memory snapshot/restore path, host database
   inspection, or native database lowering. For an
@@ -2321,7 +2329,8 @@
   `DROP COLUMN ...`, `DROP KEY ...`, `DROP INDEX ...`, and
   `DROP PRIMARY KEY` mutations, then exposes that recorded shape through the
   same `SHOW TABLES LIKE`, `DESCRIBE`/`DESC`,
-  `SHOW [FULL] COLUMNS`, `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS`, and
+  `SHOW [FULL] COLUMNS`, `SHOW INDEX`/`SHOW INDEXES`/`SHOW KEYS` including
+  bounded `WHERE Key_name = ...` and `WHERE Key_name LIKE ...` filters, and
   deterministic `SHOW CREATE TABLE` probes, plus exact
   `SHOW TABLE STATUS LIKE '<table>'` and
   `SHOW TABLE STATUS WHERE Name = '<table>'` probes that expose the recorded
@@ -2973,7 +2982,7 @@
   CLI header log as an ordered array of strings in current log order. It
   exposes only this project-local request-state scaffold after accepted
   `header()` replacement/appends, bounded `setcookie()`/`setrawcookie()` formatting and
-  name-only replacement, and bounded `header_remove()` mutations; PHP CLI
+  path/domain-aware replacement, and bounded `header_remove()` mutations; PHP CLI
   parity, SAPI response state, status-code headers, full cookie formatting,
   header normalization, output buffers beyond the current output-started
   bookkeeping, exact warnings, and native lowering remain unsupported.
@@ -2995,14 +3004,16 @@
   CLI header log used by `header()`/`headers_list()` while output is still
   open, percent-encode the cookie value, format nonzero expiration timestamps
   as GMT dates, and replace earlier deterministic cookie headers with the same
-  cookie name. Once unbuffered output has started, it returns `false`, does
-  not append a cookie header, and emits a bounded `E_WARNING` through the
-  current `set_error_handler()` stack or stderr fallback. `setrawcookie()`
+  cookie name, normalized non-empty path, and normalized non-empty domain while
+  keeping same-name cookies for different path/domain identities. Once
+  unbuffered output has started, it returns `false`, does not append a cookie
+  header, and emits a bounded `E_WARNING` through the current
+  `set_error_handler()` stack or stderr fallback. `setrawcookie()`
   accepts the same bounded signature and attributes, but writes the string
   value unchanged instead of percent-encoding it. Cookie name
   validation/encoding, `Max-Age`, array option validation
-  beyond the documented keys, path/domain-aware duplicate handling, SAPI/
-  web-server emission, exact warning text, and native lowering remain
+  beyond the documented keys, case-insensitive domain identity normalization,
+  SAPI/web-server emission, exact warning text, and native lowering remain
   unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
   It returns `true`, sets the bounded session status to active, assigns a
@@ -3382,7 +3393,10 @@
   direct array-offset alias.
   Direct `unset($name)` removes the current-scope symbol and treats missing
   names as no-ops; later plain reads use the existing undefined-variable
-  diagnostic. Multiple supported `unset(...)` operands run left to right.
+  diagnostic. For covered direct array roots and direct object roots with
+  public/context property array-slot aliases, root removal detaches remaining
+  alias variables with their last observed values. Multiple supported
+  `unset(...)` operands run left to right.
   Runtime lookup by a value computed from PHP code is not implemented yet, so
   variable variables still do not execute.
 - Null coalescing: `phpc run` supports an executable `??` slice where the left
@@ -5941,8 +5955,13 @@
   and string class-like names, invokes the existing autoload path for string
   misses, and supports `getName()`, `getShortName()`, `isInterface()`,
   `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, and `hasMethod($name)` over the current metadata
-  tables.
+  `getInterfaceNames()`, `hasMethod($name)`, `getFileName()`,
+  `getStartLine()`, `getEndLine()`, and `getDocComment()` over the current
+  metadata tables. For declared user classes, interfaces, and traits loaded
+  from a known CLI/fixture or include path, `getFileName()` returns that path,
+  line numbers come from the parsed class-like declaration and closing brace,
+  and `getDocComment()` returns the directly preceding `/** ... */` docblock
+  or `false`.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
@@ -7633,7 +7652,8 @@
   declared user classes, interfaces, and traits. The executable method subset
   is `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
   `isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
-  `hasMethod($name)`, `hasProperty($name)`, `getProperty($name)`, and
+  `hasMethod($name)`, `getFileName()`, `getStartLine()`, `getEndLine()`,
+  `getDocComment()`, `hasProperty($name)`, `getProperty($name)`, and
   zero-argument `getProperties()`. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the
   source metadata, modifier, predicate, parameter-list, and return-type
@@ -7660,7 +7680,7 @@
   metadata only and does not enforce call arguments or return values.
   Parenthesized DNF parameter/return types, callable/iterable/object special
   PHP edge cases beyond the current parsed-name metadata, attributes,
-  class/property/parameter file-line or doc-comment metadata,
+  property/parameter file-line or doc-comment metadata,
   exact docblock association across attributes and unusual trivia,
   extension/internal function/method/property/parameter metadata, parameter and property
   attributes, default constant-name introspection, closure
@@ -7963,7 +7983,7 @@
   beyond function-table introspection
 - `headers_list()` behavior beyond returning the current deterministic CLI
   header log after accepted `header()` replacement/appends, bounded
-  `setcookie()`/`setrawcookie()` formatting/name-only replacement, and bounded
+  `setcookie()`/`setrawcookie()` formatting/path-domain replacement, and bounded
   `header_remove()` mutations: PHP CLI
   parity, SAPI response state, status-code headers, full cookie formatting,
   header normalization, output buffers beyond the current output-started
@@ -7978,13 +7998,14 @@
   partial-output behavior, and native lowering beyond function-table introspection
 - `setcookie()`/`setrawcookie()` behavior beyond accepting the documented
   bounded positional/options-array attributes, formatting nonzero expiration
-  timestamps, replacing deterministic cookie headers by cookie name, returning
-  `false` after unbuffered output starts with a bounded `E_WARNING`, and
+  timestamps, replacing deterministic cookie headers by cookie name plus
+  normalized non-empty path/domain identity, returning `false` after unbuffered
+  output starts with a bounded `E_WARNING`, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
   cookie name validation/encoding, `Max-Age`, option validation
-  beyond the documented keys, path/domain-aware duplicate handling, SAPI/
-  web-server emission, exact warning text, and native lowering beyond
+  beyond the documented keys, case-insensitive domain identity normalization,
+  SAPI/web-server emission, exact warning text, and native lowering beyond
   function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and
   direct writable filename/line output-argument slice, including direct

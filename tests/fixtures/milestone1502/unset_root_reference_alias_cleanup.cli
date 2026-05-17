@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone1502/unset_root_reference_alias_cleanup.php
+array:unset|alias=seed|leaf=nested
+array:unset|alias=after|leaf=changed
+object:unset|alias=seed|leaf=nested
+object:unset|alias=property-after|leaf=property-changed

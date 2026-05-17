@@ -118,6 +118,12 @@ object-property alias metadata from the cloned source variable to the target
 variable, so the current bounded reference-slot model can keep covered property
 slots shared across a fresh object handle for the covered `clone $object`
 assignment shape.
+Direct variable `unset($name)` removes the root symbol and, for covered direct
+array roots plus direct object roots with public/context property array-slot
+aliases, detaches aliases below that removed root by storing their last
+observed values into the remaining direct alias variables. This is still the
+same symbol-table alias metadata, not a reference container with destructor or
+copy-on-write ordering semantics.
 Reference-returning `call_user_func_array()` sources use the same caller-cell
 binding path as direct reference-returning function and method calls for the
 current literal argument-array direct-variable and direct array-slot reference
@@ -178,14 +184,15 @@ alias metadata for the removed slot, and for child aliases below a removed
 parent slot, while storing the last observed alias value back into the
 detached direct alias variable. This models the bounded PHP behavior where
 unsetting a referenced container slot deletes the container entry without
-deleting the remaining reference variable. Arbitrary nested copied reference
-slots beyond the literal copied path slice, non-public property-offset or
-magic clone alias mirroring, dynamic ArrayAccess references, arbitrary
-ArrayAccess append bodies, reference array literals outside direct variable,
-direct array-offset, direct visible object-property, and direct
-dynamic-property assignment targets, alias cleanup outside covered unset slot
-paths, exact alias destruction ordering, and native lowering still require the
-future runtime reference/COW value model.
+deleting the remaining reference variable. Direct variable `unset($name)` also
+detaches covered aliases rooted below the removed direct array/object variable.
+Arbitrary nested copied reference slots beyond the literal copied path slice,
+non-public property-offset or magic clone alias mirroring, dynamic ArrayAccess
+references, arbitrary ArrayAccess append bodies, reference array literals
+outside direct variable, direct array-offset, direct visible object-property,
+and direct dynamic-property assignment targets, plain object-property
+`unset(...)` alias cleanup, exact alias destruction ordering, and native
+lowering still require the future runtime reference/COW value model.
 
 ## Compiler Crate
 
@@ -1748,13 +1755,16 @@ boundaries. The current slice accepts a string cookie name plus optional string
 value, bounded positional attributes, or the bounded options-array attribute
 form. It formats nonzero expiration timestamps as GMT dates, appends a
 deterministic `Set-Cookie:` line to the same CLI header log, and replaces
-earlier deterministic `Set-Cookie` lines with the same cookie name.
+earlier deterministic `Set-Cookie` lines with the same cookie name plus
+normalized non-empty path/domain identity while preserving same-name cookies
+for different path/domain identities.
 `setcookie()` percent-encodes the value; `setrawcookie()` preserves the raw
 string value. After unbuffered output starts these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
 error-handler stack or stderr fallback; cookie-name validation/encoding,
-`Max-Age`, path/domain-aware duplicate handling, exact warning text, SAPI
-emission, and native lowering remain outside the model.
+`Max-Age`, full option validation, case-insensitive domain identity
+normalization, exact warning text, SAPI emission, and native lowering remain
+outside the model.
 `session_start()` uses the same request-local output-started state for the
 current bounded session lifecycle. Before unbuffered output it materializes the
 in-memory `$_SESSION` root from a PHP-compatible `sess_<id>` file when
@@ -1896,10 +1906,12 @@ per-handle dynamic schema island records the current bounded
 column `DEFAULT`/`DEFAULT NULL`/`NOT NULL`/`auto_increment` metadata, inline
 column primary/unique/non-unique key metadata, bounded `ASC`/`DESC`
 index-part ordering metadata for `SHOW INDEX` collation values, and
-deterministic `SHOW CREATE TABLE` text. Metadata `LIKE`
+deterministic `SHOW CREATE TABLE` text. `SHOW INDEX`/`SHOW KEYS` can also
+filter the recorded rows by bounded `Key_name` equality or `Key_name LIKE`
+predicates before result materialization. Metadata `LIKE`
 filters support exact patterns plus `%` wildcards, `_` single-character
 wildcards, and backslash-escaped `%`, `_`, and `\` literals for table names,
-table status rows, and column names. The same placeholder transaction and
+table status rows, column names, and index names. The same placeholder transaction and
 savepoint helpers that snapshot the `wp_options` state island also snapshot
 and restore this bounded dynamic schema-state island for recorded
 `CREATE TABLE`/`ALTER TABLE` metadata. It does not model arbitrary
@@ -2579,8 +2591,13 @@ values and string names for the current declared class, interface, and trait
 tables, including the existing autoload callback path for string misses. The
 object stores request-local reflection state and dispatches the current
 `getName()`, `getShortName()`, `isInterface()`, `isTrait()`,
-`isInstantiable()`, `getParentClass()`, `getInterfaceNames()`, and
-`hasMethod($name)` methods directly through the interpreter. The same
+`isInstantiable()`, `getParentClass()`, `getInterfaceNames()`,
+`hasMethod($name)`, `getFileName()`, `getStartLine()`, `getEndLine()`, and
+`getDocComment()` methods directly through the interpreter. Class-like source
+paths are tracked in interpreter-side metadata when class, interface, and
+trait declarations are loaded from a known CLI/fixture or include path; start
+and end lines plus directly preceding `/** ... */` doc-comments come from the
+parsed declaration. The same
 request-local reflection path now covers declared user-class properties:
 `hasProperty($name)`, `getProperty($name)`, and zero-argument
 `getProperties()` resolve current class metadata, include inherited public and

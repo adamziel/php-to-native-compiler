@@ -171,6 +171,46 @@ echo "|leaf=", $leaf;
 }
 
 #[test]
+fn unset_root_variables_detaches_covered_reference_aliases() {
+    let source = r#"<?php
+class RefcowUnsetRootBag {
+    public $items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+}
+
+$items = ["slot" => "seed", "outer" => ["leaf" => "nested"]];
+$alias =& $items["slot"];
+$leaf =& $items["outer"]["leaf"];
+
+unset($items);
+echo isset($items) ? "array:set" : "array:unset";
+echo "|alias=", $alias, "|leaf=", $leaf, "\n";
+$alias = "after";
+$leaf = "changed";
+echo isset($items) ? "array:set" : "array:unset";
+echo "|alias=", $alias, "|leaf=", $leaf, "\n";
+
+$bag = new RefcowUnsetRootBag();
+$propertyAlias =& $bag->items["slot"];
+$propertyLeaf =& $bag->items["outer"]["leaf"];
+
+unset($bag);
+echo isset($bag) ? "object:set" : "object:unset";
+echo "|alias=", $propertyAlias, "|leaf=", $propertyLeaf, "\n";
+$propertyAlias = "property-after";
+$propertyLeaf = "property-changed";
+echo isset($bag) ? "object:set" : "object:unset";
+echo "|alias=", $propertyAlias, "|leaf=", $propertyLeaf;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array:unset|alias=seed|leaf=nested\narray:unset|alias=after|leaf=changed\nobject:unset|alias=seed|leaf=nested\nobject:unset|alias=property-after|leaf=property-changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_array_offset_rejects_non_array_targets() {
     let error = runtime_error("<?php\n$value = 1;\nunset($value[0]);\n");
 

@@ -1,0 +1,4 @@
+3
+Set-Cookie: wordpress_test_cookie=network; path=/wp-admin; domain=network.example.test
+Set-Cookie: wordpress_test_cookie=admin-new; path=/wp-admin; domain=example.test
+Set-Cookie: wordpress_test_cookie=root raw; path=/

@@ -239,6 +239,7 @@ $out[] = $second ? "second" : "second-failed";
 $out[] = count($headers);
 $out[] = $headers[0];
 $out[] = $headers[1];
+$out[] = $headers[2];
 echo implode("|", $out);
 "#,
     )
@@ -246,7 +247,34 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "1|first|second|2|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Lax"
+        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old%20value|Set-Cookie: wordpress_test_cookie=WP%20Cookie%20check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete%20me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Lax"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn setcookie_replaces_by_name_path_and_domain_identity() {
+    let execution = run_source(
+        r#"<?php
+$out = array();
+setcookie("wordpress_test_cookie", "root", 0, "/");
+setcookie("wordpress_test_cookie", "admin", 0, "/wp-admin", "example.test");
+setcookie("wordpress_test_cookie", "network", 0, "/wp-admin", "network.example.test");
+setcookie("wordpress_test_cookie", "admin-new", 0, "/wp-admin", "example.test");
+setrawcookie("wordpress_test_cookie", "root raw", 0, "/");
+$headers = headers_list();
+$out[] = count($headers);
+$out[] = $headers[0];
+$out[] = $headers[1];
+$out[] = $headers[2];
+echo implode("|", $out);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3|Set-Cookie: wordpress_test_cookie=network; path=/wp-admin; domain=network.example.test|Set-Cookie: wordpress_test_cookie=admin-new; path=/wp-admin; domain=example.test|Set-Cookie: wordpress_test_cookie=root raw; path=/"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -266,6 +294,7 @@ $out[] = $second ? "second" : "second-failed";
 $out[] = count($headers);
 $out[] = $headers[0];
 $out[] = $headers[1];
+$out[] = $headers[2];
 echo implode("|", $out);
 "#,
     )
@@ -273,7 +302,7 @@ echo implode("|", $out);
 
     assert_eq!(
         execution.stdout,
-        "1|first|second|2|Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Strict"
+        "1|first|second|3|Set-Cookie: wordpress_test_cookie=old raw|Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly|Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Strict"
     );
     assert_eq!(execution.exit_code, 0);
 }

@@ -1,0 +1,1 @@
+exact=2:meta_lookup:1:meta_key:191;meta_lookup:2:meta_value:10;|like=1:content_search:post_content:FULLTEXT;|primary=1:PRIMARY:0|missing=0

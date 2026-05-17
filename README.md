@@ -95,7 +95,7 @@ parity, session-cookie encoding/expiration/replacement beyond the documented
 `session_start()` attribute scaffold, and cache-header emission remain
 unsupported. `setcookie()`/`setrawcookie()` separately support a bounded
 deterministic CLI header-log slice for encoded or raw string values,
-expiration dates, attributes, and name-only replacement. `fopen()` can create bounded
+expiration dates, attributes, and path/domain-aware replacement. `fopen()` can create bounded
 interpreter-owned `php://memory`,
 `php://temp`, `php://input`, and local UTF-8 file stream resources for simple
 flows through `fwrite()`, `fread()`, `rewind()`, `stream_get_contents()`,
@@ -223,7 +223,9 @@ incorrect native code.
   `call_user_func_array()` reference-return iterable roots when the returned
   direct variable is backed by a caller variable cell, plus bounded
   direct array-offset by-reference parameter writeback with `unset($param)`
-  detachment for ordinary arrays and request bags, plus bounded
+  detachment for ordinary arrays and request bags, plus bounded alias cleanup
+  when direct array/object roots with covered child aliases are removed through
+  `unset($name)`, plus bounded
   direct free-function, visible object-method, and current static dispatch
   reference-return assignment that binds a returned by-reference parameter
   back to covered direct array-offset and visible named object-property
@@ -428,7 +430,8 @@ incorrect native code.
   for current object values or declared string class names, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
   `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
-  `getInterfaceNames()`, `hasMethod($name)`, `hasProperty($name)`,
+  `getInterfaceNames()`, `hasMethod($name)`, class-like
+  file/start/end/doc-comment source metadata, `hasProperty($name)`,
   `getProperty($name)`, and zero-argument `getProperties()`, bounded
   `ReflectionFunction` metadata objects for declared user functions with
   name, file/start/end/doc-comment, parameter-list, return-type, and
@@ -577,6 +580,10 @@ metadata, so writes through the global slot and the original slot observe the
 same value. These paths are still symbol-table alias metadata rather than full
 PHP reference containers; broader alias rebinding, exact mutation ordering, and
 copy-on-write remain unsupported.
+Covered root-variable `unset($name)` now detaches remaining aliases below a
+removed direct array or object variable with their last observed values. Plain
+object-property unset cleanup, magic-property references, exact alias
+destruction ordering, and broad array/object copy-on-write remain unsupported.
 By-reference function and method return declarations also parse and have
 bounded statement-form reference-assignment execution for direct variable
 returns, covered array/property-slot by-reference arguments, and the narrow
@@ -747,7 +754,8 @@ interpreter-only `headers_sent()` output-started tracking, direct variable,
 array-offset, object-property, and object-property array-offset filename/line
 outputs including direct variables backed by the current bounded array-offset
 reference-alias metadata, bounded ordinary header-name replacement in the
-request-local CLI header log, bounded request-local status-code state, and
+request-local CLI header log, bounded path/domain-aware cookie replacement,
+bounded request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,
 direct `realpath(...)` filesystem canonicalization calls,

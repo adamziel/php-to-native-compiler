@@ -1,4 +1,5 @@
 1
-2
+3
+Set-Cookie: wordpress_test_cookie=old raw
 Set-Cookie: wordpress_test_cookie=WP Cookie check; expires=Tue, 14 Nov 2023 22:13:20 GMT; path=/wp-admin; domain=example.test; secure; HttpOnly
 Set-Cookie: logged_in=delete me; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/; HttpOnly; SameSite=Strict

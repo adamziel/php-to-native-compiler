@@ -208,36 +208,41 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Object/interface lane: Milestone 1501 targets closure/internal reflection,
-  attributes and exact docblock association, class/property/parameter source
-  metadata, exact reflection exceptions, invocation/value mutation,
+- Object/interface lane: Milestone 1506 targets property/parameter source
+  metadata, closure/internal reflection, attributes and exact docblock
+  association, exact reflection exceptions, invocation/value mutation,
   readonly/property hooks, magic hooks reached by WordPress,
   autoload/class-alias lifecycle parity, interface/trait source metadata, or
   broader class metadata behavior.
-- Reference/COW lane: Milestone 1502 targets real reference containers,
-  magic-property reference containers, arbitrary reference expressions,
-  non-direct holder expressions, invisible dynamic property reference sources,
-  mixed nested `ArrayAccess` chains, alias cleanup beyond covered
-  `unset(...)` slots, broader array/object copy-on-write, exact alias
-  destruction ordering, by-reference foreach, or native lowering.
-- Request/SAPI/filesystem/stream lane: Milestone 1503 targets
+- Reference/COW lane: Milestone 1507 targets real reference containers, plain
+  object-property `unset(...)` alias cleanup, magic-property reference
+  containers, arbitrary reference expressions, non-direct holder expressions,
+  invisible dynamic property reference sources, mixed nested `ArrayAccess`
+  chains, alias cleanup beyond covered root/slot paths, broader array/object
+  copy-on-write, exact alias destruction ordering, by-reference foreach, or
+  native lowering.
+- Request/SAPI/filesystem/stream lane: Milestone 1508 targets
   callback-mediated `headers_sent()` output parameters, cookie name/option
-  validation, `Max-Age`, path/domain-aware cookie replacement, session cookie
-  replacement parity, cache headers, session locking, save handlers, garbage
-  collection, binary reads, shutdown/fatal/destructor ordering,
-  include-path/stat-cache behavior, stream wrappers/contexts, request-body
-  lifetime, host filesystem edge cases, or native lowering.
-- WordPress DB/bootstrap lane: Milestone 1504 targets broader
+  validation, `Max-Age`, case-insensitive domain identity normalization,
+  session cookie replacement parity, cache headers, session locking, save
+  handlers, garbage collection, binary reads, shutdown/fatal/destructor
+  ordering, include-path/stat-cache behavior, stream wrappers/contexts,
+  request-body lifetime, host filesystem edge cases, exact warning text, real
+  SAPI emission, or native lowering.
+- WordPress DB/bootstrap lane: Milestone 1509 targets broader
   dbDelta-relevant schema diffing, real SQL parsing slices, host database
   inspection, arbitrary query/result behavior, prepared statements,
-  charset/collation/error fidelity, persistent object-cache/transient
-  behavior, hooks under realistic callback shapes, deterministic plugin/theme
-  loading probes, or a bootstrap/request probe that moves past its next real
-  blocker.
-- Tests/docs lane: Milestone 1505 is the next tests/docs slot after the next
+  charset/collation/error fidelity, SQL-mode-aware wildcard behavior,
+  persistent object-cache/transient behavior, hooks under realistic callback
+  shapes, deterministic plugin/theme loading probes, or a bootstrap/request
+  probe that moves past its next real blocker.
+- Tests/docs lane: Milestone 1510 is the next tests/docs slot after the next
   WordPress-focused implementation batch.
 
-Milestones 1496 through 1499 closed the latest four WordPress-focused
+Milestones 1501 through 1504 closed the latest four WordPress-focused
+implementation lanes, and Milestone 1505 refreshed the queue and recorded the
+full-gate result.
+Milestones 1496 through 1499 closed the previous four WordPress-focused
 implementation lanes, and Milestone 1500 refreshed the queue and recorded the
 full-gate result.
 Milestones 1491 through 1494 closed the previous four WordPress-focused
