@@ -1505,16 +1505,16 @@ fn emit_asm_rejects_interface_declaration_before_backend_execution() {
 fn unsupported_trait_declaration_has_stable_parse_errors() {
     let cases = [
         (
+            "<?php\ntrait Reusable {\n    private function render() {}\n}\n",
+            3,
+            13,
+            "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+        ),
+        (
             "<?php\ntrait Reusable {\n    protected static function render() {}\n}\n",
             3,
             22,
             "unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
-        ),
-        (
-            "<?php\ntrait Reusable {\n    use Other { Other::render as alias; }\n}\n",
-            3,
-            15,
-            "unsupported trait-body use adaptation: aliases, visibility adaptations, and insteadof conflict resolution inside traits are not implemented",
         ),
         (
             "<?php\nif (true) {\n    trait Nested {}\n}\n",

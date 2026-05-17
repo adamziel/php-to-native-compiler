@@ -1,0 +1,9 @@
+This fixture exercises phpc's deterministic prepared-statement result-binding
+island through a WordPress-shaped `wpdb` object without calling
+`mysqli_stmt_store_result()` first. System PHP needs a real initialized
+MySQLi/mysqlnd connection and host database row source, while phpc fetches the
+current deterministic executed seed-post row directly and leaves
+`mysqli_stmt_num_rows()` at the documented pre-buffered value `0`. It does not
+implement true by-reference result aliases, arbitrary prepared SQL, real
+mysqlnd cursor/network transfer, host database state, PHP warning/error
+fidelity, or native database lowering.

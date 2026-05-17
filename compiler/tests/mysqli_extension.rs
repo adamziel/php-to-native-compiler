@@ -2093,6 +2093,29 @@ echo array_key_exists("changed", $row->fields) ? "changed" : "stable";
 }
 
 #[test]
+fn mysqli_statement_bind_result_fetches_unbuffered_executed_rows() {
+    let execution = run_source(
+        r#"<?php
+$stmt = mysqli_prepare(mysqli_init(), "SELECT ID, post_title FROM wp_posts WHERE ID = ?");
+mysqli_stmt_execute($stmt, array(1));
+$id = null;
+$title = null;
+echo mysqli_stmt_num_rows($stmt);
+echo "|";
+echo mysqli_stmt_bind_result($stmt, $id, $title) ? "bound" : "failed";
+echo "|";
+echo mysqli_stmt_fetch($stmt) ? $id . ":" . $title : "no-row";
+echo "|";
+echo mysqli_stmt_fetch($stmt) === null ? "done" : "again";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|bound|1:Hello world placeholder|done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_statement_result_and_close_are_visible_but_explicit_boundaries() {
     let execution = run_source(
         r#"<?php

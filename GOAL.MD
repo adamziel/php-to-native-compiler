@@ -175,10 +175,10 @@ gate above is satisfied.
 
 ### Current Parallel Focus
 
-The latest WordPress-focused batch closed bounded trait property composition,
-by-reference `foreach` over multi-slot reference-return child-array aliases,
-duplicate differently cased cookie options-array key parity, and MySQLi
-prepared-statement result binding into direct object-property targets.
+The latest WordPress-focused batch closed nested trait-body method adaptations,
+by-reference `foreach` over covered `ArrayAccess` offset-array roots,
+cookie-name validation before header mutation, and unbuffered deterministic
+prepared-statement fetches without `mysqli_stmt_store_result()`.
 Those are useful compatibility steps, but they do not change the larger
 project shape: the next lanes should keep attacking broad object/interface
 semantics, real reference/COW behavior, request/SAPI/filesystem/stream

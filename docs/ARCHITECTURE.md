@@ -48,16 +48,22 @@ by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context
 `$this->holder()->items`, or `$this->holder()->{$name}`, evaluate the holder
 once into a private temporary object root and then use that same public/context
-property alias machinery when the selected property is visible. Direct free-function calls
+property alias machinery when the selected property is visible. Direct and
+visible property-held `ArrayAccess` offset-array roots, such as
+`foreach ($bag["outer"] as &$value)` and
+`foreach ($holder->{$name}["outer"] as &$value)`, reuse the exact bounded
+by-reference `offsetGet($offset) { return $this->property[$offset]; }` bridge
+and then apply the same foreach array-slot alias machinery to the returned
+backing array slot. Direct free-function calls
 declared as returning by reference can also serve as by-reference `foreach`
 iterable roots when the function returns a direct variable backed by a caller
 variable cell, such as a by-reference parameter; the interpreter binds a
 private temporary root to that returned cell before applying the existing
 foreach array-slot alias machinery. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
-recursive `$GLOBALS` array, copy-on-write, dynamic global-name, ArrayAccess
-iteration, arbitrary dynamic object-property iterable roots, or included-file scope
-model.
+recursive `$GLOBALS` array, copy-on-write, dynamic global-name, broader
+ArrayAccess iteration, arbitrary dynamic object-property iterable roots, or
+included-file scope model.
 `$_COOKIE`, `$_GET`, `$_POST`, `$_REQUEST`, and `$_FILES` are seeded in the
 same root symbol table and route direct function-scope reads and writes through
 that root storage. `$_SESSION` is materialized lazily into the same root symbol
@@ -130,12 +136,16 @@ Prepared MySQLi result bindings use a separate deterministic statement-target
 list rather than PHP reference containers: direct variables write to the caller
 symbol table, and direct variable or direct object-property array-offset
 bindings store their evaluated key path at bind time before
-`mysqli_stmt_fetch()` copies buffered placeholder row values into those slots.
+`mysqli_stmt_fetch()` copies deterministic placeholder row values into those
+slots. The bounded fetch path can consume the executed statement result
+directly without `mysqli_stmt_store_result()`, while buffered metadata such as
+`mysqli_stmt_num_rows()` and `mysqli_stmt_data_seek()` stays tied to the
+explicit store path.
 Direct object-property bindings write through the same visible property path
 used by ordinary property assignment, with dynamic public-property creation
 limited to the current `stdClass`/`wpdb` object slice. Dynamic property target
-expressions, unbuffered mysqlnd cursors, and arbitrary host database rows
-remain outside this binding model.
+expressions, real mysqlnd unbuffered network transfer, and arbitrary host
+database rows remain outside this binding model.
 Direct variable `unset($name)` removes the root symbol and, for covered direct
 array roots plus direct object roots with public/context property array-slot
 aliases, detaches aliases below that removed root by storing their last
@@ -185,14 +195,16 @@ evaluate to objects, direct free-function, direct visible
 instance-method, direct named-static-method, method-context
 `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
 `call_user_func_array()` reference-return iterable roots from this machinery,
-including bounded direct caller-cell and direct static-local cell cases. When
+plus direct and visible property-held `ArrayAccess` offset-array roots backed
+by the exact bounded by-reference `offsetGet()` bridge, including bounded
+direct caller-cell and direct static-local cell cases. When
 the reference-return call maps a returned child array such as
 `return $param[$key];` to multiple covered aliases for direct names sharing a
 caller cell, by-reference `foreach` binds each visited element through all of
 those aliases so loop writes and the lingering post-loop reference keep the
 current bounded alias group coherent.
 Non-direct property holders outside that object-result foreach slice,
-invisible selected properties,
+invisible selected properties, mixed nested `ArrayAccess` chains,
 magic-property containers, property-return, array-offset-return beyond that
 assignment-only covered parent-slot suffix shape, expression-return, magic
 `__callStatic`, and callback forms outside the bounded
@@ -344,7 +356,10 @@ interface method checks. When two different composed traits still provide the
 same public instance method after class-method precedence and bounded
 `insteadof` exclusions are applied, class registration stops with a stable
 trait-conflict diagnostic instead of falling through to generic duplicate
-method metadata.
+method metadata. Trait-body `use` declarations inside traits reuse that same
+bounded method-adaptation machinery for supported public instance methods, so
+an outer trait can adapt nested trait aliases, visibility, and qualified
+`insteadof` conflict winners before a class consumes the outer trait.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
@@ -358,8 +373,8 @@ trait/class constants, static/abstract/final or non-public trait methods,
 broad executable conflict resolution beyond class-method precedence and the
 current bounded `insteadof` slice, exact PHP fatal-error text for unresolved
 trait conflicts, unqualified visibility-only adaptations across
-multiple used traits, trait-body aliases/visibility adaptations/`insteadof`,
-unqualified `insteadof`,
+multiple used traits, unqualified `insteadof`, trait property or constant
+adaptations,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
@@ -1794,7 +1809,8 @@ current error-handler stack or stderr fallback. It still does not model
 status-header removal, whitespace normalization, exact PHP warning text, or
 full SAPI removal behavior.
 `setcookie()` and `setrawcookie()` are interpreter-only header-state
-boundaries. The current slice accepts a string cookie name plus optional string
+boundaries. The current slice accepts a non-empty string cookie name that does
+not contain PHP's forbidden cookie-name separator bytes, plus optional string
 value, bounded positional attributes, or the bounded options-array attribute
 form. It formats nonzero expiration timestamps as GMT dates, appends a
 deterministic `Set-Cookie:` line to the same CLI header log, adds a bounded
@@ -1813,9 +1829,9 @@ unknown string keys before changing the deterministic header log. After
 unbuffered output starts
 these calls return `false`, leave
 the header log unchanged, and route a bounded `E_WARNING` through the current
-error-handler stack or stderr fallback; cookie-name validation/encoding,
+error-handler stack or stderr fallback; cookie-name encoding,
 exact request-time/Date-header parity for future `Max-Age` values,
-exact `ValueError` objects/text for invalid options,
+exact `ValueError` objects/text for invalid names/options,
 IDNA/trailing-dot/domain-policy
 canonicalization, exact warning text, SAPI emission, and native lowering
 remain outside the model.

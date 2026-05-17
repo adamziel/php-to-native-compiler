@@ -380,6 +380,67 @@ echo implode("|", $out);
 }
 
 #[test]
+fn setcookie_rejects_invalid_cookie_names_before_header_mutation() {
+    let empty = runtime_error(
+        r#"<?php
+setcookie("", "value");
+"#,
+    );
+    assert_eq!(empty.line, 2);
+    assert_eq!(empty.column, 1);
+    assert_eq!(
+        empty.message,
+        "unsupported call setcookie(): name argument cannot be empty in the current subset"
+    );
+
+    let invalid = runtime_error("<?php\nsetcookie(\"bad name\", \"value\");\n");
+    assert_eq!(invalid.line, 2);
+    assert_eq!(invalid.column, 1);
+    assert_eq!(
+        invalid.message,
+        "unsupported call setcookie(): name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset"
+    );
+
+    let valid = run_source(
+        r#"<?php
+setcookie("wordpress_logged_in", "user token");
+setrawcookie("wp-settings-1", "raw token");
+$headers = headers_list();
+echo count($headers) . "|" . $headers[0] . "|" . $headers[1];
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        valid.stdout,
+        "2|Set-Cookie: wordpress_logged_in=user%20token|Set-Cookie: wp-settings-1=raw token"
+    );
+    assert_eq!(valid.exit_code, 0);
+}
+
+#[test]
+fn setrawcookie_rejects_invalid_cookie_names_before_header_mutation() {
+    let empty = runtime_error(
+        r#"<?php
+setrawcookie("", "value");
+"#,
+    );
+    assert_eq!(empty.line, 2);
+    assert_eq!(empty.column, 1);
+    assert_eq!(
+        empty.message,
+        "unsupported call setrawcookie(): name argument cannot be empty in the current subset"
+    );
+
+    let invalid = runtime_error("<?php\nsetrawcookie(\"bad=name\", \"value\");\n");
+    assert_eq!(invalid.line, 2);
+    assert_eq!(invalid.column, 1);
+    assert_eq!(
+        invalid.message,
+        "unsupported call setrawcookie(): name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset"
+    );
+}
+
+#[test]
 fn setrawcookie_formats_bounded_attributes_without_value_encoding() {
     let execution = run_source(
         r#"<?php
@@ -835,6 +896,18 @@ echo setcookie(42);
         "unsupported call setcookie(): name argument must be string in the current subset, got int"
     );
 
+    let invalid_name = runtime_error(
+        r#"<?php
+echo setcookie("bad;name", "value");
+"#,
+    );
+    assert_eq!(invalid_name.line, 2);
+    assert_eq!(invalid_name.column, 6);
+    assert_eq!(
+        invalid_name.message,
+        "unsupported call setcookie(): name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset"
+    );
+
     let non_string_value = runtime_error(
         r#"<?php
 echo setcookie("wordpress_test_cookie", 1);
@@ -908,6 +981,30 @@ echo setrawcookie();
     assert_eq!(
         missing.message,
         "arity mismatch for setrawcookie(): expected 1 to 7 argument(s), got 0"
+    );
+
+    let non_string_name = runtime_error(
+        r#"<?php
+echo setrawcookie(42);
+"#,
+    );
+    assert_eq!(non_string_name.line, 2);
+    assert_eq!(non_string_name.column, 6);
+    assert_eq!(
+        non_string_name.message,
+        "unsupported call setrawcookie(): name argument must be string in the current subset, got int"
+    );
+
+    let invalid_name = runtime_error(
+        r#"<?php
+echo setrawcookie("bad,name", "value");
+"#,
+    );
+    assert_eq!(invalid_name.line, 2);
+    assert_eq!(invalid_name.column, 6);
+    assert_eq!(
+        invalid_name.message,
+        "unsupported call setrawcookie(): name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset"
     );
 
     let non_string_value = runtime_error(

@@ -1,0 +1,2 @@
+runtime error at 2:1: unsupported call setcookie(): name argument cannot contain "=", ",", ";", " ", "\t", "\r", "\n", "\013", or "\014" in the current subset
+

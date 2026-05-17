@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/milestone707/trait_member_boundary.php:7:14: unsupported trait-body use adaptation: aliases, visibility adaptations, and insteadof conflict resolution inside traits are not implemented
+parse error at tests/fixtures/milestone707/trait_member_boundary.php:5:13: unsupported trait method declaration: only simple public instance trait methods are implemented; static, abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported
 --- stderr end ---

@@ -819,6 +819,94 @@ echo $items["a"], "|", $items["b"], "|", $item;
 }
 
 #[test]
+fn foreach_by_reference_binds_array_access_reference_roots() {
+    let execution = run_source(
+        r#"<?php
+class RefCowForeachArrayAccessBag implements ArrayAccess {
+    public $items = ["outer" => ["a" => "one", "b" => "two"]];
+
+    #[ReturnTypeWillChange]
+    public function offsetExists($offset) {
+        return isset($this->items[$offset]);
+    }
+
+    #[ReturnTypeWillChange]
+    public function &offsetGet($offset) {
+        return $this->items[$offset];
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetSet($offset, $value) {
+        $this->items[$offset] = $value;
+    }
+
+    #[ReturnTypeWillChange]
+    public function offsetUnset($offset) {
+        unset($this->items[$offset]);
+    }
+}
+
+class RefCowForeachArrayAccessHolder {
+    public $bag;
+}
+
+$bag = new RefCowForeachArrayAccessBag();
+foreach ($bag["outer"] as $key => &$value) {
+    $value = $value . ":" . $key;
+    if ($key === "a") {
+        $bag->items["outer"]["c"] = "three";
+    }
+}
+echo $bag["outer"]["a"], "|", $bag["outer"]["b"], "|", $value, "\n";
+$bag->items["outer"]["c"] = "direct";
+echo $value, "|";
+$value = "tail";
+echo $bag["outer"]["c"], "|", $value, "\n";
+unset($value);
+
+$namedHolder = new RefCowForeachArrayAccessHolder();
+$namedHolder->bag = new RefCowForeachArrayAccessBag();
+$namedBag = $namedHolder->bag;
+foreach ($namedHolder->bag["outer"] as $key => &$value) {
+    $value = "named:" . $key;
+    if ($key === "a") {
+        $namedBag->items["outer"]["c"] = "named-c";
+    }
+}
+echo $namedHolder->bag["outer"]["a"], "|", $namedHolder->bag["outer"]["b"], "|", $value, "\n";
+$namedBag->items["outer"]["c"] = "named-direct";
+echo $value, "|";
+$value = "named-tail";
+echo $namedHolder->bag["outer"]["c"], "|", $value, "\n";
+unset($value);
+
+$holder = new RefCowForeachArrayAccessHolder();
+$holder->bag = new RefCowForeachArrayAccessBag();
+$heldBag = $holder->bag;
+$property = "bag";
+foreach ($holder->{$property}["outer"] as $key => &$value) {
+    $value = "held:" . $key;
+    if ($key === "a") {
+        $heldBag->items["outer"]["c"] = "held-c";
+    }
+}
+echo $holder->bag["outer"]["a"], "|", $holder->bag["outer"]["b"], "|", $value, "\n";
+$heldBag->items["outer"]["c"] = "held-direct";
+echo $value, "|";
+$value = "held-tail";
+echo $holder->bag["outer"]["c"], "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "one:a|two:b|three:c\ndirect|tail|tail\nnamed:a|named:b|named:c\nnamed-direct|named-tail|named-tail\nheld:a|held:b|held:c\nheld-direct|held-tail|held-tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_key_value_requires_array_iterable() {
     let error = runtime_error(
         r#"<?php

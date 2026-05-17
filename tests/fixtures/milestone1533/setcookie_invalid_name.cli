@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1533/setcookie_invalid_name.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone1533/setcookie_invalid_name.php:2:1: unsupported call setcookie(): name argument cannot contain "=", ",", ";", " ", "\t", "\r", "\n", "\013", or "\014" in the current subset
+--- stderr end ---

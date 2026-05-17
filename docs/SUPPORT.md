@@ -285,7 +285,7 @@
   documented slice, invisible selected properties, magic-property references,
   mixed nested `ArrayAccess` chains, alias cleanup beyond covered unset
   container-slot detachment, broad copy-on-write, exact alias destruction
-  ordering, by-reference `foreach` expansion, append-offset `ArrayAccess`
+  ordering, broader by-reference `foreach` expansion, append-offset `ArrayAccess`
   source roots outside the exact direct/property-held
   `offsetGet(null)` bridge, `ArrayAccess` bridges outside
   the documented direct/property-held stored-array source path for
@@ -769,7 +769,13 @@
   `foreach ($this->holder()->items as &$value)`. In those cases, the holder
   is evaluated once, must produce an object, and the selected public or
   context-visible non-public property is routed through the same internal
-  object-property alias root. Direct
+  object-property alias root. Direct `ArrayAccess` offset roots such as
+  `foreach ($bag["outer"] as &$value)` and visible direct or dynamic
+  property-held `ArrayAccess` roots such as
+  `foreach ($holder->bag["outer"] as &$value)` and
+  `foreach ($holder->{$name}["outer"] as &$value)` also route through the
+  bounded by-reference `offsetGet($offset) { return $this->property[$offset]; }`
+  bridge when the selected offset resolves to an array. Direct
   free-function call iterables such as `foreach (items($items) as &$value)`,
   direct visible instance-method call iterables such as
   `foreach ($bag->items($items) as &$value)`, direct named-static-method
@@ -788,7 +794,8 @@
   array iteration creates no lingering reference. This is still not full PHP
   by-reference iteration: broad array reordering/replacement semantics, full
   reference containers, copy-on-write, object/Traversable iteration,
-  ArrayAccess iterables, non-direct property holder expressions outside
+  ArrayAccess roots outside the exact direct/property-held `offsetGet()`
+  bridge, non-direct property holder expressions outside
   the documented object-result named/dynamic property foreach slice,
   invisible selected dynamic properties, magic-property reference containers,
   non-string-keyed `$GLOBALS` roots, reference-return iterables that return
@@ -1996,12 +2003,13 @@
   names, direct variable array-offset targets, direct object-property targets,
   and direct object-property array-offset targets for the current known
   placeholder statement result shape, and `mysqli_stmt_fetch($statement)`
-  copies buffered placeholder row values into those targets while advancing
-  the placeholder cursor. Array-offset keys are evaluated at bind time. This
-  is not true by-reference aliasing, dynamic object-property target
-  expressions, unbuffered statement fetching, broad prepared SQL, real mysqlnd
-  cursor behavior, host database state, PHP warning/error fidelity, or native
-  statement lowering.
+  copies deterministic executed or explicitly buffered placeholder row values
+  into those targets while advancing the placeholder cursor. Array-offset keys
+  are evaluated at bind time, and `mysqli_stmt_num_rows()` remains `0` until
+  `mysqli_stmt_store_result()` buffers the result. This is not true
+  by-reference aliasing, dynamic object-property target expressions, real
+  mysqlnd unbuffered transfer, broad prepared SQL, host database state, PHP
+  warning/error fidelity, or native statement lowering.
   `mysqli_stmt_send_long_data($statement, $param_num, $data)` validates active
   statements, non-negative in-range parameter indexes, and string chunk data,
   then records deterministic placeholder chunk state that is cleared by
@@ -3054,9 +3062,11 @@
   SAPI/web-server behavior, exact warning text, partial-output behavior, and
   native lowering remain unsupported.
   `setcookie($name, $value = "", $expires_or_options = 0, $path = "",
-  $domain = "", $secure = false, $httponly = false)` accepts a string name,
-  optional string value, bounded integer expiration or options array, string
-  path/domain, truthy secure/HttpOnly flags, and `samesite` in the options
+  $domain = "", $secure = false, $httponly = false)` accepts a non-empty
+  string name that does not contain `"="`, `","`, `";"`, space, tab, carriage
+  return, newline, vertical tab, or form feed, optional string value, bounded
+  integer expiration or options array, string path/domain, truthy
+  secure/HttpOnly flags, and `samesite` in the options
   array. Accepted values append a deterministic `Set-Cookie:` line to the same
   CLI header log used by `header()`/`headers_list()` while output is still
   open, percent-encode the cookie value, format nonzero expiration timestamps
@@ -3074,10 +3084,10 @@
   unbuffered output has started, it returns `false`, does not append a cookie
   header, and emits a bounded `E_WARNING` through the current
   `set_error_handler()` stack or stderr fallback. `setrawcookie()`
-  accepts the same bounded signature and attributes, but writes the string
-  value unchanged instead of percent-encoding it. Cookie name
-  validation/encoding, exact request-time/Date-header parity for future
-  `Max-Age` values, exact `ValueError` objects/text for invalid options,
+  accepts the same bounded signature, name validation, and attributes, but
+  writes the string value unchanged instead of percent-encoding it. Cookie
+  name encoding, exact request-time/Date-header parity for future
+  `Max-Age` values, exact `ValueError` objects/text for invalid names/options,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server emission,
   exact warning text, and native lowering remain unsupported.
   `session_start($options = [])` accepts no argument or one array argument.
@@ -5567,11 +5577,13 @@
   SQL execution, or host database state,
   `mysqli_stmt_bind_result(...)`/`mysqli_stmt_fetch(...)` expose only direct
   variable, direct variable array-offset, direct object-property, and direct
-  object-property array-offset placeholder result binding plus buffered row
-  copying for current known statement result shapes without true by-reference
-  aliasing, dynamic object-property target expressions, unbuffered statement
-  fetching, broad prepared SQL, real mysqlnd cursor behavior, or host
-  database rows,
+  object-property array-offset placeholder result binding plus deterministic
+  executed-row copying for current known statement result shapes, including
+  the bounded path where `mysqli_stmt_fetch()` consumes the executed
+  placeholder result without `mysqli_stmt_store_result()` while
+  `mysqli_stmt_num_rows()` remains buffered-only; this is without true
+  by-reference aliasing, dynamic object-property target expressions, real
+  mysqlnd unbuffered transfer, broad prepared SQL, or host database rows,
   `mysqli_stmt_result_metadata(...)`/`mysqli_stmt_field_count(...)`/
   `mysqli_stmt_free_result(...)` expose only deterministic placeholder field
   metadata and cleanup for current known statement SELECT shapes without
@@ -5583,7 +5595,7 @@
   mysqlnd fidelity, host database rows, or native lowering,
   `mysqli_stmt_data_seek(...)` records only deterministic in-range placeholder
   cursor offsets for active buffered statement results without
-  unbuffered statement fetching, true by-reference result aliases, real
+  unbuffered cursor seeking, true by-reference result aliases, real
   mysqlnd cursor behavior, or host database rows,
   `mysqli_stmt_attr_get(...)`/`mysqli_stmt_attr_set(...)` expose only
   deterministic placeholder statement-attribute state for active statements
@@ -6140,7 +6152,11 @@
   compose supported properties, public methods, and constants from the used
   traits into classes that consume the outer trait; the class's direct trait
   metadata remains the outer trait, matching PHP's non-recursive direct-class
-  trait reflection for the covered slice. Trait
+  trait reflection for the covered slice. Trait-body `use` declarations may
+  use the same current public instance method `as` aliases, visibility-only
+  adaptations, protected/private aliases, qualified `insteadof` conflict
+  resolution, and same-block winner-alias interaction as class-body trait use
+  declarations. Trait
   constants declared as `const NAME = ...` or `public const NAME = ...` use the
   current class-constant expression subset and resolve as ordinary public class
   constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
@@ -6720,9 +6736,10 @@
   text for trait conflicts,
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
-  unqualified visibility-only adaptations across multiple used traits,
-  trait-body aliases/visibility adaptations/`insteadof`, unqualified
-  `insteadof`, `__TRAIT__`,
+  including those same method-adaptation slices inside trait-body `use`
+  declarations, unqualified visibility-only adaptations across multiple used
+  traits, unqualified `insteadof`, trait property or constant adaptations,
+  `__TRAIT__`,
   conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
@@ -8099,19 +8116,20 @@
   status-header removal, SAPI/web-server behavior, exact warning text,
   partial-output behavior, and native lowering beyond function-table introspection
 - `setcookie()`/`setrawcookie()` behavior beyond accepting the documented
-  bounded positional/options-array attributes, formatting nonzero expiration
-  timestamps with a bounded `Max-Age` attribute computed from the current host
-  clock and pinned to `0` for past expirations, replacing deterministic cookie
-  headers by cookie name plus normalized non-empty path/domain identity with
-  ASCII-case-insensitive domain matching, returning `false` after unbuffered
-  output starts with a bounded `E_WARNING`, matching documented options-array
-  keys ASCII-case-insensitively, using the last inserted value for duplicate
+  non-empty cookie-name validation, bounded positional/options-array
+  attributes, formatting nonzero expiration timestamps with a bounded
+  `Max-Age` attribute computed from the current host clock and pinned to `0`
+  for past expirations, replacing deterministic cookie headers by cookie name
+  plus normalized non-empty path/domain identity with ASCII-case-insensitive
+  domain matching, returning `false` after unbuffered output starts with a
+  bounded `E_WARNING`, matching documented options-array keys
+  ASCII-case-insensitively, using the last inserted value for duplicate
   differently cased documented keys, rejecting numeric options-array keys and
   unknown string option keys, and
   returning `true` for accepted pre-output cookies, with `setcookie()`
   percent-encoding values and `setrawcookie()` preserving raw string values:
-  cookie name validation/encoding, exact request-time/Date-header parity for
-  future `Max-Age` values, exact `ValueError` objects/text for invalid options,
+  cookie name encoding, exact request-time/Date-header parity for
+  future `Max-Age` values, exact `ValueError` objects/text for invalid names/options,
   IDNA/trailing-dot/domain-policy canonicalization, SAPI/web-server
   emission, exact warning text, and native lowering beyond function-table introspection
 - `headers_sent()` behavior beyond the current output-started tracking and

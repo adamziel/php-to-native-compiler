@@ -1,8 +1,6 @@
 <?php
-trait Base {
-    public function render() {}
-}
-
 trait Reusable {
-    use Base { Base::render as alias; }
+    public function render() {}
+
+    private function hidden() {}
 }

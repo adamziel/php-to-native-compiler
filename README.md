@@ -225,7 +225,9 @@ incorrect native code.
   including bounded by-reference iteration over direct array, nested array,
   superglobal/request-bag, string-keyed `$GLOBALS`, and visible
   named, direct dynamic, and bounded object-result non-direct named/dynamic
-  object-property array roots, plus direct
+  object-property array roots, direct and visible property-held `ArrayAccess`
+  offset-array roots backed by the exact bounded by-reference `offsetGet()`
+  bridge, plus direct
   free-function, direct visible
   instance-method, direct named-static-method, method-context
   `self::`/`parent::`/`static::`, dynamic static receiver, and bounded
@@ -291,6 +293,10 @@ incorrect native code.
   plus one-shot `mysqli_execute_query()` prepared option insert/update/replace/delete
   mutations and deterministic prepared-statement insert-ID metadata for
   option/transient-shaped state probes,
+  plus bounded prepared-statement result binding where
+  `mysqli_stmt_fetch()` can consume the deterministic executed placeholder row
+  without `mysqli_stmt_store_result()` while `mysqli_stmt_num_rows()` remains
+  buffered-only,
   plus bounded direct and prepared transient-shaped option-name prefix result
   scans and deletes, including exact `ORDER BY option_name` suffixes on prefix
   scans and a bounded expired-transient-timeout
@@ -488,7 +494,8 @@ incorrect native code.
   public instance conflict resolution such as
   `use TraitA, TraitB { TraitA::method insteadof TraitB; }`, including
   comma-separated loser lists in that same public instance method shape, the
-  same-block winning-method public alias interaction, and class-declared public
+  same-block winning-method public alias interaction, the same bounded
+  method-adaptation shapes inside trait-body `use` declarations, and class-declared public
   instance methods taking precedence over same-named composed trait methods or
   aliases. Unresolved same-name public methods from different composed traits
   stop with a stable `phpc run` trait-conflict diagnostic before class
@@ -528,8 +535,7 @@ unresolved trait conflicts, aliases
 beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
 unqualified visibility-only adaptations across multiple used traits,
-trait-body aliases/visibility adaptations/`insteadof`, unqualified
-`insteadof`, `__TRAIT__`,
+unqualified `insteadof`, trait property or constant adaptations, `__TRAIT__`,
 conditional/nested trait registration, enum case objects/backed
 values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
@@ -717,20 +723,27 @@ private or protected holder property is visible and holds the bounded
 property-held append reference sources such as `$alias =& $bag[]` and
 `$args[0] =& $holder->bag[]` are covered only for that same exact body shape,
 where PHP's `offsetGet(null)` maps to the backing array's empty-string key.
+By-reference `foreach` can also consume direct and visible property-held
+ArrayAccess offset-array roots such as `foreach ($bag["outer"] as &$value)`
+and `foreach ($holder->{$name}["outer"] as &$value)` through that same exact
+by-reference `offsetGet()` bridge when the selected backing slot is an array.
 Real reference containers, magic-property references, arbitrary expressions,
 non-direct holder expressions outside the slice, mixed nested `ArrayAccess`
 chains, alias cleanup outside covered unset root/property/slot paths, broad
-copy-on-write, exact alias destruction ordering, by-reference `foreach`
+copy-on-write, exact alias destruction ordering, broader by-reference `foreach`
 expansion, native lowering, and alias lifetime after replacing the containing
 property remain outside that bounded slice.
-By-reference `foreach` over a direct array variable has a bounded copy-back
-interpreter path for common array-walk code that unsets the loop variable after
-the loop. It also supports direct array-offset paths, request-bag paths such as
-`$_REQUEST["payload"]`, and string-keyed nested `$GLOBALS` paths such as
-`$GLOBALS["bag"]["child"]`, with loop-body mutation, appended tail visitation,
-and post-loop lingering aliases to selected array slots. It is not exact PHP
-aliasing: broad mutation ordering, object-property/ArrayAccess iterables, array
-slot cells, full reference containers, and copy-on-write remain unsupported.
+By-reference `foreach` has a bounded copy-back interpreter path for common
+array-walk code that unsets the loop variable after the loop. It supports
+direct array-offset paths, request-bag paths such as `$_REQUEST["payload"]`,
+string-keyed nested `$GLOBALS` paths such as `$GLOBALS["bag"]["child"]`,
+visible object-property array roots, and direct/property-held `ArrayAccess`
+offset-array roots through the exact `offsetGet()` bridge, with loop-body
+mutation, appended tail visitation, and post-loop lingering aliases to
+selected array slots. It is not exact PHP aliasing: broad mutation ordering,
+object/Traversable iteration, ArrayAccess roots outside the documented bridge,
+array slot cells, full reference containers, and copy-on-write remain
+unsupported.
 
 ### Native Path
 
@@ -783,7 +796,7 @@ outputs including direct variables backed by the current bounded array-offset
 reference-alias metadata, bounded ordinary header-name replacement in the
 request-local CLI header log, bounded path/domain-aware cookie replacement,
 bounded cookie `Max-Age` emission for nonzero expirations, bounded
-cookie options-array key validation,
+cookie name validation and options-array key validation,
 request-local status-code state, and
 bounded post-output `E_WARNING` routing for `header()`, `header_remove()`,
 and `setcookie()`/`setrawcookie()`,

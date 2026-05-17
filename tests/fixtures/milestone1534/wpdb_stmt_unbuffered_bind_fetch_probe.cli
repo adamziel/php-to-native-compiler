@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone1534/wpdb_stmt_unbuffered_bind_fetch_probe.php
+0|fetched|1:Hello world placeholder|done

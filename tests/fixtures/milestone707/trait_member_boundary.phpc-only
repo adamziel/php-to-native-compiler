@@ -1,1 +1,1 @@
-phpc intentionally rejects trait-body use adaptations inside traits until nested adaptation composition semantics exist.
+phpc intentionally rejects non-public trait methods until broader trait visibility and dispatch semantics exist.

@@ -3498,6 +3498,20 @@ impl Interpreter {
                         keys.push(self.evaluate_array_key(index, scope)?);
                     }
 
+                    if let Some((alias, _)) = self
+                        .evaluate_direct_array_access_reference_source_alias(
+                            name,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(ForeachArrayRoot::Alias {
+                            root: alias.root,
+                            keys: alias.keys,
+                        });
+                    }
+
                     if name == "GLOBALS" {
                         let (global_name, keys) =
                             SymbolTable::split_globals_reference_path(keys, span)?;
@@ -3520,6 +3534,20 @@ impl Interpreter {
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, scope)?);
                     }
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object_name,
+                            property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(ForeachArrayRoot::Alias {
+                            root: alias.root,
+                            keys: alias.keys,
+                        });
+                    }
                     let root =
                         self.foreach_object_property_alias_root(object_name, property, scope, span)?;
                     return Ok(ForeachArrayRoot::Alias { root, keys });
@@ -3532,6 +3560,20 @@ impl Interpreter {
                     let mut keys = Vec::with_capacity(indices.len());
                     for index in indices {
                         keys.push(self.evaluate_array_key(index, scope)?);
+                    }
+                    if let Some((alias, _)) = self
+                        .evaluate_object_property_array_access_reference_source_alias(
+                            object_name,
+                            &property,
+                            keys.clone(),
+                            span,
+                            scope,
+                        )?
+                    {
+                        return Ok(ForeachArrayRoot::Alias {
+                            root: alias.root,
+                            keys: alias.keys,
+                        });
                     }
                     let root = self.foreach_object_property_alias_root(
                         object_name,
@@ -23342,15 +23384,19 @@ impl Interpreter {
                     ),
                 ));
             }
-            let Some(result) = state.buffered_result.as_ref() else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "mysqli_stmt_fetch()",
-                        "buffered statement result state is not available in the current subset",
-                    ),
-                ));
-            };
+            let result = state
+                .buffered_result
+                .as_ref()
+                .or(state.executed_result.as_ref())
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_stmt_fetch()",
+                            "executed statement result state is not available in the current subset",
+                        ),
+                    )
+                })?;
             if state.buffered_result_cursor >= result.rows.len() {
                 return Ok(Value::Null);
             }
@@ -27512,6 +27558,7 @@ impl Interpreter {
                 ));
             }
         };
+        validate_cookie_name(name, function_name, span)?;
 
         let value = match args.get(1) {
             Some(Value::String(value)) => value.as_str(),
@@ -34336,7 +34383,6 @@ fn composed_trait_constants_for_trait(
 
     let mut constants = Vec::new();
     for trait_use in &trait_decl.trait_uses {
-        ensure_simple_trait_body_use(trait_use)?;
         let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
         constants.extend(composed_trait_constants_for_trait(
             nested,
@@ -34369,7 +34415,6 @@ fn composed_trait_properties_for_trait(
     let mut properties = Vec::new();
     let direct_properties = declared_trait_properties(trait_decl);
     for trait_use in &trait_decl.trait_uses {
-        ensure_simple_trait_body_use(trait_use)?;
         let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
         for property in composed_trait_properties_for_trait(nested, trait_lookup, path)? {
             if !direct_properties.contains_key(&property.name) {
@@ -34401,35 +34446,97 @@ fn composed_trait_methods_for_trait(
 
     let mut methods = Vec::new();
     let direct_method_names = declared_trait_method_names(trait_decl);
-    for trait_use in &trait_decl.trait_uses {
-        ensure_simple_trait_body_use(trait_use)?;
-        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        for method in composed_trait_methods_for_trait(nested, trait_lookup, path)? {
-            if !direct_method_names.contains(&method.function.name.to_ascii_lowercase()) {
-                methods.push(method);
-            }
-        }
-    }
+    methods.extend(composed_trait_methods_from_uses(
+        &trait_decl.trait_uses,
+        trait_lookup,
+        path,
+        &direct_method_names,
+    )?);
     methods.extend(trait_decl.methods.iter().cloned());
 
     path.remove(&key);
     Ok(methods)
 }
 
-fn ensure_simple_trait_body_use(trait_use: &TraitUseDecl) -> CompileResult<()> {
-    if trait_use.aliases.is_empty()
-        && trait_use.visibility_adaptations.is_empty()
-        && trait_use.precedences.is_empty()
-    {
-        return Ok(());
+fn composed_trait_methods_from_uses(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+    direct_method_names: &HashSet<String>,
+) -> CompileResult<Vec<ClassMethodDecl>> {
+    let mut methods = Vec::new();
+    let mut composed_names: HashMap<String, String> = HashMap::new();
+    let precedence_exclusions = trait_precedence_exclusions_for_uses(trait_uses, trait_lookup)?;
+
+    for trait_use in trait_uses {
+        let key = trait_use.name.to_ascii_lowercase();
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let trait_methods = composed_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
+        let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
+        for method in &trait_methods {
+            let method_key = method.function.name.to_ascii_lowercase();
+            if precedence_exclusions.contains(&(key.clone(), method_key.clone())) {
+                continue;
+            }
+            if direct_method_names.contains(&method_key) {
+                continue;
+            }
+            let mut composed = method.clone();
+            if let Some(existing_trait) =
+                composed_names.get(&composed.function.name.to_ascii_lowercase())
+            {
+                if existing_trait.eq_ignore_ascii_case(&trait_decl.name) {
+                    continue;
+                }
+                return Err(runtime_error(
+                    composed.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
+                        trait_decl.name,
+                        composed.function.name,
+                        existing_trait,
+                        composed.function.name
+                    )),
+                ));
+            }
+            if let Some(visibility) =
+                visibility_adaptations.get(&composed.function.name.to_ascii_lowercase())
+            {
+                composed.visibility = visibility.clone();
+            }
+            composed_names.insert(
+                composed.function.name.to_ascii_lowercase(),
+                trait_decl.name.clone(),
+            );
+            methods.push(composed);
+        }
+        for alias in &trait_use.aliases {
+            let Some(method) = trait_methods.iter().find(|method| {
+                method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&alias.method_name)
+            }) else {
+                return Err(runtime_error(
+                    alias.span,
+                    RuntimeError::unsupported_trait_use(format!(
+                        "trait alias {}::{} targets a missing method",
+                        trait_decl.name, alias.method_name
+                    )),
+                ));
+            };
+            let mut aliased = method.clone();
+            aliased.function.name = alias.alias.clone();
+            aliased.visibility = alias.visibility;
+            aliased.span = alias.span;
+            if direct_method_names.contains(&aliased.function.name.to_ascii_lowercase()) {
+                continue;
+            }
+            methods.push(aliased);
+        }
     }
 
-    Err(runtime_error(
-        trait_use.span,
-        RuntimeError::unsupported_trait_use(
-            "trait-body use adaptations are not implemented".to_string(),
-        ),
-    ))
+    Ok(methods)
 }
 
 fn resolve_trait_use_decl<'a>(
@@ -34558,8 +34665,15 @@ fn trait_precedence_exclusions(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<HashSet<(String, String)>> {
+    trait_precedence_exclusions_for_uses(&class.trait_uses, trait_lookup)
+}
+
+fn trait_precedence_exclusions_for_uses(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<HashSet<(String, String)>> {
     let mut exclusions = HashSet::new();
-    for trait_use in &class.trait_uses {
+    for trait_use in trait_uses {
         let winner_trait = resolve_trait_use_decl(trait_use, trait_lookup)?;
         let winner_methods =
             composed_trait_methods_for_trait(winner_trait, trait_lookup, &mut HashSet::new())?;
@@ -43432,6 +43546,33 @@ fn validate_setcookie_option_keys(
                 ),
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_cookie_name(name: &str, function_name: &'static str, span: Span) -> CompileResult<()> {
+    if name.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function_name,
+                "name argument cannot be empty in the current subset",
+            ),
+        ));
+    }
+    if name.bytes().any(|byte| {
+        matches!(
+            byte,
+            b'=' | b',' | b';' | b' ' | b'\t' | b'\r' | b'\n' | 0x0b | 0x0c
+        )
+    }) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function_name,
+                "name argument cannot contain \"=\", \",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\" in the current subset",
+            ),
+        ));
     }
     Ok(())
 }

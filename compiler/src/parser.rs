@@ -573,10 +573,8 @@ impl Parser {
             }
         }
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-            return Err(self.error_at(
-                self.peek().span,
-                "unsupported trait-body use adaptation: aliases, visibility adaptations, and insteadof conflict resolution inside traits are not implemented",
-            ));
+            self.parse_trait_adaptation_block(&mut trait_uses)?;
+            return Ok(trait_uses);
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after trait-body use")?;
         Ok(trait_uses)

@@ -597,13 +597,14 @@ direct variable array-offset targets, direct object-property targets, and
 direct object-property array-offset targets for the current known placeholder
 statement result shapes. Array-offset keys are evaluated when binding is
 registered, so later key-variable changes do not retarget the fetched row.
-`mysqli_stmt_fetch($statement)` then copies buffered placeholder row values
-into those targets and advances the placeholder cursor. The current bounded
-path requires the deterministic statement execution result to be buffered with
-`mysqli_stmt_store_result()` first. This is not true by-reference aliasing,
-dynamic object-property target expressions, unbuffered statement fetching,
-broad prepared SQL, real mysqlnd cursor behavior, host database state, PHP
-warning/error fidelity, or native lowering.
+`mysqli_stmt_fetch($statement)` then copies placeholder row values into those
+targets and advances the placeholder cursor. The current bounded path can
+fetch directly from the deterministic executed statement result without
+`mysqli_stmt_store_result()` first, while `mysqli_stmt_num_rows()` remains
+`0` until an explicit store buffers that same placeholder result. This is not
+true by-reference aliasing, dynamic object-property target expressions, real
+mysqlnd unbuffered network transfer, broad prepared SQL, host database state,
+PHP warning/error fidelity, or native lowering.
 
 `mysqli_stmt_field_count($statement)` reports deterministic field counts for
 the current placeholder statement result metadata shapes, including the

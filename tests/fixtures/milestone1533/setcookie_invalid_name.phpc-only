@@ -1,0 +1,1 @@
+System PHP throws a ValueError object for invalid setcookie()/setrawcookie() cookie names; this fixture pins phpc's current bounded runtime diagnostic until exact exception objects/text and full SAPI header emission are implemented.

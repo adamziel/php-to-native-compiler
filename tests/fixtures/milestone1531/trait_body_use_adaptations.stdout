@@ -1,0 +1,6 @@
+primary:init:Plugin
+primary:admin:Plugin
+primary:rest:Plugin
+hidden-exists
+3|label|alias|boot
+Plugin|protected

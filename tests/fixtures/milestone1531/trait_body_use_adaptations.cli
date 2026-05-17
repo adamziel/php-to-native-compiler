@@ -1,0 +1,12 @@
+run tests/fixtures/milestone1531/trait_body_use_adaptations.php
+exit: 0
+stdout:
+primary:init:Plugin
+primary:admin:Plugin
+primary:rest:Plugin
+hidden-exists
+3|label|alias|boot
+Plugin|protected
+--- stdout end ---
+stderr:
+--- stderr end ---
