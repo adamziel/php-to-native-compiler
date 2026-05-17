@@ -7742,6 +7742,146 @@ echo $child->label("child:", "ok");
 }
 
 #[test]
+fn inherited_method_parameter_type_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function label(string $value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label($value) {
+        return "child:" . $value;
+    }
+}
+
+$child = new Child();
+echo $child->label("ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "child:ok");
+    assert_eq!(execution.exit_code, 0);
+
+    let added_type_error = runtime_error(
+        r#"<?php
+class Base {
+    public function label($value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label(string $value) {
+        return "child:" . $value;
+    }
+}
+"#,
+    );
+    assert_eq!(added_type_error.line, 9);
+    assert_eq!(added_type_error.column, 12);
+    assert_eq!(
+        added_type_error.message,
+        "unsupported class inheritance for Child: method Child::label() cannot add parameter type string for parameter $value when inherited method Base::label() has no parameter type"
+    );
+
+    let changed_type_error = runtime_error(
+        r#"<?php
+class Base {
+    public function label(string $value) {
+        return "base:" . $value;
+    }
+}
+
+class Child extends Base {
+    public function label(int $value) {
+        return "child:" . $value;
+    }
+}
+"#,
+    );
+    assert_eq!(changed_type_error.line, 9);
+    assert_eq!(changed_type_error.column, 12);
+    assert_eq!(
+        changed_type_error.message,
+        "unsupported class inheritance for Child: method Child::label() parameter $value type int is incompatible with inherited method Base::label() parameter type string"
+    );
+}
+
+#[test]
+fn inherited_method_return_type_compatibility_is_enforced() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function id() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function id(): string {
+        return "child";
+    }
+}
+
+$child = new Child();
+echo method_exists($child, "id") ? "registered" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+
+    let omitted_return_type_error = runtime_error(
+        r#"<?php
+class Base {
+    public function id(): string {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function id() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(omitted_return_type_error.line, 9);
+    assert_eq!(omitted_return_type_error.column, 12);
+    assert_eq!(
+        omitted_return_type_error.message,
+        "unsupported class inheritance for Child: method Child::id() must declare return type string to match inherited method Base::id()"
+    );
+
+    let changed_return_type_error = runtime_error(
+        r#"<?php
+class Base {
+    public function id(): string {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function id(): int {
+        return 1;
+    }
+}
+"#,
+    );
+    assert_eq!(changed_return_type_error.line, 9);
+    assert_eq!(changed_return_type_error.column, 12);
+    assert_eq!(
+        changed_return_type_error.message,
+        "unsupported class inheritance for Child: method Child::id() return type int is incompatible with inherited method Base::id() return type string"
+    );
+}
+
+#[test]
 fn nested_method_visibility_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php

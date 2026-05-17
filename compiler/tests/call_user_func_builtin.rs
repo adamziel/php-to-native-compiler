@@ -438,6 +438,75 @@ echo $cache->cache["options"]["alloptions"], "|", $method_alias, "|", $static_al
 }
 
 #[test]
+fn call_user_func_array_binds_reference_return_sources_to_stored_reference_argument_arrays() {
+    let execution = run_source(
+        r#"<?php
+class WP_Object_Cache {
+    public $cache = [];
+}
+
+class OptionFilter {
+    public function &mark(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+class Cache_Marker {
+    public static function &tag(&$value, $suffix) {
+        $value = $value . ":" . $suffix;
+        return $value;
+    }
+}
+
+function &tag_option(&$value, $suffix) {
+    $value = $value . ":" . $suffix;
+    return $value;
+}
+
+$option = "autoload";
+$args = [];
+$args[0] =& $option;
+$args[1] = "function";
+$alias =& call_user_func_array("tag_option", $args);
+$alias = $alias . ":alias";
+echo $option, "|", $args[0], "|", $alias, "\n";
+
+$_REQUEST["mode"] = "draft";
+$request_alias =& $_REQUEST["mode"];
+$request_args = [];
+$request_args[0] =& $request_alias;
+$request_args[1] = "request";
+$request_result =& call_user_func_array("tag_option", $request_args);
+$request_result = $request_result . ":seen";
+echo $_REQUEST["mode"], "|", $request_args[0], "|", $request_result, "\n";
+
+$filter = new OptionFilter();
+$method_alias =& call_user_func_array(array($filter, "mark"), $args);
+$option = "root";
+echo $method_alias, "|", $alias, "\n";
+
+$cache = new WP_Object_Cache();
+$cache->cache["options"]["alloptions"] = "cold";
+$cache_slot =& $cache->cache["options"]["alloptions"];
+$static_args = [];
+$static_args[0] =& $cache_slot;
+$static_args[1] = "static";
+$static_alias =& call_user_func_array(array("Cache_Marker", "tag"), $static_args);
+$static_alias = $static_alias . ":done";
+echo $cache->cache["options"]["alloptions"], "|", $static_args[0], "|", $static_alias;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "autoload:function:alias|autoload:function:alias|autoload:function:alias\ndraft:request:seen|draft:request:seen|draft:request:seen\nroot|root\ncold:static:done|cold:static:done|cold:static:done"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn call_user_func_array_invokes_current_array_callable_subset() {
     let execution = run_source(
         r#"<?php

@@ -162,8 +162,9 @@ incorrect native code.
 - narrow `require`, `require_once`, `include`, and `include_once` execution
   for local string paths in statement and expression position, including
   constant/string-concatenated paths resolved relative to the current source
-  file, included files executing in caller scope, include return values, and
-  `_once` de-duplication by resolved local file
+  file or through the current bounded include path, included files executing
+  in caller scope, include return values, and `_once` de-duplication by
+  resolved local file
 - a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
@@ -217,7 +218,8 @@ incorrect native code.
   runtime boundary, final class inheritance, final method overrides, method
   visibility reductions, and inherited method static/non-static compatibility
   violations rejected as runtime boundaries, plus inherited non-constructor
-  method required-parameter increases rejected as runtime boundaries, concrete
+  method required-parameter, parameter type-text, and return type-text
+  incompatibilities rejected as runtime boundaries, concrete
   classes with unimplemented abstract methods rejected as runtime boundaries,
   and readonly class declarations kept at a parse boundary,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
@@ -284,8 +286,8 @@ slice, copy-on-write, namespace forms beyond the current class-name/import,
 same-namespace function, and namespace-scoped top-level constant slices,
 including leading-backslash fully-qualified function calls such as `\strlen()`,
 leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
-include/require breadth beyond the current narrow local string-path statement
-and expression slice, eval,
+include/require breadth beyond the current narrow local string-path and
+include-path statement/expression slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
@@ -324,11 +326,11 @@ class-constant lookup through
 string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
-full method signature compatibility beyond inherited and interface
-required-parameter count increases, visibility enforcement beyond the current
-public and same-declaring-class private-property, protected-property,
+full method signature compatibility beyond the current inherited/interface
+required-parameter and same-text type metadata checks, visibility enforcement
+beyond the current public and same-declaring-class private-property, protected-property,
 protected-method, constructor, method inheritance
-visibility/staticness/signature-count, and class-constant slice, typed
+visibility/staticness/signature-count/type-text, and class-constant slice, typed
 property compatibility and DNF-shaped typed property declarations plus
 property defaults beyond the current untyped
 constant-expression instance property slice, readonly property metadata and

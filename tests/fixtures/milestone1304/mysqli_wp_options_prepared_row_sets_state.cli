@@ -1,0 +1,1 @@
+cargo run -q -p phpc -- run tests/fixtures/milestone1304/mysqli_wp_options_prepared_row_sets_state.php

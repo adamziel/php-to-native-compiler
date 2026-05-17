@@ -22,7 +22,10 @@ It can also dispatch public, same-class private, and protected same-class/child
 instance methods by static method name through `$object->method(...)`; method
 bodies run in a fresh local scope with `$this` bound to the current object
 handle. Inherited method lookup walks the current single-parent chain from the
-receiver class to ancestors. Explicit `parent::method(...)` and
+receiver class to ancestors. Child methods that redeclare inherited
+non-private methods keep the current bounded visibility, static/non-static,
+required-parameter-count, parameter type-text, and return type-text
+compatibility checks during class registration. Explicit `parent::method(...)` and
 `parent::__construct(...)` calls are supported from active instance
 method/constructor context and dispatch against the current class's parent
 chain while reusing the current `$this` object. Explicit `self::method(...)`

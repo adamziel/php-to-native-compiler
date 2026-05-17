@@ -326,8 +326,9 @@ Implemented now:
   as metadata, with abstract class instantiation, final-parent inheritance,
   final method overrides, method visibility reductions, concrete classes with
   unimplemented abstract methods rejected at runtime, and inherited method
-  static/non-static plus non-constructor required-parameter-count compatibility
-  enforced at runtime,
+  static/non-static plus bounded non-constructor signature compatibility
+  enforced at runtime, including required-parameter counts, parameter type
+  metadata, and return type metadata,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts, and bounded direct-variable dynamic class-name instantiation
   through the current class table for `new $class(...)`,
@@ -551,20 +552,23 @@ identity. Statement-form reference assignment from a reference-returning
 object-property array-offset route when the callback returns that reached
 parameter, so the assigned alias is represented in symbol-table alias metadata
 instead of as a general runtime reference container. Direct stored argument
-arrays can satisfy reached by-reference
+arrays can also satisfy reached by-reference
 parameters when the selected slots were previously assigned by reference
 through the covered direct array-offset target path. That path finds the
 stored slot in the existing alias metadata, copies the current slot value into
 the callee parameter, and writes the final parameter value back through the
 same alias, which also syncs covered direct-variable, copied-array,
-request-bag/global, and public object-property alias groups. Normal
+request-bag/global, and public object-property alias groups. For
+statement-form reference assignment, a callback that returns that reached
+parameter by reference now binds the assigned alias back to the same covered
+alias group rather than only to the stored argument array slot. Normal
 `call_user_func_array()` invocation can use the same copy-in/writeback bridge
 when the callback function or public array-callable method is declared as
-returning by reference, but the callback call itself still returns a value and
-is not a statement-form reference-return source. This deliberately does not
-model full PHP reference containers, reference array literals stored by value,
-stored arrays whose reached slots were not assigned by reference, string-keyed
-named reference argument arrays, non-public, dynamic, append, or stored-array
+returning by reference, but the callback call itself still returns a value.
+This deliberately does not model full PHP reference containers, reference
+array literals stored by value, stored arrays whose reached slots were not
+assigned by reference, non-direct stored array expressions, string-keyed named
+reference argument arrays, non-public, dynamic, append, or stored-array
 object-property reference-return bridges, dynamic static receiver callback
 object-property array arguments, broader reference-return binding, exact
 by-reference `foreach`, or copy-on-write.
@@ -2144,6 +2148,10 @@ local files in statement and expression position. It uses these rules:
 - absolute paths resolve directly
 - relative paths resolve against the directory of the file containing the
   `require` statement
+- if that source-relative path is not present, relative paths fall back through
+  the current `include_path` string managed by `get_include_path()` and
+  `set_include_path()`; the default is `"."`, path-list entries use
+  `PATH_SEPARATOR`, and empty entries are treated as `.`
 - included files are parsed as PHP files with `<?php`, register top-level
   function/class declarations into the active interpreter, and execute in the
   caller scope
@@ -2158,10 +2166,10 @@ local files in statement and expression position. It uses these rules:
   and return-value behavior have explicit lowering support
 
 Unsupported include/require behavior remains: missing-file warning/recovery for
-executed `include` statements, `include_path` lookup,
-process-current-working-directory behavior beyond the fallback used when no
-source file is available, stream wrappers, `phar://`, URL includes, autoload
-interaction, opcache behavior,
+executed `include` statements, exact PHP include-path search ordering,
+process-current-working-directory behavior beyond the default `"."` include
+path entry and fallback used when no source file is available, stream
+wrappers, `phar://`, URL includes, autoload interaction, opcache behavior,
 declaration-order dependencies such as a required file declaring `class Child
 extends Base` only after requiring the base class, exact source mapping for
 declarations after include, and PHP's warning-vs-fatal recovery details.

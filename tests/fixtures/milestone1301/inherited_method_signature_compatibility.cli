@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone1301/inherited_method_signature_compatibility.php
+exit: 0
+stdout:
+child:hook|id-method|label-method
+--- stdout end ---
+stderr:
+--- stderr end ---

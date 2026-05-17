@@ -408,7 +408,14 @@ paths; missing names return an empty zero-field placeholder result. The exact
 recorded deterministic option-id rows for string option-name parameters on the
 same handle through `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
 `mysqli_execute_query($handle, $query, array($name))`; missing names return an
-empty zero-field placeholder result. The exact
+empty zero-field placeholder result. Prepared no-placeholder row-set reads also
+support the exact
+`SELECT option_name, option_value, autoload FROM wp_options ...` and
+`SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+shapes already accepted by the direct query path, including all rows,
+autoload-filtered rows, and literal `option_name IN (...)` lists through
+`mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+`mysqli_execute_query($handle, $query)`. The exact
 `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
 prepared statement records string option-name, option-value, and autoload
 parameters on the same handle, updates statement and connection affected-row
@@ -451,9 +458,9 @@ without a prior state island remains unsupported. This does not add broad
 prepared SQL execution, real unique-index enforcement, no-op update
 affected-row fidelity, prepared mutation shapes beyond the exact option value,
 value/autoload, autoload-only, insert, replace, upsert, and delete forms listed
-above, non-string parameter coercion, result binding fidelity beyond exact
-metadata, real auto-increment fidelity, host database execution, PDO, or native
-lowering.
+above, arbitrary projections, non-string parameter coercion, result binding
+fidelity beyond exact metadata, real auto-increment fidelity, host database
+execution, PDO, or native lowering.
 
 `mysqli_stmt_bind_param($statement, $types, &...$vars)` records direct
 scalar/null variable snapshots for active statements using `s`, `i`, `d`, or

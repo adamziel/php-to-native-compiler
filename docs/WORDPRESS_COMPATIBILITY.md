@@ -332,6 +332,21 @@ mutation SQL, broad projections, real database connectivity, broad `wpdb`,
 full WordPress option APIs, plugins/themes, request/SAPI fidelity,
 references/copy-on-write, or native support.
 
+After Milestone 1304, the placeholder MySQLi state island also supports
+prepared no-placeholder row-set reads for the exact
+`SELECT option_name, option_value, autoload FROM wp_options ...` and
+`SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+shapes that were already available through direct `mysqli_query()`, including
+all rows, autoload-filtered rows, and literal `option_name IN (...)` lists. A
+committed `wpdb`-shaped fixture proves a prepared `get_results()` wrapper can
+read deterministic option-id/name/value/autoload rows without switching back
+to the direct query API. This is executable evidence for one bounded prepared
+result-set path only; it does not claim arbitrary SQL, arbitrary projections,
+prepared mutation breadth beyond the documented exact shapes, real database
+connectivity, broad `wpdb`, persistent cache, full WordPress option APIs,
+plugins/themes, request/SAPI fidelity, references/copy-on-write, or native
+support.
+
 After Milestone 1273, `phpc run` tracks whether response headers are still open
 or whether bytes have reached unbuffered stdout. The current
 `headers_sent($file, $line)` slice writes direct-variable filename and line

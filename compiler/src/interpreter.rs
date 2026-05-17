@@ -125,6 +125,7 @@ struct Interpreter {
     max_execution_steps: Option<usize>,
     trace_includes: bool,
     request_body: String,
+    include_path: String,
     execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
@@ -303,6 +304,23 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
         return path;
     }
     repo_root_relative_candidate(&path).unwrap_or(path)
+}
+
+const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+
+fn include_path_candidates(
+    source_relative_path: &Path,
+    requested_path: &Path,
+    include_path: &str,
+) -> Vec<PathBuf> {
+    let mut candidates = vec![source_relative_path.to_path_buf()];
+
+    for entry in include_path.split(INCLUDE_PATH_SEPARATOR) {
+        let entry = if entry.is_empty() { "." } else { entry };
+        candidates.push(PathBuf::from(entry).join(requested_path));
+    }
+
+    candidates
 }
 
 fn is_form_urlencoded_content_type(content_type: &str) -> bool {
@@ -1084,6 +1102,27 @@ impl SymbolTable {
                         keys,
                     } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
                 )
+            })
+            .cloned()
+    }
+
+    fn array_offset_alias_group_for_direct_array_slot(
+        &self,
+        array_name: &str,
+        key: &ArrayKey,
+    ) -> Option<Vec<ArrayOffsetAlias>> {
+        self.array_offset_aliases
+            .values()
+            .find(|aliases| {
+                aliases.iter().any(|alias| {
+                    matches!(
+                        alias,
+                        ArrayOffsetAlias {
+                            root: ArrayOffsetAliasRoot::StaticArray { name },
+                            keys,
+                        } if name == array_name && keys.as_slice() == std::slice::from_ref(key)
+                    )
+                })
             })
             .cloned()
     }
@@ -2142,12 +2181,14 @@ struct ReferenceBinding {
 enum ReferenceBindingTarget {
     CallerCell(VariableCell),
     ArrayOffset(ArrayOffsetAlias),
+    ArrayOffsets(Vec<ArrayOffsetAlias>),
 }
 
 #[derive(Debug, Clone)]
 enum ReferenceReturnBinding {
     Cell(VariableCell),
     ArrayOffset(ArrayOffsetAlias),
+    ArrayOffsets(Vec<ArrayOffsetAlias>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2358,6 +2399,7 @@ impl Interpreter {
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
             request_body: options.request_body.unwrap_or_default(),
+            include_path: ".".to_string(),
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
@@ -3678,18 +3720,47 @@ impl Interpreter {
                 }
             })
             .unwrap_or_else(|| PathBuf::from("."));
-        let source_file = base.join(path);
-        let read_path = if source_file.exists() {
-            source_file.clone()
-        } else {
+        let source_file = base.join(&path);
+        if let Some(resolved) = self.first_existing_include_candidate(&source_file, &path) {
+            return Ok(resolved);
+        }
+
+        let read_path = repo_root_relative_path(&source_file).unwrap_or_else(|| {
             // Rust fixture tests run from the crate directory while committed
             // source-map snapshots use repo-relative fixture paths.
-            repo_root_relative_path(&source_file).unwrap_or_else(|| source_file.clone())
-        };
+            source_file.clone()
+        });
         Ok(ResolvedRequirePath {
             read_path,
             source_file,
         })
+    }
+
+    fn first_existing_include_candidate(
+        &self,
+        source_relative_path: &Path,
+        requested_path: &Path,
+    ) -> Option<ResolvedRequirePath> {
+        for candidate in
+            include_path_candidates(source_relative_path, requested_path, &self.include_path)
+        {
+            if candidate.exists() {
+                return Some(ResolvedRequirePath {
+                    read_path: candidate.clone(),
+                    source_file: candidate,
+                });
+            }
+            if let Some(repo_candidate) = repo_root_relative_path(&candidate) {
+                if repo_candidate.exists() {
+                    return Some(ResolvedRequirePath {
+                        read_path: repo_candidate,
+                        source_file: candidate,
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     fn execute_switch(
@@ -4912,6 +4983,9 @@ impl Interpreter {
                         }
                         ReferenceReturnBinding::ArrayOffset(alias) => {
                             scope.bind_static_to_array_offset_alias(name, alias);
+                        }
+                        ReferenceReturnBinding::ArrayOffsets(aliases) => {
+                            scope.bind_static_to_array_offset_aliases(name, aliases);
                         }
                     }
                 } else {
@@ -8818,6 +8892,59 @@ impl Interpreter {
                 fields: Vec::new(),
                 rows: Vec::new(),
             }));
+        }
+
+        if params.is_empty() {
+            if let Some(filter) =
+                parse_wordpress_options_id_name_value_autoload_row_select_query(query)
+            {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| {
+                        wordpress_option_id_name_value_autoload_rows_for_filter(options, &filter)
+                    })
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec![
+                            "option_id".to_string(),
+                            "option_name".to_string(),
+                            "option_value".to_string(),
+                            "autoload".to_string(),
+                        ],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
+
+            if let Some(filter) =
+                parse_wordpress_options_name_value_autoload_row_select_query(query)
+            {
+                let rows = connection_handle_id
+                    .and_then(|handle_id| self.mysqli_wp_options.get(&handle_id))
+                    .map(|options| {
+                        wordpress_option_name_value_autoload_rows_for_filter(options, &filter)
+                    })
+                    .unwrap_or_default();
+                if !rows.is_empty() {
+                    return Ok(Some(MysqliPendingResultState {
+                        fields: vec![
+                            "option_name".to_string(),
+                            "option_value".to_string(),
+                            "autoload".to_string(),
+                        ],
+                        rows,
+                    }));
+                }
+                return Ok(Some(MysqliPendingResultState {
+                    fields: Vec::new(),
+                    rows: Vec::new(),
+                }));
+            }
         }
 
         mysqli_statement_result_for_query_with_params(function, query, params, span)
@@ -13869,23 +13996,99 @@ impl Interpreter {
                 ));
             };
             ensure_user_function_arity(function, argument_array.len(), span)?;
-            if function
+            if !function
                 .params
                 .iter()
                 .enumerate()
                 .any(|(index, param)| param.by_reference && index < argument_array.len())
             {
+                let positional_args =
+                    Self::call_user_func_array_positional_values(argument_array, span)?;
+                return Ok((positional_args, Vec::new()));
+            }
+            if function.params.iter().enumerate().any(|(index, param)| {
+                param.by_reference && param.is_variadic && index < argument_array.len()
+            }) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "variadic reference parameter invocation is not implemented",
+                    ),
+                ));
+            }
+
+            let Expr::Variable(array_name, _) = argument_expr else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "call_user_func_array() reference-return alias binding requires an array literal or direct stored array with covered reference slots in the current subset",
+                    ),
+                ));
+            };
+            if caller_scope.is_array_offset_alias_name(array_name) {
                 return Err(runtime_error(
                     argument_expr.span(),
                     RuntimeError::unsupported_call(
                         callable_name(&function.name),
-                        "call_user_func_array() reference-return alias binding requires an array literal with direct variable or direct public object-property array-offset reference elements for reached by-reference parameters in the current subset",
+                        "call_user_func_array() stored reference argument arrays routed through array-offset alias metadata are not implemented",
                     ),
                 ));
             }
-            let positional_args =
-                Self::call_user_func_array_positional_values(argument_array, span)?;
-            return Ok((positional_args, Vec::new()));
+
+            let mut values = Vec::with_capacity(argument_array.len());
+            let mut reference_bindings = Vec::new();
+            for (index, entry) in argument_array.entries().iter().enumerate() {
+                if matches!(entry.key, ArrayKey::String(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "call_user_func_array() string-keyed named reference arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
+
+                let Some(param) = function.params.get(index) else {
+                    values.push(entry.value_cloned());
+                    continue;
+                };
+
+                if param.by_reference {
+                    let aliases = caller_scope
+                        .array_offset_alias_group_for_direct_array_slot(array_name, &entry.key)
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::unsupported_call(
+                                    callable_name(&function.name),
+                                    "call_user_func_array() stored reference-return alias binding requires each reached by-reference argument slot to have been assigned by reference in the current subset",
+                                ),
+                            )
+                        })?;
+                    let value = caller_scope
+                        .read_array_offset_alias(aliases.first().expect("alias group is non-empty"))
+                        .ok_or_else(|| {
+                            runtime_error(
+                                argument_expr.span(),
+                                RuntimeError::invalid_array_access(
+                                    "cannot bind missing stored array reference-return argument"
+                                        .to_string(),
+                                ),
+                            )
+                        })?;
+                    values.push(value);
+                    reference_bindings.push(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                    });
+                } else {
+                    values.push(entry.value_cloned());
+                }
+            }
+
+            return Ok((values, reference_bindings));
         };
 
         ensure_user_function_arity(function, items.len(), span)?;
@@ -15990,7 +16193,19 @@ impl Interpreter {
                             if let Some(cell) = local_scope.read_cell(&param.name) {
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
-                                    alias.clone(),
+                                    vec![alias.clone()],
+                                    cell,
+                                ));
+                            }
+                        }
+                    }
+                    ReferenceBindingTarget::ArrayOffsets(aliases) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                            if let Some(cell) = local_scope.read_cell(&param.name) {
+                                array_offset_binding_cells.push((
+                                    param.name.clone(),
+                                    aliases.clone(),
                                     cell,
                                 ));
                             }
@@ -16031,9 +16246,9 @@ impl Interpreter {
         let returned_array_offset = result.as_ref().ok().and_then(|returned_cell| {
             array_offset_binding_cells
                 .iter()
-                .find_map(|(_, alias, original_cell)| {
+                .find_map(|(_, aliases, original_cell)| {
                     if Rc::ptr_eq(returned_cell, original_cell) {
-                        Some(alias.clone())
+                        Some(aliases.clone())
                     } else {
                         None
                     }
@@ -16041,7 +16256,7 @@ impl Interpreter {
         });
         let writeback_result = if result.is_ok() {
             let mut writeback_result = Ok(());
-            for (param_name, alias, original_cell) in &array_offset_binding_cells {
+            for (param_name, aliases, original_cell) in &array_offset_binding_cells {
                 let Some(local_cell) = local_scope.read_cell(param_name) else {
                     continue;
                 };
@@ -16051,7 +16266,7 @@ impl Interpreter {
                 let Some(value) = local_scope.read_named(param_name) else {
                     continue;
                 };
-                if !caller_scope.write_array_offset_alias(alias, value) {
+                if !caller_scope.write_array_offset_aliases(aliases, value) {
                     writeback_result = Err(runtime_error(
                         function.span,
                         RuntimeError::invalid_array_access(
@@ -16060,19 +16275,22 @@ impl Interpreter {
                     ));
                     break;
                 }
-                match &alias.root {
-                    ArrayOffsetAliasRoot::StaticArray { name } => {
-                        caller_scope.sync_array_offset_aliases_for_static_root(name);
-                    }
-                    ArrayOffsetAliasRoot::GlobalArray { name } => {
-                        caller_scope.sync_array_offset_aliases_for_global_root(name);
-                    }
-                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
-                    | ArrayOffsetAliasRoot::ContextObjectProperty {
-                        object, property, ..
-                    } => {
-                        caller_scope
-                            .sync_array_offset_aliases_for_object_property_root(object, property);
+                for alias in aliases {
+                    match &alias.root {
+                        ArrayOffsetAliasRoot::StaticArray { name } => {
+                            caller_scope.sync_array_offset_aliases_for_static_root(name);
+                        }
+                        ArrayOffsetAliasRoot::GlobalArray { name } => {
+                            caller_scope.sync_array_offset_aliases_for_global_root(name);
+                        }
+                        ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                        | ArrayOffsetAliasRoot::ContextObjectProperty {
+                            object, property, ..
+                        } => {
+                            caller_scope.sync_array_offset_aliases_for_object_property_root(
+                                object, property,
+                            );
+                        }
                     }
                 }
             }
@@ -16099,8 +16317,14 @@ impl Interpreter {
 
         writeback_result?;
         let cell = result?;
-        if let Some(alias) = returned_array_offset {
-            Ok(ReferenceReturnBinding::ArrayOffset(alias))
+        if let Some(aliases) = returned_array_offset {
+            if aliases.len() == 1 {
+                Ok(ReferenceReturnBinding::ArrayOffset(
+                    aliases.into_iter().next().expect("checked len"),
+                ))
+            } else {
+                Ok(ReferenceReturnBinding::ArrayOffsets(aliases))
+            }
         } else {
             Ok(ReferenceReturnBinding::Cell(cell))
         }
@@ -16426,13 +16650,15 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<()> {
         for binding in reference_bindings {
-            let ReferenceBindingTarget::ArrayOffset(alias) = &binding.target else {
-                continue;
+            let aliases = match &binding.target {
+                ReferenceBindingTarget::ArrayOffset(alias) => std::slice::from_ref(alias),
+                ReferenceBindingTarget::ArrayOffsets(aliases) => aliases.as_slice(),
+                ReferenceBindingTarget::CallerCell(_) => continue,
             };
             let Some(value) = local_scope.read_named(&binding.param_name) else {
                 continue;
             };
-            if !caller_scope.write_array_offset_alias(alias, value) {
+            if !caller_scope.write_array_offset_aliases(aliases, value) {
                 return Err(runtime_error(
                     span,
                     RuntimeError::invalid_array_access(
@@ -16440,19 +16666,21 @@ impl Interpreter {
                     ),
                 ));
             }
-            match &alias.root {
-                ArrayOffsetAliasRoot::StaticArray { name } => {
-                    caller_scope.sync_array_offset_aliases_for_static_root(name);
-                }
-                ArrayOffsetAliasRoot::GlobalArray { name } => {
-                    caller_scope.sync_array_offset_aliases_for_global_root(name);
-                }
-                ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
-                | ArrayOffsetAliasRoot::ContextObjectProperty {
-                    object, property, ..
-                } => {
-                    caller_scope
-                        .sync_array_offset_aliases_for_object_property_root(object, property);
+            for alias in aliases {
+                match &alias.root {
+                    ArrayOffsetAliasRoot::StaticArray { name } => {
+                        caller_scope.sync_array_offset_aliases_for_static_root(name);
+                    }
+                    ArrayOffsetAliasRoot::GlobalArray { name } => {
+                        caller_scope.sync_array_offset_aliases_for_global_root(name);
+                    }
+                    ArrayOffsetAliasRoot::PublicObjectProperty { object, property }
+                    | ArrayOffsetAliasRoot::ContextObjectProperty {
+                        object, property, ..
+                    } => {
+                        caller_scope
+                            .sync_array_offset_aliases_for_object_property_root(object, property);
+                    }
                 }
             }
         }
@@ -16500,6 +16728,11 @@ impl Interpreter {
                         local_scope.bind_static_to_cell(&param.name, caller_cell.clone());
                     }
                     ReferenceBindingTarget::ArrayOffset(_) => {
+                        if let Some(arg) = args.get(index) {
+                            local_scope.write_static(&param.name, arg.clone());
+                        }
+                    }
+                    ReferenceBindingTarget::ArrayOffsets(_) => {
                         if let Some(arg) = args.get(index) {
                             local_scope.write_static(&param.name, arg.clone());
                         }
@@ -17221,6 +17454,27 @@ impl Interpreter {
             "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
+            "get_include_path" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::String(self.include_path.clone()))
+            }
+            "set_include_path" => {
+                expect_arity(name, &args, 1, span)?;
+                let Value::String(path) = &args[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "set_include_path()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                args[0].type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let previous = std::mem::replace(&mut self.include_path, path.clone());
+                Ok(Value::String(previous))
+            }
             "min" => call_min(&args, span),
             "rand" => call_rand(&args, span),
             "uniqid" => call_uniqid(&args, span),
@@ -23419,6 +23673,93 @@ fn validate_inherited_method_signature_compatibility(
                 ));
             }
 
+            for (index, parent_param) in parent_signature.params.iter().enumerate() {
+                let Some(child_param) = method.function.params.get(index) else {
+                    continue;
+                };
+
+                match (
+                    parent_param.type_decl.as_deref(),
+                    child_param
+                        .type_decl
+                        .as_ref()
+                        .map(|decl| decl.text.as_str()),
+                ) {
+                    (None, Some(child_type)) => {
+                        return Err(RuntimeError::unsupported_class_inheritance(
+                            class_name,
+                            format!(
+                                "method {}::{}() cannot add parameter type {} for parameter ${} when inherited method {}::{}() has no parameter type",
+                                class_name,
+                                method.function.name,
+                                child_type,
+                                child_param.name,
+                                parent.name(),
+                                parent_method.name()
+                            ),
+                        ));
+                    }
+                    (Some(parent_type), Some(child_type))
+                        if !child_type.eq_ignore_ascii_case(parent_type) =>
+                    {
+                        return Err(RuntimeError::unsupported_class_inheritance(
+                            class_name,
+                            format!(
+                                "method {}::{}() parameter ${} type {} is incompatible with inherited method {}::{}() parameter type {}",
+                                class_name,
+                                method.function.name,
+                                child_param.name,
+                                child_type,
+                                parent.name(),
+                                parent_method.name(),
+                                parent_type
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+
+            match (
+                parent_signature.return_type.as_deref(),
+                method
+                    .function
+                    .return_type
+                    .as_ref()
+                    .map(|decl| decl.text.as_str()),
+            ) {
+                (Some(parent_type), None) => {
+                    return Err(RuntimeError::unsupported_class_inheritance(
+                        class_name,
+                        format!(
+                            "method {}::{}() must declare return type {} to match inherited method {}::{}()",
+                            class_name,
+                            method.function.name,
+                            parent_type,
+                            parent.name(),
+                            parent_method.name()
+                        ),
+                    ));
+                }
+                (Some(parent_type), Some(child_type))
+                    if !child_type.eq_ignore_ascii_case(parent_type) =>
+                {
+                    return Err(RuntimeError::unsupported_class_inheritance(
+                        class_name,
+                        format!(
+                            "method {}::{}() return type {} is incompatible with inherited method {}::{}() return type {}",
+                            class_name,
+                            method.function.name,
+                            child_type,
+                            parent.name(),
+                            parent_method.name(),
+                            parent_type
+                        ),
+                    ));
+                }
+                _ => {}
+            }
+
             return Ok(());
         }
 
@@ -23646,6 +23987,8 @@ fn is_builtin(name: &str) -> bool {
             | "date_default_timezone_set"
             | "ini_get"
             | "ini_set"
+            | "get_include_path"
+            | "set_include_path"
             | "min"
             | "rand"
             | "uniqid"
@@ -24020,6 +24363,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
+        "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "E_ERROR" => Some(Value::Int(PHP_E_ERROR)),
         "E_WARNING" => Some(Value::Int(PHP_E_WARNING)),
         "E_PARSE" => Some(Value::Int(PHP_E_PARSE)),

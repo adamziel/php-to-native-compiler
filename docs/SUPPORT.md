@@ -108,19 +108,24 @@
   by-reference parameter is supplied by a direct-variable reference element or
   a direct public object-property array-offset reference element, for example
   `$alias =& call_user_func_array("tag", array(&$value));` or
-  `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`. The
+  `$alias =& call_user_func_array("tag", array(&$object->items[$key]));`.
+  Direct stored argument arrays are also accepted for this reference-return
+  alias-binding path when each reached by-reference slot was previously
+  assigned by reference through the covered direct array-offset target path,
+  for example
+  `$args[0] =& $value; $alias =& call_user_func_array("tag", $args);`. The
   assigned alias binds to the callback's returned direct variable cell or, when
-  the callback returns the reached object-property array-offset parameter, to
-  the same bounded public object-property slot route, so later writes through
-  the alias and slot observe the same value. `unset($param)` detaches only the
-  callee's local parameter name; later local writes do not mutate the caller
-  variable or write back through the object-property argument path.
+  the callback returns the reached stored/object-property array-offset
+  parameter, to the same bounded alias group, so later writes through the
+  alias, stored argument slot, covered request/global bag slot, and covered
+  public object-property slot observe the same value. `unset($param)` detaches
+  only the callee's local parameter name; later local writes do not mutate the
+  caller variable or write back through the object-property argument path.
   Non-public, dynamic-property, append-offset, ArrayAccess, reference array
   literals stored by value, direct stored arrays whose reached slots were not
-  assigned by reference, dynamic static receiver, string-keyed named callback
-  argument arrays, stored argument arrays with reached by-reference parameters
-  for `call_user_func_array()` reference-return alias binding, non-public,
-  dynamic, append, `ArrayAccess`, or stored-array object-property bridges for
+  assigned by reference, non-direct stored array expressions, dynamic static
+  receiver, string-keyed named callback argument arrays, non-public, dynamic,
+  append, `ArrayAccess`, or stored-array object-property bridges for
   `call_user_func_array()` reference-return alias binding, closure or builtin
   callbacks as reference-return sources, and broader reference-return binding
   forms remain unsupported for object-property and stored-array reference
@@ -702,8 +707,14 @@
   Child methods other than `__construct` that redeclare inherited non-private
   methods must not require more parameters than the inherited method; keeping
   the same required count or adding optional parameters is supported in the
-  current metadata slice. Private parent methods remain separately
-  redeclarable.
+  current metadata slice. For inherited method parameter type metadata, child
+  methods may omit an inherited parameter type or use the same type text
+  case-insensitively, but may not add a type where the inherited parameter is
+  untyped or change a typed inherited parameter to a different type. For
+  inherited method return type metadata, child methods may add a return type
+  when the inherited method is untyped, but a typed inherited method requires
+  the child method to declare the same return type text case-insensitively.
+  Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
   name resolved through the current class table. Classes without `__construct`
@@ -717,8 +728,10 @@
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with unimplemented abstract methods report a stable runtime
   boundary. Method visibility reduction and static/non-static compatibility
-  violations report stable runtime boundaries. Method required-parameter
-  compatibility violations report stable runtime boundaries. Concrete classes
+  violations report stable runtime boundaries. Bounded inherited method
+  signature metadata compatibility violations report stable runtime
+  boundaries for required-parameter counts, parameter type text, and return
+  type text. Concrete classes
   that implement declared user interfaces, including through inherited
   `implements` metadata and the current parent interface inheritance slice
   with one or more user parents declared before or after the child interface,
@@ -741,7 +754,7 @@
   classes, `self::CONST`/`static::CONST` in implementing class methods, and
   `defined()`/`constant()` string lookups. Missing or cyclic parent interface
   inheritance reports stable runtime boundaries. Full PHP method signature
-  variance,
+  variance beyond the current same-text inherited/interface type checks,
   class/interface return covariance and type subtyping, type aliases,
   union/intersection canonicalization,
   typed/static/non-public/abstract/final or multi-constant interface
@@ -958,7 +971,8 @@
   `error_reporting`, `ignore_user_abort`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`,
   `realpath`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_clean`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
-  `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
+  `version_compare`, `microtime`, `ini_get`, `ini_set`,
+  `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -1822,7 +1836,14 @@
   parameters on the same handle through
   `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
   `mysqli_execute_query($handle, $query, array($name))`; missing names return
-  an empty zero-field placeholder result. The exact
+  an empty zero-field placeholder result. Prepared no-placeholder row-set reads
+  also support the exact
+  `SELECT option_name, option_value, autoload FROM wp_options ...` and
+  `SELECT option_id, option_name, option_value, autoload FROM wp_options ...`
+  shapes already accepted by the direct query path, including all rows,
+  autoload-filtered rows, and literal `option_name IN (...)` lists through
+  `mysqli_stmt_execute()`/`mysqli_stmt_get_result()` and
+  `mysqli_execute_query($handle, $query)`. The exact
   `INSERT INTO wp_options (option_name, option_value, autoload) VALUES (?, ?, ?)`
   prepared statement records string option-name, option-value, and autoload
   parameters on the same handle, updates statement and connection affected-row
@@ -1861,12 +1882,12 @@
   handle, updates statement and connection affected-row metadata, and treats
   missing option names as successful zero-row deletes. Prepared mutation SQL
   without a prior state island remains unsupported. This does not add broad
-  prepared SQL execution, real unique-index enforcement, no-op update
-  affected-row fidelity, prepared mutation shapes beyond the exact option
-  value, value/autoload, autoload-only, insert, replace, upsert, and delete
-  forms listed above, non-string parameter coercion, result binding fidelity
-  beyond exact metadata, real auto-increment fidelity, host database execution,
-  PDO, or native lowering. For the
+  prepared SQL execution, arbitrary projections, real unique-index enforcement,
+  no-op update affected-row fidelity, prepared mutation shapes beyond the exact
+  option value, value/autoload, autoload-only, insert, replace, upsert, and
+  delete forms listed above, non-string parameter coercion, result binding
+  fidelity beyond exact metadata, real auto-increment fidelity, host database
+  execution, PDO, or native lowering. For the
   exact synthetic empty result query
   `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
@@ -2303,9 +2324,10 @@
   `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`
 - narrow `require`, `require_once`, `include`, and `include_once` execution
   for local string paths in statement and expression position, including
-  constant/string concatenation, source-file-relative path resolution, included
-  file declaration registration, caller-scope execution, include return values,
-  and `_once` de-duplication by resolved local file. Declaration-order
+  constant/string concatenation, source-file-relative path resolution, bounded
+  fallback through the current `set_include_path()` path list, included file
+  declaration registration, caller-scope execution, include return values, and
+  `_once` de-duplication by resolved local file. Declaration-order
   dependencies across included files remain outside this slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - one unbracketed named `namespace` declaration per file, plus simple
@@ -2497,19 +2519,23 @@
   and `include_once path;` execute in statement position and expression
   position for paths that evaluate to strings in the current subset, including
   constant and string-concatenated paths such as `ABSPATH . WPINC .
-  '/load.php'`. Absolute paths resolve directly; relative paths resolve
-  against the source file containing the construct. Included files are parsed
-  with `<?php`, register top-level functions/classes, and run in the caller
-  symbol table. Statement forms ignore top-level include return values.
+  '/load.php'`. Absolute paths resolve directly; relative paths first resolve
+  against the source file containing the construct and then through the
+  current `include_path` string from `get_include_path()`/`set_include_path()`;
+  the default include path is `"."`, and `PATH_SEPARATOR` is exposed for the
+  host path-list separator. Included files are parsed with `<?php`, register
+  top-level functions/classes, and run in the caller symbol table. Statement
+  forms ignore top-level include return values.
   Expression forms return the included file's top-level `return` value, return
   `1` when the file completes normally, and return `true` for `_once`
   constructs when the resolved file was already loaded. `require_once` and
   `include_once` de-duplicate by resolved local file, including files loaded
   first through non-once `require`/`include`. Missing-file include
-  warning/recovery, include-path lookup, stream wrappers, URL includes,
-  `phar://`, opcache behavior, autoload interaction, declaration-order edge
-  cases, source mapping for functions/classes after include, PHP's exact
-  warning-vs-fatal recovery behavior, and native lowering are not implemented.
+  warning/recovery, exact PHP include-path search ordering, stream wrappers,
+  URL includes, `phar://`, opcache behavior, autoload interaction,
+  declaration-order edge cases, source mapping for functions/classes after
+  include, PHP's exact warning-vs-fatal recovery behavior, and native
+  lowering are not implemented.
   Native lowering rejects expression forms such as
   `$result = include 'file.php';` through a dedicated codegen diagnostic that
   names include return values, `_once` de-duplication results, caller-scope
